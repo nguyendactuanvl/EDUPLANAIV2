@@ -143,6 +143,21 @@ export const MarkdownRenderer = ({
   // 0. Bảo vệ các khối code (```...```) và inline code (`...`) để các bộ tiền xử lý toán học không làm hỏng cú pháp lập trình
   const codeTokens: string[] = [];
   let processedContent = unflattenMarkdownTables(content || '');
+
+  // 0.01 Chuyển đổi trực tiếp các BẢNG BIẾN THIÊN (BBT) Markdown table sang <svg-wrapper> NGAY TỪ ĐẦU
+  // Để các hàm xử lý công thức toán học sau đó (polishMathText, fixMath, sanitizeExamQuestion...)
+  // KHÔNG BAO GIỜ làm hỏng cấu trúc bảng, không làm mất dấu y' hay gãy mũi tên \searrow, \nearrow!
+  processedContent = processedContent.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
+    try {
+      const svg = convertBbtTableToSvg(match);
+      if (svg) {
+        const base64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : Buffer.from(encodeURIComponent(svg)).toString('base64');
+        return `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n`;
+      }
+    } catch (e) {}
+    return match;
+  });
+
   processedContent = processedContent.replace(/(```[a-zA-Z0-9_\-]*\s*[\s\S]*?```|`[^`\n]+`)/g, (match) => {
     // Nếu là khối TikZ thì giữ nguyên để TikZ renderer biên dịch đồ thị
     if (/```(?:tikz|latex)\b/i.test(match) || /\\begin\s*\{tikzpicture\}/i.test(match)) {

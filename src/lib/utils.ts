@@ -1719,7 +1719,8 @@ export function getPublicAppUrl(): string {
 
 export function cleanQuestionStem(content: any, options?: any[], tfStatements?: any[]): string {
   if (!content) return '';
-  let text = unflattenMarkdownTables(sanitizeLatexString(String(content).trim()));
+  let text = unflattenMarkdownTables(String(content).trim());
+  text = sanitizeLatexString(text);
   
   // Strip any leaked preamble packages
   text = text.replace(/\\(usetikzlibrary|usepackage)\s*\{[^}]*\}\s*/gi, '');

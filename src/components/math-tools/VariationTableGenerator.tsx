@@ -7,6 +7,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { toPng } from "html-to-image";
 import { saveAs } from "file-saver";
 import { Document, Packer, Paragraph, ImageRun, AlignmentType, HeadingLevel } from "docx";
+import { analyzeFunctionToBbt, ensureCompleteBbtPoints, parseMarkdownBbtTable } from "../../lib/bbtRenderer";
 
 // ============================================================================
 // TYPES & DATA STRUCTURES
@@ -599,6 +600,10 @@ export const VariationTableGenerator: React.FC = () => {
     try {
       let jsonText = "";
 
+      // Ưu tiên kiểm tra xem hàm số có thể phân tích giải tích trực tiếp 100% chuẩn xác hay không
+      // (VD: y = (2x-3)/(x-1), y = (2x+1)/(x-1), y = x^3 - 3x^2 + 2, y = ax^2+bx+c...)
+      const directMathBbt = analyzeFunctionToBbt(userPrompt);
+
       if (effectiveKey) {
         // Sử dụng GoogleGenAI SDK với key cá nhân
         const ai = new GoogleGenAI({ apiKey: effectiveKey });
@@ -662,20 +667,65 @@ export const VariationTableGenerator: React.FC = () => {
         jsonText = data.text || "";
       }
 
-      if (!jsonText) throw new Error("Không nhận được phản hồi từ AI.");
+      let parsed: BBTData | null = null;
 
-      // Clean markdown code fence if exists
-      const cleanJson = jsonText.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
-      const parsed: BBTData = JSON.parse(cleanJson);
+      if (jsonText) {
+        // 1. Thử phân tích JSON thuần hoặc regex JSON
+        const cleanJson = jsonText.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
+        try {
+          parsed = JSON.parse(cleanJson);
+        } catch (e) {
+          const objMatch = cleanJson.match(/\{[\s\S]*\}/);
+          if (objMatch) {
+            try {
+              parsed = JSON.parse(objMatch[0]);
+            } catch (e2) {}
+          }
+        }
 
-      if (!parsed.points || parsed.points.length < 2) {
-        throw new Error("Dữ liệu BBT không hợp lệ: Cần ít nhất 2 mốc trên trục x.");
+        // 2. Nếu AI trả về Markdown Table thay vì JSON
+        if (!parsed || !parsed.points || parsed.points.length < 2) {
+          const mdParsed = parseMarkdownBbtTable(jsonText);
+          if (mdParsed && mdParsed.points && mdParsed.points.length >= 2) {
+            parsed = mdParsed;
+          }
+        }
+      }
+
+      // 3. Nếu AI không trả về hoặc JSON thiếu mốc, sử dụng bộ giải tích toán học
+      if (!parsed || !parsed.points || parsed.points.length < 2) {
+        if (directMathBbt) {
+          parsed = directMathBbt;
+        } else {
+          parsed = analyzeFunctionToBbt(userPrompt);
+        }
+      }
+
+      // 4. Đảm bảo đầy đủ 2 mốc biên vô cực (-∞ và +∞)
+      if (parsed && parsed.points) {
+        parsed = ensureCompleteBbtPoints(parsed);
+      }
+
+      if (!parsed || !parsed.points || parsed.points.length < 2) {
+        throw new Error("Không thể phân tích Bảng biến thiên từ yêu cầu này. Thầy cô vui lòng nhập công thức hàm số cụ thể hơn như y = (2x+1)/(x-1) hoặc y = x^3 - 3x^2 + 2.");
       }
 
       setBbtData(parsed);
     } catch (err: any) {
-      console.error("Gemini API Error:", err);
-      setError(err?.message || "Đã xảy ra lỗi khi phân tích hàm số bằng Gemini API. Vui lòng kiểm tra lại API Key.");
+      console.error("BBT Generator Error:", err);
+      // Nếu có lỗi API hoặc hết quota, nhưng phân tích giải tích toán học trực tiếp được
+      const fallbackMath = analyzeFunctionToBbt(userPrompt);
+      if (fallbackMath && fallbackMath.points && fallbackMath.points.length >= 2) {
+        setBbtData(ensureCompleteBbtPoints(fallbackMath));
+        setError(null);
+      } else {
+        const isQuota = err?.message?.includes("quota") || err?.message?.includes("resource_exhausted") || err?.message?.includes("429");
+        if (isQuota) {
+          setError("Hệ thống đạt giới hạn lượt gọi API Gemini tạm thời. Thầy cô có thể nhập công thức trực tiếp (như y = (2x+1)/(x-1), y = x^3 - 3x + 2, y = x^2 - 4x + 3) để hệ thống tự động giải tích và vẽ ngay lập tức, hoặc cài đặt API Key cá nhân.");
+        } else {
+          setError(err?.message || "Đã xảy ra lỗi khi phân tích hàm số. Vui lòng kiểm tra lại công thức hoặc API Key.");
+        }
+      }
     } finally {
       setIsLoading(false);
     }

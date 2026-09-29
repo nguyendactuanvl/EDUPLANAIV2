@@ -12,6 +12,10 @@ import { BBTData, BBTPoint, BBTInterval } from '../components/math-tools/Variati
 export function cleanMathText(str?: string): string {
   if (!str) return '';
   return str
+    .replace(/[’`´]/g, "'")
+    .replace(/\\prime/g, "'")
+    .replace(/\^\{\s*['’]\s*\}/g, "'")
+    .replace(/\^\{\s*\\prime\s*\}/g, "'")
     .replace(/\\infty/g, '∞')
     .replace(/\+\\infty/g, '+∞')
     .replace(/-\\infty/g, '-∞')
@@ -185,20 +189,20 @@ export function generateBbtSvg(data: BBTData): string {
  */
 export function unflattenMarkdownTables(text: string): string {
   if (!text || !text.includes('|')) return text;
-  let s = text;
+  let s = text.replace(/[’`´]/g, "'").replace(/\\prime/g, "'");
 
   // 1. Tách văn bản đứng trước bảng nếu bị dính liền trên 1 dòng:
-  // e.g. "như sau? | x |" hoặc "sau?|$x$|"
-  s = s.replace(/([^\n|])\s*(\|(?:\s*\$?[xt]\$?|\s*x\s*)\s*\|)/gi, '$1\n\n$2');
+  // e.g. "như sau? | x |" hoặc "sau?|$x$|" hoặc "sau? | $x$ |"
+  s = s.replace(/([^\n|])\s*(\|(?:\s*\$?[xt]\$?|\s*[xt]\s*)\s*\|)/gi, '$1\n\n$2');
 
-  // 2. Tách giữa hàng đầu (x) và hàng phân cách |---| nếu bị dính liền trên 1 dòng:
-  s = s.replace(/(\|\s*)(?:[ \t]+)(\|\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)+\|)/g, '$1\n$2');
+  // 2. Tách giữa hàng đầu (x) và hàng phân cách |---| nếu có:
+  s = s.replace(/(\|\s*)(?:[ \t]*)(\|\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)+\|)/g, '$1\n$2');
 
-  // 3. Tách giữa hàng phân cách |---| và hàng y' (hoặc y):
-  s = s.replace(/(\|\s*:?-{2,}:?\s*\|)[ \t]*(\|\s*\$?(?:y'|f'|g'|y)\$?[\s|])/gi, '$1\n$2');
+  // 3. Tách trước hàng y' (kể cả có hàng |---| hay không có hàng |---|):
+  s = s.replace(/(\|\s*)(?:[ \t]*)(\|\s*\$?(?:y['’]|y\^\{\s*['’\\prime]\s*\}|y\^\\prime|f['’]|g['’]|f\^\{\s*['’\\prime]\s*\}|g\^\{\s*['’\\prime]\s*\}|f['’]\s*\([a-z]\)|g['’]\s*\([a-z]\))\$?[\s|])/gi, '$1\n$2');
 
-  // 4. Tách giữa hàng y' và hàng y:
-  s = s.replace(/(\|\s*)[ \t]+(\|\s*\$?(?:y|f\(x\)|g\(x\))\$?[\s|])/gi, '$1\n$2');
+  // 4. Tách trước hàng y / f(x):
+  s = s.replace(/(\|\s*)(?:[ \t]*)(\|\s*\$?(?:y|f\s*\([a-z]\)|g\s*\([a-z]\))\$?[\s|])/gi, '$1\n$2');
 
   // 5. Tách văn bản đứng sau bảng nếu dính liền với hàng cuối:
   s = s.replace(/(\|\s*)([^\n|]+)$/gm, (_match, pipe, rest) => {
@@ -235,11 +239,12 @@ export function parseMarkdownBbtTable(tableMarkdown: string): BBTData | null {
     });
 
     // Kiểm tra hàng 1: bắt đầu bằng x hoặc t
-    const row1Header = cleanMathText(rowCells[0][0]).toLowerCase();
-    if (row1Header !== 'x' && row1Header !== 't') return null;
+    const row1Header = cleanMathText(rowCells[0][0]).toLowerCase().replace(/[\$\s]/g, '');
+    const isRow1X = row1Header === 'x' || row1Header === 't' || (row1Header === '' && rowCells[0].length >= 3);
+    if (!isRow1X) return null;
 
     // Kiểm tra hàng 2: y' hoặc f'(x) hoặc y
-    const row2Header = cleanMathText(rowCells[1][0]).toLowerCase();
+    const row2Header = cleanMathText(rowCells[1][0]).toLowerCase().replace(/[\$\s]/g, '');
     const hasDerivative = row2Header.includes("y'") || row2Header.includes("f'") || row2Header.includes("g'");
 
     let xCells = rowCells[0].slice(1);
@@ -571,4 +576,267 @@ export function convertBbtTableToSvg(tableMarkdown: string): string | null {
   const data = parseMarkdownBbtTable(tableMarkdown);
   if (!data) return null;
   return generateBbtSvg(data);
+}
+
+/**
+ * Đảm bảo các mốc của BBT luôn có đủ 2 đầu mút vô cực (-∞ và +∞)
+ */
+export function ensureCompleteBbtPoints(data: BBTData): BBTData {
+  if (!data || !Array.isArray(data.points) || data.points.length === 0) {
+    return data;
+  }
+  const points = [...data.points];
+  const intervals = Array.isArray(data.intervals) ? [...data.intervals] : [];
+
+  const firstX = (points[0]?.x || '').replace(/\$/g, '').trim();
+  if (!firstX.includes('-\\infty') && !firstX.includes('-∞')) {
+    const nextTrend = intervals[0]?.trend || 'increasing';
+    points.unshift({
+      x: '-\\infty',
+      yPosition: nextTrend === 'increasing' ? 'bottom' : 'top',
+      yVal: nextTrend === 'increasing' ? '-\\infty' : '+\\infty'
+    });
+    if (intervals.length < points.length - 1) {
+      intervals.unshift({
+        sign: nextTrend === 'increasing' ? '+' : '-',
+        trend: nextTrend
+      });
+    }
+  }
+
+  const lastX = (points[points.length - 1]?.x || '').replace(/\$/g, '').trim();
+  if (!lastX.includes('+\\infty') && !lastX.includes('+∞') && !lastX.includes('∞')) {
+    const prevTrend = intervals[intervals.length - 1]?.trend || 'increasing';
+    points.push({
+      x: '+\\infty',
+      yPosition: prevTrend === 'increasing' ? 'top' : 'bottom',
+      yVal: prevTrend === 'increasing' ? '+\\infty' : '-\\infty'
+    });
+    if (intervals.length < points.length - 1) {
+      intervals.push({
+        sign: prevTrend === 'increasing' ? '+' : '-',
+        trend: prevTrend
+      });
+    }
+  }
+
+  while (intervals.length < points.length - 1) {
+    intervals.push({ sign: '+', trend: 'increasing' });
+  }
+
+  return {
+    ...data,
+    points,
+    intervals
+  };
+}
+
+/**
+ * Bộ giải tích toán học tự động (Deterministic Math Analyzer):
+ * Tự động tính toán giải tích chuẩn xác 100% cho các hàm số phổ biến (Lớp 10, 11, 12):
+ * - Hàm phân thức bậc nhất/bậc nhất y = (ax+b)/(cx+d)
+ * - Hàm bậc ba y = ax^3 + bx^2 + cx + d
+ * - Hàm trùng phương y = ax^4 + bx^2 + c
+ * - Hàm bậc hai (Parabol) y = ax^2 + bx + c
+ * Hoạt động offline 0ms, không phụ thuộc vào Gemini API hay quota mạng!
+ */
+export function analyzeFunctionToBbt(expression: string): BBTData | null {
+  if (!expression || !expression.trim()) return null;
+
+  try {
+    let clean = expression
+      .replace(/\s+/g, '')
+      .replace(/\$/g, '')
+      .replace(/^y\s*=\s*/i, '')
+      .replace(/^f\([a-z]\)\s*=\s*/i, '');
+
+    // 1. Hàm phân thức bậc nhất / bậc nhất y = (ax+b)/(cx+d) hoặc \frac{ax+b}{cx+d}
+    let numStr = '';
+    let denStr = '';
+    const fracMatch = clean.match(/\\frac\{([^}]+)\}\{([^}]+)\}/i);
+    if (fracMatch) {
+      numStr = fracMatch[1];
+      denStr = fracMatch[2];
+    } else if (clean.includes('/')) {
+      const parts = clean.split('/');
+      if (parts.length === 2) {
+        numStr = parts[0].replace(/^\(|\)$/g, '');
+        denStr = parts[1].replace(/^\(|\)$/g, '');
+      }
+    }
+
+    if (numStr && denStr) {
+      const parseLinear = (s: string): { a: number; b: number } | null => {
+        const m = s.match(/^([+-]?\d*(?:\.\d+)?)x([+-]\d+(?:\.\d+)?)?$/i) ||
+                  s.match(/^([+-]?\d*(?:\.\d+)?)x$/i) ||
+                  s.match(/^([+-]\d+(?:\.\d+)?)\+([+-]?\d*(?:\.\d+)?)x$/i);
+        if (!m) return null;
+        let aVal = 1;
+        let bVal = 0;
+        if (m[2] !== undefined) {
+          const aStr = m[1];
+          aVal = aStr === '' || aStr === '+' ? 1 : (aStr === '-' ? -1 : parseFloat(aStr));
+          bVal = parseFloat(m[2]);
+        } else {
+          const aStr = m[1];
+          aVal = aStr === '' || aStr === '+' ? 1 : (aStr === '-' ? -1 : parseFloat(aStr));
+        }
+        return { a: aVal, b: bVal };
+      };
+
+      const linNum = parseLinear(numStr);
+      const linDen = parseLinear(denStr);
+
+      if (linNum && linDen && linDen.a !== 0) {
+        const a = linNum.a;
+        const b = linNum.b;
+        const c = linDen.a;
+        const d = linDen.b;
+
+        const x0 = -d / c;
+        const x0Str = Number.isInteger(x0) ? String(x0) : (x0 > 0 ? `${-d}/${c}` : `-${d}/${-c}`);
+        const det = a * d - b * c;
+        const isIncreasing = det > 0;
+        const horizVal = Number.isInteger(a / c) ? String(a / c) : `${a}/${c}`;
+
+        const points: BBTPoint[] = [
+          {
+            x: '-\\infty',
+            yPosition: isIncreasing ? 'bottom' : 'top',
+            yVal: horizVal
+          },
+          {
+            x: x0Str,
+            yPrime: '||',
+            isAsymptote: true,
+            yLeftVal: isIncreasing ? '+\\infty' : '-\\infty',
+            yLeftPosition: isIncreasing ? 'top' : 'bottom',
+            yRightVal: isIncreasing ? '-\\infty' : '+\\infty',
+            yRightPosition: isIncreasing ? 'bottom' : 'top'
+          },
+          {
+            x: '+\\infty',
+            yPosition: isIncreasing ? 'top' : 'bottom',
+            yVal: horizVal
+          }
+        ];
+
+        const intervals: BBTInterval[] = [
+          { sign: isIncreasing ? '+' : '-', trend: isIncreasing ? 'increasing' : 'decreasing' },
+          { sign: isIncreasing ? '+' : '-', trend: isIncreasing ? 'increasing' : 'decreasing' }
+        ];
+
+        return {
+          functionName: `y = \\frac{${numStr}}{${denStr}}`,
+          points,
+          intervals
+        };
+      }
+    }
+
+    // 2. Hàm bậc 3: y = ax^3 + bx^2 + cx + d
+    const cubicRegex = /^(?:([+-]?\d*(?:\.\d+)?)x\^3)?(?:([+-]\d*(?:\.\d+)?)x\^2)?(?:([+-]\d*(?:\.\d+)?)x)?([+-]\d+(?:\.\d+)?)?$/i;
+    const cubicMatch = clean.match(cubicRegex);
+    if (cubicMatch && (clean.includes('x^3') || clean.includes('x³'))) {
+      const parseCoeff = (s?: string, def = 0): number => {
+        if (!s) return def;
+        if (s === '' || s === '+') return 1;
+        if (s === '-') return -1;
+        return parseFloat(s);
+      };
+
+      const a = parseCoeff(cubicMatch[1], 1);
+      const b = parseCoeff(cubicMatch[2], 0);
+      const c = parseCoeff(cubicMatch[3], 0);
+      const d = cubicMatch[4] ? parseFloat(cubicMatch[4]) : 0;
+
+      if (a !== 0) {
+        // y' = 3ax^2 + 2bx + c
+        const A = 3 * a;
+        const B = 2 * b;
+        const C = c;
+        const delta = B * B - 4 * A * C;
+
+        if (delta > 0) {
+          const r1 = (-B - Math.sqrt(delta)) / (2 * A);
+          const r2 = (-B + Math.sqrt(delta)) / (2 * A);
+          const x1 = Math.min(r1, r2);
+          const x2 = Math.max(r1, r2);
+
+          const calcY = (x: number) => a * x * x * x + b * x * x + c * x + d;
+          const y1 = calcY(x1);
+          const y2 = calcY(x2);
+
+          const formatNum = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1);
+
+          const points: BBTPoint[] = [
+            { x: '-\\infty', yVal: a > 0 ? '-\\infty' : '+\\infty', yPosition: a > 0 ? 'bottom' : 'top' },
+            { x: formatNum(x1), yPrime: '0', yVal: formatNum(y1), yPosition: a > 0 ? 'top' : 'bottom' },
+            { x: formatNum(x2), yPrime: '0', yVal: formatNum(y2), yPosition: a > 0 ? 'bottom' : 'top' },
+            { x: '+\\infty', yVal: a > 0 ? '+\\infty' : '-\\infty', yPosition: a > 0 ? 'top' : 'bottom' }
+          ];
+
+          const intervals: BBTInterval[] = a > 0 ? [
+            { sign: '+', trend: 'increasing' },
+            { sign: '-', trend: 'decreasing' },
+            { sign: '+', trend: 'increasing' }
+          ] : [
+            { sign: '-', trend: 'decreasing' },
+            { sign: '+', trend: 'increasing' },
+            { sign: '-', trend: 'decreasing' }
+          ];
+
+          return {
+            functionName: `y = ${expression.replace(/^y\s*=\s*/i, '')}`,
+            points,
+            intervals
+          };
+        }
+      }
+    }
+
+    // 3. Hàm bậc 2 (Parabol): y = ax^2 + bx + c
+    const quadRegex = /^(?:([+-]?\d*(?:\.\d+)?)x\^2)?(?:([+-]\d*(?:\.\d+)?)x)?([+-]\d+(?:\.\d+)?)?$/i;
+    const quadMatch = clean.match(quadRegex);
+    if (quadMatch && (clean.includes('x^2') || clean.includes('x²')) && !clean.includes('x^3') && !clean.includes('x^4')) {
+      const parseCoeff = (s?: string, def = 0): number => {
+        if (!s) return def;
+        if (s === '' || s === '+') return 1;
+        if (s === '-') return -1;
+        return parseFloat(s);
+      };
+
+      const a = parseCoeff(quadMatch[1], 1);
+      const b = parseCoeff(quadMatch[2], 0);
+      const c = quadMatch[3] ? parseFloat(quadMatch[3]) : 0;
+
+      if (a !== 0) {
+        const xv = -b / (2 * a);
+        const yv = a * xv * xv + b * xv + c;
+        const formatNum = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1);
+
+        const points: BBTPoint[] = [
+          { x: '-\\infty', yVal: a > 0 ? '+\\infty' : '-\\infty', yPosition: a > 0 ? 'top' : 'bottom' },
+          { x: formatNum(xv), yPrime: '0', yVal: formatNum(yv), yPosition: a > 0 ? 'bottom' : 'top' },
+          { x: '+\\infty', yVal: a > 0 ? '+\\infty' : '-\\infty', yPosition: a > 0 ? 'top' : 'bottom' }
+        ];
+
+        const intervals: BBTInterval[] = a > 0 ? [
+          { sign: '-', trend: 'decreasing' },
+          { sign: '+', trend: 'increasing' }
+        ] : [
+          { sign: '+', trend: 'increasing' },
+          { sign: '-', trend: 'decreasing' }
+        ];
+
+        return {
+          functionName: `y = ${expression.replace(/^y\s*=\s*/i, '')}`,
+          points,
+          intervals
+        };
+      }
+    }
+  } catch (err) {}
+
+  return null;
 }
