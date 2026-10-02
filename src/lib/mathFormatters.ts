@@ -170,6 +170,41 @@ export function formatCubic(a: number, b: number, c: number, d: number): string 
   return terms.join(" ");
 }
 
+export function formatQuartic(a: number, b: number, c: number): string {
+  const terms: string[] = [];
+
+  if (Math.abs(a) > 1e-7) {
+    if (a === 1) terms.push("x^4");
+    else if (a === -1) terms.push("-x^4");
+    else terms.push(`${a}x^4`);
+  }
+
+  if (Math.abs(b) > 1e-7) {
+    if (terms.length === 0) {
+      if (b === 1) terms.push("x^2");
+      else if (b === -1) terms.push("-x^2");
+      else terms.push(`${b}x^2`);
+    } else {
+      if (b === 1) terms.push("+ x^2");
+      else if (b === -1) terms.push("- x^2");
+      else if (b > 0) terms.push(`+ ${b}x^2`);
+      else terms.push(`- ${Math.abs(b)}x^2`);
+    }
+  }
+
+  if (Math.abs(c) > 1e-7) {
+    if (terms.length === 0) {
+      terms.push(`${c}`);
+    } else {
+      if (c > 0) terms.push(`+ ${c}`);
+      else terms.push(`- ${Math.abs(c)}`);
+    }
+  }
+
+  if (terms.length === 0) return "0";
+  return terms.join(" ");
+}
+
 export { cleanMath, fixMath, formatMathContent } from './utils';
 export const cleanText = (str: string) => str || '';
 export const formatMath = (str: string) => str || '';

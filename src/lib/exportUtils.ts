@@ -32,6 +32,7 @@ import {
   Packer,
   ImportedXmlComponent,
   ImageRun,
+  PageBreak,
   type ParagraphChild,
   type FileChild,
 } from 'docx';
@@ -42,6 +43,8 @@ import {
   wrapNakedMathEnvironments,
   preProcessMathContent
 } from './utils';
+import { convertBbtTableToSvg } from './bbtRenderer';
+import { getTikzSvg } from '../components/TikzRenderer';
 
 interface RunStyle {
   bold?: boolean;
@@ -929,6 +932,24 @@ async function parseDomToDocxChildren(
     const el = node as HTMLElement;
     const tagName = el.tagName.toUpperCase();
 
+    // 0. Page Breaks
+    if (
+      el.classList.contains('page-break') || 
+      el.classList.contains('docx-page-break') ||
+      el.style.pageBreakBefore === 'always' || 
+      el.style.pageBreakAfter === 'always' || 
+      el.style.breakBefore === 'page' || 
+      el.style.breakAfter === 'page' || 
+      el.getAttribute('data-page-break') === 'true'
+    ) {
+      result.push(
+        new Paragraph({
+          children: [new PageBreak()],
+        })
+      );
+      return;
+    }
+
     // 1. Headings
     if (/^H[1-6]$/.test(tagName)) {
       const level = parseInt(tagName[1], 10);
@@ -1146,8 +1167,30 @@ async function parseDomToDocxChildren(
       return;
     }
 
-    // 5. Paragraphs (<P>) or Question stem containers
-    if (tagName === 'P' || (tagName === 'DIV' && el.querySelector('strong, b') && !el.querySelector('table, ul, ol'))) {
+    // 5. Paragraphs (<P>) or Question stem containers (ONLY if leaf node without block children)
+    const hasBlockChildren = Array.from(el.children).some((c) =>
+      /^(DIV|P|TABLE|UL|OL|H[1-6]|HR)$/i.test(c.tagName)
+    );
+
+    // Check if this container is a Multiple Choice Options grid (2-4 child options)
+    const childDivs = Array.from(el.children).filter(c => c.tagName === 'DIV');
+    if (childDivs.length >= 2 && childDivs.length <= 4) {
+      const childTexts = childDivs.map(c => stripInternalTags(getNodeLatexOrText(c)).trim());
+      const isGridChoice = childTexts.every((t, i) => {
+        const expectedLetter = String.fromCharCode(65 + i);
+        return new RegExp(`^\\s*(?:[-*]\\s*)?(?:\\*{0,2})[${expectedLetter}][\\.\\:\\)]`, 'i').test(t);
+      });
+      if (isGridChoice) {
+        const optsList = childDivs.map((c, i) => {
+          const label = `${String.fromCharCode(65 + i)}.`;
+          return { label, node: c };
+        });
+        result.push(buildInvisibleChoiceTable(optsList, options));
+        return;
+      }
+    }
+
+    if (tagName === 'P' || (tagName === 'DIV' && !hasBlockChildren)) {
       const rawText = stripInternalTags(getNodeLatexOrText(el));
 
       // Check if paragraph contains embedded multiple choice options A. ... B. ... C. ... D. ...
@@ -1320,30 +1363,8 @@ async function parseDomToDocxChildren(
       return;
     }
 
-    // 6.5 Container of Multiple Choice Options (e.g. grid in Worksheets / ExamGenerator)
-    const childDivs = Array.from(el.children).filter(c => c.tagName === 'DIV');
-    if (childDivs.length >= 2 && childDivs.length <= 4) {
-      const childTexts = childDivs.map(c => stripInternalTags(getNodeLatexOrText(c)).trim());
-      const isGridChoice = childTexts.every((t, i) => {
-        const expectedLetter = String.fromCharCode(65 + i);
-        return new RegExp(`^\\s*(?:[-*]\\s*)?(?:\\*{0,2})[${expectedLetter}][\\.\\:\\)]`, 'i').test(t);
-      });
-      if (isGridChoice) {
-        const optsList = childDivs.map((c, i) => {
-          const label = `${String.fromCharCode(65 + i)}.`;
-          return { label, node: c };
-        });
-        result.push(buildInvisibleChoiceTable(optsList, options));
-        return;
-      }
-    }
-
     // 7. General DIV or CONTAINER
     // If the element contains no block-level children, treat it as a single paragraph block
-    const hasBlockChildren = Array.from(el.children).some((c) =>
-      /^(DIV|P|TABLE|UL|OL|H[1-6]|HR)$/i.test(c.tagName)
-    );
-
     if (!hasBlockChildren) {
       // Check if container contains image(s) (such as BBT, diagrams inside SPAN / DIV)
       const containerImgs = Array.from(el.querySelectorAll('img'));
@@ -1481,17 +1502,97 @@ export async function exportHtmlToWord(
     };
     walkAndPreprocessTextNodes(clone);
 
-    // 1. Pre-process all SVGs (TikZ diagrams, BBT variation tables, geometric plots) into high-res PNGs
-    const origSvgs = Array.from(element.querySelectorAll('svg')) as SVGSVGElement[];
-    const clonedSvgs = Array.from(clone.querySelectorAll('svg')) as SVGSVGElement[];
-
-    for (let i = 0; i < origSvgs.length; i++) {
-      const origSvg = origSvgs[i];
-      const clonedSvg = clonedSvgs[i];
-      if (!origSvg || !clonedSvg || !clonedSvg.parentNode) continue;
-
+    // 1. Pre-process custom SVG and TikZ wrapper elements in clone into high-res PNG images
+    const svgWrappers = Array.from(clone.querySelectorAll('svg-wrapper, .svg-wrapper'));
+    for (const wrap of svgWrappers) {
       try {
-        const { dataUrl: pngDataUrl, width: imgW, height: imgH } = await svgToPngDataUrl(origSvg);
+        let svgCode = '';
+        const base64 = wrap.getAttribute('data-svg') || (wrap as HTMLElement).dataset?.svg;
+        if (base64) {
+          try {
+            svgCode = decodeURIComponent(typeof atob !== 'undefined' ? atob(base64) : Buffer.from(base64, 'base64').toString('utf8'));
+          } catch (e) {}
+        }
+        if (!svgCode) {
+          const innerSvg = wrap.querySelector('svg');
+          if (innerSvg) svgCode = new XMLSerializer().serializeToString(innerSvg);
+        }
+        if (svgCode) {
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = svgCode.trim();
+          const svgEl = tempDiv.querySelector('svg') as SVGSVGElement | null;
+          if (svgEl) {
+            const { dataUrl, width: imgW, height: imgH } = await svgToPngDataUrl(svgEl);
+            if (dataUrl && wrap.parentNode) {
+              const img = document.createElement('img');
+              img.src = dataUrl;
+              img.className = 'diagram bbt-diagram';
+              img.setAttribute('width', String(imgW));
+              img.setAttribute('height', String(imgH));
+              img.setAttribute('data-width', String(imgW));
+              img.setAttribute('data-height', String(imgH));
+              img.style.maxWidth = '480px';
+              img.style.height = 'auto';
+              wrap.parentNode.replaceChild(img, wrap);
+              continue;
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Error rasterizing svg-wrapper:', e);
+      }
+    }
+
+    const tikzWrappers = Array.from(clone.querySelectorAll('tikz-diagram, .tikz-wrapper'));
+    for (const wrap of tikzWrappers) {
+      try {
+        let svgCode = '';
+        const base64 = wrap.getAttribute('data-tikz') || (wrap as HTMLElement).dataset?.tikz;
+        if (base64) {
+          try {
+            const tikzCode = decodeURIComponent(typeof atob !== 'undefined' ? atob(base64) : Buffer.from(base64, 'base64').toString('utf8'));
+            svgCode = getTikzSvg(tikzCode) || '';
+          } catch (e) {}
+        }
+        if (!svgCode) {
+          const innerSvg = wrap.querySelector('svg');
+          if (innerSvg) svgCode = new XMLSerializer().serializeToString(innerSvg);
+        }
+        if (svgCode) {
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = svgCode.trim();
+          const svgEl = tempDiv.querySelector('svg') as SVGSVGElement | null;
+          if (svgEl) {
+            const { dataUrl, width: imgW, height: imgH } = await svgToPngDataUrl(svgEl);
+            if (dataUrl && wrap.parentNode) {
+              const img = document.createElement('img');
+              img.src = dataUrl;
+              img.className = 'diagram tikz-diagram';
+              img.setAttribute('width', String(imgW));
+              img.setAttribute('height', String(imgH));
+              img.setAttribute('data-width', String(imgW));
+              img.setAttribute('data-height', String(imgH));
+              img.style.maxWidth = '480px';
+              img.style.height = 'auto';
+              wrap.parentNode.replaceChild(img, wrap);
+              continue;
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Error rasterizing tikz-wrapper:', e);
+      }
+    }
+
+    // 1.1 Convert any remaining standalone SVGs (excluding KaTeX glyphs) in clone into high-res PNGs
+    const clonedSvgs = Array.from(clone.querySelectorAll('svg')).filter((svg) => {
+      return !svg.closest('.katex, .katex-html, .katex-mathml, math');
+    }) as SVGSVGElement[];
+
+    for (const clonedSvg of clonedSvgs) {
+      if (!clonedSvg || !clonedSvg.parentNode) continue;
+      try {
+        const { dataUrl: pngDataUrl, width: imgW, height: imgH } = await svgToPngDataUrl(clonedSvg);
         if (pngDataUrl) {
           const img = document.createElement('img');
           img.src = pngDataUrl;
@@ -1503,7 +1604,6 @@ export async function exportHtmlToWord(
           img.style.maxWidth = '480px';
           img.style.height = 'auto';
 
-          // If clonedSvg was inside a .tikz-wrapper, replace the wrapper or the svg directly
           const wrapper = clonedSvg.closest('.tikz-wrapper, .svg-wrapper');
           if (wrapper && wrapper.parentNode) {
             wrapper.parentNode.replaceChild(img, wrapper);
@@ -1515,6 +1615,71 @@ export async function exportHtmlToWord(
         console.error('SVG to PNG conversion error:', e);
       }
     }
+
+    // 1.2 Scan for any raw TikZ code blocks or BBT tables in clone text nodes that weren't converted
+    const convertRawVisualElementsInDom = (node: Node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const txt = node.textContent || '';
+        if (/\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\}/i.test(txt)) {
+          const match = txt.match(/(\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\})/i);
+          if (match && node.parentNode) {
+            const svg = getTikzSvg(match[1]);
+            if (svg) {
+              const tempDiv = document.createElement('div');
+              tempDiv.innerHTML = svg;
+              const svgEl = tempDiv.querySelector('svg');
+              if (svgEl) {
+                svgToPngDataUrl(svgEl).then(({ dataUrl, width, height }) => {
+                  const img = document.createElement('img');
+                  img.src = dataUrl;
+                  img.setAttribute('width', String(width));
+                  img.setAttribute('height', String(height));
+                  img.style.maxWidth = '480px';
+                  img.style.height = 'auto';
+                  node.parentNode?.replaceChild(img, node);
+                }).catch(() => {});
+              }
+            }
+          }
+        }
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node as HTMLElement;
+        if (el.tagName === 'TABLE') {
+          const text = el.textContent || '';
+          if (/(?:y'|f'\(x\)|\\searrow|\\nearrow)/i.test(text) && /\b(?:x|y)\b/i.test(text)) {
+            // This is a BBT table! Convert it to a vector BBT SVG -> PNG image
+            const rows = Array.from(el.querySelectorAll('tr')).map(tr => {
+              const cells = Array.from(tr.querySelectorAll('th, td')).map(td => td.textContent?.trim() || '');
+              return `| ${cells.join(' | ')} |`;
+            });
+            if (rows.length >= 2) {
+              const tableMd = rows.join('\n');
+              const svg = convertBbtTableToSvg(tableMd);
+              if (svg && el.parentNode) {
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = svg;
+                const svgEl = tempDiv.querySelector('svg');
+                if (svgEl) {
+                  svgToPngDataUrl(svgEl).then(({ dataUrl, width, height }) => {
+                    const img = document.createElement('img');
+                    img.src = dataUrl;
+                    img.className = 'diagram bbt-diagram';
+                    img.setAttribute('width', String(width));
+                    img.setAttribute('height', String(height));
+                    img.style.maxWidth = '480px';
+                    img.style.height = 'auto';
+                    el.parentNode?.replaceChild(img, el);
+                  }).catch(() => {});
+                }
+              }
+            }
+          }
+        } else {
+          Array.from(node.childNodes).forEach(convertRawVisualElementsInDom);
+        }
+      }
+    };
+    convertRawVisualElementsInDom(clone);
 
     // 2. Pre-process standard remote/relative images to data URLs
     const standardImgs = Array.from(clone.querySelectorAll('img'));

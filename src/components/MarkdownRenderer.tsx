@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -128,6 +128,121 @@ export const fixInlineOptionText = (text: string): string => {
 };
 
 export { formatMathContent };
+
+const SvgImageRenderer: React.FC<{ svgCode: string }> = ({ svgCode }) => {
+  const [copied, setCopied] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const getCanvasFromSvg = async (scale = 3): Promise<HTMLCanvasElement> => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgCode, 'image/svg+xml');
+    const svgEl = doc.querySelector('svg');
+    if (!svgEl) throw new Error('SVG not found');
+
+    const width = parseInt(svgEl.getAttribute('width') || '600', 10);
+    const height = parseInt(svgEl.getAttribute('height') || '210', 10);
+
+    const serializer = new XMLSerializer();
+    const svgStr = serializer.serializeToString(svgEl);
+    const dataUri = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
+
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = width * scale;
+        canvas.height = height * scale;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return reject(new Error('Canvas context failed'));
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas);
+      };
+      img.onerror = reject;
+      img.src = dataUri;
+    });
+  };
+
+  const handleDownloadPng = async () => {
+    try {
+      setIsExporting(true);
+      const canvas = await getCanvasFromSvg(3);
+      const link = document.createElement('a');
+      link.download = `Bang_Bien_Thien_${Date.now()}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch (e) {
+      console.error(e);
+      alert('Không thể tạo ảnh PNG');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleCopyImage = async () => {
+    try {
+      setIsExporting(true);
+      const canvas = await getCanvasFromSvg(3);
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        try {
+          if (navigator.clipboard && 'write' in navigator.clipboard && typeof ClipboardItem !== 'undefined') {
+            await navigator.clipboard.write([
+              new ClipboardItem({ 'image/png': blob })
+            ]);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          } else {
+            // Fallback
+            const link = document.createElement('a');
+            link.download = `Bang_Bien_Thien_${Date.now()}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+          }
+        } catch (err) {
+          console.error('Clipboard write error', err);
+        }
+      }, 'image/png');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  return (
+    <div className="svg-wrapper my-4 flex flex-col items-center">
+      <div 
+        ref={containerRef}
+        className="relative group bg-white p-3 sm:p-4 rounded-lg border border-slate-300 shadow-2xs max-w-full overflow-x-auto"
+      >
+        <div className="no-print absolute top-2 right-2 flex items-center gap-1.5 opacity-90 hover:opacity-100 transition-opacity bg-white/95 backdrop-blur-xs px-2 py-1 rounded-md border border-slate-200 shadow-2xs">
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mr-1 hidden sm:inline">SGK</span>
+          <button
+            type="button"
+            onClick={handleCopyImage}
+            title="Sao chép ảnh BBT vào clipboard để dán vào Word, PowerPoint"
+            className="px-2 py-0.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded flex items-center gap-1 cursor-pointer transition-colors"
+          >
+            <span>{copied ? '✓ Đã chép' : '📋 Chép ảnh'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadPng}
+            disabled={isExporting}
+            title="Tải ảnh BBT định dạng PNG độ nét cao (300 DPI)"
+            className="px-2 py-0.5 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium rounded flex items-center gap-1 cursor-pointer transition-colors"
+          >
+            <span>📸 Tải ảnh (PNG)</span>
+          </button>
+        </div>
+        <div className="pt-2 sm:pt-4" dangerouslySetInnerHTML={{ __html: svgCode }} />
+      </div>
+    </div>
+  );
+};
 
 export const MarkdownRenderer = ({ 
   content, 
@@ -439,7 +554,7 @@ export const MarkdownRenderer = ({
               if (!base64) return null;
               const decoded = decodeURIComponent(typeof atob !== 'undefined' ? atob(base64) : Buffer.from(base64, 'base64').toString('utf8'));
               return (
-                <span className="flex justify-center my-6 overflow-x-auto bg-white p-4 rounded-xl border border-slate-200" dangerouslySetInnerHTML={{__html: decoded}} />
+                <SvgImageRenderer svgCode={decoded} />
               );
             } catch(e) {
               return <span className="text-red-500">Lỗi hiển thị hình ảnh SVG</span>;

@@ -228,7 +228,7 @@ export function mixExam(
     shuffleQuestions = true,
     shuffleOptions = true,
     shuffleEssay = false,
-    startCode = 101,
+    startCode = 1001,
     customCodes
   } = config;
 

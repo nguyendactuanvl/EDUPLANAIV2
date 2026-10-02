@@ -36,6 +36,7 @@ export const VariationTable: React.FC<VariationTableProps> = ({
 }) => {
   const bbtData: BBTData = {
     functionName: '',
+    showDerivative,
     points: points.map(pt => ({
       x: pt.x,
       yPrime: showDerivative ? pt.yPrime : undefined,

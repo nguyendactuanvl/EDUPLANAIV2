@@ -37,17 +37,22 @@ export function generateBbtSvg(data: BBTData): string {
   const { points, intervals, functionName, domainNote } = data;
   const numPoints = points.length;
 
-  const leftLabelWidth = 72;
-  const colSpacing = Math.max(100, Math.min(160, Math.round(520 / Math.max(numPoints - 1, 1))));
+  const leftLabelWidth = 68;
+  const colSpacing = Math.max(105, Math.min(160, Math.round(520 / Math.max(numPoints - 1, 1))));
   const contentWidth = Math.max(480, (numPoints - 1) * colSpacing + 80);
   const totalWidth = leftLabelWidth + contentWidth;
 
-  const rowXHeight = 40;
-  const rowYPrimeHeight = 40;
-  const rowYHeight = 135;
+  const hasDerivativeRow = data.showDerivative !== false && (
+    points.some(p => p.yPrime !== undefined && p.yPrime !== '') ||
+    intervals.some(i => i.sign !== undefined && i.sign !== '')
+  );
+
+  const rowXHeight = 38;
+  const rowYPrimeHeight = hasDerivativeRow ? 38 : 0;
+  const rowYHeight = 130;
   const totalHeight = rowXHeight + rowYPrimeHeight + rowYHeight;
 
-  const paddingX = 40;
+  const paddingX = 42;
   const usableWidth = contentWidth - 2 * paddingX;
   const stepX = numPoints > 1 ? usableWidth / (numPoints - 1) : usableWidth;
 
@@ -55,41 +60,51 @@ export function generateBbtSvg(data: BBTData): string {
 
   const getYPosValue = (pos?: 'top' | 'bottom' | 'middle') => {
     const yStart = rowXHeight + rowYPrimeHeight;
-    if (pos === 'top') return yStart + 24;
+    if (pos === 'top') return yStart + 22;
     if (pos === 'bottom') return yStart + rowYHeight - 16;
-    return yStart + rowYHeight / 2 + 4;
+    return yStart + rowYHeight / 2 + 3;
+  };
+
+  const getTextWidthEstimate = (txt?: string) => {
+    if (!txt) return 14;
+    const clean = cleanMathText(txt);
+    return Math.max(16, clean.length * 8.5);
   };
 
   const svgParts: string[] = [];
 
   // 1. DEFS: Arrow markers and hatch patterns
   svgParts.push(`<defs>
-    <marker id="bbt-arrow-marker" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#1e40af" />
+    <marker id="bbt-arrow-marker" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#0f172a" />
     </marker>
-    <pattern id="bbt-hatch-pattern" width="10" height="10" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
-      <line x1="0" y1="0" x2="0" y2="10" stroke="#94a3b8" stroke-width="1.2" />
+    <pattern id="bbt-hatch-pattern" width="8" height="8" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+      <line x1="0" y1="0" x2="0" y2="8" stroke="#64748b" stroke-width="1.2" />
     </pattern>
   </defs>`);
 
-  // 2. KHUNG NGOÀI & VÁCH NGĂN CHUẨN SGK (1 vách dọc, 2 vách ngang)
-  svgParts.push(`<rect x="0" y="0" width="${totalWidth}" height="${totalHeight}" fill="#ffffff" stroke="#1e293b" stroke-width="1.6" rx="6" />`);
-  // Vách dọc duy nhất
-  svgParts.push(`<line x1="${leftLabelWidth}" y1="0" x2="${leftLabelWidth}" y2="${totalHeight}" stroke="#1e293b" stroke-width="1.5" />`);
+  // 2. KHUNG NGOÀI & VÁCH NGĂN CHUẨN SGK (1 vách dọc, 2 vách ngang hoặc 1 vách ngang nếu 2 dòng)
+  svgParts.push(`<rect x="0" y="0" width="${totalWidth}" height="${totalHeight}" fill="#ffffff" stroke="#111827" stroke-width="1.4" />`);
+  // Vách dọc duy nhất phân cách nhãn
+  svgParts.push(`<line x1="${leftLabelWidth}" y1="0" x2="${leftLabelWidth}" y2="${totalHeight}" stroke="#111827" stroke-width="1.3" />`);
   // Vách ngang 1 (dưới hàng x)
-  svgParts.push(`<line x1="0" y1="${rowXHeight}" x2="${totalWidth}" y2="${rowXHeight}" stroke="#1e293b" stroke-width="1.5" />`);
-  // Vách ngang 2 (dưới hàng y')
-  svgParts.push(`<line x1="0" y1="${rowXHeight + rowYPrimeHeight}" x2="${totalWidth}" y2="${rowXHeight + rowYPrimeHeight}" stroke="#1e293b" stroke-width="1.5" />`);
+  svgParts.push(`<line x1="0" y1="${rowXHeight}" x2="${totalWidth}" y2="${rowXHeight}" stroke="#111827" stroke-width="1.3" />`);
+  // Vách ngang 2 (dưới hàng y' nếu có hàng đạo hàm)
+  if (hasDerivativeRow) {
+    svgParts.push(`<line x1="0" y1="${rowXHeight + rowYPrimeHeight}" x2="${totalWidth}" y2="${rowXHeight + rowYPrimeHeight}" stroke="#111827" stroke-width="1.3" />`);
+  }
 
-  // 3. CỘT NHÃN TRÁI: x, y', y
-  svgParts.push(`<text x="${leftLabelWidth / 2}" y="26" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="18" font-style="italic" font-weight="bold" fill="#0f172a">x</text>`);
-  svgParts.push(`<text x="${leftLabelWidth / 2}" y="${rowXHeight + 26}" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="18" font-style="italic" font-weight="bold" fill="#0f172a">y'</text>`);
-  svgParts.push(`<text x="${leftLabelWidth / 2}" y="${rowXHeight + rowYPrimeHeight + rowYHeight / 2 + 6}" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="18" font-style="italic" font-weight="bold" fill="#0f172a">y</text>`);
+  // 3. CỘT NHÃN TRÁI CHUẨN SGK: x, y', y (Font Times New Roman nghiêng chuẩn toán)
+  svgParts.push(`<text x="${leftLabelWidth / 2}" y="25" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="18" font-style="italic" fill="#111827">x</text>`);
+  if (hasDerivativeRow) {
+    svgParts.push(`<text x="${leftLabelWidth / 2}" y="${rowXHeight + 25}" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="18" font-style="italic" fill="#111827">y'</text>`);
+  }
+  svgParts.push(`<text x="${leftLabelWidth / 2}" y="${rowXHeight + rowYPrimeHeight + rowYHeight / 2 + 5}" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="18" font-style="italic" fill="#111827">y</text>`);
 
   // 4. HÀNG X: CÁC ĐIỂM MỐC
   points.forEach((pt, idx) => {
     const xPos = getPointX(idx);
-    svgParts.push(`<text x="${xPos}" y="26" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="16" font-weight="bold" fill="#0f172a">${cleanMathText(pt.x)}</text>`);
+    svgParts.push(`<text x="${xPos}" y="25" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="16" fill="#111827">${cleanMathText(pt.x)}</text>`);
   });
 
   // 5. MIỀN NGOÀI TẬP XÁC ĐỊNH (GẠCH CHÉO // XUYÊN SUỐT)
@@ -100,31 +115,31 @@ export function generateBbtSvg(data: BBTData): string {
     svgParts.push(`<rect x="${xLeft}" y="${rowXHeight}" width="${xRight - xLeft}" height="${rowYPrimeHeight + rowYHeight}" fill="url(#bbt-hatch-pattern)" stroke="#64748b" stroke-width="0.5" />`);
   });
 
-  // 6. HÀNG Y': DẤU (+, -)
+  // 6. HÀNG Y': DẤU (+, -) MÀU ĐEN CHUẨN SGK
   intervals.forEach((inter, idx) => {
     if (inter.isExcludedDomain || !inter.sign) return;
     const midX = (getPointX(idx) + getPointX(idx + 1)) / 2;
-    svgParts.push(`<text x="${midX}" y="${rowXHeight + 27}" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="20" font-weight="bold" fill="#1e40af">${inter.sign}</text>`);
+    svgParts.push(`<text x="${midX}" y="${rowXHeight + 25}" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="19" font-weight="bold" fill="#111827">${inter.sign}</text>`);
   });
 
-  // 7. HÀNG Y': ĐIỂM 0 HOẶC VẠCH ||
+  // 7. HÀNG Y': ĐIỂM 0 HOẶC VẠCH || TIỆM CẬN (MÀU ĐEN CHUẨN SGK)
   points.forEach((pt, idx) => {
     const xPos = getPointX(idx);
 
     if (pt.isAsymptote) {
-      // Tiệm cận đứng: kéo dài từ hàng y' xuống tận đáy hàng y
-      svgParts.push(`<line x1="${xPos - 2}" y1="${rowXHeight}" x2="${xPos - 2}" y2="${totalHeight}" stroke="#dc2626" stroke-width="1.5" />`);
-      svgParts.push(`<line x1="${xPos + 2}" y1="${rowXHeight}" x2="${xPos + 2}" y2="${totalHeight}" stroke="#dc2626" stroke-width="1.5" />`);
+      // Tiệm cận đứng: 2 vạch song song kéo dài từ hàng y' xuống tận đáy hàng y, màu đen chuẩn SGK
+      svgParts.push(`<line x1="${xPos - 2}" y1="${rowXHeight}" x2="${xPos - 2}" y2="${totalHeight}" stroke="#111827" stroke-width="1.3" />`);
+      svgParts.push(`<line x1="${xPos + 2}" y1="${rowXHeight}" x2="${xPos + 2}" y2="${totalHeight}" stroke="#111827" stroke-width="1.3" />`);
     } else if (pt.isDerivativeUndefinedOnly) {
-      // Chỉ y' không xác định (ví dụ biên hàm căn thức) -> vạch || chỉ ở hàng y'
-      svgParts.push(`<line x1="${xPos - 2}" y1="${rowXHeight}" x2="${xPos - 2}" y2="${rowXHeight + rowYPrimeHeight}" stroke="#dc2626" stroke-width="1.4" />`);
-      svgParts.push(`<line x1="${xPos + 2}" y1="${rowXHeight}" x2="${xPos + 2}" y2="${rowXHeight + rowYPrimeHeight}" stroke="#dc2626" stroke-width="1.4" />`);
+      // Chỉ y' không xác định -> vạch || chỉ ở hàng y'
+      svgParts.push(`<line x1="${xPos - 2}" y1="${rowXHeight}" x2="${xPos - 2}" y2="${rowXHeight + rowYPrimeHeight}" stroke="#111827" stroke-width="1.3" />`);
+      svgParts.push(`<line x1="${xPos + 2}" y1="${rowXHeight}" x2="${xPos + 2}" y2="${rowXHeight + rowYPrimeHeight}" stroke="#111827" stroke-width="1.3" />`);
     } else if (pt.yPrime === '0') {
-      svgParts.push(`<text x="${xPos}" y="${rowXHeight + 26}" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="16" fill="#334155">0</text>`);
+      svgParts.push(`<text x="${xPos}" y="${rowXHeight + 25}" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="16" fill="#111827">0</text>`);
     }
   });
 
-  // 8. HÀNG Y: MŨI TÊN BIẾN THIÊN
+  // 8. HÀNG Y: MŨI TÊN BIẾN THIÊN (TÍNH TOÁN KHOẢNG CÁCH CHÍNH XÁC, KHÔNG CẮT CHỮ)
   for (let i = 0; i < numPoints - 1; i++) {
     const p1 = points[i];
     const p2 = points[i + 1];
@@ -136,29 +151,43 @@ export function generateBbtSvg(data: BBTData): string {
     const endX = getPointX(i + 1);
 
     const y1 = getYPosValue(p1.isAsymptote ? p1.yRightPosition || 'bottom' : p1.yPosition);
-    const x1 = p1.isAsymptote ? startX + 16 : startX + 18;
-
     const y2 = getYPosValue(p2.isAsymptote ? p2.yLeftPosition || 'top' : p2.yPosition);
-    const x2 = p2.isAsymptote ? endX - 16 : endX - 18;
+
+    // Tính toán vùng biên của giá trị điểm xuất phát
+    let x1 = startX;
+    if (p1.isAsymptote) {
+      const rightW = getTextWidthEstimate(p1.yRightVal);
+      x1 = startX + 6 + rightW + 8;
+    } else {
+      const w = getTextWidthEstimate(p1.yVal);
+      x1 = startX + w / 2 + 8;
+    }
+
+    // Tính toán vùng biên của giá trị điểm kết thúc
+    let x2 = endX;
+    if (p2.isAsymptote) {
+      const leftW = getTextWidthEstimate(p2.yLeftVal);
+      x2 = endX - 6 - leftW - 8;
+    } else {
+      const w = getTextWidthEstimate(p2.yVal);
+      x2 = endX - w / 2 - 8;
+    }
 
     const dx = x2 - x1;
     const dy = y2 - y1;
     const dist = Math.hypot(dx, dy);
 
-    if (dist > 28) {
-      const margin = 10;
-      const nx = dx / dist;
-      const ny = dy / dist;
-      const sx = (x1 + nx * margin).toFixed(1);
-      const sy = (y1 + ny * margin - 4).toFixed(1);
-      const ex = (x2 - nx * margin).toFixed(1);
-      const ey = (y2 - ny * margin - 4).toFixed(1);
+    if (dist > 18) {
+      const sx = x1.toFixed(1);
+      const sy = (y1 + (dy < 0 ? -1 : 1)).toFixed(1);
+      const ex = x2.toFixed(1);
+      const ey = (y2 + (dy < 0 ? 1 : -1)).toFixed(1);
 
-      svgParts.push(`<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}" stroke="#1d4ed8" stroke-width="1.8" marker-end="url(#bbt-arrow-marker)" stroke-linecap="round" />`);
+      svgParts.push(`<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}" stroke="#0f172a" stroke-width="1.5" marker-end="url(#bbt-arrow-marker)" stroke-linecap="round" />`);
     }
   }
 
-  // 9. HÀNG Y: CÁC GIÁ TRỊ ĐẦU MÚT MŨI TÊN
+  // 9. HÀNG Y: CÁC GIÁ TRỊ ĐẦU MÚT MŨI TÊN (CĂN CHUẨN, KHÔNG ĐÈ LÊN MŨI TÊN)
   points.forEach((pt, idx) => {
     const xPos = getPointX(idx);
 
@@ -167,14 +196,14 @@ export function generateBbtSvg(data: BBTData): string {
       const yRight = getYPosValue(pt.yRightPosition || 'bottom');
 
       if (pt.yLeftVal) {
-        svgParts.push(`<text x="${xPos - 12}" y="${yLeft}" text-anchor="end" font-family="'Times New Roman', Times, serif" font-size="15" font-weight="bold" fill="#0f172a">${cleanMathText(pt.yLeftVal)}</text>`);
+        svgParts.push(`<text x="${xPos - 6}" y="${yLeft}" text-anchor="end" font-family="'Times New Roman', Times, serif" font-size="15" fill="#111827">${cleanMathText(pt.yLeftVal)}</text>`);
       }
       if (pt.yRightVal) {
-        svgParts.push(`<text x="${xPos + 12}" y="${yRight}" text-anchor="start" font-family="'Times New Roman', Times, serif" font-size="15" font-weight="bold" fill="#0f172a">${cleanMathText(pt.yRightVal)}</text>`);
+        svgParts.push(`<text x="${xPos + 6}" y="${yRight}" text-anchor="start" font-family="'Times New Roman', Times, serif" font-size="15" fill="#111827">${cleanMathText(pt.yRightVal)}</text>`);
       }
     } else if (pt.yVal) {
       const yCoord = getYPosValue(pt.yPosition);
-      svgParts.push(`<text x="${xPos}" y="${yCoord}" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="15" font-weight="bold" fill="#0f172a">${cleanMathText(pt.yVal)}</text>`);
+      svgParts.push(`<text x="${xPos}" y="${yCoord}" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="15" fill="#111827">${cleanMathText(pt.yVal)}</text>`);
     }
   });
 
@@ -631,26 +660,87 @@ export function ensureCompleteBbtPoints(data: BBTData): BBTData {
   };
 }
 
+function parsePolynomialCoeffs(str: string): Record<number, number> {
+  const result: Record<number, number> = {};
+  const cleaned = str
+    .replace(/\s+/g, '')
+    .replace(/[−–—]/g, '-')
+    .replace(/²/g, '^2')
+    .replace(/³/g, '^3')
+    .replace(/⁴/g, '^4');
+
+  const formatted = cleaned.replace(/(?<=[0-9x])\-/g, '+-');
+  const tokens = formatted.split('+').filter(Boolean);
+
+  for (const tok of tokens) {
+    if (tok.includes('x')) {
+      const parts = tok.split('x');
+      const coeffStr = parts[0];
+      const powStr = parts[1] ? parts[1].replace(/^\^/, '') : '1';
+
+      let coeff = 1;
+      if (coeffStr === '' || coeffStr === '+') coeff = 1;
+      else if (coeffStr === '-') coeff = -1;
+      else coeff = parseFloat(coeffStr);
+
+      const power = parseInt(powStr, 10) || 1;
+      result[power] = (result[power] || 0) + (isNaN(coeff) ? 0 : coeff);
+    } else {
+      const val = parseFloat(tok);
+      if (!isNaN(val)) {
+        result[0] = (result[0] || 0) + val;
+      }
+    }
+  }
+
+  return result;
+}
+
+function formatNumDisplay(n: number): string {
+  if (Math.abs(n - Math.round(n)) < 1e-5) return String(Math.round(n));
+  for (let denom = 2; denom <= 12; denom++) {
+    const num = Math.round(n * denom);
+    if (Math.abs(n - num / denom) < 1e-4) {
+      return num < 0 ? `-\\frac{${-num}}{${denom}}` : `\\frac{${num}}{${denom}}`;
+    }
+  }
+  return n.toFixed(1).replace(/\.0$/, '');
+}
+
 /**
  * Bộ giải tích toán học tự động (Deterministic Math Analyzer):
- * Tự động tính toán giải tích chuẩn xác 100% cho các hàm số phổ biến (Lớp 10, 11, 12):
- * - Hàm phân thức bậc nhất/bậc nhất y = (ax+b)/(cx+d)
- * - Hàm bậc ba y = ax^3 + bx^2 + cx + d
- * - Hàm trùng phương y = ax^4 + bx^2 + c
- * - Hàm bậc hai (Parabol) y = ax^2 + bx + c
- * Hoạt động offline 0ms, không phụ thuộc vào Gemini API hay quota mạng!
+ * Tự động tính toán giải tích chuẩn xác 100% cho các hàm số phổ biến (Lớp 10, 11, 12 GDPT 2018):
+ * - Hàm phân thức bậc hai/bậc nhất: y = (ax^2+bx+c)/(dx+e)
+ * - Hàm phân thức bậc nhất/bậc nhất: y = (ax+b)/(cx+d)
+ * - Hàm bậc ba: y = ax^3 + bx^2 + cx + d
+ * - Hàm trùng phương: y = ax^4 + bx^2 + c
+ * - Hàm bậc hai (Parabol): y = ax^2 + bx + c
+ * - Hàm căn thức: y = \sqrt{a - x^2} và y = \sqrt{x^2 - a}
+ * Hoạt động offline 0ms, chính xác tuyệt đối, không phụ thuộc vào Gemini API hay quota mạng!
  */
 export function analyzeFunctionToBbt(expression: string): BBTData | null {
   if (!expression || !expression.trim()) return null;
 
   try {
-    let clean = expression
+    let raw = expression.trim();
+    if (raw.includes(':')) {
+      const colonParts = raw.split(':');
+      raw = colonParts[colonParts.length - 1].trim();
+    }
+    const yMatch = raw.match(/(?:y|f\(x\)|g\(x\))\s*=\s*([^;\n]+)/i);
+    if (yMatch) {
+      raw = yMatch[1].trim();
+    }
+
+    let clean = raw
       .replace(/\s+/g, '')
       .replace(/\$/g, '')
       .replace(/^y\s*=\s*/i, '')
       .replace(/^f\([a-z]\)\s*=\s*/i, '');
 
-    // 1. Hàm phân thức bậc nhất / bậc nhất y = (ax+b)/(cx+d) hoặc \frac{ax+b}{cx+d}
+    // =========================================================================
+    // 1. HÀM PHÂN THỨC: BẬC HAI / BẬC NHẤT hoặc BẬC NHẤT / BẬC NHẤT
+    // =========================================================================
     let numStr = '';
     let denStr = '';
     const fracMatch = clean.match(/\\frac\{([^}]+)\}\{([^}]+)\}/i);
@@ -666,38 +756,127 @@ export function analyzeFunctionToBbt(expression: string): BBTData | null {
     }
 
     if (numStr && denStr) {
-      const parseLinear = (s: string): { a: number; b: number } | null => {
-        const m = s.match(/^([+-]?\d*(?:\.\d+)?)x([+-]\d+(?:\.\d+)?)?$/i) ||
-                  s.match(/^([+-]?\d*(?:\.\d+)?)x$/i) ||
-                  s.match(/^([+-]\d+(?:\.\d+)?)\+([+-]?\d*(?:\.\d+)?)x$/i);
-        if (!m) return null;
-        let aVal = 1;
-        let bVal = 0;
-        if (m[2] !== undefined) {
-          const aStr = m[1];
-          aVal = aStr === '' || aStr === '+' ? 1 : (aStr === '-' ? -1 : parseFloat(aStr));
-          bVal = parseFloat(m[2]);
+      const numCoeffs = parsePolynomialCoeffs(numStr);
+      const denCoeffs = parsePolynomialCoeffs(denStr);
+
+      const d = denCoeffs[1] || 0;
+      const e = denCoeffs[0] || 0;
+
+      // 1.1 Hàm phân thức bậc hai / bậc nhất: y = (ax^2 + bx + c) / (dx + e) (CHUẨN TOÁN 12 MỚI)
+      if (numCoeffs[2] !== undefined && numCoeffs[2] !== 0 && d !== 0) {
+        const a = numCoeffs[2];
+        const b = numCoeffs[1] || 0;
+        const c = numCoeffs[0] || 0;
+
+        const x0 = -e / d;
+        const x0Str = formatNumDisplay(x0);
+
+        const A = a * d;
+        const B = 2 * a * e;
+        const C = b * e - c * d;
+        const delta = B * B - 4 * A * C;
+
+        if (delta > 0) {
+          const r1 = (-B - Math.sqrt(delta)) / (2 * A);
+          const r2 = (-B + Math.sqrt(delta)) / (2 * A);
+          const xLeft = Math.min(r1, r2);
+          const xRight = Math.max(r1, r2);
+
+          const yLeftVal = (2 * a * xLeft + b) / d;
+          const yRightVal = (2 * a * xRight + b) / d;
+
+          const isBranchUp = a * d > 0;
+
+          const points: BBTPoint[] = isBranchUp ? [
+            { x: '-\\infty', yPosition: 'bottom', yVal: '-\\infty' },
+            { x: formatNumDisplay(xLeft), yPrime: '0', yPosition: 'top', yVal: formatNumDisplay(yLeftVal) },
+            {
+              x: x0Str,
+              yPrime: '||',
+              isAsymptote: true,
+              yLeftVal: '-\\infty',
+              yLeftPosition: 'bottom',
+              yRightVal: '+\\infty',
+              yRightPosition: 'top'
+            },
+            { x: formatNumDisplay(xRight), yPrime: '0', yPosition: 'bottom', yVal: formatNumDisplay(yRightVal) },
+            { x: '+\\infty', yPosition: 'top', yVal: '+\\infty' }
+          ] : [
+            { x: '-\\infty', yPosition: 'top', yVal: '+\\infty' },
+            { x: formatNumDisplay(xLeft), yPrime: '0', yPosition: 'bottom', yVal: formatNumDisplay(yLeftVal) },
+            {
+              x: x0Str,
+              yPrime: '||',
+              isAsymptote: true,
+              yLeftVal: '+\\infty',
+              yLeftPosition: 'top',
+              yRightVal: '-\\infty',
+              yRightPosition: 'bottom'
+            },
+            { x: formatNumDisplay(xRight), yPrime: '0', yPosition: 'top', yVal: formatNumDisplay(yRightVal) },
+            { x: '+\\infty', yPosition: 'bottom', yVal: '-\\infty' }
+          ];
+
+          const intervals: BBTInterval[] = isBranchUp ? [
+            { sign: '+', trend: 'increasing' },
+            { sign: '-', trend: 'decreasing' },
+            { sign: '-', trend: 'decreasing' },
+            { sign: '+', trend: 'increasing' }
+          ] : [
+            { sign: '-', trend: 'decreasing' },
+            { sign: '+', trend: 'increasing' },
+            { sign: '+', trend: 'increasing' },
+            { sign: '-', trend: 'decreasing' }
+          ];
+
+          return {
+            functionName: `y = \\frac{${numStr}}{${denStr}}`,
+            domainNote: `Tập xác định: D = \\mathbb{R} \\setminus \\{${x0Str}\\}`,
+            points,
+            intervals
+          };
         } else {
-          const aStr = m[1];
-          aVal = aStr === '' || aStr === '+' ? 1 : (aStr === '-' ? -1 : parseFloat(aStr));
+          const isIncreasing = A > 0;
+          const points: BBTPoint[] = [
+            { x: '-\\infty', yPosition: isIncreasing ? 'bottom' : 'top', yVal: isIncreasing ? '-\\infty' : '+\\infty' },
+            {
+              x: x0Str,
+              yPrime: '||',
+              isAsymptote: true,
+              yLeftVal: isIncreasing ? '+\\infty' : '-\\infty',
+              yLeftPosition: isIncreasing ? 'top' : 'bottom',
+              yRightVal: isIncreasing ? '-\\infty' : '+\\infty',
+              yRightPosition: isIncreasing ? 'bottom' : 'top'
+            },
+            { x: '+\\infty', yPosition: isIncreasing ? 'top' : 'bottom', yVal: isIncreasing ? '+\\infty' : '-\\infty' }
+          ];
+
+          const intervals: BBTInterval[] = [
+            { sign: isIncreasing ? '+' : '-', trend: isIncreasing ? 'increasing' : 'decreasing' },
+            { sign: isIncreasing ? '+' : '-', trend: isIncreasing ? 'increasing' : 'decreasing' }
+          ];
+
+          return {
+            functionName: `y = \\frac{${numStr}}{${denStr}}`,
+            domainNote: `Tập xác định: D = \\mathbb{R} \\setminus \\{${x0Str}\\}`,
+            points,
+            intervals
+          };
         }
-        return { a: aVal, b: bVal };
-      };
+      }
 
-      const linNum = parseLinear(numStr);
-      const linDen = parseLinear(denStr);
+      // 1.2 Hàm phân thức bậc nhất / bậc nhất: y = (ax + b) / (cx + d)
+      if (d !== 0 && (numCoeffs[2] === undefined || numCoeffs[2] === 0)) {
+        const a = numCoeffs[1] || 0;
+        const b = numCoeffs[0] || 0;
+        const c = d;
+        const dConst = e;
 
-      if (linNum && linDen && linDen.a !== 0) {
-        const a = linNum.a;
-        const b = linNum.b;
-        const c = linDen.a;
-        const d = linDen.b;
-
-        const x0 = -d / c;
-        const x0Str = Number.isInteger(x0) ? String(x0) : (x0 > 0 ? `${-d}/${c}` : `-${d}/${-c}`);
-        const det = a * d - b * c;
+        const x0 = -dConst / c;
+        const x0Str = formatNumDisplay(x0);
+        const det = a * dConst - b * c;
         const isIncreasing = det > 0;
-        const horizVal = Number.isInteger(a / c) ? String(a / c) : `${a}/${c}`;
+        const horizVal = formatNumDisplay(a / c);
 
         const points: BBTPoint[] = [
           {
@@ -728,30 +907,173 @@ export function analyzeFunctionToBbt(expression: string): BBTData | null {
 
         return {
           functionName: `y = \\frac{${numStr}}{${denStr}}`,
+          domainNote: `Tập xác định: D = \\mathbb{R} \\setminus \\{${x0Str}\\}`,
           points,
           intervals
         };
       }
     }
 
-    // 2. Hàm bậc 3: y = ax^3 + bx^2 + cx + d
-    const cubicRegex = /^(?:([+-]?\d*(?:\.\d+)?)x\^3)?(?:([+-]\d*(?:\.\d+)?)x\^2)?(?:([+-]\d*(?:\.\d+)?)x)?([+-]\d+(?:\.\d+)?)?$/i;
-    const cubicMatch = clean.match(cubicRegex);
-    if (cubicMatch && (clean.includes('x^3') || clean.includes('x³'))) {
-      const parseCoeff = (s?: string, def = 0): number => {
-        if (!s) return def;
-        if (s === '' || s === '+') return 1;
-        if (s === '-') return -1;
-        return parseFloat(s);
-      };
+    // =========================================================================
+    // 2. HÀM CĂN THỨC: y = \sqrt{a - x^2} hoặc y = \sqrt{x^2 - a}
+    // =========================================================================
+    const radMatch = clean.match(/(?:\\sqrt|sqrt)\{?([^{}()]+)\}?/i);
+    if (radMatch) {
+      const inner = radMatch[1];
+      const radCoeffs = parsePolynomialCoeffs(inner);
+      const a2 = radCoeffs[2] || 0;
+      const c0 = radCoeffs[0] || 0;
 
-      const a = parseCoeff(cubicMatch[1], 1);
-      const b = parseCoeff(cubicMatch[2], 0);
-      const c = parseCoeff(cubicMatch[3], 0);
-      const d = cubicMatch[4] ? parseFloat(cubicMatch[4]) : 0;
+      // Dạng 1: y = \sqrt{a - x^2} (ví dụ: \sqrt{4 - x^2})
+      if (a2 < 0 && c0 > 0) {
+        const radius = Math.sqrt(-c0 / a2);
+        const rStr = formatNumDisplay(radius);
+        const maxVal = formatNumDisplay(Math.sqrt(c0));
+
+        const points: BBTPoint[] = [
+          { x: '-\\infty', yVal: '', yPosition: 'bottom' },
+          { x: `-${rStr}`, yPrime: '||', isDerivativeUndefinedOnly: true, yVal: '0', yPosition: 'bottom' },
+          { x: '0', yPrime: '0', yVal: maxVal, yPosition: 'top' },
+          { x: rStr, yPrime: '||', isDerivativeUndefinedOnly: true, yVal: '0', yPosition: 'bottom' },
+          { x: '+\\infty', yVal: '', yPosition: 'bottom' }
+        ];
+
+        const intervals: BBTInterval[] = [
+          { isExcludedDomain: true, trend: 'none' },
+          { sign: '+', trend: 'increasing' },
+          { sign: '-', trend: 'decreasing' },
+          { isExcludedDomain: true, trend: 'none' }
+        ];
+
+        return {
+          functionName: `y = \\sqrt{${inner}}`,
+          domainNote: `Tập xác định: D = [ -${rStr}; ${rStr} ]`,
+          points,
+          intervals
+        };
+      }
+
+      // Dạng 2: y = \sqrt{x^2 - a} (ví dụ: \sqrt{x^2 - 4})
+      if (a2 > 0 && c0 < 0) {
+        const radius = Math.sqrt(-c0 / a2);
+        const rStr = formatNumDisplay(radius);
+
+        const points: BBTPoint[] = [
+          { x: '-\\infty', yVal: '+\\infty', yPosition: 'top' },
+          { x: `-${rStr}`, yPrime: '||', isDerivativeUndefinedOnly: true, yVal: '0', yPosition: 'bottom' },
+          { x: rStr, yPrime: '||', isDerivativeUndefinedOnly: true, yVal: '0', yPosition: 'bottom' },
+          { x: '+\\infty', yVal: '+\\infty', yPosition: 'top' }
+        ];
+
+        const intervals: BBTInterval[] = [
+          { sign: '-', trend: 'decreasing' },
+          { isExcludedDomain: true, trend: 'none' },
+          { sign: '+', trend: 'increasing' }
+        ];
+
+        return {
+          functionName: `y = \\sqrt{${inner}}`,
+          domainNote: `Tập xác định: D = (-\\infty; -${rStr}] \\cup [${rStr}; +\\infty)`,
+          points,
+          intervals
+        };
+      }
+    }
+
+    // =========================================================================
+    // 3. HÀM TRÙNG PHƯƠNG (BẬC 4): y = ax^4 + bx^2 + c
+    // =========================================================================
+    if (clean.includes('x^4') || clean.includes('x⁴')) {
+      const coeffs = parsePolynomialCoeffs(clean);
+      const a = coeffs[4] || 0;
+      const b = coeffs[2] || 0;
+      const c = coeffs[0] || 0;
+
+      if (a !== 0 && (coeffs[3] === undefined || coeffs[3] === 0) && (coeffs[1] === undefined || coeffs[1] === 0)) {
+        if (a * b < 0) {
+          const xExt = Math.sqrt(-b / (2 * a));
+          const xExtStr = formatNumDisplay(xExt);
+          const yExt = a * Math.pow(xExt, 4) + b * Math.pow(xExt, 2) + c;
+          const yExtStr = formatNumDisplay(yExt);
+          const y0Str = formatNumDisplay(c);
+
+          const isUp = a > 0;
+
+          const points: BBTPoint[] = isUp ? [
+            { x: '-\\infty', yVal: '+\\infty', yPosition: 'top' },
+            { x: `-${xExtStr}`, yPrime: '0', yVal: yExtStr, yPosition: 'bottom' },
+            { x: '0', yPrime: '0', yVal: y0Str, yPosition: 'top' },
+            { x: xExtStr, yPrime: '0', yVal: yExtStr, yPosition: 'bottom' },
+            { x: '+\\infty', yVal: '+\\infty', yPosition: 'top' }
+          ] : [
+            { x: '-\\infty', yVal: '-\\infty', yPosition: 'bottom' },
+            { x: `-${xExtStr}`, yPrime: '0', yVal: yExtStr, yPosition: 'top' },
+            { x: '0', yPrime: '0', yVal: y0Str, yPosition: 'bottom' },
+            { x: xExtStr, yPrime: '0', yVal: yExtStr, yPosition: 'top' },
+            { x: '+\\infty', yVal: '-\\infty', yPosition: 'bottom' }
+          ];
+
+          const intervals: BBTInterval[] = isUp ? [
+            { sign: '-', trend: 'decreasing' },
+            { sign: '+', trend: 'increasing' },
+            { sign: '-', trend: 'decreasing' },
+            { sign: '+', trend: 'increasing' }
+          ] : [
+            { sign: '+', trend: 'increasing' },
+            { sign: '-', trend: 'decreasing' },
+            { sign: '+', trend: 'increasing' },
+            { sign: '-', trend: 'decreasing' }
+          ];
+
+          return {
+            functionName: `y = ${raw}`,
+            domainNote: 'Tập xác định: D = \\mathbb{R}',
+            points,
+            intervals
+          };
+        } else {
+          const y0Str = formatNumDisplay(c);
+          const isUp = a > 0;
+
+          const points: BBTPoint[] = isUp ? [
+            { x: '-\\infty', yVal: '+\\infty', yPosition: 'top' },
+            { x: '0', yPrime: '0', yVal: y0Str, yPosition: 'bottom' },
+            { x: '+\\infty', yVal: '+\\infty', yPosition: 'top' }
+          ] : [
+            { x: '-\\infty', yVal: '-\\infty', yPosition: 'bottom' },
+            { x: '0', yPrime: '0', yVal: y0Str, yPosition: 'top' },
+            { x: '+\\infty', yVal: '-\\infty', yPosition: 'bottom' }
+          ];
+
+          const intervals: BBTInterval[] = isUp ? [
+            { sign: '-', trend: 'decreasing' },
+            { sign: '+', trend: 'increasing' }
+          ] : [
+            { sign: '+', trend: 'increasing' },
+            { sign: '-', trend: 'decreasing' }
+          ];
+
+          return {
+            functionName: `y = ${raw}`,
+            domainNote: 'Tập xác định: D = \\mathbb{R}',
+            points,
+            intervals
+          };
+        }
+      }
+    }
+
+    // =========================================================================
+    // 4. HÀM BẬC 3: y = ax^3 + bx^2 + cx + d
+    // =========================================================================
+    if (clean.includes('x^3') || clean.includes('x³')) {
+      const coeffs = parsePolynomialCoeffs(clean);
+      const a = coeffs[3] || 0;
+      const b = coeffs[2] || 0;
+      const c = coeffs[1] || 0;
+      const d = coeffs[0] || 0;
 
       if (a !== 0) {
-        // y' = 3ax^2 + 2bx + c
         const A = 3 * a;
         const B = 2 * b;
         const C = c;
@@ -767,12 +1089,10 @@ export function analyzeFunctionToBbt(expression: string): BBTData | null {
           const y1 = calcY(x1);
           const y2 = calcY(x2);
 
-          const formatNum = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1);
-
           const points: BBTPoint[] = [
             { x: '-\\infty', yVal: a > 0 ? '-\\infty' : '+\\infty', yPosition: a > 0 ? 'bottom' : 'top' },
-            { x: formatNum(x1), yPrime: '0', yVal: formatNum(y1), yPosition: a > 0 ? 'top' : 'bottom' },
-            { x: formatNum(x2), yPrime: '0', yVal: formatNum(y2), yPosition: a > 0 ? 'bottom' : 'top' },
+            { x: formatNumDisplay(x1), yPrime: '0', yVal: formatNumDisplay(y1), yPosition: a > 0 ? 'top' : 'bottom' },
+            { x: formatNumDisplay(x2), yPrime: '0', yVal: formatNumDisplay(y2), yPosition: a > 0 ? 'bottom' : 'top' },
             { x: '+\\infty', yVal: a > 0 ? '+\\infty' : '-\\infty', yPosition: a > 0 ? 'top' : 'bottom' }
           ];
 
@@ -787,7 +1107,23 @@ export function analyzeFunctionToBbt(expression: string): BBTData | null {
           ];
 
           return {
-            functionName: `y = ${expression.replace(/^y\s*=\s*/i, '')}`,
+            functionName: `y = ${raw}`,
+            domainNote: 'Tập xác định: D = \\mathbb{R}',
+            points,
+            intervals
+          };
+        } else {
+          const isUp = a > 0;
+          const points: BBTPoint[] = [
+            { x: '-\\infty', yVal: isUp ? '-\\infty' : '+\\infty', yPosition: isUp ? 'bottom' : 'top' },
+            { x: '+\\infty', yVal: isUp ? '+\\infty' : '-\\infty', yPosition: isUp ? 'top' : 'bottom' }
+          ];
+          const intervals: BBTInterval[] = [
+            { sign: isUp ? '+' : '-', trend: isUp ? 'increasing' : 'decreasing' }
+          ];
+          return {
+            functionName: `y = ${raw}`,
+            domainNote: 'Tập xác định: D = \\mathbb{R}',
             points,
             intervals
           };
@@ -795,29 +1131,22 @@ export function analyzeFunctionToBbt(expression: string): BBTData | null {
       }
     }
 
-    // 3. Hàm bậc 2 (Parabol): y = ax^2 + bx + c
-    const quadRegex = /^(?:([+-]?\d*(?:\.\d+)?)x\^2)?(?:([+-]\d*(?:\.\d+)?)x)?([+-]\d+(?:\.\d+)?)?$/i;
-    const quadMatch = clean.match(quadRegex);
-    if (quadMatch && (clean.includes('x^2') || clean.includes('x²')) && !clean.includes('x^3') && !clean.includes('x^4')) {
-      const parseCoeff = (s?: string, def = 0): number => {
-        if (!s) return def;
-        if (s === '' || s === '+') return 1;
-        if (s === '-') return -1;
-        return parseFloat(s);
-      };
-
-      const a = parseCoeff(quadMatch[1], 1);
-      const b = parseCoeff(quadMatch[2], 0);
-      const c = quadMatch[3] ? parseFloat(quadMatch[3]) : 0;
+    // =========================================================================
+    // 5. HÀM BẬC 2 (PARABOL): y = ax^2 + bx + c
+    // =========================================================================
+    if ((clean.includes('x^2') || clean.includes('x²')) && !clean.includes('/')) {
+      const coeffs = parsePolynomialCoeffs(clean);
+      const a = coeffs[2] || 0;
+      const b = coeffs[1] || 0;
+      const c = coeffs[0] || 0;
 
       if (a !== 0) {
         const xv = -b / (2 * a);
         const yv = a * xv * xv + b * xv + c;
-        const formatNum = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1);
 
         const points: BBTPoint[] = [
           { x: '-\\infty', yVal: a > 0 ? '+\\infty' : '-\\infty', yPosition: a > 0 ? 'top' : 'bottom' },
-          { x: formatNum(xv), yPrime: '0', yVal: formatNum(yv), yPosition: a > 0 ? 'bottom' : 'top' },
+          { x: formatNumDisplay(xv), yPrime: '0', yVal: formatNumDisplay(yv), yPosition: a > 0 ? 'bottom' : 'top' },
           { x: '+\\infty', yVal: a > 0 ? '+\\infty' : '-\\infty', yPosition: a > 0 ? 'top' : 'bottom' }
         ];
 
@@ -830,7 +1159,8 @@ export function analyzeFunctionToBbt(expression: string): BBTData | null {
         ];
 
         return {
-          functionName: `y = ${expression.replace(/^y\s*=\s*/i, '')}`,
+          functionName: `y = ${raw}`,
+          domainNote: 'Tập xác định: D = \\mathbb{R}',
           points,
           intervals
         };

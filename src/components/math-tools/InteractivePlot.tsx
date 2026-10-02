@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import { 
   ZoomIn, ZoomOut, RotateCcw, Download, Copy, Check, MousePointer, 
-  Layers, Maximize2 
+  Layers, Maximize2, Plus
 } from "lucide-react";
 import { FunctionPlotData, Point2D, AsymptoteLine, InequalityConstraint, PolygonVertex } from "./types";
 
@@ -18,6 +18,9 @@ interface InteractivePlotProps {
   width?: number;
   height?: number;
   showGrid?: boolean;
+  onInsertImage?: (dataUrl: string) => void;
+  insertButtonLabel?: string;
+  customActions?: React.ReactNode;
 }
 
 export const InteractivePlot: React.FC<InteractivePlotProps> = ({
@@ -31,7 +34,10 @@ export const InteractivePlot: React.FC<InteractivePlotProps> = ({
   defaultXRange = [-6, 6],
   defaultYRange = [-5, 5],
   height = 440,
-  showGrid = true
+  showGrid = true,
+  onInsertImage,
+  insertButtonLabel = "Chèn vào đề",
+  customActions
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -677,6 +683,28 @@ export const InteractivePlot: React.FC<InteractivePlotProps> = ({
               <RotateCcw className="w-4 h-4" />
             </button>
           </div>
+
+          {/* Insert Image button (for Exam Generator / Question Solution) */}
+          {onInsertImage && (
+            <button
+              type="button"
+              onClick={() => {
+                const exportCanvas = document.createElement("canvas");
+                exportCanvas.width = 1200;
+                exportCanvas.height = 880;
+                renderCanvas(exportCanvas, true);
+                onInsertImage(exportCanvas.toDataURL("image/png"));
+              }}
+              className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+              title="Chèn ảnh đồ thị trực tiếp vào đề thi / câu hỏi / lời giải"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{insertButtonLabel}</span>
+            </button>
+          )}
+
+          {/* Custom Actions */}
+          {customActions}
 
           {/* Copy Image button */}
           <button

@@ -39,6 +39,7 @@ export interface BBTData {
   domainNote?: string;                    // Tập xác định, vd: "D = R" hoặc "D = R \\ {-1}"
   points: BBTPoint[];                     // Danh sách các điểm mốc trên trục hoành x
   intervals: BBTInterval[];               // Danh sách các khoảng giữa các điểm mốc
+  showDerivative?: boolean;               // false nếu chỉ có 2 dòng (x và y, chuẩn Toán 10)
 }
 
 // ============================================================================
@@ -866,7 +867,7 @@ export const VariationTableGenerator: React.FC = () => {
             <button
               onClick={() => {
                 setBbtData(MOCK_CUBIC_FUNCTION);
-                setUserPrompt("Khảo sát và vẽ Bảng biến thiên hàm số bậc ba: y = x^3 - 3x^2 + 4");
+                setUserPrompt("y = x^3 - 3x^2 + 4");
               }}
               className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-medium backdrop-blur-xs transition-colors"
             >
@@ -875,7 +876,7 @@ export const VariationTableGenerator: React.FC = () => {
             <button
               onClick={() => {
                 setBbtData(MOCK_RATIONAL_FUNCTION);
-                setUserPrompt("Khảo sát và vẽ Bảng biến thiên hàm phân thức hữu tỉ có tiệm cận: y = (2x - 1) / (x + 1)");
+                setUserPrompt("y = (2x - 1) / (x + 1)");
               }}
               className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-medium backdrop-blur-xs transition-colors"
             >
@@ -884,7 +885,7 @@ export const VariationTableGenerator: React.FC = () => {
             <button
               onClick={() => {
                 setBbtData(MOCK_RADICAL_FUNCTION);
-                setUserPrompt("Khảo sát và vẽ Bảng biến thiên hàm số chứa căn thức: y = \\sqrt{x^2 - 4}");
+                setUserPrompt("y = \\sqrt{x^2 - 4}");
               }}
               className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-medium backdrop-blur-xs transition-colors"
             >
@@ -964,7 +965,7 @@ export const VariationTableGenerator: React.FC = () => {
               ].map((fn, idx) => (
                 <button
                   key={idx}
-                  onClick={() => setUserPrompt(`Khảo sát và vẽ Bảng biến thiên hàm số: ${fn}`)}
+                  onClick={() => setUserPrompt(fn)}
                   className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-serif rounded-md transition-colors"
                 >
                   {fn}

@@ -45,6 +45,7 @@ import { saveExamToCloud } from '../lib/cloudExamStore';
 import { apiFetch } from '../lib/apiFetch';
 import { GDPT_2018_SUBJECTS } from '../lib/subjects';
 import { formatMathContent, sanitizeShortAnswerInput, validateShortAnswer, sanitizeExamQuestion } from '../lib/utils';
+import { SimilarExamsModal } from './SimilarExamsModal';
 
 export { formatMathContent };
 
@@ -100,6 +101,7 @@ export function UploadTeacherExamModal({
 }: UploadTeacherExamModalProps) {
   // Step navigation: 'input' -> 'preview_edit' -> 'share_popup'
   const [step, setStep] = useState<'input' | 'preview_edit' | 'share_popup'>('input');
+  const [showSimilarModal, setShowSimilarModal] = useState(false);
   
   // Exam metadata
   const [examType, setExamType] = useState<string>("Đề kiểm tra giữa kỳ 1");
@@ -1821,15 +1823,28 @@ export function UploadTeacherExamModal({
                   <ArrowLeft className="w-4 h-4" /> Quay lại nhập đề
                 </button>
 
-                <button
-                  type="button"
-                  onClick={handleCreateOnlineExam}
-                  disabled={isSharing || questions.length === 0}
-                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm flex items-center gap-2 shadow-sm transition-colors disabled:opacity-50"
-                >
-                  <Share2 className="w-4 h-4" />
-                  {isSharing ? "Đang lưu và tạo mã QR..." : "Tạo Link Làm Online"}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowSimilarModal(true)}
+                    disabled={questions.length === 0}
+                    className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold rounded-xl text-sm flex items-center gap-2 shadow-sm transition-all disabled:opacity-50 cursor-pointer"
+                    title="Tạo 4 Đề Phát Triển Tương Tự từ đề vừa bóc tách & Tải File Word"
+                  >
+                    <Sparkles className="w-4 h-4 text-amber-300" />
+                    Tạo 4 Đề Tương Tự (.docx)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCreateOnlineExam}
+                    disabled={isSharing || questions.length === 0}
+                    className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm flex items-center gap-2 shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    {isSharing ? "Đang lưu và tạo mã QR..." : "Tạo Link Làm Online"}
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1955,6 +1970,17 @@ export function UploadTeacherExamModal({
 
         </div>
       </div>
+
+      {showSimilarModal && (
+        <SimilarExamsModal
+          isOpen={showSimilarModal}
+          onClose={() => setShowSimilarModal(false)}
+          initialQuestions={questions}
+          initialExamName={examTitle || "ĐỀ KIỂM TRA"}
+          subject={subject}
+          grade={grade}
+        />
+      )}
     </div>
   );
 }

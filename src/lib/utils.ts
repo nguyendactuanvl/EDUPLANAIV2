@@ -92,39 +92,112 @@ export function sanitizeJsonString(str: string): string {
   return result.replace(/,\s*([\}\]])/g, "$1");
 }
 
+export function extractQuestionFromBrokenJson(raw: string): any {
+  if (!raw || typeof raw !== "string") return null;
+  const result: any = {};
+  
+  const contentMatch = raw.match(/"content"\s*:\s*"((?:[^"\\]|\\.)*)/);
+  if (contentMatch) {
+    result.content = contentMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, "\"").replace(/\\\\/g, "\\");
+  }
+  
+  const solMatch = raw.match(/"solution"\s*:\s*"((?:[^"\\]|\\.)*)/);
+  if (solMatch) {
+    result.solution = solMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, "\"").replace(/\\\\/g, "\\");
+  }
+
+  const typeMatch = raw.match(/"type"\s*:\s*"([^"]+)"/);
+  if (typeMatch) result.type = typeMatch[1];
+
+  const levelMatch = raw.match(/"level"\s*:\s*"([^"]+)"/);
+  if (levelMatch) result.level = levelMatch[1];
+
+  const topicMatch = raw.match(/"topic"\s*:\s*"([^"]+)"/);
+  if (topicMatch) result.topic = topicMatch[1];
+
+  const optIdxMatch = raw.match(/"correctOptionIndex"\s*:\s*(\d+)/);
+  if (optIdxMatch) result.correctOptionIndex = parseInt(optIdxMatch[1], 10);
+
+  const ansMatch = raw.match(/"correctAnswer"\s*:\s*"([^"]+)"/);
+  if (ansMatch) result.correctAnswer = ansMatch[1];
+
+  const optsMatch = raw.match(/"options"\s*:\s*\[([\s\S]*?)\]/);
+  if (optsMatch) {
+    const opts: string[] = [];
+    const optRegex = /"((?:[^"\\]|\\.)*)"/g;
+    let m;
+    while ((m = optRegex.exec(optsMatch[1])) !== null) {
+      opts.push(m[1].replace(/\\n/g, "\n").replace(/\\"/g, "\"").replace(/\\\\/g, "\\"));
+    }
+    if (opts.length > 0) result.options = opts;
+  }
+
+  return Object.keys(result).length > 0 ? result : null;
+}
+
 export function repairTruncatedJson(str: string): string {
+  if (!str) return str;
   let inString = false;
   let escaped = false;
-  const stack: string[] = [];
+  let out = "";
 
   for (let i = 0; i < str.length; i++) {
     const ch = str[i];
     if (inString) {
       if (escaped) {
         escaped = false;
+        out += ch;
       } else if (ch === "\\") {
         escaped = true;
+        out += ch;
       } else if (ch === "\"") {
         inString = false;
+        out += ch;
+      } else if (ch === "\n") {
+        out += "\\n";
+      } else if (ch === "\r") {
+        out += "\\r";
+      } else if (ch === "\t") {
+        out += "\\t";
+      } else {
+        out += ch;
       }
     } else {
       if (ch === "\"") {
         inString = true;
-      } else if (ch === "{" || ch === "[") {
-        stack.push(ch);
-      } else if (ch === "}" && stack[stack.length - 1] === "{") {
-        stack.pop();
-      } else if (ch === "]" && stack[stack.length - 1] === "[") {
-        stack.pop();
+        out += ch;
+      } else {
+        out += ch;
       }
     }
   }
 
-  let repaired = str;
+  let repaired = out;
   if (inString) {
+    if (escaped) {
+      repaired += "\\";
+    }
     repaired += "\"";
   }
   repaired = repaired.replace(/,\s*$/, "");
+
+  const stack: string[] = [];
+  inString = false;
+  escaped = false;
+  for (let i = 0; i < repaired.length; i++) {
+    const ch = repaired[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === "\"") inString = false;
+    } else {
+      if (ch === "\"") inString = true;
+      else if (ch === "{" || ch === "[") stack.push(ch);
+      else if (ch === "}" && stack[stack.length - 1] === "{") stack.pop();
+      else if (ch === "]" && stack[stack.length - 1] === "[") stack.pop();
+    }
+  }
+
   while (stack.length > 0) {
     const top = stack.pop();
     if (top === "{") repaired += "}";
@@ -163,12 +236,24 @@ export function safeJsonParse<T = any>(text: string, fallback?: T): T {
       try {
         const repaired = repairTruncatedJson(cleaned);
         return JSON.parse(sanitizeJsonString(repaired));
-      } catch (e4) {}
+      } catch (e4) {
+        try {
+          const sanitizedRepaired = sanitizeJsonString(repairTruncatedJson(cleaned));
+          return JSON.parse(sanitizedRepaired);
+        } catch (e5) {}
+      }
+
+      try {
+        const extracted = extractQuestionFromBrokenJson(cleaned);
+        if (extracted && (extracted.content || extracted.solution)) {
+          return { question: extracted } as any;
+        }
+      } catch (e6) {}
 
       if (fallback !== undefined && fallback !== null) {
         return fallback;
       }
-      throw e1;
+      return null as any;
     }
   }
 }

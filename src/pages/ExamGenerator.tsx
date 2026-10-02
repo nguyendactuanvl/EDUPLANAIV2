@@ -20,6 +20,9 @@ import { SAMPLE_MATH_QUESTIONS, SAMPLE_MATH_EXAM_NAME, SAMPLE_MATH_DURATION } fr
 import { parseRawExamText } from '../lib/examParser';
 import { UploadTeacherExamModal } from "../components/UploadTeacherExamModal";
 import { WordEquationModal } from "../components/WordEquationModal";
+import { SimilarExamsModal } from "../components/SimilarExamsModal";
+import { QuestionEditModal } from "../components/QuestionEditModal";
+import { QuestionVisualizerPanel } from "../components/math-tools/QuestionVisualizerPanel";
 import {
   mixExam,
   identifyQuestionSection,
@@ -32,7 +35,7 @@ import {
 } from '../lib/examMixer';
 import React, { useState, useRef, useEffect } from "react";
 import * as XLSX from 'xlsx';
-import { FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera } from "lucide-react";
+import { FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera, TrendingUp, BarChart2 } from "lucide-react";
 
 interface Question {
   type?: "mc" | "tf" | "sa" | "essay" | "MULTIPLE_CHOICE" | "TRUE_FALSE" | "SHORT_ANSWER" | "ESSAY";
@@ -709,7 +712,7 @@ export function ExamGenerator() {
   const [duration, setDuration] = useState(45);
   const [examType, setExamType] = useState<string>("Đề kiểm tra giữa kỳ 1");
   const [isOnlineConfigModalOpen, setIsOnlineConfigModalOpen] = useState(false);
-  const [qCounts, setQCounts] = useState({ mc: 20, tf: 0, sa: 0, essay: 0 });
+  const [qCounts, setQCounts] = useState({ mc: 12, tf: 4, sa: 6, essay: 0 });
   const [schoolLevel, setSchoolLevel] = useState("THCS");
   const [generateMode, setGenerateMode] = useState<"auto" | "from_matrix_file">("auto");
   const [autoDetectStructure, setAutoDetectStructure] = useState(false);
@@ -850,16 +853,40 @@ export function ExamGenerator() {
   const [matrixFile, setMatrixFile] = useState<File | null>(null);
   const [matrixBase64, setMatrixBase64] = useState<string | null>(null);
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
+  const [showSimilarExamsModal, setShowSimilarExamsModal] = useState(false);
   
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setMatrixFile(file);
+      const isXls = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+
       const reader = new FileReader();
       reader.onloadend = () => {
         setMatrixBase64(reader.result as string);
       };
       reader.readAsDataURL(file);
+
+      // Nếu là tệp Excel, tự động đọc trước các Sheet để trích xuất ma trận
+      if (isXls) {
+        try {
+          const ab = await file.arrayBuffer();
+          const wb = XLSX.read(ab, { type: 'array' });
+          let extractedSheets = '';
+          wb.SheetNames.forEach(sheetName => {
+            const sheet = wb.Sheets[sheetName];
+            const csv = XLSX.utils.sheet_to_csv(sheet);
+            if (csv && csv.trim()) {
+              extractedSheets += `\n[Sheet: ${sheetName}]\n${csv.trim()}\n`;
+            }
+          });
+          if (extractedSheets) {
+            setMatrix(prev => (prev ? `${prev}\n\n` : '') + `Ma trận từ file Excel:\n${extractedSheets}`);
+          }
+        } catch (xlsErr) {
+          console.error("Lỗi đọc file Excel ma trận:", xlsErr);
+        }
+      }
     }
   };
   
@@ -900,6 +927,116 @@ const [examName, setExamName] = useState("");
   }, [questions]);
   const [shuffledExams, setShuffledExams] = useState<{code: string, questions: Question[]}[]>([]);
   const [numCodes, setNumCodes] = useState(4);
+  const [startCode, setStartCode] = useState<number>(1001);
+  const [editingExamQuestion, setEditingExamQuestion] = useState<{ question: Question; index: number } | null>(null);
+  const [activeVisualizer, setActiveVisualizer] = useState<{
+    qIndex: number;
+    tab: "bbt" | "graph";
+    target: "content" | "solution";
+  } | null>(null);
+
+  const handleInsertVisualizerSnippet = (qIndex: number, target: "content" | "solution", snippet: string) => {
+    setQuestions(prev => {
+      const next = [...prev];
+      const item = { ...next[qIndex] };
+      if (target === "content") {
+        item.content = (item.content || "") + snippet;
+      } else {
+        const cur = item.solution || item.explanation || "";
+        item.solution = cur ? `${cur}\n\n${snippet}` : snippet;
+        item.explanation = item.solution;
+      }
+      next[qIndex] = item;
+      return next;
+    });
+  };
+
+  const isMissingBbt = (content?: string): boolean => {
+    if (!content) return false;
+    const mentionsBbt = /(bảng\s*biến\s*thiên|BBT|bbt|dấu\s*của\s*f'\(x\)|chiều\s*biến\s*thiên|khảo\s*sát\s*sự\s*biến\s*thiên)/i.test(content);
+    const hasTable = /\|[^\n]+\|[^\n]+\|/.test(content);
+    const hasImgOrSvg = /<(?:img|svg|svg-wrapper)/i.test(content) || /!\[.*?\]\(.*?\)/.test(content);
+    return mentionsBbt && !hasTable && !hasImgOrSvg;
+  };
+
+  const isMissingGraph = (content?: string): boolean => {
+    if (!content) return false;
+    const mentionsGraph = /(đồ\s*thị|hình\s*bên|hình\s*vẽ|như\s*hình)/i.test(content);
+    const hasImgOrSvg = /<(?:img|svg|svg-wrapper)/i.test(content) || /!\[.*?\]\(.*?\)/.test(content);
+    return mentionsGraph && !hasImgOrSvg;
+  };
+
+  const handleSaveEditedExamQuestion = (updated: any) => {
+    if (!editingExamQuestion) return;
+    const newQs = [...questions];
+    newQs[editingExamQuestion.index] = { ...newQs[editingExamQuestion.index], ...updated };
+    setQuestions(newQs);
+  };
+
+  const handleAiFixBbtForExamQuestion = async (q: Question, idx: number) => {
+    try {
+      const res = await apiFetch('/api/fix-question', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q, mode: 'fix_bbt', subject, grade })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.question) {
+          const newQs = [...questions];
+          newQs[idx] = { ...newQs[idx], ...data.question };
+          setQuestions(newQs);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn("AI fix BBT error:", e);
+    }
+    const fallbackBbt = `\n\n| $x$ | $-\\infty$ | | $-1$ | | $2$ | | $+\\infty$ |\n|---|---|---|---|---|---|---|---|\n| $y'$ | | $+$ | $0$ | $-$ | $0$ | $+$ |\n| $y$ | $-\\infty$ | $\\nearrow$ | $3$ | $\\searrow$ | $-1$ | $\\nearrow$ | $+\\infty$ |`;
+    const newQs = [...questions];
+    newQs[idx] = { ...newQs[idx], content: (newQs[idx].content || '') + fallbackBbt };
+    setQuestions(newQs);
+  };
+
+  const handleAiRegenerateExamQuestion = async (q: Question, idx: number) => {
+    try {
+      const res = await apiFetch('/api/fix-question', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q, mode: 'regenerate', subject, grade })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.question) {
+          const newQs = [...questions];
+          newQs[idx] = { ...newQs[idx], ...data.question };
+          setQuestions(newQs);
+        }
+      }
+    } catch (e) {
+      console.warn("AI regenerate error:", e);
+    }
+  };
+
+  const handleAiReplaceExamQuestion = async (q: Question, idx: number) => {
+    try {
+      const res = await apiFetch('/api/fix-question', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q, mode: 'replace_similar', subject, grade })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.question) {
+          const newQs = [...questions];
+          newQs[idx] = { ...newQs[idx], ...data.question };
+          setQuestions(newQs);
+        }
+      }
+    } catch (e) {
+      console.warn("AI replace error:", e);
+    }
+  };
   const [shareLink, setShareLink] = useState("");
   const [sharePin, setSharePin] = useState("");
   const [showBubbleSheetModal, setShowBubbleSheetModal] = useState(false);
@@ -1047,10 +1184,19 @@ ${pin ? `🔑 Hoặc vào trang: ${publicBase} và nhập Mã phòng thi: ${pin}
     setIsGenerating(true);
     setError(null);
     try {
+      let detectedSa = qEnabled.sa ? qCounts.sa : 0;
+      const combinedMatrixCheck = `${matrix || ''} ${customPrompt || ''}`;
+      const tlnMatch = combinedMatrixCheck.match(/(\d+)\s*(?:câu)?\s*(?:TLN|trả\s*lời\s*ngắn)/i);
+      if (tlnMatch && Number(tlnMatch[1]) > 0) {
+        detectedSa = Number(tlnMatch[1]);
+      } else if (detectedSa === 0 && (generateMode === "from_matrix_file" || /tln|trả\s*lời\s*ngắn|phần\s*iii/i.test(combinedMatrixCheck))) {
+        detectedSa = 6;
+      }
+
       const activeQCounts = {
         mc: qEnabled.mc ? qCounts.mc : 0,
         tf: qEnabled.tf ? qCounts.tf : 0,
-        sa: qEnabled.sa ? qCounts.sa : 0,
+        sa: detectedSa,
         essay: qEnabled.essay ? qCounts.essay : 0
       };
 
@@ -1144,10 +1290,24 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
         const formatted = data.questions.map((q: any, idx: number) => ({
           ...q,
           id: q.id || idx + 1,
+          topic: q.topic || 'Chủ đề trọng tâm',
+          subtopic: q.subtopic || 'Nội dung kiến thức',
+          level: q.level || 'Thông hiểu',
           solution: (q.solution || q.explanation || "").trim(),
           explanation: (q.solution || q.explanation || "").trim()
         }));
         setQuestions(formatted);
+
+        // Tự động đồng bộ số lượng câu theo đúng ma trận tải lên
+        if (generateMode === "from_matrix_file" || autoDetectStructure) {
+          const mcCount = formatted.filter((q: any) => q.type === 'mc').length;
+          const tfCount = formatted.filter((q: any) => q.type === 'tf').length;
+          const saCount = formatted.filter((q: any) => q.type === 'sa').length;
+          const esCount = formatted.filter((q: any) => q.type === 'essay').length;
+          setQCounts({ mc: mcCount, tf: tfCount, sa: saCount, essay: esCount });
+          setQEnabled({ mc: mcCount > 0, tf: tfCount > 0, sa: saCount > 0, essay: esCount > 0 });
+        }
+
         setActiveTab("exam");
       } else {
         throw new Error("Không tìm thấy danh sách câu hỏi trong phản hồi của AI. Thầy cô có thể bấm nút 'Tải đề mẫu' bên dưới để dùng ngay hoặc thử tạo lại.");
@@ -1170,7 +1330,7 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
       groupBySection: outputConfig.groupBySection !== false,
       shuffleQuestions: outputConfig.shuffleQuestions !== false,
       shuffleOptions: outputConfig.shuffleOptions !== false,
-      startCode: 101
+      startCode: startCode || 1001
     });
     setShuffledExams(mixed as any[]);
     setActiveTab("shuffle");
@@ -1286,6 +1446,13 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
               className="px-5 py-3 font-bold text-sm whitespace-nowrap text-indigo-600 hover:text-indigo-800 flex items-center gap-2 bg-indigo-50/60 rounded-t-lg border-b-2 border-indigo-600"
             >
               <UploadCloud className="w-4 h-4" /> Tải đề của tôi lên (Word/PDF/Text)
+            </button>
+            <button 
+              onClick={() => setShowSimilarExamsModal(true)}
+              className="px-5 py-3 font-bold text-sm whitespace-nowrap text-purple-700 hover:text-purple-900 flex items-center gap-2 bg-purple-50/80 rounded-t-lg border-b-2 border-purple-600 transition-all cursor-pointer"
+              title="Tạo 4 Đề Phát Triển Tương Tự từ 1 Đề Có Sẵn & Tải File Word"
+            >
+              <Sparkles className="w-4 h-4 text-purple-600" /> Tạo 4 Đề Tương Tự (.docx)
             </button>
           </div>
 
@@ -1442,10 +1609,17 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                     <label className="block text-sm font-medium text-slate-700 mb-2">File đính kèm (SGK / Ma trận / Học liệu):</label>
                     
                     <div className={`w-full px-4 py-3 border rounded-lg h-24 flex items-center justify-center bg-slate-50 border-dashed relative hover:bg-slate-100 transition-colors cursor-pointer mb-2 ${generateMode === 'from_matrix_file' && !matrixFile ? 'border-red-400 bg-red-50' : 'border-slate-300'}`}>
-                      <input type="file" accept="image/*,.pdf" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                      <input 
+                        type="file" 
+                        accept=".pdf,image/*,.docx,.doc,.xlsx,.xls,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" 
+                        onChange={handleFileChange} 
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
+                      />
                       <div className="flex flex-col items-center gap-1 text-slate-500">
                         <UploadCloud className="w-6 h-6 text-slate-400" />
-                        <span className="text-sm font-medium">{matrixFile ? matrixFile.name : "Tải lên tệp ảnh/PDF ma trận"}</span>
+                        <span className="text-sm font-medium text-center px-2">
+                          {matrixFile ? matrixFile.name : "Tải lên tệp Ma trận & Bản đặc tả (PDF, Word .docx/.doc, Excel .xlsx/.xls, Ảnh)"}
+                        </span>
                       </div>
                     </div>
                     {generateMode === 'from_matrix_file' && (
@@ -1995,6 +2169,15 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                       </button>
 
                       <button
+                        onClick={() => setShowSimilarExamsModal(true)}
+                        disabled={questions.length === 0}
+                        className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-sm font-semibold rounded-lg flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-50 cursor-pointer"
+                        title="Tạo 4 Đề Phát Triển Tương Tự từ đề gốc này & Tải File Word"
+                      >
+                        <Sparkles className="w-4 h-4 text-amber-300" /> Tạo 4 Đề Tương Tự
+                      </button>
+
+                      <button
                         onClick={() => setIsOnlineConfigModalOpen(true)}
                         disabled={questions.length === 0}
                         className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg flex items-center gap-1.5 shadow-sm transition-colors disabled:opacity-50"
@@ -2367,14 +2550,131 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                               [Thực tế]
                             </span>
                           )}
-                          <button onClick={() => saveToBank(q)} className="text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded border border-blue-200 hover:bg-blue-100 shrink-0 no-print" title="Lưu vào Ngân hàng CH">+ Lưu NH</button>
-                          <button onClick={() => {
-                            if (confirm("Xóa câu hỏi này khỏi đề?")) {
-                               const updated = questions.filter(item => item.id !== q.id);
-                               setQuestions(updated);
-                            }
-                          }} className="text-xs px-2 py-1 bg-red-50 text-red-600 rounded border border-red-200 hover:bg-red-100 shrink-0 no-print" title="Xóa khỏi đề">Xóa</button>
+                          <div className="flex items-center gap-1 shrink-0 no-print">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "bbt" && activeVisualizer?.target === "content") {
+                                  setActiveVisualizer(null);
+                                } else {
+                                  setActiveVisualizer({ qIndex: idx, tab: "bbt", target: "content" });
+                                }
+                              }}
+                              className={`text-xs px-2 py-1 rounded border flex items-center gap-1 cursor-pointer transition-colors shadow-2xs font-semibold ${
+                                activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "bbt" && activeVisualizer?.target === "content"
+                                  ? "bg-emerald-600 text-white border-emerald-700"
+                                  : "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100"
+                              }`}
+                              title="Tích hợp Module Bảng biến thiên (BBT): Phân tích hàm số, tinh chỉnh và chèn BBT vào câu hỏi"
+                            >
+                              <TrendingUp className="w-3.5 h-3.5" />
+                              <span>BBT</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "graph" && activeVisualizer?.target === "content") {
+                                  setActiveVisualizer(null);
+                                } else {
+                                  setActiveVisualizer({ qIndex: idx, tab: "graph", target: "content" });
+                                }
+                              }}
+                              className={`text-xs px-2 py-1 rounded border flex items-center gap-1 cursor-pointer transition-colors shadow-2xs font-semibold ${
+                                activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "graph" && activeVisualizer?.target === "content"
+                                  ? "bg-blue-600 text-white border-blue-700"
+                                  : "bg-blue-50 text-blue-800 border-blue-300 hover:bg-blue-100"
+                              }`}
+                              title="Tích hợp Module Đồ thị: Khảo sát hàm số trực quan, điều chỉnh hệ số và chèn đồ thị vào câu hỏi"
+                            >
+                              <BarChart2 className="w-3.5 h-3.5" />
+                              <span>Đồ thị</span>
+                            </button>
+                            <button
+                              onClick={() => setEditingExamQuestion({ question: q, index: idx })}
+                              className="text-xs px-2 py-1 bg-amber-50 text-amber-700 rounded border border-amber-200 hover:bg-amber-100 flex items-center gap-1 cursor-pointer transition-colors"
+                              title="Chỉnh sửa câu hỏi, chèn Bảng biến thiên, sửa phương án & lời giải"
+                            >
+                              ✏️ Sửa
+                            </button>
+                            <button
+                              onClick={() => handleAiRegenerateExamQuestion(q, idx)}
+                              className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded border border-blue-200 hover:bg-blue-100 flex items-center gap-1 cursor-pointer transition-colors"
+                              title="AI tạo lại câu này kèm Bảng biến thiên và lời giải chi tiết từng bước"
+                            >
+                              ✨ AI tạo lại
+                            </button>
+                            <button
+                              onClick={() => handleAiReplaceExamQuestion(q, idx)}
+                              className="text-xs px-2 py-1 bg-purple-50 text-purple-700 rounded border border-purple-200 hover:bg-purple-100 flex items-center gap-1 cursor-pointer transition-colors"
+                              title="Đổi câu tương đương khác"
+                            >
+                              🔄 Đổi câu
+                            </button>
+                            <button onClick={() => saveToBank(q)} className="text-xs px-2 py-1 bg-slate-50 text-slate-600 rounded border border-slate-200 hover:bg-slate-100 shrink-0 cursor-pointer" title="Lưu vào Ngân hàng CH">+ Lưu NH</button>
+                            <button onClick={() => {
+                              if (confirm("Xóa câu hỏi này khỏi đề?")) {
+                                 const updated = questions.filter(item => item.id !== q.id);
+                                 setQuestions(updated);
+                              }
+                            }} className="text-xs px-2 py-1 bg-red-50 text-red-600 rounded border border-red-200 hover:bg-red-100 shrink-0 cursor-pointer" title="Xóa khỏi đề">Xóa</button>
+                          </div>
                         </div>
+
+                        {/* Missing BBT alert */}
+                        {isMissingBbt(q.content) && (
+                          <div className="flex flex-wrap items-center justify-between p-2.5 my-2 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-900 shadow-2xs gap-2 no-print">
+                            <div className="flex items-center gap-1.5 font-medium">
+                              <span className="text-base">⚠️</span>
+                              <span>Đề bài nhắc đến <strong>Bảng biến thiên</strong> nhưng chưa có bảng/hình hiển thị.</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => setActiveVisualizer({ qIndex: idx, tab: "bbt", target: "content" })}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-md shadow-2xs flex items-center gap-1 cursor-pointer transition-colors"
+                                title="Mở Module Bảng biến thiên để chọn mẫu hoặc tinh chỉnh và chèn vào câu hỏi"
+                              >
+                                <TrendingUp className="w-3.5 h-3.5" />
+                                <span>📈 Mở Module BBT & Chọn</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleAiFixBbtForExamQuestion(q, idx)}
+                                className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-md shadow-2xs flex items-center gap-1 cursor-pointer transition-colors"
+                              >
+                                <span>✨ AI vẽ BBT ngay</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingExamQuestion({ question: q, index: idx })}
+                                className="px-2 py-1 bg-white hover:bg-slate-100 text-amber-800 border border-amber-300 rounded-md font-medium cursor-pointer"
+                              >
+                                <span>✏️ Tự chèn BBT</span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Missing Graph alert */}
+                        {isMissingGraph(q.content) && (
+                          <div className="flex flex-wrap items-center justify-between p-2.5 my-2 bg-blue-50 border border-blue-300 rounded-lg text-xs text-blue-900 shadow-2xs gap-2 no-print">
+                            <div className="flex items-center gap-1.5 font-medium">
+                              <span className="text-base">📊</span>
+                              <span>Đề bài nhắc đến <strong>Đồ thị / Hình vẽ</strong> nhưng chưa có hình hiển thị.</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => setActiveVisualizer({ qIndex: idx, tab: "graph", target: "content" })}
+                                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md shadow-2xs flex items-center gap-1 cursor-pointer transition-colors"
+                                title="Mở Module Đồ thị để vẽ và chèn hình vào câu hỏi"
+                              >
+                                <BarChart2 className="w-3.5 h-3.5" />
+                                <span>📊 Mở Module Đồ thị & Chèn</span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
                         
                         {q.type === 'tf' && q.tfStatements && (
                           <div className="flex flex-col gap-3 pl-4">
@@ -2413,21 +2713,83 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
 
                         {/* Lời giải chi tiết accordion */}
                         <div className="mt-3 pl-2 no-print">
-                          <button
-                            type="button"
-                            onClick={() => toggleSolution(q.id || idx + 1)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 transition-colors cursor-pointer"
-                          >
-                            <span>{isSolutionOpen(q.id || idx + 1) ? "🙈 Ẩn lời giải" : "💡 Xem lời giải chi tiết"}</span>
-                          </button>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => toggleSolution(q.id || idx + 1)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 transition-colors cursor-pointer"
+                            >
+                              <span>{isSolutionOpen(q.id || idx + 1) ? "🙈 Ẩn lời giải" : "💡 Xem lời giải chi tiết"}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!isSolutionOpen(q.id || idx + 1)) toggleSolution(q.id || idx + 1);
+                                if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "bbt" && activeVisualizer?.target === "solution") {
+                                  setActiveVisualizer(null);
+                                } else {
+                                  setActiveVisualizer({ qIndex: idx, tab: "bbt", target: "solution" });
+                                }
+                              }}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg border shadow-2xs transition-colors cursor-pointer ${
+                                activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "bbt" && activeVisualizer?.target === "solution"
+                                  ? "bg-emerald-600 text-white border-emerald-700"
+                                  : "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300"
+                              }`}
+                              title="Tích hợp Module BBT: Chèn Bảng biến thiên vào lời giải chi tiết"
+                            >
+                              <TrendingUp className="w-3.5 h-3.5" />
+                              <span>+ BBT vào lời giải</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!isSolutionOpen(q.id || idx + 1)) toggleSolution(q.id || idx + 1);
+                                if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "graph" && activeVisualizer?.target === "solution") {
+                                  setActiveVisualizer(null);
+                                } else {
+                                  setActiveVisualizer({ qIndex: idx, tab: "graph", target: "solution" });
+                                }
+                              }}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg border shadow-2xs transition-colors cursor-pointer ${
+                                activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "graph" && activeVisualizer?.target === "solution"
+                                  ? "bg-blue-600 text-white border-blue-700"
+                                  : "bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-300"
+                              }`}
+                              title="Tích hợp Module Đồ thị: Chèn Đồ thị vào lời giải chi tiết"
+                            >
+                              <BarChart2 className="w-3.5 h-3.5" />
+                              <span>+ Đồ thị vào lời giải</span>
+                            </button>
+                          </div>
 
                           {isSolutionOpen(q.id || idx + 1) && (
                             <div 
                               style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '12px', marginTop: '8px' }}
                               className="text-slate-800 text-sm leading-relaxed"
                             >
-                              <div className="font-bold text-slate-900 mb-1.5 flex items-center gap-1.5">
-                                <span>💡 Lời giải chi tiết:</span>
+                              <div className="font-bold text-slate-900 mb-1.5 flex items-center justify-between">
+                                <div className="flex items-center gap-1.5">
+                                  <span>💡 Lời giải chi tiết:</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-xs">
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveVisualizer({ qIndex: idx, tab: "bbt", target: "solution" })}
+                                    className="text-emerald-700 hover:text-emerald-900 font-semibold px-2 py-0.5 rounded bg-emerald-100/70 border border-emerald-200 cursor-pointer flex items-center gap-1 shadow-2xs"
+                                  >
+                                    <TrendingUp className="w-3 h-3" />
+                                    <span>Mở BBT</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveVisualizer({ qIndex: idx, tab: "graph", target: "solution" })}
+                                    className="text-blue-700 hover:text-blue-900 font-semibold px-2 py-0.5 rounded bg-blue-100/70 border border-blue-200 cursor-pointer flex items-center gap-1 shadow-2xs"
+                                  >
+                                    <BarChart2 className="w-3 h-3" />
+                                    <span>Mở Đồ thị</span>
+                                  </button>
+                                </div>
                               </div>
                               <div className="text-slate-800">
                                 <MarkdownRenderer content={fixMath(q.solution || q.explanation || "Chưa có lời giải chi tiết cho câu hỏi này.")} />
@@ -2435,6 +2797,21 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                             </div>
                           )}
                         </div>
+
+                        {/* Integrated BBT & Graph Visualizer Panel directly inside the Question & Solution block */}
+                        {activeVisualizer?.qIndex === idx && (
+                          <div className="mt-3 no-print">
+                            <QuestionVisualizerPanel
+                              questionNumber={idx + 1}
+                              questionContent={q.content}
+                              solutionContent={q.solution || q.explanation}
+                              defaultTab={activeVisualizer.tab}
+                              defaultTarget={activeVisualizer.target}
+                              onInsertSnippet={(target, snippet) => handleInsertVisualizerSnippet(idx, target, snippet)}
+                              onClose={() => setActiveVisualizer(null)}
+                            />
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -2458,6 +2835,18 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
+                      <label className="text-xs font-semibold text-slate-600 whitespace-nowrap">Mã bắt đầu:</label>
+                      <input
+                        type="number"
+                        min="1000"
+                        max="9999"
+                        value={startCode}
+                        onChange={e => setStartCode(Number(e.target.value) || 1001)}
+                        className="w-16 px-2 py-1 text-center font-bold text-sm border border-slate-300 rounded bg-white text-slate-800 focus:ring-1 focus:ring-emerald-500"
+                        title="Chuẩn mã đề 4 chữ số theo cấu trúc mới (VD: 1001, 1002, 1003, 1004...)"
+                      />
+                    </div>
                     <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
                       <label className="text-xs font-semibold text-slate-600 whitespace-nowrap">Số lượng mã đề:</label>
                       <input
@@ -4565,6 +4954,22 @@ Lời giải: Tiệm cận ngang là $y = 1$ nên ý c sai.`);
         />
       )}
 
+      {showSimilarExamsModal && (
+        <SimilarExamsModal
+          isOpen={showSimilarExamsModal}
+          onClose={() => setShowSimilarExamsModal(false)}
+          initialQuestions={questions}
+          initialExamName={examName || "ĐỀ KIỂM TRA"}
+          subject={subject}
+          grade={grade}
+          onApplyAsOriginalExam={(newQs, newName) => {
+            setQuestions(newQs);
+            if (newName) setExamName(newName);
+            setActiveTab("exam");
+          }}
+        />
+      )}
+
       {isOnlineConfigModalOpen && (
         <OnlineExamConfigModal
           isOpen={isOnlineConfigModalOpen}
@@ -4600,6 +5005,17 @@ Lời giải: Tiệm cận ngang là $y = 1$ nên ý c sai.`);
       <WordEquationModal
         isOpen={showWordEquationModal}
         onClose={() => setShowWordEquationModal(false)}
+      />
+
+      {/* Question Edit / BBT Modal for ExamGenerator */}
+      <QuestionEditModal
+        isOpen={Boolean(editingExamQuestion)}
+        question={editingExamQuestion ? editingExamQuestion.question as any : null}
+        questionNumber={editingExamQuestion ? editingExamQuestion.index + 1 : 1}
+        subject={subject}
+        grade={grade}
+        onClose={() => setEditingExamQuestion(null)}
+        onSave={handleSaveEditedExamQuestion}
       />
     </div>
     </div>

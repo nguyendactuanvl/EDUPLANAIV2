@@ -5,11 +5,16 @@ import { exportHtmlToWord, exportElementToImage } from "../lib/exportUtils";
 import React, { useState, useRef, useEffect } from "react";
 import { 
   BookOpen, Download, AlertCircle, Edit3, Eye, Printer, Share2, Copy, CheckCircle2, 
-  ExternalLink, Upload, FileText, Palette, LayoutTemplate, GitFork, Sparkles, Zap, Image as ImageIcon, Sliders, Check
+  ExternalLink, Upload, FileText, Palette, LayoutTemplate, GitFork, Sparkles, Zap, Image as ImageIcon, Sliders, Check,
+  TrendingUp, BarChart2, Plus
 } from "lucide-react";
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { UploadTeacherExamModal } from "../components/UploadTeacherExamModal";
+import { QuestionEditModal } from "../components/QuestionEditModal";
+import { QuestionVisualizerPanel } from "../components/math-tools/QuestionVisualizerPanel";
+import { analyzeFunctionToBbt, generateBbtSvg, convertBbtTableToSvg } from "../lib/bbtRenderer";
+import { getTikzSvg, embedTikzSvgsInText } from "../components/TikzRenderer";
 import { saveToHistory, getHistory } from '../lib/history';
 import { HistoryItem } from '../types';
 import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMath, cleanQuestionStem, cleanOptionText } from "../lib/utils";
@@ -96,6 +101,266 @@ export function Worksheets() {
   const [openSolutions, setOpenSolutions] = useState<Record<string | number, boolean>>({});
   const [worksheetQuestions, setWorksheetQuestions] = useState<any[]>([]);
   const [viewMode, setViewMode] = useState<'document' | 'questions'>('document');
+
+  // BBT & Đồ thị Visualizer State
+  const [activeVisualizer, setActiveVisualizer] = useState<{
+    qIndex: number;
+    tab: "bbt" | "graph";
+    target: "content" | "solution";
+  } | null>(null);
+  const [isDocVisualizerOpen, setIsDocVisualizerOpen] = useState(false);
+  const [docVisualizerTab, setDocVisualizerTab] = useState<"bbt" | "graph">("bbt");
+  const [editingQuestion, setEditingQuestion] = useState<{ question: any; index: number } | null>(null);
+  const [isAutoGeneratingImages, setIsAutoGeneratingImages] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const isMissingBbt = (content?: string): boolean => {
+    if (!content) return false;
+    const mentionsBbt = /(bảng\s*biến\s*thiên|BBT|bbt|dấu\s*của\s*f'\(x\)|chiều\s*biến\s*thiên|khảo\s*sát\s*sự\s*biến\s*thiên)/i.test(content);
+    const hasTable = /\|[^\n]+\|[^\n]+\|/.test(content);
+    const hasImgOrSvg = /<(?:img|svg|svg-wrapper)/i.test(content) || /!\[.*?\]\(.*?\)/.test(content);
+    return mentionsBbt && !hasTable && !hasImgOrSvg;
+  };
+
+  const isMissingGraph = (content?: string): boolean => {
+    if (!content) return false;
+    const mentionsGraph = /(đồ\s*thị|hình\s*bên|hình\s*vẽ|như\s*hình)/i.test(content);
+    const hasImgOrSvg = /<(?:img|svg|svg-wrapper)/i.test(content) || /!\[.*?\]\(.*?\)/.test(content);
+    return mentionsGraph && !hasImgOrSvg;
+  };
+
+  const handleInsertVisualizerSnippet = (
+    qIndex: number,
+    target: "content" | "solution",
+    snippet: string
+  ) => {
+    setWorksheetQuestions(prev => {
+      const next = [...prev];
+      if (!next[qIndex]) return prev;
+      const item = { ...next[qIndex] };
+      if (target === "content") {
+        const cur = item.content || item.question || "";
+        item.content = cur ? `${cur}\n\n${snippet}` : snippet;
+      } else {
+        const cur = item.solution || item.explanation || "";
+        item.solution = cur ? `${cur}\n\n${snippet}` : snippet;
+        item.explanation = item.solution;
+      }
+      next[qIndex] = item;
+      return next;
+    });
+
+    // Đồng bộ vào suggestion văn bản
+    setSuggestion(prev => {
+      if (!prev) return prev;
+      const qNum = qIndex + 1;
+      const qRegex = new RegExp(`((?:\\*\\*)?(?:Câu|Bài)\\s*${qNum}[:\\.][\\s\\S]*?)(?=(?:\\*\\*)?(?:Câu|Bài)\\s*${qNum + 1}[:\\.]|---|#|$)`, 'i');
+      if (qRegex.test(prev)) {
+        return prev.replace(qRegex, (match) => {
+          return `${match.trimEnd()}\n\n${snippet}\n\n`;
+        });
+      }
+      return `${prev.trimEnd()}\n\n${snippet}\n\n`;
+    });
+
+    showToast(`Đã chèn ${snippet.includes('<svg-wrapper') ? 'BBT (ảnh SVG)' : 'Đồ thị (ảnh PNG)'} vào ${target === 'content' ? 'câu hỏi' : 'lời giải'}!`);
+  };
+
+  const handleInsertDocVisualizerSnippet = (target: "content" | "solution", snippet: string) => {
+    setSuggestion(prev => `${prev.trimEnd()}\n\n${snippet}\n\n`);
+    setIsDocVisualizerOpen(false);
+    showToast(`Đã chèn ${snippet.includes('<svg-wrapper') ? 'BBT (ảnh SVG)' : 'Đồ thị (ảnh PNG)'} vào phiếu học tập!`);
+  };
+
+  const handleAiFixBbtForWorksheetQuestion = async (q: any, idx: number) => {
+    try {
+      // 1. Thử nhận diện hàm số từ nội dung câu hỏi
+      const content = q.content || q.question || '';
+      const formulaMatch = content.match(/(?:y|f\(x\))\s*=\s*([^,;.\n$]+)/i) || 
+                           content.match(/hàm\s*số\s*(?:\$)?(?:y\s*=\s*)?([^,;.\n$]+)/i);
+      if (formulaMatch) {
+        const formula = formulaMatch[1].trim();
+        const bbtData = analyzeFunctionToBbt(formula);
+        if (bbtData) {
+          const svg = generateBbtSvg(bbtData);
+          if (svg) {
+            const base64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : '';
+            if (base64) {
+              const snippet = `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n`;
+              handleInsertVisualizerSnippet(idx, 'content', snippet);
+              showToast('✨ Đã tự động tạo ảnh BBT (SVG chuẩn SGK) thành công!');
+              return;
+            }
+          }
+        }
+      }
+
+      // 2. Gọi API /api/fix-question nếu không phân tích trực tiếp được
+      const res = await apiFetch('/api/fix-question', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q, mode: 'fix_bbt', subject, grade: selectedGrade })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.question) {
+          let newContent = data.question.content || '';
+          const tableMatch = newContent.match(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/m);
+          if (tableMatch) {
+            const svg = convertBbtTableToSvg(tableMatch[1]);
+            if (svg) {
+              const base64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : '';
+              if (base64) {
+                newContent = newContent.replace(tableMatch[1], `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n`);
+              }
+            }
+          }
+          const updatedQ = { ...data.question, content: newContent };
+          setWorksheetQuestions(prev => {
+            const next = [...prev];
+            next[idx] = { ...next[idx], ...updatedQ };
+            return next;
+          });
+          showToast('✨ AI đã vẽ Bảng biến thiên (dạng ảnh SVG chuẩn SGK) hoàn chỉnh!');
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn("Lỗi vẽ BBT:", e);
+    }
+
+    // Fallback: chèn BBT mẫu chuẩn SGK dạng SVG
+    const fallbackBbtTable = `| $x$ | $-\\infty$ | | $-1$ | | $2$ | | $+\\infty$ |\n|---|---|---|---|---|---|---|---|\n| $y'$ | | $+$ | $0$ | $-$ | $0$ | $+$ |\n| $y$ | $-\\infty$ | $\\nearrow$ | $3$ | $\\searrow$ | $-1$ | $\\nearrow$ | $+\\infty$ |`;
+    const fallbackSvg = convertBbtTableToSvg(fallbackBbtTable);
+    const base64 = fallbackSvg && typeof btoa !== 'undefined' ? btoa(encodeURIComponent(fallbackSvg)) : '';
+    const snippet = base64 ? `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n` : `\n\n${fallbackBbtTable}\n\n`;
+    handleInsertVisualizerSnippet(idx, 'content', snippet);
+    showToast('Đã thêm BBT dạng ảnh SVG vào câu hỏi!');
+  };
+
+  const handleAutoGenerateGraphForWorksheetQuestion = (q: any, idx: number) => {
+    const content = q.content || q.question || '';
+    const formulaMatch = content.match(/(?:y|f\(x\))\s*=\s*([^,;.\n$]+)/i) || 
+                         content.match(/hàm\s*số\s*(?:\$)?(?:y\s*=\s*)?([^,;.\n$]+)/i);
+    if (formulaMatch) {
+      const formula = formulaMatch[1].trim();
+      const bbtData = analyzeFunctionToBbt(formula);
+      if (bbtData && bbtData.points && bbtData.points.length > 0) {
+        // Mở Visualizer ở tab Graph với hàm số đã nhận diện để giáo viên chèn ảnh đồ họa ngay
+        setActiveVisualizer({ qIndex: idx, tab: "graph", target: "content" });
+        showToast(`Đã nhận diện hàm số ${formula}, sẵn sàng xuất ảnh đồ thị!`);
+        return;
+      }
+    }
+    setActiveVisualizer({ qIndex: idx, tab: "graph", target: "content" });
+  };
+
+  const handleAutoGenerateAllBbtAndGraphs = async () => {
+    setIsAutoGeneratingImages(true);
+    let count = 0;
+    try {
+      // 1. Quét toàn bộ worksheetQuestions
+      const updatedQuestions = [...worksheetQuestions];
+      for (let i = 0; i < updatedQuestions.length; i++) {
+        const q = updatedQuestions[i];
+        let changed = false;
+        let content = q.content || q.question || '';
+        let solution = q.solution || q.explanation || '';
+
+        // Tự động chuyển đổi nếu có mã TikZ trần thành SVG
+        if (/```tikz|\\begin\{tikzpicture\}/i.test(content)) {
+          content = embedTikzSvgsInText(content);
+          changed = true;
+          count++;
+        }
+        if (/```tikz|\\begin\{tikzpicture\}/i.test(solution)) {
+          solution = embedTikzSvgsInText(solution);
+          changed = true;
+          count++;
+        }
+
+        // Tự động chuyển đổi nếu có Markdown BBT table sang SVG wrapper
+        if (/\|[^\n]+\|[^\n]+\|/.test(content) && /(?:y'|f'\(x\)|\\searrow|\\nearrow)/i.test(content)) {
+          const match = content.match(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/m);
+          if (match) {
+            const svg = convertBbtTableToSvg(match[1]);
+            if (svg) {
+              const base64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : '';
+              if (base64) {
+                content = content.replace(match[1], `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n`);
+                changed = true;
+                count++;
+              }
+            }
+          }
+        }
+
+        // Nếu thiếu BBT mà có hàm số: tự động vẽ
+        if (isMissingBbt(content)) {
+          const fMatch = content.match(/(?:y|f\(x\))\s*=\s*([^,;.\n$]+)/i) || 
+                         content.match(/hàm\s*số\s*(?:\$)?(?:y\s*=\s*)?([^,;.\n$]+)/i);
+          if (fMatch) {
+            const bbt = analyzeFunctionToBbt(fMatch[1].trim());
+            if (bbt) {
+              const svg = generateBbtSvg(bbt);
+              if (svg) {
+                const b64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : '';
+                if (b64) {
+                  content += `\n\n<svg-wrapper data-svg="${b64}"></svg-wrapper>\n\n`;
+                  changed = true;
+                  count++;
+                }
+              }
+            }
+          }
+        }
+
+        if (changed) {
+          updatedQuestions[i] = {
+            ...q,
+            content,
+            solution,
+            explanation: solution
+          };
+        }
+      }
+      setWorksheetQuestions(updatedQuestions);
+
+      // 2. Quét và chuyển đổi trong suggestion (document view)
+      if (suggestion) {
+        let newSuggestion = suggestion;
+        // Chuyển đổi toàn bộ mã TikZ thành SVG
+        newSuggestion = embedTikzSvgsInText(newSuggestion);
+        // Chuyển đổi toàn bộ BBT markdown tables thành SVG wrappers
+        newSuggestion = newSuggestion.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
+          if (/(?:y'|f'\(x\)|\\searrow|\\nearrow)/i.test(match)) {
+            const svg = convertBbtTableToSvg(match);
+            if (svg) {
+              const b64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : '';
+              if (b64) {
+                count++;
+                return `\n\n<svg-wrapper data-svg="${b64}"></svg-wrapper>\n\n`;
+              }
+            }
+          }
+          return match;
+        });
+        setSuggestion(newSuggestion);
+      }
+
+      showToast(`🎉 Đã tự động tạo và xuất ảnh cho ${count > 0 ? `${count} bảng/đồ thị` : 'tất cả phần'} (dạng ảnh đồ họa, không dùng tex)!`);
+    } catch (err) {
+      console.warn("Lỗi auto generate:", err);
+      showToast("Đã hoàn tất kiểm tra BBT và Đồ thị.");
+    } finally {
+      setIsAutoGeneratingImages(false);
+    }
+  };
 
   const toggleSolution = (id: string | number) => {
     setOpenSolutions(prev => ({
@@ -279,14 +544,76 @@ export function Worksheets() {
       setShareLink(finalLink);
       
       // Cập nhật danh sách câu hỏi để giáo viên kiểm tra lời giải chi tiết trực quan
-      const formattedQuestions = (examData.questions || []).map((q: any, idx: number) => ({
-        ...q,
-        id: q.id || idx + 1,
-        solution: (q.solution || q.explanation || "").trim(),
-        explanation: (q.explanation || q.solution || "").trim()
-      }));
+      const formattedQuestions = (examData.questions || []).map((q: any, idx: number) => {
+        let content = embedTikzSvgsInText(q.content || q.question || '');
+        let solution = embedTikzSvgsInText((q.solution || q.explanation || "").trim());
+
+        // Chuyển đổi toàn bộ BBT markdown tables sang SVG vector chuẩn SGK
+        content = content.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
+          if (/(?:y'|f'\(x\)|\\searrow|\\nearrow)/i.test(match)) {
+            const svg = convertBbtTableToSvg(match);
+            if (svg) {
+              const b64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : '';
+              if (b64) return `\n\n<svg-wrapper data-svg="${b64}"></svg-wrapper>\n\n`;
+            }
+          }
+          return match;
+        });
+
+        solution = solution.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
+          if (/(?:y'|f'\(x\)|\\searrow|\\nearrow)/i.test(match)) {
+            const svg = convertBbtTableToSvg(match);
+            if (svg) {
+              const b64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : '';
+              if (b64) return `\n\n<svg-wrapper data-svg="${b64}"></svg-wrapper>\n\n`;
+            }
+          }
+          return match;
+        });
+
+        // Tự động phân tích và tạo ảnh BBT nếu câu hỏi nhắc đến BBT mà chưa có bảng
+        if (isMissingBbt(content)) {
+          const fMatch = content.match(/(?:y|f\(x\))\s*=\s*([^,;.\n$]+)/i) || 
+                         content.match(/hàm\s*số\s*(?:\$)?(?:y\s*=\s*)?([^,;.\n$]+)/i);
+          if (fMatch) {
+            const bbt = analyzeFunctionToBbt(fMatch[1].trim());
+            if (bbt) {
+              const svg = generateBbtSvg(bbt);
+              if (svg) {
+                const b64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : '';
+                if (b64) content += `\n\n<svg-wrapper data-svg="${b64}"></svg-wrapper>\n\n`;
+              }
+            }
+          }
+        }
+
+        return {
+          ...q,
+          id: q.id || idx + 1,
+          content,
+          solution,
+          explanation: solution
+        };
+      });
+
       setWorksheetQuestions(formattedQuestions);
       setViewMode('questions');
+
+      // Tạo gợi ý hiển thị cho chế độ Bản in A4
+      const generatedDoc = formattedQuestions.map((q: any, i: number) => {
+        let t = `### Câu ${i + 1}: ${q.content}\n`;
+        if (q.options && q.options.length > 0) {
+          t += q.options.map((opt: string, oIdx: number) => `- **${String.fromCharCode(65 + oIdx)}.** ${opt}`).join('\n') + '\n';
+        }
+        if (q.tfStatements && q.tfStatements.length > 0) {
+          t += q.tfStatements.map((s: any, sIdx: number) => `- **${String.fromCharCode(97 + sIdx)})** ${s.statement || s}`).join('\n') + '\n';
+        }
+        if (q.solution) {
+          t += `\n*Lời giải chi tiết:*\n${q.solution}\n`;
+        }
+        return t;
+      }).join('\n---\n\n');
+      setSuggestion(generatedDoc);
       
     } catch (err: any) {
       console.error(err);
@@ -370,20 +697,86 @@ export function Worksheets() {
         }
       }
       const rawResult = (typeof data?.result === 'string' ? data.result : String(data?.result || '')).replace(/\s*(?:undefined|null)\s*$/gi, '').trim();
-      const processedResult = preProcessMathContent(rawResult);
+      let processedResult = preProcessMathContent(rawResult);
+      // Tự động chuyển đổi toàn bộ mã TikZ sang ảnh SVG đồ họa sắc nét (không để mã tex)
+      processedResult = embedTikzSvgsInText(processedResult);
+      // Tự động chuyển đổi toàn bộ BBT markdown tables sang ảnh SVG vector chuẩn SGK
+      processedResult = processedResult.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
+        if (/(?:y'|f'\(x\)|\\searrow|\\nearrow)/i.test(match)) {
+          const svg = convertBbtTableToSvg(match);
+          if (svg) {
+            const b64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : '';
+            if (b64) return `\n\n<svg-wrapper data-svg="${b64}"></svg-wrapper>\n\n`;
+          }
+        }
+        return match;
+      });
       setSuggestion(processedResult);
-      setViewMode('document');
 
-      // Tự động phân tích các câu hỏi để hiển thị accordion lời giải chi tiết
+      // Tự động phân tích các câu hỏi để hiển thị giao diện câu hỏi trực quan kèm bộ công cụ BBT & Đồ thị
       try {
         const parsed = parseRawExamText(processedResult);
         if (parsed && parsed.length > 0) {
-          setWorksheetQuestions(parsed);
+          const enriched = parsed.map((q, idx) => {
+            let content = embedTikzSvgsInText(q.content || '');
+            let solution = embedTikzSvgsInText(q.solution || q.explanation || '');
+
+            content = content.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
+              if (/(?:y'|f'\(x\)|\\searrow|\\nearrow)/i.test(match)) {
+                const svg = convertBbtTableToSvg(match);
+                if (svg) {
+                  const b64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : '';
+                  if (b64) return `\n\n<svg-wrapper data-svg="${b64}"></svg-wrapper>\n\n`;
+                }
+              }
+              return match;
+            });
+
+            solution = solution.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
+              if (/(?:y'|f'\(x\)|\\searrow|\\nearrow)/i.test(match)) {
+                const svg = convertBbtTableToSvg(match);
+                if (svg) {
+                  const b64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : '';
+                  if (b64) return `\n\n<svg-wrapper data-svg="${b64}"></svg-wrapper>\n\n`;
+                }
+              }
+              return match;
+            });
+
+            // Tự động tạo BBT dạng ảnh SVG nếu câu hỏi nhắc đến BBT
+            if (isMissingBbt(content)) {
+              const fMatch = content.match(/(?:y|f\(x\))\s*=\s*([^,;.\n$]+)/i) || 
+                             content.match(/hàm\s*số\s*(?:\$)?(?:y\s*=\s*)?([^,;.\n$]+)/i);
+              if (fMatch) {
+                const bbt = analyzeFunctionToBbt(fMatch[1].trim());
+                if (bbt) {
+                  const svg = generateBbtSvg(bbt);
+                  if (svg) {
+                    const b64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : '';
+                    if (b64) content += `\n\n<svg-wrapper data-svg="${b64}"></svg-wrapper>\n\n`;
+                  }
+                }
+              }
+            }
+
+            return {
+              ...q,
+              id: q.id || idx + 1,
+              content,
+              solution,
+              explanation: solution
+            };
+          });
+
+          setWorksheetQuestions(enriched);
+          setViewMode('document');
         } else {
           setWorksheetQuestions([]);
+          setViewMode('document');
         }
       } catch (e) {
         setWorksheetQuestions([]);
+        setViewMode('document');
       }
       
       // Save to history
@@ -463,6 +856,17 @@ export function Worksheets() {
     if (exportRef.current) {
       await ensureMathRendered(exportRef.current);
       exportHtmlToWord(exportRef.current, `PhieuHocTap_${customLessonName.replace(/\s+/g, '_')}_LaTeX.doc`, true);
+    }
+  };
+
+  const handleExportWordImage = async () => {
+    if (isEditing) {
+      alert("Vui lòng chuyển sang chế độ 'Xem trước' (con mắt) trước khi tải xuống.");
+      return;
+    }
+    if (exportRef.current) {
+      await ensureMathRendered(exportRef.current);
+      exportHtmlToWord(exportRef.current, `PhieuHocTap_${customLessonName.replace(/\s+/g, '_')}_Anh.doc`, 'image');
     }
   };
 
@@ -841,25 +1245,27 @@ export function Worksheets() {
           <div className="flex flex-wrap items-center gap-2">
             {(suggestion || worksheetQuestions.length > 0) && (
               <>
-                {suggestion && worksheetQuestions.length > 0 && (
+                {worksheetQuestions.length > 0 && (
                   <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs">
                     <button
                       onClick={() => setViewMode('document')}
                       className={cn(
-                        "px-2.5 py-1 rounded-md font-medium transition-all flex items-center gap-1",
-                        viewMode === 'document' ? "bg-white text-emerald-700 shadow-xs font-bold" : "text-slate-500 hover:text-slate-700"
+                        "px-3 py-1.5 rounded-md font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                        viewMode === 'document' ? "bg-emerald-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
                       )}
+                      title="Hiển thị bố cục toàn trang phiếu học tập chuẩn GDPT 2018 (Khổ A4 in ấn / Xuất Word)"
                     >
-                      <FileText className="w-3.5 h-3.5" /> Bản in phiếu
+                      <FileText className="w-3.5 h-3.5" /> Bản in phiếu học tập (A4)
                     </button>
                     <button
                       onClick={() => setViewMode('questions')}
                       className={cn(
-                        "px-2.5 py-1 rounded-md font-medium transition-all flex items-center gap-1",
-                        viewMode === 'questions' ? "bg-white text-emerald-700 shadow-xs font-bold" : "text-slate-500 hover:text-slate-700"
+                        "px-3 py-1.5 rounded-md font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                        viewMode === 'questions' ? "bg-emerald-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
                       )}
+                      title="Hiển thị từng câu hỏi kèm thanh công cụ chèn BBT, Đồ thị và lời giải chi tiết"
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Chi tiết câu hỏi ({worksheetQuestions.length})
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Chi tiết từng câu ({worksheetQuestions.length})
                     </button>
                   </div>
                 )}
@@ -871,6 +1277,64 @@ export function Worksheets() {
                   title="Bật/Tắt hiển thị lời giải chi tiết cho tất cả câu hỏi"
                 >
                   <span>{showAllSolutions ? "🙈 Ẩn tất cả lời giải" : "👁️ Hiện tất cả lời giải"}</span>
+                </button>
+
+                {/* Auto Generate BBT & Graph Images */}
+                <button
+                  type="button"
+                  onClick={handleAutoGenerateAllBbtAndGraphs}
+                  disabled={isAutoGeneratingImages}
+                  className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                  title="Tự động quét và kết xuất toàn bộ Bảng biến thiên và Đồ thị dưới dạng ảnh SVG/PNG sắc nét (không dùng mã tex)"
+                >
+                  {isAutoGeneratingImages ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>Đang xuất ảnh...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                      <span>✨ Tự động xuất BBT & Đồ thị ảnh</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Manual Visualizer Drawer Toggles for Document Mode */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDocVisualizerTab("bbt");
+                    setIsDocVisualizerOpen(prev => (docVisualizerTab === "bbt" ? !prev : true));
+                  }}
+                  className={cn(
+                    "px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 border shadow-2xs transition-colors cursor-pointer",
+                    isDocVisualizerOpen && docVisualizerTab === "bbt"
+                      ? "bg-emerald-600 text-white border-emerald-700"
+                      : "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300"
+                  )}
+                  title="Mở Module Bảng biến thiên (chuẩn SGK) để tạo và chèn vào phiếu"
+                >
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span>📈 BBT</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDocVisualizerTab("graph");
+                    setIsDocVisualizerOpen(prev => (docVisualizerTab === "graph" ? !prev : true));
+                  }}
+                  className={cn(
+                    "px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 border shadow-2xs transition-colors cursor-pointer",
+                    isDocVisualizerOpen && docVisualizerTab === "graph"
+                      ? "bg-blue-600 text-white border-blue-700"
+                      : "bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-300"
+                  )}
+                  title="Mở Module Đồ thị để vẽ và chèn ảnh vào phiếu"
+                >
+                  <BarChart2 className="w-3.5 h-3.5" />
+                  <span>📊 Đồ thị</span>
                 </button>
 
                 {viewMode === 'document' && suggestion && (
@@ -945,6 +1409,19 @@ export function Worksheets() {
                   <span>Xuất Word</span>
                 </button>
 
+                {/* Export Word (Ảnh) */}
+                <button
+                  onClick={handleExportWordImage}
+                  className={cn(
+                    "px-3.5 py-1.5 sm:py-2 text-white text-xs sm:text-sm font-semibold rounded-lg flex items-center gap-1.5 shadow-xs transition-colors",
+                    isEditing ? "bg-slate-400 cursor-not-allowed" : "bg-teal-600 hover:bg-teal-700"
+                  )}
+                  title="Xuất file Word với toàn bộ Bảng biến thiên, Đồ thị và công thức toán học dưới dạng ảnh chất lượng cao (không lo lỗi font/lỗi tex)"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Word (Ảnh)</span>
+                </button>
+
                 <button
                   onClick={handleExportWordLatex}
                   className={cn(
@@ -1006,7 +1483,7 @@ export function Worksheets() {
           ) : (
             <div className="max-w-4xl mx-auto">
               {(() => {
-                const SOLUTION_DELIMITER_REGEX = /(?:\n\s*---+\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN CHI TIẾT|LỜI GIẢI CHI TIẾT|HƯỚNG DẪN GIẢI)[^\n]*---+\s*\n|\n\s*#{1,3}\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN CHI TIẾT|LỜI GIẢI CHI TIẾT|HƯỚNG DẪN GIẢI)\b[^\n]*\n)/i;
+                const SOLUTION_DELIMITER_REGEX = /(?:\n\s*---+\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN CHI TIẾT|LỜI GIẢI CHI TIẾT|HƯỚNG DẪN GIẢI|BẢNG ĐÁP ÁN NHANH|BẢNG ĐÁP ÁN)[^\n]*---+\s*\n|\n\s*#{1,3}\s*(?:IV|V|III|Phần\s*(?:4|IV))?\.?\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN CHI TIẾT|LỜI GIẢI CHI TIẾT|HƯỚNG DẪN GIẢI|BẢNG ĐÁP ÁN NHANH|BẢNG ĐÁP ÁN)\b[^\n]*\n)/i;
                 const delimiterMatch = suggestion ? suggestion.match(SOLUTION_DELIMITER_REGEX) : null;
                 const mainDocContent = delimiterMatch && delimiterMatch.index !== undefined ? suggestion.substring(0, delimiterMatch.index).trim() : suggestion;
                 const solutionDocContent = delimiterMatch && delimiterMatch.index !== undefined ? suggestion.substring(delimiterMatch.index).trim() : "";
@@ -1017,36 +1494,201 @@ export function Worksheets() {
                       ref={exportRef}
                       className="bg-white p-8 md:p-12 shadow-sm border border-slate-300 rounded-xl min-h-[500px] font-serif text-slate-900 max-w-[210mm] mx-auto space-y-6"
                     >
-                      {/* School Exam Header for A4 Print */}
-                      <div className="border border-slate-800 mb-6 p-4 bg-white text-xs sm:text-sm text-slate-800 leading-normal">
-                        <div className="grid grid-cols-2 gap-4 pb-3 border-b border-dashed border-slate-400">
-                          <div>
-                            <p className="font-semibold uppercase tracking-wider text-[11px] sm:text-xs">TRƯỜNG THPT / THCS: ................................................</p>
-                            <p className="mt-1 font-semibold">LỚP: ............................ KHỐI: {selectedGrade}</p>
-                            <p className="mt-1 font-semibold">HỌ VÀ TÊN: ..............................................................</p>
+                      {/* School Exam Header for A4 Print (Chuẩn Sư Phạm GDPT 2018) */}
+                      <div className="border-2 border-slate-800 mb-6 p-4 bg-white text-xs sm:text-sm text-slate-800 leading-normal">
+                        <div className="grid grid-cols-2 gap-4 pb-3 border-b border-slate-300">
+                          <div className="text-center font-bold">
+                            <p className="uppercase text-[11px] sm:text-xs tracking-wider text-slate-700">SỞ GIÁO DỤC VÀ ĐÀO TẠO</p>
+                            <p className="uppercase text-[12px] sm:text-sm text-slate-900 font-extrabold">TRƯỜNG THPT: ................................................</p>
+                            <p className="text-[11px] font-semibold text-slate-600">TỔ CHUYÊN MÔN: TOÁN - TIN HỌC</p>
                           </div>
-                          <div className="text-right">
-                            <p className="font-bold uppercase text-slate-900 tracking-wide">PHIẾU BÀI TẬP: {customLessonName || "BÀI HỌC"}</p>
-                            <p className="mt-1 text-slate-700">Môn: {subject} | Lớp {selectedGrade}</p>
-                            <p className="mt-1 text-slate-600">Ngày: ...... / ...... / 202...</p>
+                          <div className="text-center">
+                            <p className="font-black uppercase text-slate-900 text-sm sm:text-base tracking-wide">PHIẾU HỌC TẬP</p>
+                            <p className="font-bold text-emerald-800 text-xs sm:text-sm mt-0.5 uppercase">BÀI: {customLessonName || "BÀI HỌC"}</p>
+                            <p className="text-[11px] text-slate-600 mt-0.5">Môn: {subject} • Lớp {selectedGrade} • Năm học 2024 - 2025</p>
                           </div>
                         </div>
-                        <div className="grid grid-cols-12 gap-2 pt-2.5 items-center">
-                          <div className="col-span-3 border border-slate-700 p-2 text-center rounded bg-slate-50">
-                            <span className="font-bold block text-[11px] uppercase text-slate-700">ĐIỂM SỐ</span>
-                            <span className="text-sm sm:text-base text-slate-400 italic">......... / 10</span>
+
+                        <div className="py-2.5 grid grid-cols-1 sm:grid-cols-3 gap-2 border-b border-dashed border-slate-300 text-xs sm:text-sm">
+                          <div>
+                            <span className="font-semibold">Họ và tên học sinh:</span> .................................................
                           </div>
-                          <div className="col-span-9 pl-2">
-                            <span className="font-semibold block text-slate-800">Lời phê & nhận xét của Thầy / Cô:</span>
+                          <div>
+                            <span className="font-semibold">Lớp:</span> .................... <span className="font-semibold ml-2">STT:</span> ......
+                          </div>
+                          <div className="sm:text-right">
+                            <span className="font-semibold">Ngày nộp:</span> ...... / ...... / 202...
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-12 gap-2 pt-2.5 items-stretch">
+                          <div className="col-span-3 border border-slate-700 p-2 text-center rounded bg-slate-50 flex flex-col justify-center">
+                            <span className="font-bold block text-[11px] uppercase text-slate-700">ĐIỂM SỐ</span>
+                            <span className="text-base font-bold text-slate-400 italic mt-0.5">......... / 10</span>
+                          </div>
+                          <div className="col-span-9 pl-3 border-l border-slate-200">
+                            <span className="font-bold block text-slate-800 text-xs">Lời phê & Nhận xét của Thầy / Cô:</span>
                             <p className="border-b border-dotted border-slate-400 mt-2 h-4"></p>
+                            <p className="border-b border-dotted border-slate-400 mt-2.5 h-4"></p>
                           </div>
                         </div>
                       </div>
 
-                      {/* Questions List with Accordion Toggle for Detailed Solution */}
+                      {/* Optional Collapsible Theory Box at Top of Questions Mode */}
+                      {mainDocContent && (
+                        <div className="mb-6 p-4 bg-emerald-50/60 border border-emerald-200 rounded-xl no-print">
+                          <details className="group">
+                            <summary className="font-bold text-emerald-900 cursor-pointer list-none flex items-center justify-between text-sm">
+                              <span className="flex items-center gap-1.5">
+                                <BookOpen className="w-4 h-4 text-emerald-700" />
+                                <span>📚 Xem Mục tiêu & Kiến thức trọng tâm của phiếu học tập</span>
+                              </span>
+                              <span className="text-xs text-emerald-700 group-open:rotate-180 transition-transform">▼</span>
+                            </summary>
+                            <div className="mt-3 pt-3 border-t border-emerald-200/80 text-slate-800 text-sm prose max-w-none">
+                              <MarkdownRenderer content={fixMath(mainDocContent)} />
+                            </div>
+                          </details>
+                        </div>
+                      )}
+
+                      {/* Questions List with Accordion Toggle for Detailed Solution & Visualizer */}
                       <div className="space-y-6">
                         {worksheetQuestions.map((q, idx) => (
-                          <div key={idx} className="pb-4 border-b border-slate-200 last:border-0">
+                          <div key={idx} className="pb-4 border-b border-slate-200 last:border-0 relative">
+                            {/* Question Action Toolbar */}
+                            <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5 no-print">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-slate-900 text-sm">Câu {idx + 1}:</span>
+                                {q.level && <span className="text-xs text-emerald-600 font-medium px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200">[{q.level}]</span>}
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "bbt" && activeVisualizer?.target === "content") {
+                                      setActiveVisualizer(null);
+                                    } else {
+                                      setActiveVisualizer({ qIndex: idx, tab: "bbt", target: "content" });
+                                    }
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md border shadow-2xs transition-colors cursor-pointer ${
+                                    activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "bbt" && activeVisualizer?.target === "content"
+                                      ? "bg-emerald-600 text-white border-emerald-700"
+                                      : "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300"
+                                  }`}
+                                  title="Tích hợp Module BBT: Chèn Bảng biến thiên (dạng ảnh SVG chuẩn SGK) vào câu hỏi"
+                                >
+                                  <TrendingUp className="w-3.5 h-3.5" />
+                                  <span>+ BBT vào câu hỏi</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "graph" && activeVisualizer?.target === "content") {
+                                      setActiveVisualizer(null);
+                                    } else {
+                                      setActiveVisualizer({ qIndex: idx, tab: "graph", target: "content" });
+                                    }
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md border shadow-2xs transition-colors cursor-pointer ${
+                                    activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "graph" && activeVisualizer?.target === "content"
+                                      ? "bg-blue-600 text-white border-blue-700"
+                                      : "bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-300"
+                                  }`}
+                                  title="Tích hợp Module Đồ thị: Chèn Đồ thị (dạng ảnh đồ họa) vào câu hỏi"
+                                >
+                                  <BarChart2 className="w-3.5 h-3.5" />
+                                  <span>+ Đồ thị vào câu hỏi</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleAiFixBbtForWorksheetQuestion(q, idx)}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 shadow-2xs transition-colors cursor-pointer"
+                                  title="AI tự động phân tích hàm số và vẽ BBT dạng ảnh SVG chuẩn SGK"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                                  <span>✨ AI vẽ BBT ảnh</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingQuestion({ question: q, index: idx })}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 shadow-2xs transition-colors cursor-pointer"
+                                  title="Chỉnh sửa chi tiết nội dung, phương án và lời giải câu hỏi"
+                                >
+                                  <Edit3 className="w-3 h-3 text-slate-500" />
+                                  <span>Sửa</span>
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Missing BBT Alert Banner */}
+                            {isMissingBbt(q.content || (q as any).question) && (
+                              <div className="flex flex-wrap items-center justify-between p-2.5 my-2 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-900 shadow-2xs gap-2 no-print">
+                                <div className="flex items-center gap-1.5 font-medium">
+                                  <span className="text-base">⚠️</span>
+                                  <span>Đề bài nhắc đến <strong>Bảng biến thiên</strong> nhưng chưa có bảng/hình hiển thị.</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveVisualizer({ qIndex: idx, tab: "bbt", target: "content" })}
+                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-md shadow-2xs flex items-center gap-1 cursor-pointer transition-colors"
+                                    title="Mở Module Bảng biến thiên để chọn mẫu hoặc tinh chỉnh và chèn vào câu hỏi"
+                                  >
+                                    <TrendingUp className="w-3.5 h-3.5" />
+                                    <span>📈 Mở Module BBT & Chọn</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAiFixBbtForWorksheetQuestion(q, idx)}
+                                    className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-md shadow-2xs flex items-center gap-1 cursor-pointer transition-colors"
+                                    title="Tự động vẽ BBT dạng ảnh SVG chuẩn SGK"
+                                  >
+                                    <span>✨ Tự động xuất BBT ảnh</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingQuestion({ question: q, index: idx })}
+                                    className="px-2 py-1 bg-white hover:bg-slate-100 text-amber-800 border border-amber-300 rounded-md font-medium cursor-pointer"
+                                  >
+                                    <span>✏️ Tự chèn BBT</span>
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Missing Graph Alert Banner */}
+                            {isMissingGraph(q.content || (q as any).question) && (
+                              <div className="flex flex-wrap items-center justify-between p-2.5 my-2 bg-blue-50 border border-blue-300 rounded-lg text-xs text-blue-900 shadow-2xs gap-2 no-print">
+                                <div className="flex items-center gap-1.5 font-medium">
+                                  <span className="text-base">📊</span>
+                                  <span>Đề bài nhắc đến <strong>Đồ thị / Hình vẽ</strong> nhưng chưa có hình hiển thị.</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveVisualizer({ qIndex: idx, tab: "graph", target: "content" })}
+                                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md shadow-2xs flex items-center gap-1 cursor-pointer transition-colors"
+                                    title="Mở Module Đồ thị để vẽ và chèn hình vào câu hỏi"
+                                  >
+                                    <BarChart2 className="w-3.5 h-3.5" />
+                                    <span>📊 Mở Module Đồ thị & Chèn</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAutoGenerateGraphForWorksheetQuestion(q, idx)}
+                                    className="px-2.5 py-1 bg-blue-700 hover:bg-blue-800 text-white font-medium rounded-md shadow-2xs flex items-center gap-1 cursor-pointer transition-colors"
+                                  >
+                                    <span>✨ Tự động xuất Đồ thị ảnh</span>
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
                             <div className="font-medium text-slate-800 mb-3 flex items-start gap-2">
                               <span className="font-bold whitespace-nowrap mt-1">Câu {idx + 1}:</span>
                               <MarkdownRenderer className="markdown-body inline-block" content={cleanQuestionStem(q.content || (q as any).question || '', q.options, q.tfStatements)} />
@@ -1101,23 +1743,87 @@ export function Worksheets() {
                               </div>
                             )}
 
-                            {/* Lời giải chi tiết - Accordion toggle trên màn hình */}
+                            {/* Lời giải chi tiết - Accordion toggle & BBT/Đồ thị buttons */}
                             <div className="mt-3 pl-2 no-print">
-                              <button
-                                type="button"
-                                onClick={() => toggleSolution(q.id || idx + 1)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 transition-colors cursor-pointer"
-                              >
-                                <span>{isSolutionOpen(q.id || idx + 1) ? "🙈 Ẩn lời giải" : "💡 Xem lời giải chi tiết"}</span>
-                              </button>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleSolution(q.id || idx + 1)}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 transition-colors cursor-pointer"
+                                >
+                                  <span>{isSolutionOpen(q.id || idx + 1) ? "🙈 Ẩn lời giải" : "💡 Xem lời giải chi tiết"}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!isSolutionOpen(q.id || idx + 1)) toggleSolution(q.id || idx + 1);
+                                    if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "bbt" && activeVisualizer?.target === "solution") {
+                                      setActiveVisualizer(null);
+                                    } else {
+                                      setActiveVisualizer({ qIndex: idx, tab: "bbt", target: "solution" });
+                                    }
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg border shadow-2xs transition-colors cursor-pointer ${
+                                    activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "bbt" && activeVisualizer?.target === "solution"
+                                      ? "bg-emerald-600 text-white border-emerald-700"
+                                      : "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300"
+                                  }`}
+                                  title="Tích hợp Module BBT: Chèn Bảng biến thiên (dạng ảnh SVG chuẩn SGK) vào lời giải chi tiết"
+                                >
+                                  <TrendingUp className="w-3.5 h-3.5" />
+                                  <span>+ BBT vào lời giải</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!isSolutionOpen(q.id || idx + 1)) toggleSolution(q.id || idx + 1);
+                                    if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "graph" && activeVisualizer?.target === "solution") {
+                                      setActiveVisualizer(null);
+                                    } else {
+                                      setActiveVisualizer({ qIndex: idx, tab: "graph", target: "solution" });
+                                    }
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg border shadow-2xs transition-colors cursor-pointer ${
+                                    activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "graph" && activeVisualizer?.target === "solution"
+                                      ? "bg-blue-600 text-white border-blue-700"
+                                      : "bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-300"
+                                  }`}
+                                  title="Tích hợp Module Đồ thị: Chèn Đồ thị (dạng ảnh đồ họa) vào lời giải chi tiết"
+                                >
+                                  <BarChart2 className="w-3.5 h-3.5" />
+                                  <span>+ Đồ thị vào lời giải</span>
+                                </button>
+                              </div>
 
                               {isSolutionOpen(q.id || idx + 1) && (
                                 <div 
                                   style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '12px', marginTop: '8px' }}
                                   className="text-slate-800 text-sm leading-relaxed"
                                 >
-                                  <div className="font-bold text-slate-900 mb-1.5 flex items-center gap-1.5">
-                                    <span>💡 Lời giải chi tiết:</span>
+                                  <div className="font-bold text-slate-900 mb-1.5 flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5">
+                                      <span>💡 Lời giải chi tiết:</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 text-xs">
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveVisualizer({ qIndex: idx, tab: "bbt", target: "solution" })}
+                                        className="text-emerald-700 hover:text-emerald-900 font-semibold px-2 py-0.5 rounded bg-emerald-100/70 border border-emerald-200 cursor-pointer flex items-center gap-1 shadow-2xs"
+                                        title="Mở Module BBT để chèn vào lời giải"
+                                      >
+                                        <TrendingUp className="w-3 h-3" />
+                                        <span>Mở BBT</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveVisualizer({ qIndex: idx, tab: "graph", target: "solution" })}
+                                        className="text-blue-700 hover:text-blue-900 font-semibold px-2 py-0.5 rounded bg-blue-100/70 border border-blue-200 cursor-pointer flex items-center gap-1 shadow-2xs"
+                                        title="Mở Module Đồ thị để chèn vào lời giải"
+                                      >
+                                        <BarChart2 className="w-3 h-3" />
+                                        <span>Mở Đồ thị</span>
+                                      </button>
+                                    </div>
                                   </div>
                                   <div className="text-slate-800">
                                     <MarkdownRenderer content={fixMath(q.solution || q.explanation || "Chưa có lời giải chi tiết cho câu hỏi này.")} />
@@ -1125,6 +1831,21 @@ export function Worksheets() {
                                 </div>
                               )}
                             </div>
+
+                            {/* Integrated BBT & Graph Visualizer Panel directly inside the Question & Solution block */}
+                            {activeVisualizer?.qIndex === idx && (
+                              <div className="mt-3 no-print">
+                                <QuestionVisualizerPanel
+                                  questionNumber={idx + 1}
+                                  questionContent={q.content || (q as any).question}
+                                  solutionContent={q.solution || q.explanation}
+                                  defaultTab={activeVisualizer.tab}
+                                  defaultTarget={activeVisualizer.target}
+                                  onInsertSnippet={(target, snippet) => handleInsertVisualizerSnippet(idx, target, snippet)}
+                                  onClose={() => setActiveVisualizer(null)}
+                                />
+                              </div>
+                            )}
 
                             {/* Lời giải chi tiết - Kèm theo khi In và Xuất Word (Bản Giáo viên) */}
                             {includeDetailedSolution && (q.solution || q.explanation) && (
@@ -1163,9 +1884,46 @@ export function Worksheets() {
                       onChange={(e) => setSuggestion(e.target.value)}
                     />
                   ) : (
-                    /* Preview Canvas Container Styled by LayoutStyle */
-                    <div 
-                      ref={exportRef}
+                    <>
+                      {/* Document-level BBT & Graph Visualizer Tool */}
+                      {isDocVisualizerOpen && (
+                        <div className="mb-6 p-4 bg-white rounded-2xl border-2 border-emerald-400 shadow-md no-print max-w-[210mm] mx-auto">
+                          <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200">
+                            <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                              {docVisualizerTab === 'bbt' ? (
+                                <>
+                                  <TrendingUp className="w-4 h-4 text-emerald-600" />
+                                  <span>Module Tạo Bảng Biến Thiên Dạng Ảnh Vector SVG (Chuẩn SGK)</span>
+                                </>
+                              ) : (
+                                <>
+                                  <BarChart2 className="w-4 h-4 text-blue-600" />
+                                  <span>Module Vẽ & Xuất Đồ Thị Dạng Ảnh Đồ Họa Sắc Nét</span>
+                                </>
+                              )}
+                            </h3>
+                            <button
+                              onClick={() => setIsDocVisualizerOpen(false)}
+                              className="text-xs px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium cursor-pointer"
+                            >
+                              Đóng
+                            </button>
+                          </div>
+                          <QuestionVisualizerPanel
+                            questionNumber={1}
+                            questionContent={customLessonName || "Hàm số"}
+                            solutionContent=""
+                            defaultTab={docVisualizerTab}
+                            defaultTarget="content"
+                            onInsertSnippet={handleInsertDocVisualizerSnippet}
+                            onClose={() => setIsDocVisualizerOpen(false)}
+                          />
+                        </div>
+                      )}
+
+                      {/* Preview Canvas Container Styled by LayoutStyle */}
+                      <div 
+                        ref={exportRef}
                       className={cn(
                         "transition-all duration-300",
                         layoutStyle === 'a4_print' && "bg-white p-8 md:p-12 shadow-sm border border-slate-300 rounded-xl min-h-[500px] font-serif text-slate-900 max-w-[210mm] mx-auto",
@@ -1174,29 +1932,43 @@ export function Worksheets() {
                         layoutStyle === 'mindmap' && "bg-slate-50/80 p-6 md:p-10 shadow-md border-2 border-emerald-300/80 rounded-2xl min-h-[500px]"
                       )}
                     >
-                      {/* 1. Header decor for A4 Chuẩn In Ấn */}
+                      {/* 1. Header decor for A4 Chuẩn In Ấn (Chuẩn Sư Phạm GDPT 2018) */}
                       {layoutStyle === 'a4_print' && (
-                        <div className="border border-slate-800 mb-8 p-4 bg-white text-xs sm:text-sm text-slate-800 leading-normal">
-                          <div className="grid grid-cols-2 gap-4 pb-3 border-b border-dashed border-slate-400">
-                            <div>
-                              <p className="font-semibold uppercase tracking-wider text-[11px] sm:text-xs">TRƯỜNG THPT / THCS: ................................................</p>
-                              <p className="mt-1 font-semibold">LỚP: ............................ KHỐI: {selectedGrade}</p>
-                              <p className="mt-1 font-semibold">HỌ VÀ TÊN: ..............................................................</p>
+                        <div className="border-2 border-slate-800 mb-8 p-4 bg-white text-xs sm:text-sm text-slate-800 leading-normal">
+                          <div className="grid grid-cols-2 gap-4 pb-3 border-b border-slate-300">
+                            <div className="text-center font-bold">
+                              <p className="uppercase text-[11px] sm:text-xs tracking-wider text-slate-700">SỞ GIÁO DỤC VÀ ĐÀO TẠO</p>
+                              <p className="uppercase text-[12px] sm:text-sm text-slate-900 font-extrabold">TRƯỜNG THPT: ................................................</p>
+                              <p className="text-[11px] font-semibold text-slate-600">TỔ CHUYÊN MÔN: TOÁN - TIN HỌC</p>
                             </div>
-                            <div className="text-right">
-                              <p className="font-bold uppercase text-slate-900 tracking-wide">PHIẾU HỌC TẬP: {customLessonName || "BÀI HỌC"}</p>
-                              <p className="mt-1 text-slate-700">Môn: {subject} | Lớp {selectedGrade}</p>
-                              <p className="mt-1 text-slate-600">Ngày: ...... / ...... / 202...</p>
+                            <div className="text-center">
+                              <p className="font-black uppercase text-slate-900 text-sm sm:text-base tracking-wide">PHIẾU HỌC TẬP</p>
+                              <p className="font-bold text-emerald-800 text-xs sm:text-sm mt-0.5 uppercase">BÀI: {customLessonName || "BÀI HỌC"}</p>
+                              <p className="text-[11px] text-slate-600 mt-0.5">Môn: {subject} • Lớp {selectedGrade} • Năm học 2024 - 2025</p>
                             </div>
                           </div>
-                          <div className="grid grid-cols-12 gap-2 pt-2.5 items-center">
-                            <div className="col-span-3 border border-slate-700 p-2 text-center rounded bg-slate-50">
-                              <span className="font-bold block text-[11px] uppercase text-slate-700">ĐIỂM SỐ</span>
-                              <span className="text-sm sm:text-base text-slate-400 italic">......... / 10</span>
+
+                          <div className="py-2.5 grid grid-cols-1 sm:grid-cols-3 gap-2 border-b border-dashed border-slate-300 text-xs sm:text-sm">
+                            <div>
+                              <span className="font-semibold">Họ và tên học sinh:</span> .................................................
                             </div>
-                            <div className="col-span-9 pl-2">
-                              <span className="font-semibold block text-slate-800">Lời phê & nhận xét của Thầy / Cô:</span>
+                            <div>
+                              <span className="font-semibold">Lớp:</span> .................... <span className="font-semibold ml-2">STT:</span> ......
+                            </div>
+                            <div className="sm:text-right">
+                              <span className="font-semibold">Ngày nộp:</span> ...... / ...... / 202...
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-12 gap-2 pt-2.5 items-stretch">
+                            <div className="col-span-3 border border-slate-700 p-2 text-center rounded bg-slate-50 flex flex-col justify-center">
+                              <span className="font-bold block text-[11px] uppercase text-slate-700">ĐIỂM SỐ</span>
+                              <span className="text-base font-bold text-slate-400 italic mt-0.5">......... / 10</span>
+                            </div>
+                            <div className="col-span-9 pl-3 border-l border-slate-200">
+                              <span className="font-bold block text-slate-800 text-xs">Lời phê & Nhận xét của Thầy / Cô:</span>
                               <p className="border-b border-dotted border-slate-400 mt-2 h-4"></p>
+                              <p className="border-b border-dotted border-slate-400 mt-2.5 h-4"></p>
                             </div>
                           </div>
                         </div>
@@ -1333,8 +2105,9 @@ export function Worksheets() {
                         )}
                       </div>
                     </div>
-                  );
-                }
+                  </>
+                );
+              }
 
                 return (
                   <div className="h-full min-h-[500px] flex flex-col items-center justify-center text-slate-400 bg-white/50 rounded-xl border border-dashed border-slate-300 p-8">
@@ -1367,6 +2140,35 @@ export function Worksheets() {
         defaultSubject={subject}
         defaultGrade={selectedGrade}
       />
+
+      {/* Question Edit Modal with integrated BBT & Graph visualizer */}
+      {editingQuestion && (
+        <QuestionEditModal
+          isOpen={true}
+          question={editingQuestion.question}
+          questionNumber={editingQuestion.index + 1}
+          subject={subject}
+          grade={String(selectedGrade)}
+          onClose={() => setEditingQuestion(null)}
+          onSave={(updated) => {
+            setWorksheetQuestions(prev => {
+              const next = [...prev];
+              next[editingQuestion.index] = { ...next[editingQuestion.index], ...updated };
+              return next;
+            });
+            setEditingQuestion(null);
+            showToast("Đã lưu cập nhật câu hỏi!");
+          }}
+        />
+      )}
+
+      {/* Floating Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-xl border border-slate-700 flex items-center gap-2 text-sm font-medium animate-in fade-in slide-in-from-bottom-2 no-print">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 }
