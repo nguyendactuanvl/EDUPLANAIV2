@@ -52,6 +52,7 @@ export const InteractivePlot: React.FC<InteractivePlotProps> = ({
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [hoverCoord, setHoverCoord] = useState<{ x: number; y: number } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [showLabels, setShowLabels] = useState(false);
 
   // Synchronize when default props change
   useEffect(() => {
@@ -354,9 +355,11 @@ export const InteractivePlot: React.FC<InteractivePlotProps> = ({
         ctx.stroke();
 
         // Label
-        ctx.font = "bold 11px sans-serif";
-        ctx.fillStyle = asymp.color || "#ef4444";
-        ctx.fillText(asymp.label, px + 5, 25);
+        if (showLabels) {
+          ctx.font = "bold 11px sans-serif";
+          ctx.fillStyle = asymp.color || "#ef4444";
+          ctx.fillText(asymp.label, px + 5, 25);
+        }
       } else if (asymp.type === "horizontal" && typeof asymp.value === "number") {
         const { py } = toCanvas(0, asymp.value, w, h);
         ctx.moveTo(0, py);
@@ -364,9 +367,11 @@ export const InteractivePlot: React.FC<InteractivePlotProps> = ({
         ctx.stroke();
 
         // Label
-        ctx.font = "bold 11px sans-serif";
-        ctx.fillStyle = asymp.color || "#ef4444";
-        ctx.fillText(asymp.label, 15, py - 6);
+        if (showLabels) {
+          ctx.font = "bold 11px sans-serif";
+          ctx.fillStyle = asymp.color || "#ef4444";
+          ctx.fillText(asymp.label, 15, py - 6);
+        }
       } else if (asymp.type === "slant" && typeof asymp.m === "number" && typeof asymp.c === "number") {
         const yAtXMin = asymp.m * xMin + asymp.c;
         const yAtXMax = asymp.m * xMax + asymp.c;
@@ -377,11 +382,12 @@ export const InteractivePlot: React.FC<InteractivePlotProps> = ({
         ctx.stroke();
 
         // Label
-        ctx.font = "bold 11px sans-serif";
-        ctx.fillStyle = asymp.color || "#ef4444";
-        const midPoint = toCanvas((xMin + xMax) / 2, asymp.m * ((xMin + xMax) / 2) + asymp.c, w, h);
-        ctx.fillText(asymp.label, midPoint.px + 10, midPoint.py - 10);
-      }
+        if (showLabels) {
+          ctx.font = "bold 11px sans-serif";
+          ctx.fillStyle = asymp.color || "#ef4444";
+          const midPoint = toCanvas((xMin + xMax) / 2, asymp.m * ((xMin + xMax) / 2) + asymp.c, w, h);
+          ctx.fillText(asymp.label, midPoint.px + 10, midPoint.py - 10);
+        }
       ctx.restore();
     });
 
@@ -481,7 +487,7 @@ export const InteractivePlot: React.FC<InteractivePlotProps> = ({
       ctx.stroke();
 
       // Point label with pill background
-      if (pt.label) {
+      if (showLabels && pt.label) {
         ctx.font = "bold 11px sans-serif";
         const labelText = pt.label;
         const textMetrics = ctx.measureText(labelText);
@@ -745,10 +751,10 @@ export const InteractivePlot: React.FC<InteractivePlotProps> = ({
         </div>
 
         {/* Canvas Viewport */}
-        <div className="relative w-full overflow-hidden bg-white select-none cursor-grab active:cursor-grabbing group min-h-[600px]">
+        <div className="relative w-full overflow-hidden bg-white select-none cursor-grab active:cursor-grabbing group h-[85vh]">
           <canvas
             ref={canvasRef}
-            style={{ height: "600px", width: "100%" }}
+            className="w-full h-full"
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}

@@ -11,6 +11,9 @@ import { printElement } from "../lib/print";
 import { exportHtmlToWord } from "../lib/exportUtils";
 import { GraphingAndAnalysisMain } from "../components/math-tools/GraphingAndAnalysisMain";
 import { VariationTableGenerator } from "../components/math-tools/VariationTableGenerator";
+import { GeoGebraDrawer } from "../components/math-tools/GeoGebraDrawer";
+import { ScientificCalculatorModal } from "../components/math-tools/ScientificCalculatorModal";
+
 
 // ==========================================
 // PRESET EXAMPLES
@@ -95,6 +98,9 @@ function round(val: number, decimals: number = 2): number {
 }
 
 export function MathTools() {
+  const [showCalculator, setShowCalculator] = useState(false);
+  const [showGeoGebra, setShowGeoGebra] = useState(false);
+
   // Navigation: Sub-system Tab 1: Statistics vs Tab 2: Graphing & Analysis (KSHS) vs Tab 3: Bảng biến thiên AI
   const [mainSubsystem, setMainSubsystem] = useState<"statistics" | "graphing" | "bbt_ai">("bbt_ai");
 
@@ -839,6 +845,37 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
           </div>
         </div>
       </header>
+
+      {/* Quick Launch Panel */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-950 to-indigo-950 text-white py-3.5 px-4 sm:px-6 shadow-md border-b border-slate-800">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-2 w-2 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <p className="text-xs font-semibold tracking-wide text-slate-300">
+              Công cụ bổ trợ giảng dạy trực quan & tính toán:
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setShowGeoGebra(true)}
+              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer border border-indigo-500/30"
+              title="Mở phân hệ vẽ hình phẳng, không gian 3D và đồ thị trực quan"
+            >
+              <span>📐</span> Vẽ hình GeoGebra (Flat & 3D)
+            </button>
+            <button
+              onClick={() => setShowCalculator(true)}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer border border-emerald-500/30"
+              title="Mở máy tính khoa học cầm tay Casio fx-580VN X"
+            >
+              <Calculator className="w-3.5 h-3.5 text-white" /> Máy tính Casio fx-580VN X
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* RENDER PHÂN HỆ 3: BẢNG BIẾN THIÊN AI CHUẨN SGK */}
       {mainSubsystem === "bbt_ai" && (
@@ -1941,8 +1978,45 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
           </div>
         </div>
       )}
+      {/* Floating Action Buttons for Casio Calculator & GeoGebra */}
+      <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-3 no-print">
+        <button
+          onClick={() => setShowGeoGebra(!showGeoGebra)}
+          className="bg-slate-900 text-white hover:bg-slate-805 hover:scale-105 active:scale-95 p-4 rounded-full shadow-2xl flex items-center justify-center cursor-pointer transition-all border border-slate-750"
+          title="Mở Vẽ hình GeoGebra"
+        >
+          <span className="text-xl">📐</span>
+        </button>
+        <button
+          onClick={() => setShowCalculator(!showCalculator)}
+          className="bg-slate-900 text-white hover:bg-slate-805 hover:scale-105 active:scale-95 p-4 rounded-full shadow-2xl flex items-center justify-center cursor-pointer transition-all border border-slate-750"
+          title="Mở Máy tính Khoa học Casio"
+        >
+          <Calculator className="w-6 h-6 text-emerald-400" />
+        </button>
+      </div>
+
+      {showCalculator && (
+        <ScientificCalculatorModal onClose={() => setShowCalculator(false)} />
+      )}
+
+      {showGeoGebra && (
+        <GeoGebraDrawer
+          onInsertImage={(base64) => {
+            const link = document.createElement('a');
+            link.href = base64;
+            link.download = 'geogebra_export.png';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setShowGeoGebra(false);
+          }}
+          onClose={() => setShowGeoGebra(false)}
+        />
+      )}
     </div>
   );
 }
+
 
 export default MathTools;

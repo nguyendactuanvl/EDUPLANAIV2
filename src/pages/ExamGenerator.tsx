@@ -25,6 +25,9 @@ import { WordEquationModal } from "../components/WordEquationModal";
 import { SimilarExamsModal } from "../components/SimilarExamsModal";
 import { QuestionEditModal } from "../components/QuestionEditModal";
 import { QuestionVisualizerPanel } from "../components/math-tools/QuestionVisualizerPanel";
+import { GeoGebraDrawer } from "../components/math-tools/GeoGebraDrawer";
+import { ScientificCalculatorModal } from "../components/math-tools/ScientificCalculatorModal";
+
 import {
   mixExam,
   identifyQuestionSection,
@@ -37,7 +40,7 @@ import {
 } from '../lib/examMixer';
 import React, { useState, useRef, useEffect } from "react";
 import * as XLSX from 'xlsx';
-import { FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera, TrendingUp, BarChart2, Box, BarChart3 } from "lucide-react";
+import { FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera, TrendingUp, BarChart2, Box, BarChart3, Calculator } from "lucide-react";
 
 interface Question {
   type?: "mc" | "tf" | "sa" | "essay" | "MULTIPLE_CHOICE" | "TRUE_FALSE" | "SHORT_ANSWER" | "ESSAY";
@@ -204,6 +207,9 @@ export function ExamGenerator() {
       windowPrint.close();
     }, 250);
   };
+  const [showCalculator, setShowCalculator] = useState(false);
+  const [geoGebraTarget, setGeoGebraTarget] = useState<{ qIndex: number; target: "content" | "solution" } | null>(null);
+
   const [activeTab, setActiveTab] = useState<"matrix" | "exam" | "shuffle" | "banks" | "results">("matrix");
   const [examResults, setExamResults] = useState<any[]>([]);
   const [resultsLoading, setResultsLoading] = useState(false);
@@ -2783,7 +2789,16 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                           <div className="flex items-center gap-1 shrink-0 no-print flex-wrap">
                             <button
                               type="button"
+                              onClick={() => setGeoGebraTarget({ qIndex: idx, target: "content" })}
+                              className="text-xs px-2 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded border border-teal-300 flex items-center gap-1 cursor-pointer transition-colors font-medium shadow-2xs"
+                              title="Vẽ hình minh họa bằng GeoGebra và chèn vào câu hỏi"
+                            >
+                              <span>📐 GeoGebra</span>
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => {
+
                                 if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "bbt" && activeVisualizer?.target === "content") {
                                   setActiveVisualizer(null);
                                 } else {
@@ -5369,9 +5384,44 @@ Lời giải: Tiệm cận ngang là $y = 1$ nên ý c sai.`);
         onClose={() => setEditingExamQuestion(null)}
         onSave={handleSaveEditedExamQuestion}
       />
+
+      {/* Floating Casio Calculator Trigger Button & Modal */}
+      <button
+        onClick={() => setShowCalculator(!showCalculator)}
+        className="fixed bottom-6 right-6 z-40 bg-slate-900 text-white hover:bg-slate-805 hover:scale-105 active:scale-95 p-4 rounded-full shadow-2xl flex items-center justify-center cursor-pointer transition-all border border-slate-750 no-print"
+        title="Mở Máy tính Khoa học Casio"
+      >
+        <Calculator className="w-6 h-6 text-emerald-400" />
+      </button>
+
+      {showCalculator && (
+        <ScientificCalculatorModal onClose={() => setShowCalculator(false)} />
+      )}
+
+      {/* GeoGebra Drawer Integration Modal */}
+      {geoGebraTarget !== null && (
+        <GeoGebraDrawer
+          onInsertImage={(base64) => {
+            const idx = geoGebraTarget.qIndex;
+            setQuestions(prev => {
+              const next = [...prev];
+              next[idx] = {
+                ...next[idx],
+                imageUrl: base64,
+                hasFigure: true
+              };
+              return next;
+            });
+            setGeoGebraTarget(null);
+            setToastMessage(`Đã chèn hình vẽ GeoGebra thành công vào câu hỏi số ${idx + 1}!`);
+          }}
+          onClose={() => setGeoGebraTarget(null)}
+        />
+      )}
     </div>
     </div>
   );
 }
+
 
 

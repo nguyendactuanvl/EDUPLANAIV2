@@ -1,6 +1,7 @@
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import React, { useState, useEffect } from 'react';
-import { Loader2, FileText, Trophy, CheckCircle2, XCircle, Clock, Copy, Camera, X, Image as ImageIcon } from 'lucide-react';
+import { Loader2, FileText, Trophy, CheckCircle2, XCircle, Clock, Copy, Camera, X, Image as ImageIcon, Calculator } from 'lucide-react';
+import { ScientificCalculatorModal } from '../components/math-tools/ScientificCalculatorModal';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -27,6 +28,7 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
   const [score, setScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [timeSpent, setTimeSpent] = useState<number>(0);
+  const [showCalculator, setShowCalculator] = useState(false);
 
   const fetchExamById = async (id: string) => {
     const cleanId = id.trim();
@@ -1127,6 +1129,19 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
           );
         })}
       </main>
+
+      {/* Floating Calculator Button and Modal */}
+      <button
+        onClick={() => setShowCalculator(!showCalculator)}
+        className="fixed bottom-6 right-6 z-40 bg-slate-900 text-white hover:bg-slate-805 hover:scale-105 active:scale-95 p-4 rounded-full shadow-2xl flex items-center justify-center cursor-pointer transition-all border border-slate-750"
+        title="Mở Máy tính Khoa học Casio"
+      >
+        <Calculator className="w-6 h-6 text-emerald-400" />
+      </button>
+
+      {showCalculator && (
+        <ScientificCalculatorModal onClose={() => setShowCalculator(false)} />
+      )}
 
       {/* Image Preview Lightbox Modal */}
       {previewingImage && (

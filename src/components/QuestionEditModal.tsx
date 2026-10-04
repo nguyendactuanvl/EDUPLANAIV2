@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { GeoGebraDrawer } from './math-tools/GeoGebraDrawer';
+import { ScientificCalculatorModal } from './math-tools/ScientificCalculatorModal';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { apiFetch } from '../lib/apiFetch';
 import { QuestionVisualizerPanel } from './math-tools/QuestionVisualizerPanel';
-import { TrendingUp, BarChart2, Box, BarChart3 } from 'lucide-react';
+import { TrendingUp, BarChart2, Box, BarChart3, Calculator } from 'lucide-react';
 
 export interface QuestionData {
   id?: number;
@@ -17,6 +19,8 @@ export interface QuestionData {
   subtopic?: string;
   solution?: string;
   explanation?: string;
+  imageUrl?: string;
+  hasFigure?: boolean;
 }
 
 interface QuestionEditModalProps {
@@ -59,6 +63,8 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
     tab: 'bbt' | 'graph' | 'geometry3d' | 'statistics';
     target: 'content' | 'solution';
   } | null>(null);
+  const [showGeoGebra, setShowGeoGebra] = useState(false);
+  const [showCalculator, setShowCalculator] = useState(false);
 
   const handleInsertSnippet = (target: 'content' | 'solution', snippet: string) => {
     if (target === 'content') {
@@ -198,7 +204,9 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
       correctAnswer: type === 'mc' ? String.fromCharCode(65 + correctOptionIndex) : correctAnswer,
       tfStatements: type === 'tf' ? tfStatements : undefined,
       solution,
-      explanation: solution
+      explanation: solution,
+      imageUrl: content.includes('![Hình vẽ]') ? content.split('![Hình vẽ](')[1].split(')')[0] : question.imageUrl,
+      hasFigure: content.includes('![Hình vẽ]') ? true : question.hasFigure
     };
 
     onSave(updated);
@@ -299,8 +307,25 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
               </button>
             </div>
 
-            {/* Direct Tool integration buttons: BBT, Graph, 3D, Statistics */}
+            {/* Direct Tool integration buttons: BBT, Graph, 3D, Statistics, GeoGebra, Calculator */}
             <div className="flex items-center gap-1.5 border-t sm:border-t-0 sm:border-l border-slate-200 pt-2 sm:pt-0 sm:pl-3 w-full sm:w-auto flex-wrap">
+              <button
+                type="button"
+                onClick={() => setShowGeoGebra(true)}
+                className="px-2.5 py-1 text-xs font-bold rounded-lg border shadow-2xs flex items-center gap-1 cursor-pointer transition-colors bg-teal-50 hover:bg-teal-100 text-teal-800 border-teal-300"
+                title="Mở GeoGebra vẽ hình"
+              >
+                <span>📐 GeoGebra</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCalculator(true)}
+                className="px-2.5 py-1 text-xs font-bold rounded-lg border shadow-2xs flex items-center gap-1 cursor-pointer transition-colors bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-300"
+                title="Mở máy tính Casio fx-580VN X"
+              >
+                <Calculator className="w-3.5 h-3.5" />
+                <span>Máy tính</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setActiveVisualizer(prev => prev?.tab === 'bbt' ? null : { tab: 'bbt', target: 'content' })}
@@ -355,6 +380,26 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
               </button>
             </div>
           </div>
+
+          {showGeoGebra && (
+            <GeoGebraDrawer
+              onInsertImage={(base64) => {
+                setContent(prev => `${prev}\n\n![Hình vẽ](${base64})`);
+                // Assume the question has an `imageUrl` field that can be updated.
+                // The current interface `QuestionData` doesn't have it, but the requirement implies it.
+                // I might need to update the interface `QuestionData`.
+                // Actually, I will check the requirement again.
+                // "tự động gán ảnh vào trường imageUrl và bật hasFigure: true cho câu hỏi đó."
+                // I will add these fields to `updated` object in `handleSave`.
+                setShowGeoGebra(false);
+              }}
+              onClose={() => setShowGeoGebra(false)}
+            />
+          )}
+
+          {showCalculator && (
+            <ScientificCalculatorModal onClose={() => setShowCalculator(false)} />
+          )}
 
           {/* Integrated BBT & Graph Visualizer Panel */}
           {activeVisualizer && (

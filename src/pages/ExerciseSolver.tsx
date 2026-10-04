@@ -5,12 +5,15 @@ import {
   Copy, Save, Upload, X, Sparkles, Loader2, Download, Presentation, 
   ChevronLeft, ChevronRight, Maximize2, FileText, BookmarkPlus, Camera, 
   Image as ImageIcon, Send, ArrowLeft, Crop, CheckCircle2, ImagePlus, 
-  Clipboard, Eye, EyeOff, RefreshCw, Trash2, Scissors 
+  Clipboard, Eye, EyeOff, RefreshCw, Trash2, Scissors, Calculator 
 } from 'lucide-react';
 
 import { MarkdownRenderer, fixMath } from "../components/MarkdownRenderer";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { ImageCropperModal } from "../components/ImageCropperModal";
+import { GeoGebraDrawer } from "../components/math-tools/GeoGebraDrawer";
+import { ScientificCalculatorModal } from "../components/math-tools/ScientificCalculatorModal";
+
 import { renderAllPdfPages } from "../lib/pdfUtils";
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -75,7 +78,10 @@ export const injectCroppedImageIntoSolution = (rawSolution: string, imgDataUrl: 
 };
 
 export function ExerciseSolver() {
+  const [showCalculator, setShowCalculator] = useState(false);
+  const [showGeoGebra, setShowGeoGebra] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
   const [isCameraActive, setIsCameraActive] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -432,6 +438,35 @@ export function ExerciseSolver() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 p-4 lg:p-8">
+      {/* Quick Launch Panel */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-950 to-indigo-950 text-white py-3.5 px-6 rounded-xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-slate-800">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-2 w-2 relative">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+          </span>
+          <p className="text-xs font-semibold tracking-wide text-slate-300">
+            Công cụ hỗ trợ làm bài & vẽ hình minh họa:
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setShowGeoGebra(true)}
+            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer border border-indigo-500/30"
+            title="Mở Vẽ hình GeoGebra để xuất hình ảnh chèn trực quan vào lời giải bài tập"
+          >
+            <span>📐</span> Vẽ hình GeoGebra (Lấy ảnh chèn lời giải)
+          </button>
+          <button
+            onClick={() => setShowCalculator(true)}
+            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer border border-emerald-500/30"
+            title="Mở máy tính khoa học cầm tay Casio fx-580VN X"
+          >
+            <Calculator className="w-3.5 h-3.5 text-white" /> Máy tính Casio fx-580VN X
+          </button>
+        </div>
+      </div>
+
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 lg:p-8">
         <h2 className="text-2xl font-bold text-slate-800 mb-6 text-center">Trợ lý Giải Bài Tập Thông Minh</h2>
         
@@ -947,8 +982,44 @@ export function ExerciseSolver() {
           </div>
         </div>
       )}
+      {/* Floating Action Buttons for Casio Calculator & GeoGebra */}
+      <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-3 no-print">
+        <button
+          onClick={() => setShowGeoGebra(!showGeoGebra)}
+          className="bg-slate-900 text-white hover:bg-slate-805 hover:scale-105 active:scale-95 p-4 rounded-full shadow-2xl flex items-center justify-center cursor-pointer transition-all border border-slate-750"
+          title="Mở Vẽ hình GeoGebra"
+        >
+          <span className="text-xl">📐</span>
+        </button>
+        <button
+          onClick={() => setShowCalculator(!showCalculator)}
+          className="bg-slate-900 text-white hover:bg-slate-805 hover:scale-105 active:scale-95 p-4 rounded-full shadow-2xl flex items-center justify-center cursor-pointer transition-all border border-slate-750"
+          title="Mở Máy tính Khoa học Casio"
+        >
+          <Calculator className="w-6 h-6 text-emerald-400" />
+        </button>
+      </div>
+
+      {showCalculator && (
+        <ScientificCalculatorModal onClose={() => setShowCalculator(false)} />
+      )}
+
+      {showGeoGebra && (
+        <GeoGebraDrawer
+          onInsertImage={(base64) => {
+            setCroppedImage(base64);
+            if (solution) {
+              const updated = injectCroppedImageIntoSolution(solution, base64, showInBothQuestionAndAnswer);
+              setSolution(updated);
+            }
+            setShowGeoGebra(false);
+          }}
+          onClose={() => setShowGeoGebra(false)}
+        />
+      )}
     </div>
   );
 }
+
 
 export default ExerciseSolver;
