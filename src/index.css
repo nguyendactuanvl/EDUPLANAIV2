@@ -75,12 +75,40 @@
   white-space: nowrap !important;
 }
 
-.katex .mopen,
-.katex .mclose,
-.katex .mtable,
-.katex .mord {
+.katex .minner > .mopen,
+.katex .minner > .mclose,
+.katex .minner > .mtable {
   flex-shrink: 0 !important;
   vertical-align: middle !important;
+}
+
+/* --- HIỂN THỊ GIỚI HẠN (LIMITS) CHUẨN SÁCH GIÁO KHOA --- */
+/* Căn chỉnh chỉ số dưới lim (x -> x0, x -> +-∞) ngay ngắn, rõ nét, không bị dính chữ hoặc lệch dòng */
+.katex .op-limits {
+  display: inline-flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  vertical-align: -0.45em !important;
+  margin: 0 0.15em !important;
+}
+
+.katex .op-limits > .vlist-t {
+  text-align: center !important;
+}
+
+.katex .op-limits .vlist-r {
+  text-align: center !important;
+}
+
+.katex .op-limits .mop {
+  font-weight: 600 !important;
+  font-size: 1.05em !important;
+  letter-spacing: 0.02em !important;
+}
+
+.katex .op-limits .vlist > span:last-child {
+  font-size: 0.8em !important;
+  line-height: 1.1 !important;
 }
 
 .katex-display {

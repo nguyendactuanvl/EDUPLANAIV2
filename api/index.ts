@@ -33,7 +33,7 @@ const MATH_FORMATTING_RULES = `QUY TẮC ĐỊNH DẠNG TOÁN HỌC VÀ VĂN B�
 
 2. BẢNG BIẾN THIÊN (BBT):
    - Tuyệt đối KHÔNG để khung rỗng hoặc để trống.
-   - Khi câu hỏi hoặc bài giải cần bảng biến thiên, BẮT BUỘC vẽ bảng biến thiên trực quan bằng Markdown Table chuẩn để hệ thống tự động kết xuất thành ẢNH VECTOR SVG CHUẨN SGK (tuyệt đối KHÔNG xuất mã LaTeX \\tkzTab trần trụi khó đọc):
+   - Khi câu hỏi hoặc bài giải cần bảng biến thiên, BẮT BUỘC vẽ bảng biến thiên trực quan bằng Markdown Table chuẩn, mỗi hàng BẮT BUỘC xuống dòng riêng biệt (có ký tự \\n):
      | $x$ | $-\\infty$ | | $x_0$ | | $+\\infty$ |
      |---|---|---|---|---|---|
      | $y'$ | | $+$ | $0$ | $-$ | |
@@ -43,7 +43,7 @@ const MATH_FORMATTING_RULES = `QUY TẮC ĐỊNH DẠNG TOÁN HỌC VÀ VĂN B�
    - TUYỆT ĐỐI KHÔNG viết toàn bộ bảng biến thiên dính liền trên cùng 1 dòng mà không có ký tự ngắt dòng \\n.
 
 3. HÌNH VẼ ĐỒ THỊ:
-   - Nếu câu hỏi trích dẫn hình vẽ mà không có URL ảnh thực tế: BẮT BUỘC phải nêu rõ công thức hàm số (ví dụ: $y = x^3 - 3x^2 + 4$) và mô tả rõ đặc điểm đồ thị (đỉnh, tiệm cận, điểm đi qua) HOẶC sinh kèm mã SVG đồ thị nội tuyến để hệ thống tự động xuất dạng ảnh đồ họa sắc nét, TUYỆT ĐỐI KHÔNG để thẻ img/div trống rỗng hoặc mã TeX trần không render được.
+   - Nếu câu hỏi trích dẫn hình vẽ mà không có URL ảnh thực tế: BẮT BUỘC phải mô tả rõ đặc điểm đồ thị bằng lời trong đề (ví dụ: "Đồ thị đi qua điểm $A(0; -1)$, đỉnh $I(1; -2)$, cắt trục hoành tại...") HOẶC sinh kèm mã SVG đồ thị nội tuyến, KHÔNG để thẻ img/div trống rỗng.
 
 4. CẤM TUYỆT ĐỐI SINH MÃ HTML INLINE PHỨC TẠP:
    - CẤM TUYỆT ĐỐI sinh mã HTML inline phức tạp (<mark style="...">, <span>, <div style="...">).
@@ -534,120 +534,39 @@ function sanitizeJsonString(str: string): string {
   return result.replace(/,\s*([\}\]])/g, "$1");
 }
 
-function extractQuestionFromBrokenJson(raw: string): any {
-  if (!raw || typeof raw !== "string") return null;
-  const result: any = {};
-  
-  // Extract content
-  const contentMatch = raw.match(/"content"\s*:\s*"((?:[^"\\]|\\.)*)/);
-  if (contentMatch) {
-    result.content = contentMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, "\"").replace(/\\\\/g, "\\");
-  }
-  
-  // Extract solution
-  const solMatch = raw.match(/"solution"\s*:\s*"((?:[^"\\]|\\.)*)/);
-  if (solMatch) {
-    result.solution = solMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, "\"").replace(/\\\\/g, "\\");
-  }
-
-  // Extract type
-  const typeMatch = raw.match(/"type"\s*:\s*"([^"]+)"/);
-  if (typeMatch) result.type = typeMatch[1];
-
-  // Extract level
-  const levelMatch = raw.match(/"level"\s*:\s*"([^"]+)"/);
-  if (levelMatch) result.level = levelMatch[1];
-
-  // Extract topic
-  const topicMatch = raw.match(/"topic"\s*:\s*"([^"]+)"/);
-  if (topicMatch) result.topic = topicMatch[1];
-
-  // Extract correctOptionIndex
-  const optIdxMatch = raw.match(/"correctOptionIndex"\s*:\s*(\d+)/);
-  if (optIdxMatch) result.correctOptionIndex = parseInt(optIdxMatch[1], 10);
-
-  // Extract correctAnswer
-  const ansMatch = raw.match(/"correctAnswer"\s*:\s*"([^"]+)"/);
-  if (ansMatch) result.correctAnswer = ansMatch[1];
-
-  // Extract options array
-  const optsMatch = raw.match(/"options"\s*:\s*\[([\s\S]*?)\]/);
-  if (optsMatch) {
-    const opts: string[] = [];
-    const optRegex = /"((?:[^"\\]|\\.)*)"/g;
-    let m;
-    while ((m = optRegex.exec(optsMatch[1])) !== null) {
-      opts.push(m[1].replace(/\\n/g, "\n").replace(/\\"/g, "\"").replace(/\\\\/g, "\\"));
-    }
-    if (opts.length > 0) result.options = opts;
-  }
-
-  return Object.keys(result).length > 0 ? result : null;
-}
-
 function repairTruncatedJson(str: string): string {
-  if (!str) return str;
   let inString = false;
   let escaped = false;
-  let out = "";
+  const stack: string[] = [];
 
   for (let i = 0; i < str.length; i++) {
     const ch = str[i];
     if (inString) {
       if (escaped) {
         escaped = false;
-        out += ch;
       } else if (ch === "\\") {
         escaped = true;
-        out += ch;
       } else if (ch === "\"") {
         inString = false;
-        out += ch;
-      } else if (ch === "\n") {
-        out += "\\n";
-      } else if (ch === "\r") {
-        out += "\\r";
-      } else if (ch === "\t") {
-        out += "\\t";
-      } else {
-        out += ch;
       }
     } else {
       if (ch === "\"") {
         inString = true;
-        out += ch;
-      } else {
-        out += ch;
+      } else if (ch === "{" || ch === "[") {
+        stack.push(ch);
+      } else if (ch === "}" && stack[stack.length - 1] === "{") {
+        stack.pop();
+      } else if (ch === "]" && stack[stack.length - 1] === "[") {
+        stack.pop();
       }
     }
   }
 
-  let repaired = out;
+  let repaired = str;
   if (inString) {
-    if (escaped) {
-      repaired += "\\";
-    }
     repaired += "\"";
   }
   repaired = repaired.replace(/,\s*$/, "");
-
-  const stack: string[] = [];
-  inString = false;
-  escaped = false;
-  for (let i = 0; i < repaired.length; i++) {
-    const ch = repaired[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === "\"") inString = false;
-    } else {
-      if (ch === "\"") inString = true;
-      else if (ch === "{" || ch === "[") stack.push(ch);
-      else if (ch === "}" && stack[stack.length - 1] === "{") stack.pop();
-      else if (ch === "]" && stack[stack.length - 1] === "[") stack.pop();
-    }
-  }
-
   while (stack.length > 0) {
     const top = stack.pop();
     if (top === "{") repaired += "}";
@@ -690,25 +609,12 @@ function safeJsonParse<T = any>(text: string, fallback?: T): T {
       try {
         const repaired = repairTruncatedJson(cleaned);
         return JSON.parse(sanitizeJsonString(repaired));
-      } catch (e4) {
-        try {
-          const sanitizedRepaired = sanitizeJsonString(repairTruncatedJson(cleaned));
-          return JSON.parse(sanitizedRepaired);
-        } catch (e5) {}
-      }
-
-      // 5. Thử trích xuất khối đối tượng câu hỏi bằng regex fallback
-      try {
-        const extracted = extractQuestionFromBrokenJson(cleaned);
-        if (extracted && (extracted.content || extracted.solution)) {
-          return { question: extracted } as any;
-        }
-      } catch (e6) {}
+      } catch (e4) {}
 
       if (fallback !== undefined && fallback !== null) {
         return fallback;
       }
-      return null as any;
+      throw e1;
     }
   }
 }
@@ -1735,6 +1641,9 @@ LƯU Ý ĐẶC BIỆT:
 - Lồng ghép trực tiếp các kịch bản [Năng lực số], [Năng lực AI] và [Tích hợp STEM/STEAM] vào từng hoạt động và sản phẩm cụ thể của học sinh.
 - Nổi bật mọi công cụ số, NLS, AI bằng Markdown in đậm chuẩn: **[Tên công cụ / NLS / AI]** (TUYỆT ĐỐI CẤM dùng mã HTML inline như <mark style="..."> hay <span>).
 - Viết chi tiết đầy đủ 100%, không tóm tắt, không dùng dấu ba chấm (...).
+- ĐỐI VỚI MÔN TOÁN (Đặc biệt các bài học về Hàm số, Đạo hàm, Khảo sát hàm số, Tính đơn điệu, Cực trị, Bất phương trình, Hình học):
+  + Ở Hoạt động 2 (Hình thành kiến thức mới) và Hoạt động 3 (Luyện tập), BẮT BUỘC chèn BẢNG BIẾN THIÊN dạng Markdown Table chuẩn hoặc khối TikZ/SVG đồ thị hàm số chuẩn SGK vào phần Sản phẩm của học sinh và phần Chuyển giao nhiệm vụ.
+  + Tuyệt đối không để trống bảng biến thiên hoặc hình vẽ đồ thị.
 ${MATH_FORMATTING_RULES}`;
 
     let contents: any = prompt;
@@ -1778,15 +1687,29 @@ app.all("/api/generate-similar", async (req, res) => {
     return keepAliveExecute(req, res, async () => {
 
       const files = resolveFiles(req.body);
-      if (!files || files.length === 0) {
+      const { croppedImage } = req.body || {};
+      if ((!files || files.length === 0) && !croppedImage) {
         return res.status(400).json({ error: "No files provided" });
       }
 
-      const prompt = `Bạn là một chuyên gia giáo dục. Dưới đây là bài tập, đề thi hoặc tài liệu mà giáo viên cung cấp.
+      const fileList = [...(files || [])];
+      if (croppedImage && typeof croppedImage === 'string') {
+        const cleanBase64 = croppedImage.replace(/^data:[^;]+;base64,/, '');
+        fileList.unshift({
+          data: cleanBase64,
+          type: 'image/png',
+          name: 'cropped_figure.png'
+        });
+      }
+
+      const prompt = `Bạn là một chuyên gia giáo dục xuất sắc. Dưới đây là bài tập, đề thi hoặc tài liệu mà giáo viên cung cấp.
 YÊU CẦU:
 1. Đọc và phân tích cấu trúc, độ khó, dạng bài, và kiến thức trọng tâm của tài liệu gốc.
 2. TẠO RA MỘT ĐỀ BÀI HOẶC BỘ BÀI TẬP TƯƠNG TỰ (cùng cấu trúc, độ khó, và dạng bài nhưng thay đổi số liệu, ngữ cảnh hoặc cách hỏi).
 3. CUNG CẤP LỜI GIẢI CHI TIẾT cho ĐỀ TƯƠNG TỰ vừa tạo.
+4. [BẢNG BIẾN THIÊN (BBT) & HÌNH VẼ]:
+- Nếu tài liệu gốc có bảng biến thiên (BBT): BẮT BUỘC vẽ bảng biến thiên trực quan cho cả Đề bài tương tự và Lời giải chi tiết bằng Markdown Table chuẩn SGK có đầy đủ các hàng $x$, $y'$, $y$ kèm mũi tên $\\nearrow, \\searrow$, các dấu $+$, $-$, giá trị $0$, các điểm cực trị $y_{CĐ}, y_{CT}$, giới hạn $-\\infty, +\\infty$.
+- Điền đầy đủ số liệu và biểu thức biến thiên, tuyệt đối không để trống.
 
 Định dạng đầu ra rõ ràng:
 ## Đề bài tương tự
@@ -1803,7 +1726,7 @@ BẮT BUỘC kiểm tra và SỬA LỖI CHÍNH TẢ tiếng Việt thật cẩn 
           {
             role: "user",
             parts: [
-              ...(await processFilesForAI(files || [])),
+              ...(await processFilesForAI(fileList)),
               {
                 text: prompt
               }
@@ -1970,28 +1893,12 @@ YÊU CẦU PHONG CÁCH: MINDMAP / SƠ ĐỒ NHÁNH
 - Dùng thụt dòng, ký hiệu phân cấp cây sơ đồ trực quan và bullet point để tạo cảm giác bản đồ tư duy sinh động.`;
       } else {
         stylePrompt = `
-YÊU CẦU CẤU TRÚC PHIẾU HỌC TẬP CHUẨN SƯ PHẠM (Chương trình GDPT 2018 & Công văn 5512/BGDĐT):
-- KHÔNG tạo bảng thông tin học sinh (Trường, Lớp, Họ và tên, Điểm số, Lời phê) ở đầu tài liệu vì giao diện phần mềm đã tự động hiển thị khung in tiêu chuẩn này.
-- BẮT BUỘC BẮT ĐẦU NGAY BẰNG CẤU TRÚC 4 PHẦN CHUẨN MỰC SAU:
-
-## I. MỤC TIÊU & YÊU CẦU CẦN ĐẠT
-- 🎯 **Về kiến thức**: Nêu rõ 2-3 kiến thức cốt lõi cần nhớ của bài học "${lesson}".
-- 🧠 **Về năng lực toán học**: Rèn luyện năng lực tư duy & lập luận toán học, năng lực giải quyết vấn đề toán học, năng lực mô hình hóa toán học thông qua các tình huống thực tiễn.
-
-## II. KIẾN THỨC TRỌNG TÂM & VÍ DỤ MINH HỌA
-- 📌 **Tóm tắt lý thuyết & Công thức then chốt**: Trình bày ngắn gọn, cô đọng, đóng khung các công thức mấu chốt.
-- 📈 **Bảng biến thiên / Đồ thị minh họa**: Nếu là bài toán hàm số, BẮT BUỘC vẽ BẢNG BIẾN THIÊN bằng bảng Markdown Table chuẩn gồm 3 dòng $x$, $y'$, $y$ với mũi tên $\nearrow$, $\searrow$, dấu đạo hàm $+$, $-$, $0$.
-- 💡 **Ví dụ mẫu**: 1 bài toán kinh điển có phân tích hướng tư duy và lời giải mẫu chi tiết từng bước.
-
-## III. HỆ THỐNG BÀI TẬP RÈN LUYỆN
-Phân chia rõ ràng thành các phần:
-- **Phần 1: Câu trắc nghiệm nhiều phương án lựa chọn**: Đánh số Câu 1, Câu 2... với 4 phương án $A, B, C, D$ rõ ràng.
-- **Phần 2: Câu trắc nghiệm Đúng / Sai** (nếu có): Cấu trúc chuẩn 4 ý a), b), c), d).
-- **Phần 3: Câu hỏi trắc nghiệm trả lời ngắn & Tự luận**: Mỗi câu tự luận hoặc trả lời ngắn BẮT BUỘC có dòng kẻ chấm chừa chỗ:
-  *Bài làm:*
-  ....................................................................................................................................
-  ....................................................................................................................................
-  để học sinh làm trực tiếp vào phiếu học tập.`;
+YÊU CẦU PHONG CÁCH: A4 CHUẨN IN ẤN (Đen trắng / Tiết kiệm mực - Bố cục chính quy)
+- Bố cục trang giấy chuẩn mực cho học sinh in ra làm bài:
+  + Phần đầu: Bảng thông tin học sinh (Trường, Lớp, Họ và tên học sinh, Điểm số, Lời phê của giáo viên).
+  + Phần I: TÓM TẮT LÝ THUYẾT (Ngắn gọn, bảng biểu sắc nét, kẻ khung tiết kiệm mực in).
+  + Phần II: CÂU HỎI TRẮC NGHIỆM (Đánh số câu rõ ràng, 4 phương án A, B, C, D phân bố gọn gàng).
+  + Phần III: BÀI TẬP TỰ LUẬN (Có dòng kẻ chấm chấm "......................................................" hoặc khung trống phù hợp để học sinh làm bài trực tiếp trên giấy in).`;
       }
 
       let exercisePrompt = `Hình thức bài tập: ${type || "Kết hợp trắc nghiệm và tự luận"}.`;
@@ -2018,12 +1925,7 @@ YÊU CẦU CHUNG:
 3. Trình bày rõ ràng, để lại khoảng trống hợp lý giả định học sinh sẽ làm trực tiếp vào phiếu.
 ${MATH_FORMATTING_RULES}
 4. ĐÁP ÁN: ${answerPrompt}
-5. [QUAN TRỌNG NHẤT] QUY TẮC CÔNG THỨC TOÁN & BẢNG BIẾN THIÊN:
-   - TẤT CẢ công thức toán học, biến số đơn lẻ ($x$, $y$, $m$, $a$, $b$, $f(x)$, $\lim_{x \to +\infty} f(x) = y_0$, $y=ax+b$, $\mathbb{R}$) BẮT BUỘC đặt trong cặp dấu đô la $...$ hoặc $$...$$. TUYỆT ĐỐI KHÔNG để sót công thức trần không có dấu đô la.
-   - BẢNG BIẾN THIÊN (BBT): BẮT BUỘC vẽ bảng biến thiên trực quan bằng Markdown Table chuẩn ($x$, $y'$, $y$ có mũi tên $\nearrow$, $\searrow$, dấu $+$, $-$, $0$).
-   - TUYỆT ĐỐI KHÔNG để chữ "undefined" rò rỉ trong bất kỳ công thức hay câu văn nào.
-6. KHÔNG lặp lại tên trường/lớp hay bảng thông tin học sinh ở đầu kết quả. Bắt đầu ngay từ "## I. MỤC TIÊU & YÊU CẦU CẦN ĐẠT" (hoặc "## I. KIẾN THỨC TRỌNG TÂM").
-7. BẮT BUỘC kiểm tra và SỬA LỖI CHÍNH TẢ tiếng Việt thật cẩn thận trước khi trả kết quả.`;
+5. BẮT BUỘC kiểm tra và SỬA LỖI CHÍNH TẢ tiếng Việt thật cẩn thận trước khi trả kết quả.`;
 
       const response = await generateWithFallback(req, {
         contents: prompt,
@@ -2053,8 +1955,19 @@ app.all("/api/pdf-to-word", async (req, res) => {
     return keepAliveExecute(req, res, async () => {
 
       const files = resolveFiles(req.body);
+      const { croppedImage } = req.body || {};
       if (!files || files.length === 0) {
         return res.status(400).json({ error: "No files provided" });
+      }
+
+      const fileList = [...(files || [])];
+      if (croppedImage && typeof croppedImage === 'string') {
+        const cleanBase64 = croppedImage.replace(/^data:[^;]+;base64,/, '');
+        fileList.unshift({
+          data: cleanBase64,
+          type: 'image/png',
+          name: 'cropped_figure.png'
+        });
       }
 
       const prompt = `Bạn là một chuyên gia số hóa tài liệu. Nhiệm vụ của bạn là chuyển đổi TOÀN BỘ nội dung trong tài liệu (ảnh/PDF) được cung cấp sang định dạng văn bản (Markdown).
@@ -2063,7 +1976,7 @@ YÊU CẦU NGHIÊM NGẶT:
 1. TUYỆT ĐỐI GIỮ NGUYÊN cấu trúc, số thứ tự câu, các mục lục, phân chương phân bài. Không được tự ý tóm tắt hay lược bỏ bất kỳ từ nào.
 ${MATH_FORMATTING_RULES}
 2. HÌNH ẢNH / HÌNH VẼ: Do hạn chế kỹ thuật số hóa, nếu gặp biểu đồ, hình vẽ, đồ thị, hãy thêm một chú thích rõ ràng bằng chữ ở vị trí đó (Ví dụ: [Hình vẽ đồ thị hàm số...] hoặc [Hình ảnh mô tả...]) để giáo viên biết vị trí cần chèn lại ảnh gốc.
-3. GIỮ NGUYÊN BẢNG BIỂU VÀ BẢNG BIẾN THIÊN: Dùng cú pháp Markdown table để tạo lại chính xác các bảng biểu thông thường cũng như BẢNG BIẾN THIÊN (hàng $x$, $y'$, $y$ với các mũi tên $\nearrow$, $\searrow$, ký hiệu $\|$ tại điểm gián đoạn). Tuyệt đối không để khung rỗng.
+3. GIỮ NGUYÊN BẢNG BIỂU VÀ BẢNG BIẾN THIÊN: Dùng cú pháp Markdown table để tạo lại chính xác các bảng biểu thông thường cũng như BẢNG BIẾN THIÊN (hàng $x$, $y'$, $y$ với các mũi tên $\\nearrow$, $\\searrow$, ký hiệu $\\|$ tại điểm gián đoạn). Tuyệt đối không để khung rỗng.
 4. Nếu trong tài liệu gốc có các thẻ HTML (như <img>) được truyền vào, TUYỆT ĐỐI GIỮ NGUYÊN Y HỆT các thẻ đó ở đúng vị trí.
 
 Đầu ra của bạn phải hoàn toàn là nội dung tài liệu đã được số hóa, không thêm các câu chào hỏi thừa.`;
@@ -2073,7 +1986,7 @@ ${MATH_FORMATTING_RULES}
           {
             role: "user",
             parts: [
-              ...(await processFilesForAI(files || [])),
+              ...(await processFilesForAI(fileList)),
               {
                 text: prompt
               }
@@ -2085,7 +1998,14 @@ ${MATH_FORMATTING_RULES}
         }
       });
       
-      return { result: response.text };
+      let resultText = response.text || "";
+      if (croppedImage) {
+        const imgTag = `\n\n<img src="${croppedImage}" alt="Hình vẽ minh họa tài liệu" class="max-w-[480px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm" />\n\n`;
+        if (/\[Hình (?:vẽ|ảnh)[^\]]*\]/i.test(resultText)) {
+          resultText = resultText.replace(/\[Hình (?:vẽ|ảnh)[^\]]*\]/i, imgTag);
+        }
+      }
+      return { result: resultText };
     
     });
 });
@@ -2097,7 +2017,6 @@ app.all("/api/solve-exercise", async (req, res) => {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-
   if (req.method !== 'POST') {
     return res.status(405).json({ message: 'Method not allowed' });
   }
@@ -2105,32 +2024,50 @@ app.all("/api/solve-exercise", async (req, res) => {
     return keepAliveExecute(req, res, async () => {
 
       const files = resolveFiles(req.body);
-      if (!files || files.length === 0) {
+      const { croppedImage } = req.body || {};
+
+      if ((!files || files.length === 0) && !croppedImage) {
         return res.status(400).json({ error: "No files provided" });
+      }
+
+      // If a cropped image of the graph/diagram is provided, include it in the parts for Gemini
+      const fileList = [...(files || [])];
+      if (croppedImage && typeof croppedImage === 'string') {
+        const cleanBase64 = croppedImage.replace(/^data:[^;]+;base64,/, '');
+        fileList.unshift({
+          data: cleanBase64,
+          type: 'image/png',
+          name: 'cropped_figure.png'
+        });
       }
 
       const prompt = `Bạn là một giáo viên xuất sắc. Dưới đây là bài tập hoặc tài liệu học sinh đưa ra. 
 YÊU CẦU:
-1. Đọc nội dung bài tập từ file.
-2. Viết lại đề bài rõ ràng.
-3. Cung cấp lời giải chi tiết, giải thích cặn kẽ từng bước để học sinh dễ hiểu.
+1. Đọc kỹ nội dung bài tập từ file/ảnh.
+2. Viết lại đề bài rõ ràng, mạch lạc, đầy đủ các câu chữ và giả thiết.
+3. Cung cấp lời giải chi tiết, giải thích cặn kẽ từng bước biến đổi để học sinh dễ hiểu.
 4. Định dạng đầu ra thành 2 phần rõ rệt (dùng tiêu đề H2):
 ## Đề bài
 [Nội dung đề]
+${croppedImage ? '[HÌNH_ẢNH_ĐỀ_BÀI]' : ''}
 
 ## Lời giải chi tiết
-[Các bước giải chi tiết]
+${croppedImage ? '[HÌNH_ẢNH_ĐÁP_ÁN]\n' : ''}[Các bước giải chi tiết từng bước, phân tích trực tiếp các yếu tố trên hình vẽ / đồ thị]
 
 ${MATH_FORMATTING_RULES}
 5. BẮT BUỘC kiểm tra và SỬA LỖI CHÍNH TẢ tiếng Việt thật cẩn thận trước khi trả kết quả.
-6. [QUAN TRỌNG] BẢNG BIẾN THIÊN (BBT): BẮT BUỘC vẽ bằng Markdown Table chuẩn trực quan (hàng $x$, $y'$, $y$ kèm mũi tên $\nearrow$, $\searrow$, dấu $+$, $-$, $0$, cực trị, tuyệt đối không để trống). Nếu bài toán trích dẫn đồ thị hoặc hình học: hãy sinh mã SVG nội tuyến hoặc code TikZ; nếu không có URL hình ảnh thực tế thì BẮT BUỘC mô tả chi tiết bằng lời các đặc điểm đồ thị (tọa độ các điểm đi qua, đỉnh, tiệm cận...), tuyệt đối không để thẻ img/div hay khung trống rỗng. Code TikZ nếu có phải đặt trong khối \`\`\`tikz ... \`\`\`.`;
+6. [QUAN TRỌNG VỀ HÌNH VẼ & ĐỒ THỊ]:
+- Nếu đề bài có hình vẽ, đồ thị, bảng biến thiên (hoặc có ảnh cắt đính kèm): BẮT BUỘC chèn thẻ [HÌNH_ẢNH_ĐỀ_BÀI] vào cuối phần "## Đề bài" VÀ BẮT BUỘC chèn thẻ [HÌNH_ẢNH_ĐÁP_ÁN] vào ngay đầu phần "## Lời giải chi tiết" để học sinh và giáo viên vừa đọc lời giải vừa đối chiếu trực quan đồ thị / hình vẽ.
+- Trong lời giải: Khai thác chi tiết các tọa độ điểm đặc biệt, giao điểm, đỉnh, tiệm cận, đường nét trên đồ thị/hình ảnh.
+- BẢNG BIẾN THIÊN (BBT): BẮT BUỘC vẽ bằng Markdown Table chuẩn trực quan (hàng $x$, $y'$, $y$ kèm mũi tên $\\nearrow$, $\\searrow$, dấu $+$, $-$, $0$, cực trị, tuyệt đối không để trống).
+- Nếu không có ảnh thực tế nhưng cần vẽ hình học không gian hay miền nghiệm: Hãy sinh code TikZ trong khối \`\`\`tikz ... \`\`\`.`;
 
       const response = await generateWithFallback(req, {
         contents: [
           {
             role: "user",
             parts: [
-              ...(await processFilesForAI(files || [])),
+              ...(await processFilesForAI(fileList)),
               {
                 text: prompt
               }
@@ -2141,7 +2078,32 @@ ${MATH_FORMATTING_RULES}
           temperature: 0.2,
         }
       });
-      return { result: response.text };
+
+      let resultText = response.text || "";
+      if (croppedImage) {
+        const imgTag = `\n\n<img src="${croppedImage}" alt="Hình vẽ / Đồ thị bài toán" class="max-w-[480px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm" />\n\n`;
+        // 1. Chèn vào Đề bài
+        if (resultText.includes('[HÌNH_ẢNH_ĐỀ_BÀI]')) {
+          resultText = resultText.replace(/\[HÌNH_ẢNH_ĐỀ_BÀI\]/g, imgTag);
+        } else {
+          resultText = resultText.replace(/(##\s*Đề bài[^\n]*\n)([\s\S]*?)(?=\n##\s*(?:Lời giải|Đáp án|Hướng dẫn giải)|$)/i, `$1$2\n${imgTag}`);
+        }
+
+        // 2. Chèn vào Lời giải chi tiết / Đáp án để đối chiếu trực quan
+        if (resultText.includes('[HÌNH_ẢNH_ĐÁP_ÁN]')) {
+          resultText = resultText.replace(/\[HÌNH_ẢNH_ĐÁP_ÁN\]/g, imgTag);
+        } else if (resultText.includes('[HÌNH_ẢNH_LỜI_GIẢI]')) {
+          resultText = resultText.replace(/\[HÌNH_ẢNH_LỜI_GIẢI\]/g, imgTag);
+        } else if (/##\s*(?:Lời giải|Đáp án|Hướng dẫn giải)/i.test(resultText)) {
+          const solIdx = resultText.search(/##\s*(?:Lời giải|Đáp án|Hướng dẫn giải)/i);
+          const solPart = resultText.slice(solIdx);
+          if (!solPart.includes(croppedImage)) {
+            resultText = resultText.replace(/(##\s*(?:Lời giải|Đáp án|Hướng dẫn giải)[^\n]*\n)/i, `$1${imgTag}`);
+          }
+        }
+      }
+
+      return { result: resultText };
     });
 });
 
@@ -2247,14 +2209,20 @@ CẤU TRÚC ĐỀ THI GDPT 2018 GỒM CÁC PHẦN:
 - Trường type: "ESSAY" (hoặc "essay").
 - Gồm: "question" (nội dung bài toán tự luận), "correctAnswer" hoặc "explanation" (lời giải / hướng dẫn chấm chi tiết kèm thang điểm nếu có).
 
-QUY TẮC NHẬN DIỆN HÌNH VẼ / ĐỒ THỊ MINH HỌA (FIGURES / CHARTS / IMAGES):
-+ Khi đọc tài liệu đề thi (PDF, Word, ảnh), nếu một câu hỏi có kèm theo hình vẽ, đồ thị hàm số (ví dụ: đồ thị tọa độ Oxy, hình không gian, hình tròn, biểu đồ...), BẮT BUỘC:
-  - Đánh dấu thuộc tính: "hasFigure": true
-  - Nếu đề bài có ghi chú hoặc có đường dẫn ảnh/mô tả đồ thị, ghi vào: "figureDescription": "Mô tả ngắn gọn hình vẽ (ví dụ: Đồ thị hàm số bậc ba trên hệ trục Oxy qua các điểm...)"
-  - Nếu câu không có hình vẽ thì "hasFigure": false hoặc bỏ qua.
+QUY TẮC NHẬN DIỆN HÌNH VẼ, ĐỒ THỊ & BẢNG BIẾN THIÊN (CỰC KỲ QUAN TRỌNG - TỌA ĐỘ CẮT ẢNH TỰ ĐỘNG):
++ Nếu câu hỏi có Đồ thị hàm số, Hình học không gian, Biểu đồ hoặc Bảng biến thiên (BBT):
+  - Đặt "hasFigure": true
+  - Xác định chính xác tọa độ vùng chứa hình ảnh theo trường "figureBox": [ymin, xmin, ymax, xmax] trên thang đo chuẩn hóa 0 - 1000 của trang tài liệu (ảnh hoặc PDF).
+  - Trong trường "question" / "content", chèn thẻ giữ chỗ [HINH_ANH] tại đúng vị trí hình xuất hiện trong câu hỏi.
++ Nếu câu không có hình: "hasFigure": false và "figureBox": null.
 
-QUY TẮC BẮT BUỘC VỀ TOÁN HỌC VÀ CÔNG THỨC (LATEX):
+QUY TẮC BẮT BUỘC VỀ TOÁN HỌC VÀ CÔNG THỨC (LATEX CHUẨN 100%):
 + TẤT CẢ các ký hiệu toán học, biến số (x, y, m, a, b...), biểu thức, phương trình, hệ phương trình BẮT BUỘC đặt trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối riêng).
++ KÝ HIỆU VÔ CỰC CHUẨN XÁC: Luôn viết đúng "-\\infty" và "+\\infty". TUYỆT ĐỐI KHÔNG để dính khoảng trắng sau dấu gạch chéo (NGHIÊM CẤM viết: "-\\ infty", "+\\ infty", "\\ frac").
++ QUY TẮC BẢNG BIẾN THIÊN (BBT):
+  - Khi đạo hàm y' < 0 (nghịch biến), mũi tên biến thiên BẮT BUỘC dùng mũi tên dốc xuống: "\\searrow" (TUYỆT ĐỐI KHÔNG dùng mũi tên ngang như "\\rightarrow", "\\longrightarrow", "->", "-->").
+  - Khi đạo hàm y' > 0 (đồng biến), mũi tên biến thiên BẮT BUỘC dùng mũi tên dốc lên: "\\nearrow".
+  - Điểm gián đoạn / tiệm cận đứng BẮT BUỘC dùng vạch đôi "\\|".
 + QUY TẮC ĐẶC BIỆT VỀ DẤU $:
   - Tuyệt đối không tự động gắn thêm dấu $ vào cuối chuỗi nếu chuỗi đã có cặp dấu $...$ hoàn chỉnh.
   - Tuyệt đối không để ký tự $ mồ côi (trailing dollar sign) ở cuối đáp án hoặc nằm sau dấu chấm câu (ví dụ: cấm viết ".$" hay ". $", phải cắt bỏ sạch sẽ thành ".").
@@ -2263,7 +2231,7 @@ QUY TẮC BẮT BUỘC VỀ TOÁN HỌC VÀ CÔNG THỨC (LATEX):
 + HỆ PHƯƠNG TRÌNH / HỆ BẤT PHƯƠNG TRÌNH: GIỮ NGUYÊN dấu móc nhọn \begin{cases} ... \end{cases} và BẮT BUỘC bọc trong cặp dấu $...$ hoặc $$...$$. Các dòng phương trình BẮT BUỘC cách nhau bởi dấu xuống dòng \\ (hai dấu gạch chéo ngược) rõ ràng. Ví dụ:
   $\begin{cases} 2x + y = 5 \\ x - y = 1 \end{cases}$
 + Tuyệt đối KHÔNG viết \\ x - y (một gạch) làm dính dòng phương trình, BẮT BUỘC phải là \\\\ x - y.
-+ Sử dụng cú pháp LaTeX chuẩn: \\frac{a}{b}, \\sqrt{x}, \\sin x, \\cos x, \\tan x, \\cot x, \\pi, \\ge, \\le, \\in, \\Leftrightarrow, \\Rightarrow, \\Delta.
++ Sử dụng cú pháp LaTeX chuẩn: \\frac{a}{b} (luôn dùng \\frac, không dùng \\dfrac), \\sqrt{x}, \\sin x, \\cos x, \\tan x, \\cot x, \\pi, \\ge, \\le, \\in, \\Leftrightarrow, \\Rightarrow, \\Delta.
 + Giữ nguyên font tiếng Việt UTF-8 chuẩn cho đề bài và các phương án.
 
 Trả về kết quả dưới dạng JSON có cấu trúc sau:
@@ -2274,11 +2242,12 @@ Trả về kết quả dưới dạng JSON có cấu trúc sau:
     {
       "id": 1,
       "type": "MULTIPLE_CHOICE", // "MULTIPLE_CHOICE", "TRUE_FALSE", "SHORT_ANSWER", "ESSAY"
-      "question": "Nội dung câu hỏi...",
-      "hasFigure": false,
-      "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
+      "question": "Cho hàm số $y = f(x)$ có bảng biến thiên như sau:\n[HINH_ANH]\nHàm số đã cho nghịch biến trên khoảng nào dưới đây?",
+      "hasFigure": true,
+      "figureBox": [120, 200, 350, 800], // [ymin, xmin, ymax, xmax] trên thang đo 0 - 1000 nếu có hình/BBT/đồ thị, hoặc null nếu không có
+      "options": ["A. $(0; 2)$", "B. $(-\\infty; 0)$", "C. $(2; +\\infty)$", "D. $(0; +\\infty)$"],
       "correctAnswer": "A",
-      "explanation": "Lời giải chi tiết nếu có..."
+      "explanation": "Dựa vào bảng biến thiên, trên khoảng $(0; 2)$ ta có $f'(x) < 0$ (mũi tên dốc xuống $\\searrow$) nên hàm số nghịch biến."
     }
   ]
 }
@@ -2793,49 +2762,11 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT 1 ĐỐI TƯỢNG JSON VỚI ĐỊNH DẠNG:
 }`;
 
     try {
-      const responseSchema = {
-        type: Type.OBJECT,
-        properties: {
-          question: {
-            type: Type.OBJECT,
-            properties: {
-              id: { type: Type.INTEGER },
-              type: { type: Type.STRING },
-              level: { type: Type.STRING },
-              topic: { type: Type.STRING },
-              content: { type: Type.STRING },
-              options: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING }
-              },
-              correctOptionIndex: { type: Type.INTEGER },
-              correctAnswer: { type: Type.STRING },
-              tfStatements: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    statement: { type: Type.STRING },
-                    correct: { type: Type.BOOLEAN }
-                  },
-                  required: ["statement", "correct"]
-                }
-              },
-              solution: { type: Type.STRING }
-            },
-            required: ["content", "solution"]
-          }
-        },
-        required: ["question"]
-      };
-
       const response = await generateWithFallback(req, {
         contents: [{ role: "user", parts: [{ text: promptText }] }],
         config: {
           responseMimeType: "application/json",
-          responseSchema,
-          maxOutputTokens: 8192,
-          temperature: 0.2
+          temperature: 0.3
         }
       });
 
@@ -2845,17 +2776,6 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT 1 ĐỐI TƯỢNG JSON VỚI ĐỊNH DẠNG:
         if (!parsed || !parsed.question) {
           const match = rawText.match(/\{[\s\S]*\}/);
           if (match) parsed = safeJsonParse(match[0]);
-        }
-        if (!parsed || !parsed.question) {
-          const extracted = extractQuestionFromBrokenJson(rawText);
-          if (extracted && (extracted.content || extracted.solution)) {
-            parsed = {
-              question: {
-                ...question,
-                ...extracted
-              }
-            };
-          }
         }
         if (parsed && parsed.question) {
           return { question: parsed.question };

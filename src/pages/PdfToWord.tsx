@@ -248,3 +248,5 @@ export function PdfToWord() {
     </div>
   );
 }
+
+export default PdfToWord;

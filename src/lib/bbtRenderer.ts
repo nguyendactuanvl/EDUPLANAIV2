@@ -7,23 +7,85 @@
  * - Vùng ngoài tập xác định được tô họa tiết gạch chéo //
  */
 
-import { BBTData, BBTPoint, BBTInterval } from '../components/math-tools/VariationTableGenerator';
+export interface BBTPoint {
+  x: string;
+  yPrime?: string;
+  isAsymptote?: boolean;
+  isDerivativeUndefinedOnly?: boolean;
+  yVal?: string;
+  yPosition?: "top" | "bottom" | "middle";
+  yLeftVal?: string;
+  yLeftPosition?: "top" | "bottom" | "middle";
+  yRightVal?: string;
+  yRightPosition?: "top" | "bottom" | "middle";
+}
+
+export interface BBTInterval {
+  sign?: "+" | "-" | "";
+  isExcludedDomain?: boolean;
+  trend?: "increasing" | "decreasing" | "none";
+}
+
+export interface BBTData {
+  functionName: string;
+  domainNote?: string;
+  points: BBTPoint[];
+  intervals: BBTInterval[];
+  showDerivative?: boolean;
+}
 
 export function cleanMathText(str?: string): string {
   if (!str) return '';
-  return str
-    .replace(/[’`´]/g, "'")
+  let s = str
+    // Xử lý triệt để mọi biến thể âm/dương vô cực có dấu gạch chéo rách chuỗi hoặc có dấu cách
+    .replace(/[-–—]\s*\\+\s*infty/gi, '-∞')
+    .replace(/\+\s*\\+\s*infty/gi, '+∞')
+    .replace(/\\+\s*infty/gi, '∞')
+    .replace(/\bin\s+fty\b/gi, '∞')
+    .replace(/[-–—]\s*infty/gi, '-∞')
+    .replace(/\+\s*infty/gi, '+∞')
+    .replace(/[-–—]\s*∞/g, '-∞')
+    .replace(/\+\s*∞/g, '+∞')
+    .replace(/[’`´′]/g, "'")
+    .replace(/[−–—]/g, '-')
     .replace(/\\prime/g, "'")
-    .replace(/\^\{\s*['’]\s*\}/g, "'")
+    .replace(/\^\{\s*['’′]\s*\}/g, "'")
     .replace(/\^\{\s*\\prime\s*\}/g, "'")
-    .replace(/\\infty/g, '∞')
-    .replace(/\+\\infty/g, '+∞')
-    .replace(/-\\infty/g, '-∞')
     .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '$1/$2')
     .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
     .replace(/\\mathbb\{R\}/g, 'ℝ')
     .replace(/_([a-zA-Z0-9])/g, '$1')
     .replace(/\$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Deduplicate repeated artifacts from browser copy (e.g. "5 5" -> "5", "55" -> "5", "-∞ -∞" -> "-∞", "x x" -> "x")
+  if (/e\s*a\s*r\s*r\s*o\s*w/i.test(s) || /n\s*e\s*a\s*r\s*r\s*o\s*w/i.test(s)) return '↗';
+  if (/s\s*e\s*a\s*r\s*r\s*o\s*w/i.test(s)) return '↘';
+  if (s === '++' || s === '+ +') return '+';
+  if (s === '--' || s === '- -') return '-';
+  if (s === '00' || s === '0 0') return '0';
+  if (s === '11' || s === '1 1') return '1';
+  if (s === '22' || s === '2 2') return '2';
+  if (s === '55' || s === '5 5') return '5';
+  if (s === '↘↘' || s === '↘ ↘') return '↘';
+  if (s === '↗↗' || s === '↗ ↗') return '↗';
+  if (s === '-∞-∞' || s === '- ∞ -∞' || s === '-∞ -∞') return '-∞';
+  if (s === '+∞+∞' || s === '+ ∞ +∞' || s === '+∞ +∞') return '+∞';
+  if (s === '-1-1' || s === '- 1 -1' || s === '-1 -1') return '-1';
+  if (s === 'xx' || s === 'x x') return 'x';
+
+  const parts = s.split(' ');
+  if (parts.length === 2 && parts[0] === parts[1]) {
+    s = parts[0];
+  } else if (parts.length > 2) {
+    const half = Math.floor(parts.length / 2);
+    if (parts.slice(0, half).join(' ') === parts.slice(half).join(' ')) {
+      s = parts.slice(0, half).join(' ');
+    }
+  }
+
+  return s
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -150,8 +212,50 @@ export function generateBbtSvg(data: BBTData): string {
     const startX = getPointX(i);
     const endX = getPointX(i + 1);
 
-    const y1 = getYPosValue(p1.isAsymptote ? p1.yRightPosition || 'bottom' : p1.yPosition);
-    const y2 = getYPosValue(p2.isAsymptote ? p2.yLeftPosition || 'top' : p2.yPosition);
+    // Xác định chiều biến thiên của khoảng:
+    const sign = inter?.sign?.trim();
+    const trend = inter?.trend;
+    const isDecreasing = sign === '-' || trend === 'decreasing' || /searrow|\\searrow|↘|downarrow|\\downarrow/i.test(String(sign || ''));
+    const isIncreasing = sign === '+' || trend === 'increasing' || /nearrow|\\nearrow|↗|uparrow|\\uparrow/i.test(String(sign || ''));
+
+    let pos1 = p1.isAsymptote ? (p1.yRightPosition || (isDecreasing ? 'top' : 'bottom')) : (p1.yPosition || (isDecreasing ? 'top' : 'bottom'));
+    let pos2 = p2.isAsymptote ? (p2.yLeftPosition || (isDecreasing ? 'bottom' : 'top')) : (p2.yPosition || (isDecreasing ? 'bottom' : 'top'));
+
+    // BẮT BUỘC KHÔNG ĐỂ ĐƯỜNG NẰM NGANG KHI HÀM SỐ BIẾN THIÊN:
+    if (isDecreasing) {
+      // Khi đạo hàm y' mang dấu "-" (nghịch biến): BẮT BUỘC điểm bắt đầu ở tầng trên (top) dốc chéo xuống tầng dưới (bottom)
+      pos1 = 'top';
+      pos2 = 'bottom';
+    } else if (isIncreasing) {
+      // Khi đạo hàm y' mang dấu "+" (đồng biến): BẮT BUỘC điểm bắt đầu ở tầng dưới (bottom) dốc chéo lên tầng trên (top)
+      pos1 = 'bottom';
+      pos2 = 'top';
+    } else if (pos1 === pos2) {
+      // Nếu 2 vị trí trùng nhau, so sánh giá trị y nếu có hoặc ép dốc nhẹ tránh đường nằm ngang tuyệt đối
+      const val1 = parseFloat(cleanMathText(p1.yVal).replace('+', ''));
+      const val2 = parseFloat(cleanMathText(p2.yVal).replace('+', ''));
+      if (!isNaN(val1) && !isNaN(val2)) {
+        if (val1 > val2) {
+          pos1 = 'top';
+          pos2 = 'bottom';
+        } else if (val1 < val2) {
+          pos1 = 'bottom';
+          pos2 = 'top';
+        }
+      } else if (cleanMathText(p1.yVal).includes('-∞') || cleanMathText(p2.yVal).includes('+∞')) {
+        pos1 = 'bottom';
+        pos2 = 'top';
+      } else if (cleanMathText(p1.yVal).includes('+∞') || cleanMathText(p2.yVal).includes('-∞')) {
+        pos1 = 'top';
+        pos2 = 'bottom';
+      } else {
+        pos1 = 'middle';
+        pos2 = 'bottom';
+      }
+    }
+
+    const y1 = getYPosValue(pos1);
+    const y2 = getYPosValue(pos2);
 
     // Tính toán vùng biên của giá trị điểm xuất phát
     let x1 = startX;
@@ -214,24 +318,61 @@ export function generateBbtSvg(data: BBTData): string {
 
 /**
  * Tự động phục hồi và ngắt dòng chuẩn cho Bảng biến thiên (BBT) dạng Markdown table
- * nếu bị dính liền trên 1 dòng hoặc dính vào câu văn dẫn xuất của đề thi
+ * nếu bị dính liền trên 1 dòng hoặc dính vào câu văn dẫn xuất của đề thi,
+ * hoặc bị vỡ dòng khi sao chép từ trình duyệt (multiline cells, MathML/KaTeX artifacts)
  */
 export function unflattenMarkdownTables(text: string): string {
-  if (!text || !text.includes('|')) return text;
-  let s = text.replace(/[’`´]/g, "'").replace(/\\prime/g, "'");
+  if (!text || (!text.includes('|') && !text.includes('\\n'))) return text;
+  let s = text
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/[’`´′]/g, "'")
+    .replace(/\\prime/g, "'")
+    .replace(/[−–—]/g, '-');
+
+  // Xử lý tiền xử lý đặc biệt cho các bảng copy từ web/HTML có dòng bị bẻ đôi giữa các ô
+  if (s.includes('|')) {
+    const lines = s.split('\n');
+    const resultLines: string[] = [];
+    let inTable = false;
+    let tableBuffer: string[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (line.includes('|')) {
+        inTable = true;
+        tableBuffer.push(line);
+      } else if (inTable && (line === '' || /^(?:Câu|Bài|Giá trị|Đáp án|##|\d+[\.\)])/i.test(line))) {
+        resultLines.push(collapseMultilineTableLines(tableBuffer));
+        resultLines.push(line);
+        tableBuffer = [];
+        inTable = false;
+      } else if (inTable) {
+        tableBuffer.push(line);
+      } else {
+        resultLines.push(lines[i]);
+      }
+    }
+    if (tableBuffer.length > 0) {
+      resultLines.push(collapseMultilineTableLines(tableBuffer));
+    }
+    s = resultLines.join('\n');
+  }
 
   // 1. Tách văn bản đứng trước bảng nếu bị dính liền trên 1 dòng:
-  // e.g. "như sau? | x |" hoặc "sau?|$x$|" hoặc "sau? | $x$ |"
   s = s.replace(/([^\n|])\s*(\|(?:\s*\$?[xt]\$?|\s*[xt]\s*)\s*\|)/gi, '$1\n\n$2');
 
+  // 1.1 Xóa các dòng trống hoặc khoảng trắng thừa giữa các hàng bảng để đảm bảo các hàng nối liền nhau
+  s = s.replace(/(\|[^\n]+\|)[ \t]*\n\s*\n[ \t]*(\|)/g, '$1\n$2');
+
   // 2. Tách giữa hàng đầu (x) và hàng phân cách |---| nếu có:
-  s = s.replace(/(\|\s*)(?:[ \t]*)(\|\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)+\|)/g, '$1\n$2');
+  s = s.replace(/(\|)[ \t]+(\|\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)+\|)/g, '$1\n$2');
 
-  // 3. Tách trước hàng y' (kể cả có hàng |---| hay không có hàng |---|):
-  s = s.replace(/(\|\s*)(?:[ \t]*)(\|\s*\$?(?:y['’]|y\^\{\s*['’\\prime]\s*\}|y\^\\prime|f['’]|g['’]|f\^\{\s*['’\\prime]\s*\}|g\^\{\s*['’\\prime]\s*\}|f['’]\s*\([a-z]\)|g['’]\s*\([a-z]\))\$?[\s|])/gi, '$1\n$2');
+  // 3. Tách trước hàng y' / f'(x) nếu cùng 1 dòng
+  s = s.replace(/(\|)[ \t]+(\|\s*\$?(?:y['’′]|y\^\{\s*['’′\\prime]\s*\}|y\^\\prime|f['’′]|g['’′]|f\^\{\s*['’′\\prime]\s*\}|g\^\{\s*['’′\\prime]\s*\}|f['’′]?\s*\([a-z]\)|g['’′]?\s*\([a-z]\))\$?[\s|])/gi, '$1\n$2');
 
-  // 4. Tách trước hàng y / f(x):
-  s = s.replace(/(\|\s*)(?:[ \t]*)(\|\s*\$?(?:y|f\s*\([a-z]\)|g\s*\([a-z]\))\$?[\s|])/gi, '$1\n$2');
+  // 4. Tách trước hàng y / f(x) nếu cùng 1 dòng:
+  s = s.replace(/(\|)[ \t]+(\|\s*\$?(?:y|f\s*\([a-z]\)|g\s*\([a-z]\))\$?[\s|])/gi, '$1\n$2');
 
   // 5. Tách văn bản đứng sau bảng nếu dính liền với hàng cuối:
   s = s.replace(/(\|\s*)([^\n|]+)$/gm, (_match, pipe, rest) => {
@@ -242,7 +383,60 @@ export function unflattenMarkdownTables(text: string): string {
     return `${pipe}${rest}`;
   });
 
+  // Đảm bảo không còn dòng trắng nào giữa các hàng markdown table
+  s = s.replace(/(\|[^\n]+\|)[ \t]*\n\s*\n[ \t]*(\|)/g, '$1\n$2');
+
   return s;
+}
+
+function collapseMultilineTableLines(tblLines: string[]): string {
+  const joined = tblLines.join(' ');
+  const sepMatch = joined.match(/\|\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)+\|/);
+  if (!sepMatch) return tblLines.join('\n');
+
+  const sepIdx = sepMatch.index || 0;
+  const beforeSep = joined.substring(0, sepIdx).trim();
+  const sepStr = sepMatch[0].trim();
+  const afterSep = joined.substring(sepIdx + sepMatch[0].length).trim();
+
+  // Tìm vị trí phân cách giữa hàng đạo hàm (row 3) và hàng giá trị f(x) (row 4)
+  const row4Match = afterSep.match(/(?:\|\s*)(?:f\s*\([a-z]\)|y\b)/i);
+  let row2 = afterSep;
+  let row3 = '';
+  if (row4Match && row4Match.index !== undefined && row4Match.index > 3) {
+    row2 = afterSep.substring(0, row4Match.index).trim();
+    row3 = afterSep.substring(row4Match.index).trim();
+    if (!row3.startsWith('|')) row3 = '| ' + row3;
+  }
+
+  const cleanRowCells = (r: string) => {
+    return r.split('|').map(cell => {
+      let c = cell.replace(/\s+/g, ' ').trim();
+      if (/e\s*a\s*r\s*r\s*o\s*w/i.test(c) || /n\s*e\s*a\s*r\s*r\s*o\s*w/i.test(c)) return '↗';
+      if (/s\s*e\s*a\s*r\s*r\s*o\s*w/i.test(c)) return '↘';
+      if (c === '--' || c === '- -') return '-';
+      if (c === '++' || c === '+ +') return '+';
+      if (c === '00' || c === '0 0') return '0';
+      if (c === '11' || c === '1 1') return '1';
+      if (c === '22' || c === '2 2') return '2';
+      if (c === '55' || c === '5 5') return '5';
+      if (c === '↘↘' || c === '↘ ↘') return '↘';
+      if (c === '↗↗' || c === '↗ ↗') return '↗';
+      if (c === '-∞-∞' || c === '- ∞ -∞' || c === '-∞ -∞') return '-∞';
+      if (c === '+∞+∞' || c === '+ ∞ +∞' || c === '+∞ +∞') return '+∞';
+      if (c === '-1-1' || c === '- 1 -1' || c === '-1 -1') return '-1';
+      if (c.includes("f'(x)") || c.includes("f ′ (x)") || c.includes("f' (x)")) return "f'(x)";
+      if (c.includes("f(x)")) return "f(x)";
+      if (c === 'xx' || c === 'x x') return 'x';
+      const parts = c.split(' ');
+      if (parts.length === 2 && parts[0] === parts[1]) return parts[0];
+      return c;
+    }).join(' | ');
+  };
+
+  const rows = [cleanRowCells(beforeSep).trim(), sepStr, cleanRowCells(row2).trim()];
+  if (row3) rows.push(cleanRowCells(row3).trim());
+  return rows.join('\n');
 }
 
 /**
@@ -269,12 +463,12 @@ export function parseMarkdownBbtTable(tableMarkdown: string): BBTData | null {
 
     // Kiểm tra hàng 1: bắt đầu bằng x hoặc t
     const row1Header = cleanMathText(rowCells[0][0]).toLowerCase().replace(/[\$\s]/g, '');
-    const isRow1X = row1Header === 'x' || row1Header === 't' || (row1Header === '' && rowCells[0].length >= 3);
+    const isRow1X = row1Header === 'x' || row1Header === 't' || row1Header === 'xx' || (row1Header === '' && rowCells[0].length >= 3);
     if (!isRow1X) return null;
 
     // Kiểm tra hàng 2: y' hoặc f'(x) hoặc y
     const row2Header = cleanMathText(rowCells[1][0]).toLowerCase().replace(/[\$\s]/g, '');
-    const hasDerivative = row2Header.includes("y'") || row2Header.includes("f'") || row2Header.includes("g'");
+    const hasDerivative = row2Header.includes("y'") || row2Header.includes("f'") || row2Header.includes("g'") || row2Header.includes("y′") || row2Header.includes("f′");
 
     let xCells = rowCells[0].slice(1);
     let yPrimeCells: string[] = [];
@@ -291,7 +485,7 @@ export function parseMarkdownBbtTable(tableMarkdown: string): BBTData | null {
     // 1. Lọc danh sách mốc x hợp lệ
     const xValues: string[] = [];
     for (let c = 0; c < xCells.length; c++) {
-      const val = xCells[c].replace(/\$/g, '').trim();
+      const val = cleanMathText(xCells[c]);
       if (val && val !== '') {
         xValues.push(val);
       }
@@ -301,7 +495,7 @@ export function parseMarkdownBbtTable(tableMarkdown: string): BBTData | null {
     // 2. Trích xuất dấu của y'
     const signs: Array<'+' | '-' | ''> = [];
     yPrimeCells.forEach(cell => {
-      const s = cell.replace(/\$/g, '').trim();
+      const s = cleanMathText(cell);
       if (s === '+' || s === '-') {
         signs.push(s);
       }
@@ -309,18 +503,21 @@ export function parseMarkdownBbtTable(tableMarkdown: string): BBTData | null {
 
     // 3. Phân tích hàng y theo token mũi tên (Arrow-based parsing)
     const isArrow = (txt: string) => {
-      const clean = txt.replace(/\$/g, '').trim();
-      return clean.includes('\\nearrow') || clean.includes('↗') || clean.includes('\\searrow') || clean.includes('↘');
+      const clean = txt.replace(/[\$\s]/g, '').toLowerCase();
+      return clean.includes('nearrow') || clean.includes('earrow') || clean.includes('searrow') ||
+             clean.includes('rightarrow') || clean.includes('uparrow') || clean.includes('downarrow') ||
+             clean.includes('↗') || clean.includes('↘') || clean.includes('↑') || clean.includes('↓') ||
+             clean.includes('->') || clean.includes('-->') || clean.includes('→');
     };
 
     const getTrend = (txt: string): 'increasing' | 'decreasing' => {
-      const clean = txt.replace(/\$/g, '').trim();
-      if (clean.includes('\\searrow') || clean.includes('↘')) return 'decreasing';
+      const clean = txt.replace(/[\$\s]/g, '').toLowerCase();
+      if (clean.includes('searrow') || clean.includes('↘') || clean.includes('downarrow') || clean.includes('↓') || clean.includes('rightarrow') || clean.includes('->') || clean.includes('→')) return 'decreasing';
       return 'increasing';
     };
 
     const yTokens = yCells
-      .map(c => c.replace(/\$/g, '').trim())
+      .map(c => cleanMathText(c))
       .filter(c => c !== '');
 
     const milestoneGroups: string[][] = [];
@@ -605,6 +802,26 @@ export function convertBbtTableToSvg(tableMarkdown: string): string | null {
   const data = parseMarkdownBbtTable(tableMarkdown);
   if (!data) return null;
   return generateBbtSvg(data);
+}
+
+/**
+ * Chuyển đổi mọi bảng biến thiên (Markdown table) trong chuỗi văn bản thành thẻ <svg-wrapper>
+ */
+export function embedBbtSvgsInText(text: string): string {
+  if (!text) return '';
+  const unflattened = unflattenMarkdownTables(text);
+  return unflattened.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
+    try {
+      const svg = convertBbtTableToSvg(match);
+      if (svg) {
+        const base64 = typeof btoa !== 'undefined' 
+          ? btoa(encodeURIComponent(svg)) 
+          : Buffer.from(encodeURIComponent(svg)).toString('base64');
+        return `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n`;
+      }
+    } catch (e) {}
+    return match;
+  });
 }
 
 /**

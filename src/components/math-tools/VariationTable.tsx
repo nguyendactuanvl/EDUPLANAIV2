@@ -1,6 +1,5 @@
 import React from "react";
-import { generateBbtSvg } from "../../lib/bbtRenderer";
-import { BBTData } from "./VariationTableGenerator";
+import { generateBbtSvg, BBTData } from "../../lib/bbtRenderer";
 
 export interface VariationTablePoint {
   x: string;               // LaTeX string e.g. "-\\infty", "1", "2", "+\\infty"

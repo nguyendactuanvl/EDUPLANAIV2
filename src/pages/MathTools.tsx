@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import { 
   Calculator, BarChart3, ArrowUpDown, Plus, Trash2, Copy, Check, FileSpreadsheet, 
   HelpCircle, RefreshCw, Printer, Download, Sparkles, BookOpen, Layers, CheckCircle2, 
@@ -108,7 +108,7 @@ export function MathTools() {
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
 
   // Print ref
-  const reportRef = React.useRef<HTMLDivElement>(null);
+  const reportRef = useRef<HTMLDivElement>(null);
 
   // ----------------------------------------------------------------
   // STATE: PHÂN HỆ 1 (LỚP 10 - SỐ LIỆU RỜI RẠC)
@@ -1944,3 +1944,5 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
     </div>
   );
 }
+
+export default MathTools;

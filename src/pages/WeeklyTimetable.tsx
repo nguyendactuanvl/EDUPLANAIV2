@@ -1,6 +1,6 @@
 import { apiFetch } from '../lib/apiFetch';
 import { parseApiResponse } from '../lib/utils';
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Calendar, Plus, Upload, CheckSquare, Trash2, Loader2, FileImage, Moon } from "lucide-react";
 
 export function WeeklyTimetable() {
@@ -252,3 +252,5 @@ export function WeeklyTimetable() {
     </div>
   );
 }
+
+export default WeeklyTimetable;

@@ -1,8 +1,8 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { unflattenMarkdownTables } from './bbtRenderer';
+import { unflattenMarkdownTables, embedBbtSvgsInText } from './bbtRenderer';
 
-export { unflattenMarkdownTables };
+export { unflattenMarkdownTables, embedBbtSvgsInText };
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -92,112 +92,39 @@ export function sanitizeJsonString(str: string): string {
   return result.replace(/,\s*([\}\]])/g, "$1");
 }
 
-export function extractQuestionFromBrokenJson(raw: string): any {
-  if (!raw || typeof raw !== "string") return null;
-  const result: any = {};
-  
-  const contentMatch = raw.match(/"content"\s*:\s*"((?:[^"\\]|\\.)*)/);
-  if (contentMatch) {
-    result.content = contentMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, "\"").replace(/\\\\/g, "\\");
-  }
-  
-  const solMatch = raw.match(/"solution"\s*:\s*"((?:[^"\\]|\\.)*)/);
-  if (solMatch) {
-    result.solution = solMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, "\"").replace(/\\\\/g, "\\");
-  }
-
-  const typeMatch = raw.match(/"type"\s*:\s*"([^"]+)"/);
-  if (typeMatch) result.type = typeMatch[1];
-
-  const levelMatch = raw.match(/"level"\s*:\s*"([^"]+)"/);
-  if (levelMatch) result.level = levelMatch[1];
-
-  const topicMatch = raw.match(/"topic"\s*:\s*"([^"]+)"/);
-  if (topicMatch) result.topic = topicMatch[1];
-
-  const optIdxMatch = raw.match(/"correctOptionIndex"\s*:\s*(\d+)/);
-  if (optIdxMatch) result.correctOptionIndex = parseInt(optIdxMatch[1], 10);
-
-  const ansMatch = raw.match(/"correctAnswer"\s*:\s*"([^"]+)"/);
-  if (ansMatch) result.correctAnswer = ansMatch[1];
-
-  const optsMatch = raw.match(/"options"\s*:\s*\[([\s\S]*?)\]/);
-  if (optsMatch) {
-    const opts: string[] = [];
-    const optRegex = /"((?:[^"\\]|\\.)*)"/g;
-    let m;
-    while ((m = optRegex.exec(optsMatch[1])) !== null) {
-      opts.push(m[1].replace(/\\n/g, "\n").replace(/\\"/g, "\"").replace(/\\\\/g, "\\"));
-    }
-    if (opts.length > 0) result.options = opts;
-  }
-
-  return Object.keys(result).length > 0 ? result : null;
-}
-
 export function repairTruncatedJson(str: string): string {
-  if (!str) return str;
   let inString = false;
   let escaped = false;
-  let out = "";
+  const stack: string[] = [];
 
   for (let i = 0; i < str.length; i++) {
     const ch = str[i];
     if (inString) {
       if (escaped) {
         escaped = false;
-        out += ch;
       } else if (ch === "\\") {
         escaped = true;
-        out += ch;
       } else if (ch === "\"") {
         inString = false;
-        out += ch;
-      } else if (ch === "\n") {
-        out += "\\n";
-      } else if (ch === "\r") {
-        out += "\\r";
-      } else if (ch === "\t") {
-        out += "\\t";
-      } else {
-        out += ch;
       }
     } else {
       if (ch === "\"") {
         inString = true;
-        out += ch;
-      } else {
-        out += ch;
+      } else if (ch === "{" || ch === "[") {
+        stack.push(ch);
+      } else if (ch === "}" && stack[stack.length - 1] === "{") {
+        stack.pop();
+      } else if (ch === "]" && stack[stack.length - 1] === "[") {
+        stack.pop();
       }
     }
   }
 
-  let repaired = out;
+  let repaired = str;
   if (inString) {
-    if (escaped) {
-      repaired += "\\";
-    }
     repaired += "\"";
   }
   repaired = repaired.replace(/,\s*$/, "");
-
-  const stack: string[] = [];
-  inString = false;
-  escaped = false;
-  for (let i = 0; i < repaired.length; i++) {
-    const ch = repaired[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === "\"") inString = false;
-    } else {
-      if (ch === "\"") inString = true;
-      else if (ch === "{" || ch === "[") stack.push(ch);
-      else if (ch === "}" && stack[stack.length - 1] === "{") stack.pop();
-      else if (ch === "]" && stack[stack.length - 1] === "[") stack.pop();
-    }
-  }
-
   while (stack.length > 0) {
     const top = stack.pop();
     if (top === "{") repaired += "}";
@@ -236,24 +163,12 @@ export function safeJsonParse<T = any>(text: string, fallback?: T): T {
       try {
         const repaired = repairTruncatedJson(cleaned);
         return JSON.parse(sanitizeJsonString(repaired));
-      } catch (e4) {
-        try {
-          const sanitizedRepaired = sanitizeJsonString(repairTruncatedJson(cleaned));
-          return JSON.parse(sanitizedRepaired);
-        } catch (e5) {}
-      }
-
-      try {
-        const extracted = extractQuestionFromBrokenJson(cleaned);
-        if (extracted && (extracted.content || extracted.solution)) {
-          return { question: extracted } as any;
-        }
-      } catch (e6) {}
+      } catch (e4) {}
 
       if (fallback !== undefined && fallback !== null) {
         return fallback;
       }
-      return null as any;
+      throw e1;
     }
   }
 }
@@ -327,27 +242,37 @@ export function normalizeInfinity(text: any): string {
   if (!text && text !== 0) return '';
   let s = String(text);
 
-  // 1. Normalize OCR / font ligature splits: "in fty", "in  fty", "in\tfty"
-  s = s.replace(/\bin\s+fty\b/gi, '\\infty');
-  s = s.replace(/([+\-±])\s*in\s*fty\b/gi, '$1\\infty');
+  // 1. Cưỡng chế sửa mọi biến thể âm/dương vô cực và dấu gạch chéo bị rách chuỗi
+  s = s.replace(/[-–—]\s*\\+\s*infty\b/gi, '-\\infty');
+  s = s.replace(/\+\s*\\+\s*infty\b/gi, '+\\infty');
+  s = s.replace(/[-–—]\s*infty\b/gi, '-\\infty');
+  s = s.replace(/\+\s*infty\b/gi, '+\\infty');
 
-  // 2. Normalize "infty" not preceded by backslash: e.g. "-infty", "+infty", "infty"
+  // 2. Chữa lỗi dấu gạch chéo ngược có khoảng trắng: "\ infty", "\\ infty"
+  s = s.replace(/\\+\s+infty\b/gi, '\\infty');
+  s = s.replace(/([+\-–—±])\s*\\+\s*infty\b/gi, (m, sign) => (sign === '+' ? '+\\infty' : '-\\infty'));
+
+  // 3. Normalize OCR / font ligature splits: "in fty", "in  fty", "in\tfty"
+  s = s.replace(/\bin\s+fty\b/gi, '\\infty');
+  s = s.replace(/([+\-–—±])\s*in\s*fty\b/gi, '$1\\infty');
+
+  // 4. Normalize "infty" not preceded by backslash: e.g. "-infty", "+infty", "infty"
   s = s.replace(/(?<!\\)\binfty\b/g, '\\infty');
 
-  // 3. Normalize spaces between sign and \infty: e.g. "- \infty" -> "-\infty", "+ \infty" -> "+\infty"
-  s = s.replace(/([+\-±])\s+\\infty\b/g, '$1\\infty');
+  // 5. Normalize spaces between sign and \infty: e.g. "- \infty" -> "-\infty", "+ \infty" -> "+\infty"
+  s = s.replace(/([+\-–—±])\s+\\infty\b/g, '$1\\infty');
 
-  // 4. Normalize informal "oo" used as infinity in intervals, limits, or signs:
+  // 6. Normalize informal "oo" used as infinity in intervals, limits, or signs:
   // e.g. "(-oo; -1)", "(1; +oo)", "[-oo; +oo]", "x \to +oo"
-  s = s.replace(/([\(\[\{;,]\s*)([+\-±]?)\s*oo\b/gi, '$1$2\\infty');
-  s = s.replace(/\b([+\-±])\s*oo\b/gi, '$1\\infty');
-  s = s.replace(/\\to\s*([+\-±]?)\s*oo\b/gi, '\\to $1\\infty');
-  s = s.replace(/\b([+\-±]?)\s*oo(\s*[\)\]\};,])/gi, '$1\\infty$2');
+  s = s.replace(/([\(\[\{;,]\s*)([+\-–—±]?)\s*oo\b/gi, '$1$2\\infty');
+  s = s.replace(/\b([+\-–—±])\s*oo\b/gi, '$1\\infty');
+  s = s.replace(/\\to\s*([+\-–—±]?)\s*oo\b/gi, '\\to $1\\infty');
+  s = s.replace(/\b([+\-–—±]?)\s*oo(\s*[\)\]\};,])/gi, '$1\\infty$2');
 
-  // 5. Normalize intervals where \infty had stray internal dollars:
+  // 7. Normalize intervals where \infty had stray internal dollars:
   // e.g. "(-$\infty$; -1)" -> "(-\infty; -1)", "(-1; +$\infty$)" -> "(-1; +\infty)"
-  s = s.replace(/([\[\(])\s*([+\-±]?)\s*\$\\infty\$\s*([;,])/g, '$1$2\\infty$3');
-  s = s.replace(/([;,]\s*)([+\-±]?)\s*\$\\infty\$\s*([\]\)])/g, '$1$2\\infty$3');
+  s = s.replace(/([\[\(])\s*([+\-–—±]?)\s*\$\\infty\$\s*([;,])/g, '$1$2\\infty$3');
+  s = s.replace(/([;,]\s*)([+\-–—±]?)\s*\$\\infty\$\s*([\]\)])/g, '$1$2\\infty$3');
 
   return s;
 }
@@ -411,9 +336,9 @@ export function normalizeCasesBody(body: string): string {
   // 3. Nếu giữa các dòng xuống hàng thực sự mà thiếu `\\` -> bổ sung `\\`
   s = s.replace(/([^\\])\n\s*([a-zA-Z0-9\-\+\{\(\\])/g, '$1 \\\\\n $2');
 
-  // 4. Sửa lỗi dính dòng giữa các bất phương trình/phương trình (như \ge 1002x hoặc \ge 80x):
-  // CHỈ tách nếu vế sau có chứa thêm toán tử bất phương trình/phương trình tiếp theo
-  // Tránh tách nhầm các biểu thức hợp lệ như `x \ge 2x - 1`
+  // 4. Sửa lỗi dính dòng giữa các bất phương trình/phương trình (như \ge 1002x hoặc \ge 80x, > 0x, < 0x):
+  s = s.replace(/([<>=]|\\ge|\\le|\\leq|\\geq|\\neq)\s*0\s*([a-zA-Z\d][^\\\n]*?(?:[<>=]|\\ge|\\le|\\leq|\\geq|\\neq))/g, '$1 0 \\\\\n $2');
+  s = s.replace(/([<>=]|\\ge|\\le|\\leq|\\geq|\\neq)\s*0\s*([a-zA-Z]\b)/g, '$1 0 \\\\\n $2');
   s = s.replace(/([<>=]|\\ge|\\le|\\leq|\\geq|\\neq)\s*(\d+)\s*([a-zA-Z\d][^\\\n]*?(?:[<>=]|\\ge|\\le|\\leq|\\geq|\\neq))/g, (_m, op, num, rest) => {
     const subMatch = num.match(/^(\d+?0+)([1-9][a-zA-Z].*)$/);
     if (subMatch) {
@@ -1268,10 +1193,10 @@ export const sanitizeExamQuestion = (rawContent: string): string => {
     }
   }
 
-  // BƯỚC 2: BẢO VỆ CÁC KHỐI MÔI TRƯỜNG TOÁN HỌC, KHỐI CODE, BẢNG BIẾN THIÊN VÀ MATH HỢP LỆ TRƯỚC HẾT
+  // BƯỚC 2: BẢO VỆ CÁC KHỐI MÔI TRƯỜNG TOÁN HỌC, KHỐI CODE, BẢNG BIẾN THIÊN, ẢNH VÀ MATH HỢP LỆ TRƯỚC HẾT
   const envTokens: string[] = [];
   content = unflattenMarkdownTables(content);
-  content = content.replace(/(```[\s\S]*?```|`[^`\n]+`|<svg[\s\S]*?<\/svg>|<tikz-diagram[\s\S]*?<\/tikz-diagram>|<svg-wrapper[\s\S]*?<\/svg-wrapper>|\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\}|\\left\s*\[\s*\\begin\s*\{aligned\*?\}[\s\S]*?\\end\s*\{aligned\*?\}\s*\\right\.?|\\begin\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}[\s\S]*?\\end\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}|(?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gim, (match) => {
+  content = content.replace(/(```[\s\S]*?```|`[^`\n]+`|<img[\s\S]*?>|<svg[\s\S]*?<\/svg>|<tikz-diagram[\s\S]*?<\/tikz-diagram>|<svg-wrapper[\s\S]*?<\/svg-wrapper>|\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\}|\\left\s*\[\s*\\begin\s*\{aligned\*?\}[\s\S]*?\\end\s*\{aligned\*?\}\s*\\right\.?|\\begin\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}[\s\S]*?\\end\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}|(?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gim, (match) => {
     envTokens.push(match);
     return `\uE000EB_${envTokens.length - 1}\uE001`;
   });
@@ -1804,24 +1729,40 @@ export function getPublicAppUrl(): string {
 
 export function cleanQuestionStem(content: any, options?: any[], tfStatements?: any[]): string {
   if (!content) return '';
-  let text = unflattenMarkdownTables(String(content).trim());
+  let rawStr = String(content).replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n');
+  let text = unflattenMarkdownTables(rawStr.trim());
+  
+  // Bảo vệ an toàn tuyệt đối cho Bảng biến thiên (BBT), Đồ thị, SVGs, Images & Markdown tables
+  // TRƯỚC KHI sanitizeLatexString hoặc bất kỳ regex nào can thiệp!
+  const visualTokens: string[] = [];
+  const protectVisual = (m: string) => {
+    visualTokens.push(m);
+    return `\n\n___VISUAL_TOKEN_${visualTokens.length - 1}___\n\n`;
+  };
+
+  text = text.replace(/<svg-wrapper[\s\S]*?<\/svg-wrapper>/gi, protectVisual);
+  text = text.replace(/<tikz-diagram[\s\S]*?<\/tikz-diagram>/gi, protectVisual);
+  text = text.replace(/<svg[\s\S]*?<\/svg>/gi, protectVisual);
+  text = text.replace(/<img\b[\s\S]*?>/gi, protectVisual);
+  text = text.replace(/(?:```[a-z]*\s*[\s\S]*?\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\}\s*```|```tikz\s*[\s\S]*?```|\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\})/gi, protectVisual);
+  text = text.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, protectVisual);
+
   text = sanitizeLatexString(text);
   
   // Strip any leaked preamble packages
   text = text.replace(/\\(usetikzlibrary|usepackage)\s*\{[^}]*\}\s*/gi, '');
+
+  // Strip any leaked HTML fragments or image placeholder tokens
+  text = text
+    .replace(/\[HINH_ANH\]/gi, '')
+    .replace(/class=["'][^"']*max-h-[^"']*["']\s*\/?>/gi, '')
+    .replace(/<div\b[^>]*>\s*<\/div>/gi, '');
 
   // Strip system prefixes like (Loại tf), (Loại mcq), [Loại: tf], (Loại Đúng/Sai), etc.
   text = text
     .replace(/(Câu\s*\d+)\s*[:\.]?\s*[\(\[]\s*Loại(?:\s*trắc\s*nghiệm|\s*đúng\s*sai|\s*trả\s*lời\s*ngắn|\s*tự\s*luận|[:\s]+[a-z0-9_\-]+)?\s*[\)\]]\s*[:\.]?/gi, '$1:')
     .replace(/[\(\[]\s*Loại(?:\s*trắc\s*nghiệm|\s*đúng\s*sai|\s*trả\s*lời\s*ngắn|\s*tự\s*luận|[:\s]+[a-z0-9_\-]+)?\s*[\)\]]\s*:?/gi, '')
     .replace(/(Câu\s*\d+[:\.])\s*/gi, '$1 ');
-
-  // Bảo vệ an toàn tuyệt đối cho Bảng biến thiên (BBT) & Markdown tables không bị phá vỡ cấu trúc dòng
-  const tableTokens: string[] = [];
-  text = text.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
-    tableTokens.push(match.trim());
-    return `\n\n___BBT_TABLE_TOKEN_${tableTokens.length - 1}___\n\n`;
-  });
 
   text = text
     .replace(/[ \t]{2,}/g, ' ')
@@ -1849,9 +1790,9 @@ export function cleanQuestionStem(content: any, options?: any[], tfStatements?: 
   
   let cleaned = sanitizeExamQuestion(text.trim());
 
-  // Khôi phục các bảng BBT nguyên vẹn
-  cleaned = cleaned.replace(/___BBT_TABLE_TOKEN_(\d+)___/g, (_m, idx) => {
-    const raw = tableTokens[Number(idx)];
+  // Khôi phục các hình vẽ BBT & đồ thị nguyên vẹn 100%
+  cleaned = cleaned.replace(/___VISUAL_TOKEN_(\d+)___/g, (_m, idx) => {
+    const raw = visualTokens[Number(idx)];
     return raw ? `\n\n${raw}\n\n` : '';
   });
 
@@ -2080,13 +2021,37 @@ export const wrapAllNakedMath = (str: string): string => {
 export const fixMath = (text: any) => {
     if (!text || text === 'undefined') return '';
     if (typeof text !== 'string') text = String(text);
-    let t = unflattenMarkdownTables(sanitizeLatexString(text.trim()));
+    let t = embedBbtSvgsInText(unflattenMarkdownTables(sanitizeLatexString(text.trim())));
     t = rescueCodeAndNestedText(t);
     t = normalizePropositionQuotes(t);
     t = normalizeLogicAndSetSymbols(normalizeMathLatex(t));
     
     // 0. Remove stray preamble packages that might be generated in math or TikZ
     t = t.replace(/\\(usetikzlibrary|usepackage)\s*\{[^}]*\}\s*/gi, '');
+
+    // 0.05. Sửa lỗi hệ phương trình bị mất gạch chéo và ngoặc nhọn:
+    // Bắt và chuyển đổi các chuỗi "begincases", "begin cases", "\begin cases" thành "\begin{cases}".
+    // Bắt và chuyển đổi "endcases", "end cases", "\end cases" thành "\end{cases}".
+    t = t.replace(/\\?begin\s*cases\b/gi, '\\begin{cases}');
+    t = t.replace(/\\?begincases\b/gi, '\\begin{cases}');
+    t = t.replace(/\\?end\s*cases\b/gi, '\\end{cases}');
+    t = t.replace(/\\?endcases\b/gi, '\\end{cases}');
+
+    // 0.06. Sửa lỗi ký hiệu tập hợp và toán học bị dính khoảng trắng sau gạch chéo:
+    // "\ \in", "\\ \in" -> "\in"
+    // "\ \mathbb", "\\ \mathbb" -> "\mathbb"
+    // "\ \mid", "\\ \mid" -> "\mid"
+    // "\ text", "\\ text" -> "\text"
+    t = t.replace(/(?<!\\)\\+\s+in\b/g, '\\in');
+    t = t.replace(/(?<!\\)\\+\s+mathbb\b/g, '\\mathbb');
+    t = t.replace(/(?<!\\)\\+\s+mid\b/g, '\\mid');
+    t = t.replace(/(?<!\\)\\+\s+text\b/g, '\\text');
+    t = t.replace(/(?<!\\)\\+\s+notin\b/g, '\\notin');
+    t = t.replace(/(?<!\\)\\+\s+subset\b/g, '\\subset');
+
+    // Tự động thoát dấu ngoặc nhọn tập hợp "{" và "}" thành "\{" và "\}" để KaTeX hiển thị đúng
+    t = t.replace(/([=:]|\\in|\\cap|\\cup|\\subset)\s*(?<!\\)\{([^{}\n]+?)(?<!\\)\}/g, '$1 \\{$2\\}');
+    t = t.replace(/(?<!\\)\{\s*([a-zA-Z\d]\s*\\in\s*\\mathbb[^{}\n]+?)\s*(?<!\\)\}/g, '\\{$1\\}');
 
     // 0.1. Normalize infinity in all variations (in fty, infty without backslash, etc.)
     t = normalizeInfinity(t);
@@ -2132,6 +2097,10 @@ export const fixMath = (text: any) => {
                 const safeFormula = f.replace(/(?<!\\)\|/g, '\\vert ');
                 return `$${safeFormula}$`;
             });
+            // 3. Cưỡng chế đổi mọi mũi tên ngang trong bảng biến thiên thành \searrow
+            line = line.replace(/\\(?:rightarrow|longrightarrow)\b/g, '\\searrow');
+            line = line.replace(/\|\s*-{1,2}>\s*\|/g, '| $\\searrow$ |');
+            line = line.replace(/(?<=\|\s*(?:\$)?)\s*-{1,2}>\s*(?=(?:\$)?\s*\|)/g, '\\searrow');
             rawLines[i] = line;
         }
     }
@@ -2227,8 +2196,8 @@ export const fixMath = (text: any) => {
         return `$$\n${normalizeInfinity(formula.trim())}\n$$`;
     });
 
-    // 2.9. Protect existing math blocks, code blocks, inline code, TikZ, and SVGs while wrapping naked math commands
-    const tokenRegex = /(```[\s\S]*?```|`[^`\n]+`|<svg[\s\S]*?<\/svg>|<tikz-diagram[\s\S]*?<\/tikz-diagram>|<svg-wrapper[\s\S]*?<\/svg-wrapper>|\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\}|\\begin\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}[\s\S]*?\\end\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}|\$\$[\s\S]*?\$\$|\$(?:\\\$|[^\$])+?\$)/gi;
+    // 2.9. Protect existing math blocks, code blocks, inline code, TikZ, and SVGs/images while wrapping naked math commands
+    const tokenRegex = /(```[\s\S]*?```|`[^`\n]+`|<img[\s\S]*?>|<svg[\s\S]*?<\/svg>|<tikz-diagram[\s\S]*?<\/tikz-diagram>|<svg-wrapper[\s\S]*?<\/svg-wrapper>|\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\}|\\begin\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}[\s\S]*?\\end\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}|\$\$[\s\S]*?\$\$|\$(?:\\\$|[^\$])+?\$)/gi;
     const parts: { isProtected: boolean; text: string }[] = [];
     let lastIndex = 0;
     let match: RegExpExecArray | null;

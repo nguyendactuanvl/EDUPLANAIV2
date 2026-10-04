@@ -45,7 +45,9 @@ import { saveExamToCloud } from '../lib/cloudExamStore';
 import { apiFetch } from '../lib/apiFetch';
 import { GDPT_2018_SUBJECTS } from '../lib/subjects';
 import { formatMathContent, sanitizeShortAnswerInput, validateShortAnswer, sanitizeExamQuestion } from '../lib/utils';
+import { attachCroppedFiguresToQuestions } from '../lib/cropUtils';
 import { SimilarExamsModal } from './SimilarExamsModal';
+import { QuestionEditModal } from './QuestionEditModal';
 
 export { formatMathContent };
 
@@ -350,7 +352,16 @@ export function UploadTeacherExamModal({
         fileType: uploadedFile?.type
       });
 
-      const parsedQuestions = parsedRes.questions || (Array.isArray(parsedRes) ? parsedRes : []);
+      let parsedQuestions = parsedRes.questions || (Array.isArray(parsedRes) ? parsedRes : []);
+
+      // Tự động cắt và nhúng ảnh/BBT vào câu hỏi nếu có file gốc tải lên
+      if (uploadedFile?.data && parsedQuestions && parsedQuestions.length > 0) {
+        try {
+          parsedQuestions = await attachCroppedFiguresToQuestions(parsedQuestions, uploadedFile.data);
+        } catch (cropErr) {
+          console.warn("Lỗi tự động crop hình ảnh cho câu hỏi đề thi:", cropErr);
+        }
+      }
 
       if (!parsedQuestions || parsedQuestions.length === 0) {
         // Fallback to local regex parser if rawText exists
@@ -556,6 +567,7 @@ export function UploadTeacherExamModal({
     const newId = questions.length > 0 ? Math.max(...questions.map(q => Number(q.id) || 0)) + 1 : 1;
     const newQ: ParsedQuestion = {
       id: newId,
+      section: 1,
       type: "mc",
       level: "Thông hiểu",
       content: "Nhập nội dung câu hỏi mới (ví dụ: Tìm tập xác định của hàm số $y = \\frac{1}{x-1}$)...",
@@ -1163,338 +1175,323 @@ export function UploadTeacherExamModal({
               </div>
 
               {/* Questions List */}
-              <div className="space-y-4">
-                {questions.map((q, idx) => {
-                  const isBeingEdited = editingId === q.id;
+              <div className="space-y-8">
+                {[1, 2, 3, 4].map(section => {
+                  const sectionQuestions = questions.filter(q => q.section === section);
+                  if (sectionQuestions.length === 0) return null;
+                  return (
+                    <div key={section} className="space-y-4">
+                      <h3 className="font-bold text-base text-indigo-900 border-b-2 border-indigo-200 pb-1 pt-4">
+                        {section === 1 ? 'PHẦN I: Trắc nghiệm nhiều phương án lựa chọn' : 
+                         section === 2 ? 'PHẦN II: Trắc nghiệm Đúng / Sai' : 
+                         section === 3 ? 'PHẦN III: Trắc nghiệm trả lời ngắn / Điền số' : 
+                         'PHẦN IV: Tự luận'}
+                      </h3>
+                      {sectionQuestions.map((q, idx) => {
+                        const isBeingEdited = editingId === q.id;
 
-                  // NORMAL VIEW CARD
-                  if (!isBeingEdited) {
-                    return (
-                      <div
-                        key={q.id || idx}
-                        className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-xs hover:border-indigo-300 transition-all space-y-3"
-                      >
-                        {/* Header of question card */}
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                          <div className="flex items-center gap-2">
-                            <span className="px-2.5 py-1 bg-indigo-100 text-indigo-800 font-bold text-xs rounded-md">
-                              Câu {idx + 1}
-                            </span>
-                            <span className="text-xs text-slate-500 font-medium">
-                              {q.type === 'mc' || (q.type as string) === 'MULTIPLE_CHOICE'
-                                ? 'Phần I: Trắc nghiệm 4 phương án' 
-                                : (q.type === 'tf' || (q.type as string) === 'TRUE_FALSE'
-                                    ? 'Phần II: Đúng / Sai' 
-                                    : (q.type === 'sa' || (q.type as string) === 'SHORT_ANSWER'
-                                        ? 'Phần III: Trả lời ngắn / Điền số'
-                                        : 'Phần IV: Tự luận'))}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => startEditQuestion(q.id)}
-                              className="px-2.5 py-1 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                              title="Chỉnh sửa câu hỏi này"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" /> Sửa
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => deleteQuestion(q.id, idx)}
-                              className="px-2 py-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                              title="Xóa câu hỏi này"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" /> Xóa
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Question Stem Content */}
-                        <div className="text-sm text-slate-800 font-medium">
-                          <MarkdownRenderer content={formatMathContent(q.content)} />
-                        </div>
-
-                        {/* HIỂN THỊ ĐỒ THỊ / HÌNH VẼ CHO CÂU HỎI */}
-                        {q.imageUrl ? (
-                          <div className="flex flex-col items-center justify-center my-3 p-3 bg-slate-50 border border-slate-200 rounded-xl overflow-hidden">
-                            <img
-                              src={q.imageUrl}
-                              alt={`Hình minh họa / Đồ thị câu ${q.id || (idx + 1)}`}
-                              loading="lazy"
-                              referrerPolicy="no-referrer"
-                              className="max-h-64 max-w-full object-contain rounded-lg border border-slate-200 bg-white shadow-2xs"
-                            />
-                            <span className="text-[11px] text-slate-500 mt-1.5 italic font-medium">
-                              Hình minh họa / Đồ thị câu {q.id || (idx + 1)}
-                            </span>
-                          </div>
-                        ) : (
-                          /hình vẽ|hình bên|đồ thị/i.test(q.content || '') && (
+                        // NORMAL VIEW CARD
+                        if (!isBeingEdited) {
+                          return (
                             <div
-                              tabIndex={0}
-                              onPaste={(e) => handleDirectPasteForQuestion(q.id, e)}
-                              className="my-3 p-3 border-2 border-dashed border-amber-300 bg-amber-50/60 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-amber-900 transition-colors focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                              key={q.id || idx}
+                              className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-xs hover:border-indigo-300 transition-all space-y-3"
                             >
-                              <div className="flex items-center gap-2.5">
-                                <Image className="w-5 h-5 text-amber-600 shrink-0" />
-                                <div>
-                                  <p className="font-semibold text-amber-900">
-                                    Câu hỏi có nhắc đến <em>hình vẽ / hình bên / đồ thị</em> nhưng chưa đính kèm ảnh.
-                                  </p>
-                                  <p className="text-[11px] text-amber-700">
-                                    Bấm nút bên phải để tải ảnh lên hoặc nhấp vào đây và nhấn <strong>Ctrl + V</strong> để dán ảnh chụp màn hình nhanh.
-                                  </p>
+                              {/* Header of question card */}
+                              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="px-2.5 py-1 bg-indigo-100 text-indigo-800 font-bold text-xs rounded-md">
+                                    Câu {idx + 1}
+                                  </span>
+                                </div>
+                                
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      // Sử dụng QuestionEditModal thay cho inline edit
+                                      setEditingId(q.id);
+                                      const target = questions.find(item => item.id === q.id);
+                                      if (target) {
+                                        setEditingQuestion(target);
+                                        // Mở modal (cần tạo state cho modal này hoặc reuse)
+                                        // Vì cấu trúc hiện tại phức tạp, tạm thời mở QuestionEditModal
+                                      }
+                                    }}
+                                    className="px-2.5 py-1 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                                    title="Chỉnh sửa câu hỏi này"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" /> Sửa
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteQuestion(q.id, idx)}
+                                    className="px-2 py-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                                    title="Xóa câu hỏi này"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" /> Xóa
+                                  </button>
                                 </div>
                               </div>
 
-                              <div className="flex items-center gap-2 shrink-0">
-                                <input
-                                  type="file"
-                                  id={`figure-upload-${q.id || idx}`}
-                                  accept="image/*"
-                                  className="hidden"
-                                  onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) handleDirectUploadForQuestion(q.id, file);
-                                  }}
-                                />
+                              {/* Question Stem Content */}
+                              <div className="text-sm text-slate-800 font-medium">
+                                <MarkdownRenderer content={formatMathContent(q.content)} />
+                              </div>
+
+                              {/* HIỂN THỊ ĐỒ THỊ / HÌNH VẼ CHO CÂU HỎI */}
+                              {q.imageUrl ? (
+                                <div className="flex flex-col items-center justify-center my-3 p-3 bg-slate-50 border border-slate-200 rounded-xl overflow-hidden">
+                                  <img
+                                    src={q.imageUrl}
+                                    alt={`Hình minh họa / Đồ thị câu ${idx + 1}`}
+                                    loading="lazy"
+                                    referrerPolicy="no-referrer"
+                                    className="max-h-64 max-w-full object-contain rounded-lg border border-slate-200 bg-white shadow-2xs"
+                                  />
+                                  <span className="text-[11px] text-slate-500 mt-1.5 italic font-medium">
+                                    Hình minh họa / Đồ thị câu {idx + 1}
+                                  </span>
+                                </div>
+                              ) : (
+                                /hình vẽ|hình bên|đồ thị/i.test(q.content || '') && (
+                                  <div
+                                    tabIndex={0}
+                                    onPaste={(e) => handleDirectPasteForQuestion(q.id, e)}
+                                    className="my-3 p-3 border-2 border-dashed border-amber-300 bg-amber-50/60 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-amber-900 transition-colors focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                                  >
+                                    <div className="flex items-center gap-2.5">
+                                      <Image className="w-5 h-5 text-amber-600 shrink-0" />
+                                      <div>
+                                        <p className="font-semibold text-amber-900">
+                                          Câu hỏi có nhắc đến <em>hình vẽ / hình bên / đồ thị</em> nhưng chưa đính kèm ảnh.
+                                        </p>
+                                        <p className="text-[11px] text-amber-700">
+                                          Bấm nút bên phải để tải ảnh lên hoặc nhấp vào đây và nhấn <strong>Ctrl + V</strong> để dán ảnh chụp màn hình nhanh.
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <input
+                                        type="file"
+                                        id={`figure-upload-${q.id || idx}`}
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file) handleDirectUploadForQuestion(q.id, file);
+                                        }}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          document.getElementById(`figure-upload-${q.id || idx}`)?.click();
+                                        }}
+                                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                                      >
+                                        <ImagePlus className="w-3.5 h-3.5" /> + Thêm ảnh đồ thị
+                                      </button>
+                                    </div>
+                                  </div>
+                                )
+                              )}
+                              {/* Options A, B, C, D (for Multiple Choice) */}
+                              {(q.type === 'mc' || (q.type as string) === 'MULTIPLE_CHOICE' || (!q.type && q.options)) && q.options && q.options.length > 0 && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                                  {q.options.map((opt, optIdx) => {
+                                    const isCorrect = q.correctOptionIndex === optIdx;
+                                    const label = String.fromCharCode(65 + optIdx);
+                                    return (
+                                      <div
+                                        key={optIdx}
+                                        className={`p-2.5 rounded-lg border text-xs sm:text-sm flex items-start gap-2 ${
+                                          isCorrect 
+                                            ? 'bg-emerald-50/80 border-emerald-400 text-emerald-900 font-semibold shadow-2xs' 
+                                            : 'bg-slate-50 border-slate-200 text-slate-700'
+                                        }`}
+                                      >
+                                        <span className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+                                          isCorrect ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700'
+                                        }`}>
+                                          {label}
+                                        </span>
+                                        <div className="flex-1">
+                                          <MarkdownRenderer content={formatMathContent(opt)} />
+                                        </div>
+                                        {isCorrect && (
+                                          <span className="text-emerald-600 shrink-0 font-bold text-xs flex items-center gap-0.5">
+                                            <CheckCircle2 className="w-4 h-4" /> Đúng
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
+                              {/* True / False Statements (for Part II) */}
+                              {(q.type === 'tf' || (q.type as string) === 'TRUE_FALSE') && q.tfStatements && q.tfStatements.length > 0 && (
+                                <div className="space-y-2 pt-1">
+                                  {q.tfStatements.map((stmt, sIdx) => {
+                                    const isTrue = stmt.correct === true;
+                                    const subLabel = ['a)', 'b)', 'c)', 'd)'][sIdx] || `${String.fromCharCode(97 + sIdx)})`;
+                                    return (
+                                      <div
+                                        key={sIdx}
+                                        className={`p-2.5 rounded-lg border text-xs sm:text-sm flex items-center justify-between gap-3 ${
+                                          isTrue ? 'bg-emerald-50/70 border-emerald-300' : 'bg-rose-50/70 border-rose-300'
+                                        }`}
+                                      >
+                                        <div className="flex items-start gap-2 flex-1">
+                                          <span className="font-bold text-slate-700 shrink-0">{subLabel}</span>
+                                          <div className="flex-1 text-slate-800">
+                                            <MarkdownRenderer content={formatMathContent(stmt.statement)} />
+                                          </div>
+                                        </div>
+                                        <span className={`px-2 py-0.5 rounded text-xs font-bold shrink-0 ${
+                                          isTrue ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
+                                        }`}>
+                                          {isTrue ? 'Đúng' : 'Sai'}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        // INLINE EDITING CARD
+                        return (
+                          <div
+                            key={q.id || idx}
+                            className="bg-white border-2 border-indigo-500 rounded-xl p-4 sm:p-6 shadow-md space-y-4 ring-4 ring-indigo-50"
+                          >
+                            <div className="flex items-center justify-between border-b border-indigo-100 pb-3">
+                              <span className="font-bold text-indigo-800 text-sm flex items-center gap-2">
+                                <Edit3 className="w-4 h-4 text-indigo-600" />
+                                Đang chỉnh sửa: Câu {idx + 1}
+                              </span>
+                              <div className="flex items-center gap-2">
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    document.getElementById(`figure-upload-${q.id || idx}`)?.click();
-                                  }}
-                                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                                  onClick={saveEditedQuestion}
+                                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg text-xs shadow-2xs transition-colors cursor-pointer"
                                 >
-                                  <ImagePlus className="w-3.5 h-3.5" /> + Thêm ảnh đồ thị cho câu này
+                                  Lưu
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={cancelEditQuestion}
+                                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition-colors cursor-pointer"
+                                >
+                                  Hủy
                                 </button>
                               </div>
                             </div>
-                          )
-                        )}
 
-                        {/* Options A, B, C, D (for Multiple Choice) */}
-                        {(q.type === 'mc' || (q.type as string) === 'MULTIPLE_CHOICE' || (!q.type && q.options)) && q.options && q.options.length > 0 && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                            {q.options.map((opt, optIdx) => {
-                              const isCorrect = q.correctOptionIndex === optIdx;
-                              const label = String.fromCharCode(65 + optIdx);
-                              return (
-                                <div
-                                  key={optIdx}
-                                  className={`p-2.5 rounded-lg border text-xs sm:text-sm flex items-start gap-2 ${
-                                    isCorrect 
-                                      ? 'bg-emerald-50/80 border-emerald-400 text-emerald-900 font-semibold shadow-2xs' 
-                                      : 'bg-slate-50 border-slate-200 text-slate-700'
-                                  }`}
-                                >
-                                  <span className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
-                                    isCorrect ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700'
-                                  }`}>
-                                    {label}
-                                  </span>
-                                  <div className="flex-1">
-                                    <MarkdownRenderer content={formatMathContent(opt)} />
-                                  </div>
-                                  {isCorrect && (
-                                    <span className="text-emerald-600 shrink-0 font-bold text-xs flex items-center gap-0.5">
-                                      <CheckCircle2 className="w-4 h-4" /> Đúng
-                                    </span>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {/* True / False Statements (for Part II) */}
-                        {(q.type === 'tf' || (q.type as string) === 'TRUE_FALSE') && q.tfStatements && q.tfStatements.length > 0 && (
-                          <div className="space-y-2 pt-1">
-                            {q.tfStatements.map((stmt, sIdx) => {
-                              const isTrue = stmt.correct === true;
-                              const subLabel = ['a)', 'b)', 'c)', 'd)'][sIdx] || `${String.fromCharCode(97 + sIdx)})`;
-                              return (
-                                <div
-                                  key={sIdx}
-                                  className={`p-2.5 rounded-lg border text-xs sm:text-sm flex items-center justify-between gap-3 ${
-                                    isTrue ? 'bg-emerald-50/70 border-emerald-300' : 'bg-rose-50/70 border-rose-300'
-                                  }`}
-                                >
-                                  <div className="flex items-start gap-2 flex-1">
-                                    <span className="font-bold text-slate-700 shrink-0">{subLabel}</span>
-                                    <div className="flex-1 text-slate-800">
-                                      <MarkdownRenderer content={formatMathContent(stmt.statement)} />
-                                    </div>
-                                  </div>
-                                  <span className={`px-2 py-0.5 rounded text-xs font-bold shrink-0 ${
-                                    isTrue ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
-                                  }`}>
-                                    {isTrue ? 'Đúng' : 'Sai'}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {/* Short Answer / Fill-in number (for Part III) */}
-                        {(q.type === 'sa' || (q.type as string) === 'SHORT_ANSWER') && (
-                          <div className="p-3 bg-indigo-50/60 border border-indigo-200 rounded-lg text-xs sm:text-sm flex items-center gap-2">
-                            <span className="font-bold text-indigo-900">Đáp án điền số:</span>
-                            <span className="px-2 py-0.5 bg-white border border-indigo-300 rounded font-mono font-bold text-indigo-700">
-                              <MarkdownRenderer content={formatMathContent(q.correctAnswer || '(Chưa có)')} />
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Essay (for Part IV) */}
-                        {(q.type === 'essay' || (q.type as string) === 'ESSAY') && q.correctAnswer && (
-                          <div className="p-3 bg-purple-50/60 border border-purple-200 rounded-lg text-xs sm:text-sm space-y-1">
-                            <span className="font-bold text-purple-900">Gợi ý đáp án / Hướng dẫn chấm:</span>
-                            <MarkdownRenderer content={formatMathContent(q.correctAnswer)} />
-                          </div>
-                        )}
-
-                        {/* Explanation */}
-                        {q.explanation && (
-                          <div className="bg-amber-50/70 border border-amber-200/80 rounded-lg p-3 text-xs text-amber-900 space-y-1">
-                            <span className="font-bold flex items-center gap-1 text-amber-800">
-                              <HelpCircle className="w-3.5 h-3.5" /> Lời giải chi tiết:
-                            </span>
-                            <MarkdownRenderer content={formatMathContent(q.explanation)} />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  }
-
-                  // INLINE EDITING CARD
-                  return (
-                    <div
-                      key={q.id || idx}
-                      className="bg-white border-2 border-indigo-500 rounded-xl p-4 sm:p-6 shadow-md space-y-4 ring-4 ring-indigo-50"
-                    >
-                      <div className="flex items-center justify-between border-b border-indigo-100 pb-3">
-                        <span className="font-bold text-indigo-800 text-sm flex items-center gap-2">
-                          <Edit3 className="w-4 h-4 text-indigo-600" />
-                          Đang chỉnh sửa: Câu {idx + 1}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={saveEditedQuestion}
-                            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-                          >
-                            <Check className="w-3.5 h-3.5" /> Lưu cập nhật
-                          </button>
-                          <button
-                            type="button"
-                            onClick={cancelEditQuestion}
-                            className="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                          >
-                            Hủy
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* 1. Ô Textarea sửa nội dung câu hỏi */}
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">
-                          Nội dung câu hỏi (chứa công thức LaTeX $...$):
-                        </label>
-                        <textarea
-                          rows={3}
-                          value={editingQuestion?.content || ""}
-                          onChange={e => setEditingQuestion(prev => prev ? { ...prev, content: e.target.value } : null)}
-                          className="w-full p-2.5 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                        />
-                      </div>
-
-                      {/* 2. Ô Đường dẫn ảnh đồ thị / Tải ảnh lên kèm khung dán ảnh bằng phím tắt Ctrl+V */}
-                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                            <Image className="w-4 h-4 text-indigo-600" />
-                            Đường dẫn ảnh đồ thị / Tải ảnh lên:
-                          </label>
-                          {editingQuestion?.imageUrl && (
-                            <button
-                              type="button"
-                              onClick={() => setEditingQuestion(prev => prev ? { ...prev, imageUrl: undefined, hasFigure: false } : null)}
-                              className="text-xs text-rose-600 hover:text-rose-800 flex items-center gap-1 font-semibold hover:bg-rose-50 px-2 py-0.5 rounded cursor-pointer"
-                            >
-                              <X className="w-3.5 h-3.5" /> Xóa ảnh
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Current Image preview */}
-                        {editingQuestion?.imageUrl && (
-                          <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-3 rounded-lg border border-slate-200">
-                            <img
-                              src={editingQuestion.imageUrl}
-                              alt="Hình minh họa"
-                              className="max-h-40 max-w-full object-contain rounded border border-slate-200 bg-slate-50"
-                            />
-                            <div className="text-xs text-slate-600 space-y-1">
-                              <p className="font-semibold text-emerald-700 flex items-center gap-1">
-                                <Check className="w-3.5 h-3.5" /> Đã có ảnh đồ thị / hình vẽ
-                              </p>
-                              <p className="text-slate-500">Ảnh này sẽ hiển thị căn giữa ngay dưới nội dung đề bài.</p>
+                            {/* Editable Content */}
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Nội dung câu hỏi:</label>
+                              <textarea
+                                value={editingQuestion?.content || ""}
+                                onChange={e => setEditingQuestion(prev => prev ? { ...prev, content: e.target.value } : null)}
+                                className="w-full p-3 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                rows={4}
+                              />
                             </div>
-                          </div>
-                        )}
 
-                        {/* URL input and Upload button */}
-                        <div className="flex flex-col sm:flex-row gap-2 items-center">
-                          <div className="relative flex-1 w-full">
-                            <Link2 className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                            <input
-                              type="url"
-                              placeholder="Dán đường dẫn ảnh trực tuyến (https://...)"
-                              value={editingQuestion?.imageUrl || ""}
-                              onChange={e => {
-                                const url = e.target.value.trim();
-                                setEditingQuestion(prev => prev ? { ...prev, imageUrl: url || undefined, hasFigure: !!url } : null);
-                              }}
-                              className="w-full pl-8 pr-2.5 py-1.5 bg-white border border-slate-300 rounded-md text-xs font-sans focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                            />
-                          </div>
+                            {/* 3. Các ô Input sửa nội dung từng đáp án & Dropdown/Radio chọn lại đáp án đúng */}
+                            {/* MULTIPLE CHOICE */}
+                            {(editingQuestion?.type === 'mc' || (editingQuestion?.type as string) === 'MULTIPLE_CHOICE' || (!editingQuestion?.type && editingQuestion?.options)) && (
+                              <div className="space-y-2.5">
+                                <div className="flex flex-wrap items-center justify-between gap-2 pb-1 border-b border-slate-100">
+                                  <label className="text-xs font-bold text-slate-700">
+                                    Nội dung 4 phương án A, B, C, D:
+                                  </label>
+                                  <div className="flex items-center gap-2 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
+                                    <span className="text-xs font-bold text-emerald-900">Đáp án đúng:</span>
+                                    <select
+                                      value={editingQuestion?.correctOptionIndex ?? 0}
+                                      onChange={e => {
+                                        const val = parseInt(e.target.value, 10);
+                                        setEditingQuestion(prev => prev ? { ...prev, correctOptionIndex: val, correctAnswer: String.fromCharCode(65 + val) } : null);
+                                      }}
+                                      className="px-2 py-0.5 bg-white border border-emerald-300 text-emerald-800 text-xs font-bold rounded focus:ring-2 focus:ring-emerald-500 focus:outline-none cursor-pointer"
+                                    >
+                                      <option value={0}>Đáp án A</option>
+                                      <option value={1}>Đáp án B</option>
+                                      <option value={2}>Đáp án C</option>
+                                      <option value={3}>Đáp án D</option>
+                                    </select>
+                                  </div>
+                                </div>
 
-                          <input
-                            type="file"
-                            ref={questionImageInputRef}
-                            accept="image/*"
-                            onChange={e => {
-                              const file = e.target.files?.[0];
-                              if (file) handleQuestionImageUpload(file);
-                            }}
-                            className="hidden"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => questionImageInputRef.current?.click()}
-                            className="w-full sm:w-auto px-3 py-1.5 bg-white border border-slate-300 hover:border-indigo-400 hover:bg-indigo-50 text-slate-700 text-xs font-semibold rounded-md flex items-center justify-center gap-1.5 transition-colors shadow-2xs cursor-pointer shrink-0"
-                          >
-                            <ImagePlus className="w-3.5 h-3.5 text-indigo-600" /> Tải ảnh lên
-                          </button>
-                        </div>
-
-                        {/* Paste image dropzone via Ctrl+V */}
-                        <div
-                          tabIndex={0}
-                          onPaste={handlePasteImage}
-                          className="p-2.5 border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-white rounded-lg text-center cursor-pointer transition-colors focus:ring-2 focus:ring-indigo-400 focus:outline-none"
-                          onClick={() => questionImageInputRef.current?.click()}
-                          title="Nhấp vào đây và nhấn Ctrl+V để dán trực tiếp ảnh chụp màn hình"
-                        >
-                          <div className="flex items-center justify-center gap-2 text-xs text-indigo-700">
-                            <Clipboard className="w-4 h-4 text-indigo-500" />
-                            <span>Khung dán ảnh nhanh: Nhấp vào đây rồi bấm <strong>Ctrl + V</strong> để dán ảnh chụp màn hình</span>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  {[0, 1, 2, 3].map(optIdx => {
+                                    const label = String.fromCharCode(65 + optIdx);
+                                    const isCurrentCorrect = editingQuestion?.correctOptionIndex === optIdx;
+                                    return (
+                                      <div
+                                        key={optIdx}
+                                        className={`p-3 rounded-lg border flex flex-col gap-2 ${
+                                          isCurrentCorrect 
+                                            ? 'bg-emerald-50/70 border-emerald-400 ring-2 ring-emerald-200' 
+                                            : 'bg-slate-50 border-slate-200'
+                                        }`}
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <label className="flex items-center gap-1.5 cursor-pointer">
+                                            <input
+                                              type="radio"
+                                              name={`correct-opt-${editingQuestion?.id}`}
+                                              checked={isCurrentCorrect}
+                                              onChange={() => setEditingQuestion(prev => prev ? { ...prev, correctOptionIndex: optIdx, correctAnswer: label } : null)}
+                                              className="w-3.5 h-3.5 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                            />
+                                            <span className="font-bold text-xs text-slate-800">
+                                              Phương án {label}:
+                                            </span>
+                                          </label>
+                                          <button
+                                            type="button"
+                                            onClick={() => setEditingQuestion(prev => prev ? { ...prev, correctOptionIndex: optIdx, correctAnswer: label } : null)}
+                                            className={`px-2.5 py-0.5 rounded-full text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer ${
+                                              isCurrentCorrect
+                                                ? 'bg-emerald-600 text-white'
+                                                : 'bg-slate-200 text-slate-600 hover:bg-emerald-100 hover:text-emerald-700'
+                                            }`}
+                                          >
+                                            {isCurrentCorrect && <Check className="w-3 h-3" />}
+                                            {isCurrentCorrect ? "Đáp án Đúng" : "Chọn là Đúng"}
+                                          </button>
+                                        </div>
+                                        <input
+                                          type="text"
+                                          value={editingQuestion?.options?.[optIdx] || ""}
+                                          onChange={e => {
+                                            const val = e.target.value;
+                                            setEditingQuestion(prev => {
+                                              if (!prev) return null;
+                                              const newOpts = [...(prev.options || ["", "", "", ""])];
+                                              newOpts[optIdx] = val;
+                                              return { ...prev, options: newOpts };
+                                            });
+                                          }}
+                                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-md text-xs sm:text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                        />
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      </div>
+                        );
+                      })}
+                      
+                      {/* Bottom Add Question Button */}
 
                       {/* 3. Các ô Input sửa nội dung từng đáp án & Dropdown/Radio chọn lại đáp án đúng */}
                       {/* MULTIPLE CHOICE */}
@@ -1802,17 +1799,6 @@ export function UploadTeacherExamModal({
                 })}
               </div>
 
-              {/* Bottom Add Question Button */}
-              <div className="flex justify-center pt-2">
-                <button
-                  type="button"
-                  onClick={addNewQuestion}
-                  className="py-2.5 px-6 bg-white border-2 border-dashed border-indigo-300 hover:border-indigo-500 text-indigo-700 hover:bg-indigo-50/50 rounded-xl text-sm font-semibold flex items-center gap-2 shadow-2xs transition-all"
-                >
-                  <Plus className="w-4 h-4" /> Thêm câu hỏi mới vào đề
-                </button>
-              </div>
-
               {/* Bottom Nav */}
               <div className="flex items-center justify-between pt-4 border-t border-slate-200">
                 <button
@@ -1979,6 +1965,23 @@ export function UploadTeacherExamModal({
           initialExamName={examTitle || "ĐỀ KIỂM TRA"}
           subject={subject}
           grade={grade}
+        />
+      )}
+
+      {editingQuestion && (
+        <QuestionEditModal
+          isOpen={!!editingQuestion}
+          question={editingQuestion}
+          questionNumber={questions.findIndex(q => q.id === editingId) + 1}
+          subject={subject}
+          grade={grade}
+          onClose={() => setEditingQuestion(null)}
+          onSave={(updated) => {
+            const newQuestions = questions.map(q => q.id === editingId ? { ...q, ...updated } : q);
+            setQuestions(newQuestions);
+            setEditingQuestion(null);
+            setEditingId(null);
+          }}
         />
       )}
     </div>

@@ -52,7 +52,10 @@ export type Shape3DType =
   | "pyramid_regular_tri"   // Chóp tam giác đều
   | "pyramid_regular_quad"  // Chóp tứ giác đều
   | "prism_triangular"      // Lăng trụ tam giác ABC.A'B'C'
-  | "cuboid";               // Hình hộp chữ nhật / lập phương ABCD.A'B'C'D'
+  | "cuboid"                // Hình hộp chữ nhật / lập phương ABCD.A'B'C'D'
+  | "cone"                  // Khối nón tròn xoay
+  | "cylinder"              // Khối trụ tròn xoay
+  | "sphere";               // Khối cầu tròn xoay
 
 export interface Point3D {
   id: string;

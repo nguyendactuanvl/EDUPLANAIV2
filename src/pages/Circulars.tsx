@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { FileText, ShieldCheck, AlertCircle, Plus, Trash2, Link } from "lucide-react";
 import { printElement } from '../lib/print';
 
@@ -168,3 +168,5 @@ export function Circulars() {
     </div>
   );
 }
+
+export default Circulars;

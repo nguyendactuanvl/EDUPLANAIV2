@@ -2,10 +2,11 @@ import { apiFetch } from '../lib/apiFetch';
 import { GDPT_2018_SUBJECTS } from '../lib/subjects';
 import { exportHtmlToWord } from '../lib/exportUtils';
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Sparkles, Save, BookOpen, Download, AlertCircle, Upload, Edit3, Eye, Presentation } from "lucide-react";
+import { Sparkles, Save, BookOpen, Download, AlertCircle, Upload, Edit3, Eye, Presentation, TrendingUp, BarChart2, X, Box, BarChart3 } from "lucide-react";
 import { fullPlan } from "../data/mockData";
-import { MarkdownRenderer } from "../components/MarkdownRenderer";
+import { MarkdownRenderer, fixMath } from "../components/MarkdownRenderer";
 import { ErrorBoundary } from "../components/ErrorBoundary";
+import { QuestionVisualizerPanel } from "../components/math-tools/QuestionVisualizerPanel";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -33,6 +34,8 @@ export function LessonPlan() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedTextbook, setSelectedTextbook] = useState<Textbook | null>(null);
+  const [showVisualizerModal, setShowVisualizerModal] = useState<boolean>(false);
+  const [visualizerTab, setVisualizerTab] = useState<"bbt" | "graph" | "geometry3d" | "statistics">("bbt");
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
@@ -509,7 +512,43 @@ export function LessonPlan() {
       </div>
 
       <div className="flex-1 bg-white p-8 rounded-xl border border-slate-200 shadow-sm relative flex flex-col h-[calc(100vh-4rem)]">
-        <div className="absolute top-4 right-4 flex gap-2 z-10 bg-white shadow-sm border border-slate-100 rounded-lg p-1">
+        <div className="absolute top-4 right-4 flex flex-wrap items-center gap-2 z-10 bg-white shadow-sm border border-slate-100 rounded-lg p-1">
+          <button 
+            type="button"
+            className="px-2.5 py-1 text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-300 rounded-md transition-colors flex items-center gap-1 cursor-pointer shadow-2xs"
+            title="Tích hợp Module Bảng biến thiên (BBT Chuẩn SGK): Chọn mẫu hoặc tinh chỉnh và chèn trực tiếp vào Kế hoạch bài dạy"
+            onClick={() => { setVisualizerTab("bbt"); setShowVisualizerModal(true); }}
+          >
+            <TrendingUp className="h-4 w-4" />
+            <span>+ BBT SGK</span>
+          </button>
+          <button 
+            type="button"
+            className="px-2.5 py-1 text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-300 rounded-md transition-colors flex items-center gap-1 cursor-pointer shadow-2xs"
+            title="Tích hợp Module Đồ thị hàm số & BPT: Chọn dạng hàm, tinh chỉnh và chèn trực tiếp vào Kế hoạch bài dạy"
+            onClick={() => { setVisualizerTab("graph"); setShowVisualizerModal(true); }}
+          >
+            <BarChart2 className="h-4 w-4" />
+            <span>+ Đồ thị & BPT</span>
+          </button>
+          <button 
+            type="button"
+            className="px-2.5 py-1 text-xs font-semibold bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-300 rounded-md transition-colors flex items-center gap-1 cursor-pointer shadow-2xs"
+            title="Tích hợp Module Hình học không gian 3D: Chóp, Lăng trụ, Hộp, Nón, Trụ, Cầu"
+            onClick={() => { setVisualizerTab("geometry3d"); setShowVisualizerModal(true); }}
+          >
+            <Box className="h-4 w-4" />
+            <span>+ Hình 3D</span>
+          </button>
+          <button 
+            type="button"
+            className="px-2.5 py-1 text-xs font-semibold bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-300 rounded-md transition-colors flex items-center gap-1 cursor-pointer shadow-2xs"
+            title="Tích hợp Module Biểu đồ & Thống kê: Ghép nhóm & Rời rạc"
+            onClick={() => { setVisualizerTab("statistics"); setShowVisualizerModal(true); }}
+          >
+            <BarChart3 className="h-4 w-4" />
+            <span>+ Thống kê</span>
+          </button>
           {suggestion && (
             <button 
               className={`p-2 rounded-md transition-colors ${isEditing ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:text-blue-600 hover:bg-blue-50'}`}
@@ -551,8 +590,6 @@ export function LessonPlan() {
           >
             <span className="text-sm font-bold border-2 border-current px-1 rounded">PDF</span>
           </button>
-          
-
         </div>
         
         <div className="flex-1 overflow-y-auto pr-4 custom-scrollbar mt-8">
@@ -565,7 +602,7 @@ export function LessonPlan() {
               />
             ) : (
               <div ref={exportRef} className="markdown-body prose prose-slate max-w-none pb-12 pt-4 prose-headings:text-slate-800 prose-h2:text-2xl prose-h2:border-b prose-h2:pb-2 prose-h3:text-xl prose-a:text-emerald-600 prose-table:border-collapse prose-th:border prose-th:bg-slate-50 prose-td:border prose-td:p-2">
-                <ErrorBoundary><MarkdownRenderer content={suggestion} /></ErrorBoundary>
+                <ErrorBoundary><MarkdownRenderer content={fixMath(suggestion)} /></ErrorBoundary>
               </div>
             )
           ) : (
@@ -587,6 +624,45 @@ export function LessonPlan() {
           )}
         </div>
       </div>
+
+      {/* Modal Tích hợp Bảng biến thiên (BBT) & Đồ thị Chuẩn SGK */}
+      {showVisualizerModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-4 border border-slate-200 relative animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-2">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-emerald-600 text-white rounded-xl shadow-2xs">
+                  <TrendingUp className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800 text-base">
+                    Công cụ Vẽ hình & Đồ thị Toán học Chuẩn SGK (Kế hoạch bài dạy)
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Bảng biến thiên AI, Đồ thị 2D & BPT, Hình không gian 3D, Biểu đồ Thống kê chèn trực tiếp vào Giáo án
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowVisualizerModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <QuestionVisualizerPanel
+              defaultTab={visualizerTab}
+              defaultTarget="content"
+              onInsertSnippet={(_target, snippet) => {
+                setSuggestion(prev => (prev ? prev + "\n\n" + snippet : snippet));
+                setShowVisualizerModal(false);
+              }}
+              onClose={() => setShowVisualizerModal(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

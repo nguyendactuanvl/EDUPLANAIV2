@@ -6,7 +6,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { 
   BookOpen, Download, AlertCircle, Edit3, Eye, Printer, Share2, Copy, CheckCircle2, 
   ExternalLink, Upload, FileText, Palette, LayoutTemplate, GitFork, Sparkles, Zap, Image as ImageIcon, Sliders, Check,
-  TrendingUp, BarChart2, Plus
+  TrendingUp, BarChart2, Plus, Box, BarChart3
 } from "lucide-react";
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -102,14 +102,14 @@ export function Worksheets() {
   const [worksheetQuestions, setWorksheetQuestions] = useState<any[]>([]);
   const [viewMode, setViewMode] = useState<'document' | 'questions'>('document');
 
-  // BBT & Đồ thị Visualizer State
+  // BBT & Đồ thị & Hình 3D & Thống kê Visualizer State
   const [activeVisualizer, setActiveVisualizer] = useState<{
     qIndex: number;
-    tab: "bbt" | "graph";
+    tab: "bbt" | "graph" | "geometry3d" | "statistics";
     target: "content" | "solution";
   } | null>(null);
   const [isDocVisualizerOpen, setIsDocVisualizerOpen] = useState(false);
-  const [docVisualizerTab, setDocVisualizerTab] = useState<"bbt" | "graph">("bbt");
+  const [docVisualizerTab, setDocVisualizerTab] = useState<"bbt" | "graph" | "geometry3d" | "statistics">("bbt");
   const [editingQuestion, setEditingQuestion] = useState<{ question: any; index: number } | null>(null);
   const [isAutoGeneratingImages, setIsAutoGeneratingImages] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -1331,10 +1331,46 @@ export function Worksheets() {
                       ? "bg-blue-600 text-white border-blue-700"
                       : "bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-300"
                   )}
-                  title="Mở Module Đồ thị để vẽ và chèn ảnh vào phiếu"
+                  title="Mở Module Đồ thị & BPT để vẽ và chèn ảnh vào phiếu"
                 >
                   <BarChart2 className="w-3.5 h-3.5" />
                   <span>📊 Đồ thị</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDocVisualizerTab("geometry3d");
+                    setIsDocVisualizerOpen(prev => (docVisualizerTab === "geometry3d" ? !prev : true));
+                  }}
+                  className={cn(
+                    "px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 border shadow-2xs transition-colors cursor-pointer",
+                    isDocVisualizerOpen && docVisualizerTab === "geometry3d"
+                      ? "bg-purple-600 text-white border-purple-700"
+                      : "bg-purple-50 hover:bg-purple-100 text-purple-800 border-purple-300"
+                  )}
+                  title="Mở Module Hình học không gian 3D (Chóp, Lăng trụ, Hộp, Nón, Trụ, Cầu)"
+                >
+                  <Box className="w-3.5 h-3.5" />
+                  <span>🧊 Hình 3D</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDocVisualizerTab("statistics");
+                    setIsDocVisualizerOpen(prev => (docVisualizerTab === "statistics" ? !prev : true));
+                  }}
+                  className={cn(
+                    "px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 border shadow-2xs transition-colors cursor-pointer",
+                    isDocVisualizerOpen && docVisualizerTab === "statistics"
+                      ? "bg-amber-600 text-white border-amber-700"
+                      : "bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300"
+                  )}
+                  title="Mở Module Biểu đồ & Bảng Thống kê (Mẫu số liệu ghép nhóm và rời rạc)"
+                >
+                  <BarChart3 className="w-3.5 h-3.5" />
+                  <span>📉 Thống kê</span>
                 </button>
 
                 {viewMode === 'document' && suggestion && (
@@ -1580,7 +1616,7 @@ export function Worksheets() {
                                   title="Tích hợp Module BBT: Chèn Bảng biến thiên (dạng ảnh SVG chuẩn SGK) vào câu hỏi"
                                 >
                                   <TrendingUp className="w-3.5 h-3.5" />
-                                  <span>+ BBT vào câu hỏi</span>
+                                  <span>+ BBT</span>
                                 </button>
 
                                 <button
@@ -1597,10 +1633,50 @@ export function Worksheets() {
                                       ? "bg-blue-600 text-white border-blue-700"
                                       : "bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-300"
                                   }`}
-                                  title="Tích hợp Module Đồ thị: Chèn Đồ thị (dạng ảnh đồ họa) vào câu hỏi"
+                                  title="Tích hợp Module Đồ thị: Chèn Đồ thị & BPT (dạng ảnh đồ họa) vào câu hỏi"
                                 >
                                   <BarChart2 className="w-3.5 h-3.5" />
-                                  <span>+ Đồ thị vào câu hỏi</span>
+                                  <span>+ Đồ thị</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "geometry3d" && activeVisualizer?.target === "content") {
+                                      setActiveVisualizer(null);
+                                    } else {
+                                      setActiveVisualizer({ qIndex: idx, tab: "geometry3d", target: "content" });
+                                    }
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md border shadow-2xs transition-colors cursor-pointer ${
+                                    activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "geometry3d" && activeVisualizer?.target === "content"
+                                      ? "bg-purple-600 text-white border-purple-700"
+                                      : "bg-purple-50 hover:bg-purple-100 text-purple-800 border-purple-300"
+                                  }`}
+                                  title="Tích hợp Module Hình học không gian 3D: Chóp, Lăng trụ, Hộp, Nón, Trụ, Cầu"
+                                >
+                                  <Box className="w-3.5 h-3.5" />
+                                  <span>+ Hình 3D</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "statistics" && activeVisualizer?.target === "content") {
+                                      setActiveVisualizer(null);
+                                    } else {
+                                      setActiveVisualizer({ qIndex: idx, tab: "statistics", target: "content" });
+                                    }
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md border shadow-2xs transition-colors cursor-pointer ${
+                                    activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "statistics" && activeVisualizer?.target === "content"
+                                      ? "bg-amber-600 text-white border-amber-700"
+                                      : "bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300"
+                                  }`}
+                                  title="Tích hợp Module Thống kê: Chèn Biểu đồ hoặc Bảng tần số"
+                                >
+                                  <BarChart3 className="w-3.5 h-3.5" />
+                                  <span>+ Thống kê</span>
                                 </button>
 
                                 <button
@@ -1788,10 +1864,50 @@ export function Worksheets() {
                                       ? "bg-blue-600 text-white border-blue-700"
                                       : "bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-300"
                                   }`}
-                                  title="Tích hợp Module Đồ thị: Chèn Đồ thị (dạng ảnh đồ họa) vào lời giải chi tiết"
+                                  title="Tích hợp Module Đồ thị: Chèn Đồ thị & BPT (dạng ảnh đồ họa) vào lời giải chi tiết"
                                 >
                                   <BarChart2 className="w-3.5 h-3.5" />
                                   <span>+ Đồ thị vào lời giải</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!isSolutionOpen(q.id || idx + 1)) toggleSolution(q.id || idx + 1);
+                                    if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "geometry3d" && activeVisualizer?.target === "solution") {
+                                      setActiveVisualizer(null);
+                                    } else {
+                                      setActiveVisualizer({ qIndex: idx, tab: "geometry3d", target: "solution" });
+                                    }
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg border shadow-2xs transition-colors cursor-pointer ${
+                                    activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "geometry3d" && activeVisualizer?.target === "solution"
+                                      ? "bg-purple-600 text-white border-purple-700"
+                                      : "bg-purple-50 hover:bg-purple-100 text-purple-800 border-purple-300"
+                                  }`}
+                                  title="Tích hợp Module Hình không gian 3D: Chèn hình chóp, lăng trụ, nón, trụ, cầu vào lời giải"
+                                >
+                                  <Box className="w-3.5 h-3.5" />
+                                  <span>+ Hình 3D vào lời giải</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!isSolutionOpen(q.id || idx + 1)) toggleSolution(q.id || idx + 1);
+                                    if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "statistics" && activeVisualizer?.target === "solution") {
+                                      setActiveVisualizer(null);
+                                    } else {
+                                      setActiveVisualizer({ qIndex: idx, tab: "statistics", target: "solution" });
+                                    }
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg border shadow-2xs transition-colors cursor-pointer ${
+                                    activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "statistics" && activeVisualizer?.target === "solution"
+                                      ? "bg-amber-600 text-white border-amber-700"
+                                      : "bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300"
+                                  }`}
+                                  title="Tích hợp Module Thống kê: Chèn Biểu đồ hoặc Bảng tần số vào lời giải"
+                                >
+                                  <BarChart3 className="w-3.5 h-3.5" />
+                                  <span>+ Thống kê vào lời giải</span>
                                 </button>
                               </div>
 
@@ -1804,7 +1920,7 @@ export function Worksheets() {
                                     <div className="flex items-center gap-1.5">
                                       <span>💡 Lời giải chi tiết:</span>
                                     </div>
-                                    <div className="flex items-center gap-1.5 text-xs">
+                                    <div className="flex items-center gap-1.5 text-xs flex-wrap">
                                       <button
                                         type="button"
                                         onClick={() => setActiveVisualizer({ qIndex: idx, tab: "bbt", target: "solution" })}
@@ -1822,6 +1938,24 @@ export function Worksheets() {
                                       >
                                         <BarChart2 className="w-3 h-3" />
                                         <span>Mở Đồ thị</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveVisualizer({ qIndex: idx, tab: "geometry3d", target: "solution" })}
+                                        className="text-purple-700 hover:text-purple-900 font-semibold px-2 py-0.5 rounded bg-purple-100/70 border border-purple-200 cursor-pointer flex items-center gap-1 shadow-2xs"
+                                        title="Mở Module Hình 3D để chèn vào lời giải"
+                                      >
+                                        <Box className="w-3 h-3" />
+                                        <span>Mở Hình 3D</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveVisualizer({ qIndex: idx, tab: "statistics", target: "solution" })}
+                                        className="text-amber-700 hover:text-amber-900 font-semibold px-2 py-0.5 rounded bg-amber-100/70 border border-amber-200 cursor-pointer flex items-center gap-1 shadow-2xs"
+                                        title="Mở Module Thống kê để chèn vào lời giải"
+                                      >
+                                        <BarChart3 className="w-3 h-3" />
+                                        <span>Mở Thống kê</span>
                                       </button>
                                     </div>
                                   </div>
@@ -1890,15 +2024,28 @@ export function Worksheets() {
                         <div className="mb-6 p-4 bg-white rounded-2xl border-2 border-emerald-400 shadow-md no-print max-w-[210mm] mx-auto">
                           <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200">
                             <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                              {docVisualizerTab === 'bbt' ? (
+                              {docVisualizerTab === 'bbt' && (
                                 <>
                                   <TrendingUp className="w-4 h-4 text-emerald-600" />
                                   <span>Module Tạo Bảng Biến Thiên Dạng Ảnh Vector SVG (Chuẩn SGK)</span>
                                 </>
-                              ) : (
+                              )}
+                              {docVisualizerTab === 'graph' && (
                                 <>
                                   <BarChart2 className="w-4 h-4 text-blue-600" />
-                                  <span>Module Vẽ & Xuất Đồ Thị Dạng Ảnh Đồ Họa Sắc Nét</span>
+                                  <span>Module Vẽ & Xuất Đồ Thị 2D & Bất Phương Trình</span>
+                                </>
+                              )}
+                              {docVisualizerTab === 'geometry3d' && (
+                                <>
+                                  <Box className="w-4 h-4 text-purple-600" />
+                                  <span>Module Vẽ Hình Học Không Gian 3D (Chóp, Lăng trụ, Nón, Trụ, Cầu)</span>
+                                </>
+                              )}
+                              {docVisualizerTab === 'statistics' && (
+                                <>
+                                  <BarChart3 className="w-4 h-4 text-amber-600" />
+                                  <span>Module Biểu Đồ & Bảng Thống Kê (Mẫu số liệu ghép nhóm và rời rạc)</span>
                                 </>
                               )}
                             </h3>

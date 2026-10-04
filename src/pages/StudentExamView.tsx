@@ -1154,3 +1154,5 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
   );
 }
 
+export default StudentExamView;
+

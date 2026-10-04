@@ -1,5 +1,5 @@
 import { apiFetch } from '../lib/apiFetch';
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Trophy, Star, MinusCircle, Play, Users, Medal, Crown, Filter, History, Loader2, Upload, Plus, Trash2, Edit2, FolderOpen, MessageSquare, X, Send } from "lucide-react";
 import { Student } from "../types";
 import { parseApiResponse } from "../lib/utils";
@@ -842,3 +842,5 @@ export function Gamification() {
     </div>
   );
 }
+
+export default Gamification;

@@ -1,5 +1,5 @@
 import { exportHtmlToWord } from '../lib/exportUtils';
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { getHistory, deleteFromHistory, clearHistory } from "../lib/history";
 import { HistoryItem } from "../types";
 import { Trash2, Download, Eye, Clock, BookOpen } from "lucide-react";
@@ -230,3 +230,5 @@ export function HistoryPage() {
     </div>
   );
 }
+
+export default HistoryPage;

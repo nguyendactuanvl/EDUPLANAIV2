@@ -8,6 +8,7 @@ import katex from 'katex';
 // @ts-ignore
 import renderMathInElement from 'katex/dist/contrib/auto-render.js';
 import { TikzRenderer, getTikzSvg } from './TikzRenderer';
+import { ImageViewerModal } from './ImageViewerModal';
 import { convertBbtTableToSvg, unflattenMarkdownTables } from '../lib/bbtRenderer';
 import { 
   fixMath, 
@@ -128,11 +129,19 @@ export const fixInlineOptionText = (text: string): string => {
 };
 
 export { formatMathContent };
+export { fixMath } from '../lib/utils';
 
 const SvgImageRenderer: React.FC<{ svgCode: string }> = ({ svgCode }) => {
   const [copied, setCopied] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const isGraph = svgCode.includes('arrow-axis') || svgCode.includes('plot') || svgCode.includes('grid') || /<path[^>]*class=["'](?:graph|curve)/.test(svgCode) || (svgCode.includes('x') && svgCode.includes('y') && svgCode.includes('path') && !svgCode.includes('bbt-'));
+  const isBbt = svgCode.includes('bbt-') || (!isGraph && (svgCode.includes("y'") || (svgCode.includes('x') && svgCode.includes('y'))));
+  const badgeLabel = isBbt ? 'BBT Chuẩn SGK' : isGraph ? 'Đồ thị Chuẩn SGK' : 'Hình vẽ SGK';
+  const downloadFilename = isBbt ? `Bang_Bien_Thien_${Date.now()}.png` : isGraph ? `Do_Thi_Ham_So_${Date.now()}.png` : `Hinh_Ve_${Date.now()}.png`;
+  const copyBtnLabel = isBbt ? '📋 Chép BBT' : isGraph ? '📋 Chép Đồ thị' : '📋 Chép ảnh';
+  const downloadBtnLabel = isBbt ? '📸 Tải BBT (PNG)' : isGraph ? '📸 Tải Đồ thị (PNG)' : '📸 Tải ảnh (PNG)';
 
   const getCanvasFromSvg = async (scale = 3): Promise<HTMLCanvasElement> => {
     const parser = new DOMParser();
@@ -170,7 +179,7 @@ const SvgImageRenderer: React.FC<{ svgCode: string }> = ({ svgCode }) => {
       setIsExporting(true);
       const canvas = await getCanvasFromSvg(3);
       const link = document.createElement('a');
-      link.download = `Bang_Bien_Thien_${Date.now()}.png`;
+      link.download = downloadFilename;
       link.href = canvas.toDataURL('image/png');
       link.click();
     } catch (e) {
@@ -197,7 +206,7 @@ const SvgImageRenderer: React.FC<{ svgCode: string }> = ({ svgCode }) => {
           } else {
             // Fallback
             const link = document.createElement('a');
-            link.download = `Bang_Bien_Thien_${Date.now()}.png`;
+            link.download = downloadFilename;
             link.href = canvas.toDataURL('image/png');
             link.click();
           }
@@ -216,29 +225,110 @@ const SvgImageRenderer: React.FC<{ svgCode: string }> = ({ svgCode }) => {
     <div className="svg-wrapper my-4 flex flex-col items-center">
       <div 
         ref={containerRef}
-        className="relative group bg-white p-3 sm:p-4 rounded-lg border border-slate-300 shadow-2xs max-w-full overflow-x-auto"
+        className="relative group bg-white p-3 sm:p-4 rounded-xl border border-slate-300 shadow-sm max-w-full overflow-x-auto"
       >
         <div className="no-print absolute top-2 right-2 flex items-center gap-1.5 opacity-90 hover:opacity-100 transition-opacity bg-white/95 backdrop-blur-xs px-2 py-1 rounded-md border border-slate-200 shadow-2xs">
-          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mr-1 hidden sm:inline">SGK</span>
+          <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider mr-1 hidden sm:inline">{badgeLabel}</span>
           <button
             type="button"
             onClick={handleCopyImage}
-            title="Sao chép ảnh BBT vào clipboard để dán vào Word, PowerPoint"
+            title={isBbt ? "Sao chép ảnh BBT vào clipboard" : "Sao chép ảnh Đồ thị vào clipboard"}
+            className="px-2 py-0.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded flex items-center gap-1 cursor-pointer transition-colors"
+          >
+            <span>{copied ? '✓ Đã chép' : copyBtnLabel}</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadPng}
+            disabled={isExporting}
+            title="Tải ảnh định dạng PNG độ nét cao (300 DPI)"
+            className="px-2 py-0.5 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium rounded flex items-center gap-1 cursor-pointer transition-colors"
+          >
+            <span>{downloadBtnLabel}</span>
+          </button>
+        </div>
+        <div className="pt-2 sm:pt-4" dangerouslySetInnerHTML={{ __html: svgCode }} />
+      </div>
+    </div>
+  );
+};
+
+const CustomImageRenderer: React.FC<{ cleanSrc: string; alt?: string; [key: string]: any }> = ({ cleanSrc, alt, ...props }) => {
+  const [copied, setCopied] = useState(false);
+  const isGraph = /đồ\s*thị|do_thi|graph|plot|hàm\s*số/i.test(alt || '') || cleanSrc.includes('Do_Thi') || cleanSrc.includes('graph');
+  const isBbt = /bảng\s*biến\s*thiên|bang_bien_thien|bbt/i.test(alt || '') || cleanSrc.includes('Bang_Bien_Thien');
+  const badgeLabel = isBbt ? 'BBT Chuẩn SGK' : isGraph ? 'Đồ thị Chuẩn SGK' : 'Hình vẽ SGK';
+
+  const handleCopy = async () => {
+    try {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || 600;
+        canvas.height = img.naturalHeight || 400;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+        canvas.toBlob(async (blob) => {
+          if (!blob) return;
+          try {
+            if (navigator.clipboard && 'write' in navigator.clipboard && typeof ClipboardItem !== 'undefined') {
+              await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            }
+          } catch (e) {
+            console.warn(e);
+          }
+        }, 'image/png');
+      };
+      img.src = cleanSrc;
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDownload = () => {
+    const link = document.createElement('a');
+    link.download = `${isBbt ? 'Bang_Bien_Thien' : isGraph ? 'Do_Thi_Ham_So' : 'Hinh_Minh_Hoa'}_${Date.now()}.png`;
+    link.href = cleanSrc;
+    link.click();
+  };
+
+  return (
+    <div className="relative group max-w-fit mx-auto my-3 flex flex-col items-center">
+      <div className="relative bg-white p-2 sm:p-3 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="no-print absolute top-2 right-2 flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity bg-white/95 backdrop-blur-xs px-2 py-1 rounded-md border border-slate-200 shadow-2xs z-10">
+          <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider mr-1 hidden sm:inline">{badgeLabel}</span>
+          <button
+            type="button"
+            onClick={handleCopy}
             className="px-2 py-0.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded flex items-center gap-1 cursor-pointer transition-colors"
           >
             <span>{copied ? '✓ Đã chép' : '📋 Chép ảnh'}</span>
           </button>
           <button
             type="button"
-            onClick={handleDownloadPng}
-            disabled={isExporting}
-            title="Tải ảnh BBT định dạng PNG độ nét cao (300 DPI)"
+            onClick={handleDownload}
             className="px-2 py-0.5 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium rounded flex items-center gap-1 cursor-pointer transition-colors"
           >
-            <span>📸 Tải ảnh (PNG)</span>
+            <span>📸 Tải ảnh</span>
           </button>
         </div>
-        <div className="pt-2 sm:pt-4" dangerouslySetInnerHTML={{ __html: svgCode }} />
+        <img
+          src={cleanSrc}
+          alt={alt || 'Hình minh họa SGK'}
+          loading="eager"
+          className="max-w-full h-auto rounded-lg mx-auto pt-1 sm:pt-2 cursor-zoom-in hover:ring-2 hover:ring-indigo-400 transition-all"
+          onClick={() => window.dispatchEvent(new CustomEvent('open-fullscreen-image', { detail: cleanSrc }))}
+          onError={(e) => {
+            (e.target as HTMLElement).style.display = 'none';
+          }}
+          {...props}
+        />
       </div>
     </div>
   );
@@ -254,6 +344,15 @@ export const MarkdownRenderer = ({
   inline?: boolean; 
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleOpenFullscreen = (e: any) => {
+      setFullscreenImage(e.detail);
+    };
+    window.addEventListener('open-fullscreen-image', handleOpenFullscreen);
+    return () => window.removeEventListener('open-fullscreen-image', handleOpenFullscreen);
+  }, []);
 
   // 0. Bảo vệ các khối code (```...```) và inline code (`...`) để các bộ tiền xử lý toán học không làm hỏng cú pháp lập trình
   const codeTokens: string[] = [];
@@ -587,16 +686,10 @@ export const MarkdownRenderer = ({
               }
             }
             return (
-              <img
-                src={cleanSrc}
-                alt={alt || 'Hình minh họa bài thi'}
-                loading="eager"
+              <CustomImageRenderer
+                cleanSrc={cleanSrc}
+                alt={alt || 'Hình minh họa SGK'}
                 referrerPolicy="no-referrer"
-                className="max-w-full h-auto rounded-lg mx-auto my-3 border border-slate-200 shadow-sm"
-                onError={(e) => {
-                  // Do not show empty broken img frame
-                  (e.target as HTMLElement).style.display = 'none';
-                }}
                 {...props}
               />
             );

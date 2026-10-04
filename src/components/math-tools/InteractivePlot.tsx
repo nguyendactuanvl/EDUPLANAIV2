@@ -3,6 +3,7 @@ import {
   ZoomIn, ZoomOut, RotateCcw, Download, Copy, Check, MousePointer, 
   Layers, Maximize2, Plus
 } from "lucide-react";
+import { ImageViewerModal } from "../ImageViewerModal";
 import { FunctionPlotData, Point2D, AsymptoteLine, InequalityConstraint, PolygonVertex } from "./types";
 
 interface InteractivePlotProps {
@@ -648,106 +649,129 @@ export const InteractivePlot: React.FC<InteractivePlotProps> = ({
     }
   };
 
-  return (
-    <div ref={containerRef} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs flex flex-col">
-      {/* Header Bar */}
-      <div className="px-4 py-3 bg-slate-50/80 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          {title && <h3 className="text-sm font-bold text-slate-800">{title}</h3>}
-          {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
-        </div>
+// Add useState to manage fullscreen state for the graph
+  const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
-        {/* Toolbar controls */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {/* Zoom Buttons */}
-          <div className="flex items-center bg-white border border-slate-200 rounded-lg p-0.5 shadow-2xs">
-            <button
-              onClick={() => handleZoom(0.85)}
-              className="p-1 text-slate-600 hover:text-blue-600 hover:bg-slate-100 rounded transition-colors"
-              title="Phóng to (+)"
-            >
-              <ZoomIn className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => handleZoom(1.18)}
-              className="p-1 text-slate-600 hover:text-blue-600 hover:bg-slate-100 rounded transition-colors"
-              title="Thu nhỏ (-)"
-            >
-              <ZoomOut className="w-4 h-4" />
-            </button>
-            <button
-              onClick={handleResetView}
-              className="p-1 text-slate-600 hover:text-emerald-600 hover:bg-slate-100 rounded transition-colors"
-              title="Khôi phục góc nhìn mặc định"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
+  // ... inside handleExportPNG or similar, get dataURL
+  const getGraphDataUrl = () => {
+    const exportCanvas = document.createElement("canvas");
+    exportCanvas.width = 1200;
+    exportCanvas.height = 880;
+    renderCanvas(exportCanvas, true);
+    return exportCanvas.toDataURL("image/png");
+  }
+
+  // Inside return block, add ImageViewerModal and update Canvas div:
+  return (
+    <>
+      <ImageViewerModal imageUrl={fullscreenImage || ''} isOpen={!!fullscreenImage} onClose={() => setFullscreenImage(null)} />
+      <div ref={containerRef} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs flex flex-col">
+        {/* Header Bar */}
+        <div className="px-4 py-3 bg-slate-50/80 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            {title && <h3 className="text-sm font-bold text-slate-800">{title}</h3>}
+            {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
           </div>
 
-          {/* Insert Image button (for Exam Generator / Question Solution) */}
-          {onInsertImage && (
+          {/* Toolbar controls */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Zoom Buttons */}
+            <div className="flex items-center bg-white border border-slate-200 rounded-lg p-0.5 shadow-2xs">
+              <button
+                onClick={() => handleZoom(0.85)}
+                className="p-1 text-slate-600 hover:text-blue-600 hover:bg-slate-100 rounded transition-colors"
+                title="Phóng to (+)"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => handleZoom(1.18)}
+                className="p-1 text-slate-600 hover:text-blue-600 hover:bg-slate-100 rounded transition-colors"
+                title="Thu nhỏ (-)"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleResetView}
+                className="p-1 text-slate-600 hover:text-emerald-600 hover:bg-slate-100 rounded transition-colors"
+                title="Khôi phục góc nhìn mặc định"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Insert Image button (for Exam Generator / Question Solution) */}
+            {onInsertImage && (
+              <button
+                type="button"
+                onClick={() => {
+                  const exportCanvas = document.createElement("canvas");
+                  exportCanvas.width = 1200;
+                  exportCanvas.height = 880;
+                  renderCanvas(exportCanvas, true);
+                  onInsertImage(exportCanvas.toDataURL("image/png"));
+                }}
+                className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                title="Chèn ảnh đồ thị trực tiếp vào đề thi / câu hỏi / lời giải"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{insertButtonLabel}</span>
+              </button>
+            )}
+
+            {/* Custom Actions */}
+            {customActions}
+
+            {/* Copy Image button */}
             <button
-              type="button"
-              onClick={() => {
-                const exportCanvas = document.createElement("canvas");
-                exportCanvas.width = 1200;
-                exportCanvas.height = 880;
-                renderCanvas(exportCanvas, true);
-                onInsertImage(exportCanvas.toDataURL("image/png"));
-              }}
-              className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
-              title="Chèn ảnh đồ thị trực tiếp vào đề thi / câu hỏi / lời giải"
+              onClick={handleCopyImage}
+              className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
+              title="Sao chép ảnh đồ thị vào clipboard để dán vào Word/đề thi"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>{insertButtonLabel}</span>
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copied ? "Đã sao chép ảnh!" : "Sao chép ảnh"}</span>
             </button>
-          )}
 
-          {/* Custom Actions */}
-          {customActions}
+            {/* Download PNG button */}
+            <button
+              onClick={handleExportPNG}
+              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
+              title="Tải ảnh PNG độ nét cao (in ấn / đề thi)"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Tải PNG</span>
+            </button>
+          </div>
+        </div>
 
-          {/* Copy Image button */}
-          <button
-            onClick={handleCopyImage}
-            className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
-            title="Sao chép ảnh đồ thị vào clipboard để dán vào Word/đề thi"
+        {/* Canvas Viewport */}
+        <div className="relative w-full overflow-hidden bg-white select-none cursor-grab active:cursor-grabbing group min-h-[600px]">
+          <canvas
+            ref={canvasRef}
+            style={{ height: "600px", width: "100%" }}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={() => {
+              handleMouseUp();
+              setHoverCoord(null);
+            }}
+            onWheel={handleWheel}
+          />
+          <button 
+            onClick={() => setFullscreenImage(getGraphDataUrl())}
+            className="absolute top-2 left-2 p-2 bg-white/90 rounded-lg border border-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"
+            title="Xem đồ thị toàn màn hình"
           >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>{copied ? "Đã sao chép ảnh!" : "Sao chép ảnh"}</span>
+            <Maximize2 className="w-5 h-5 text-slate-700" />
           </button>
 
-          {/* Download PNG button */}
-          <button
-            onClick={handleExportPNG}
-            className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
-            title="Tải ảnh PNG độ nét cao (in ấn / đề thi)"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Tải PNG</span>
-          </button>
+          {/* Floating coordinate helper */}
+          <div className="absolute bottom-2 left-2 pointer-events-none bg-slate-900/75 text-white text-[10px] font-mono px-2 py-0.5 rounded shadow">
+            {hoverCoord ? `x: ${hoverCoord.x.toFixed(2)} | y: ${hoverCoord.y.toFixed(2)}` : "Di chuyển chuột để xem tọa độ"}
+          </div>
         </div>
       </div>
-
-      {/* Canvas Viewport */}
-      <div className="relative w-full overflow-hidden bg-white select-none cursor-grab active:cursor-grabbing">
-        <canvas
-          ref={canvasRef}
-          style={{ height: `${height}px`, width: "100%" }}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={() => {
-            handleMouseUp();
-            setHoverCoord(null);
-          }}
-          onWheel={handleWheel}
-        />
-
-        {/* Floating coordinate helper */}
-        <div className="absolute bottom-2 left-2 pointer-events-none bg-slate-900/75 text-white text-[10px] font-mono px-2 py-0.5 rounded shadow">
-          {hoverCoord ? `x: ${hoverCoord.x.toFixed(2)} | y: ${hoverCoord.y.toFixed(2)}` : "Di chuyển chuột để xem tọa độ"}
-        </div>
-      </div>
-    </div>
+    </>
   );
 };

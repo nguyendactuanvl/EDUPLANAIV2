@@ -63,11 +63,28 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
     
     // First try with custom key (if exists), or system key
     const baseUrl = (import.meta as any).env.VITE_API_BASE_URL || "";
-    let response = await fetch(baseUrl + url, {
-      credentials: 'include',
-      ...options,
-      headers: getHeaders(skipCustomKey)
-    });
+    let response: Response;
+    try {
+      response = await fetch(baseUrl + url, {
+        credentials: 'include',
+        ...options,
+        headers: getHeaders(skipCustomKey)
+      });
+    } catch (netErr: any) {
+      console.warn(`[apiFetch] Network/fetch error on ${url}:`, netErr);
+      if (attempt < maxRetries) {
+        window.dispatchEvent(new CustomEvent('api-retry-status', { 
+          detail: { 
+            attempt: attempt + 1, 
+            maxRetries, 
+            message: "Mạng hoặc máy chủ đang tạm thời gián đoạn. Đang tự động kết nối lại..." 
+          } 
+        }));
+        await delay(2000 + attempt * 1500);
+        continue;
+      }
+      throw new Error("Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau.");
+    }
 
     
     const contentType = response.headers.get("content-type");

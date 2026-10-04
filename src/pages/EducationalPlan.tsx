@@ -348,3 +348,5 @@ export function EducationalPlan() {
     </div>
   );
 }
+
+export default EducationalPlan;

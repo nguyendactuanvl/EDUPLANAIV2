@@ -7,40 +7,21 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { toPng } from "html-to-image";
 import { saveAs } from "file-saver";
 import { Document, Packer, Paragraph, ImageRun, AlignmentType, HeadingLevel } from "docx";
-import { analyzeFunctionToBbt, ensureCompleteBbtPoints, parseMarkdownBbtTable } from "../../lib/bbtRenderer";
+import { 
+  BBTPoint, 
+  BBTInterval, 
+  BBTData, 
+  analyzeFunctionToBbt, 
+  ensureCompleteBbtPoints, 
+  parseMarkdownBbtTable 
+} from "../../lib/bbtRenderer";
+import { apiFetch } from "../../lib/apiFetch";
 
 // ============================================================================
 // TYPES & DATA STRUCTURES
 // ============================================================================
 
-export interface BBTPoint {
-  x: string;                              // Ký hiệu x, vd: "-\\infty", "0", "2", "+\\infty"
-  yPrime?: string;                        // Dấu hoặc giá trị tại x, vd: "0", "+", "-", "||"
-  isAsymptote?: boolean;                  // Tiệm cận đứng (vạch || xuyên suốt hàng y' và y)
-  isDerivativeUndefinedOnly?: boolean;    // Chỉ đạo hàm không xác định, hàm số xác định (vạch || chỉ ở y')
-  yVal?: string;                          // Giá trị y tại x, vd: "-\\infty", "4", "0", "+\\infty"
-  yPosition?: "top" | "bottom" | "middle";// Vị trí độ cao nhãn y trên canvas (top ~ 15%, bottom ~ 85%, middle ~ 50%)
-  
-  // Trường hợp tiệm cận đứng có 2 giới hạn một bên (x -> x0^- và x -> x0^+)
-  yLeftVal?: string;                      // Giới hạn bên trái tiệm cận đứng, vd: "+\\infty"
-  yLeftPosition?: "top" | "bottom" | "middle";
-  yRightVal?: string;                     // Giới hạn bên phải tiệm cận đứng, vd: "-\\infty"
-  yRightPosition?: "top" | "bottom" | "middle";
-}
-
-export interface BBTInterval {
-  sign?: "+" | "-" | "";                  // Dấu của y' trong khoảng
-  isExcludedDomain?: boolean;             // Khoảng nằm ngoài TXĐ (tô gạch chéo //)
-  trend?: "increasing" | "decreasing" | "none"; // Chiều biến thiên mũi tên
-}
-
-export interface BBTData {
-  functionName: string;                   // Tên hàm số, vd: "y = x^3 - 3x^2 + 4"
-  domainNote?: string;                    // Tập xác định, vd: "D = R" hoặc "D = R \\ {-1}"
-  points: BBTPoint[];                     // Danh sách các điểm mốc trên trục hoành x
-  intervals: BBTInterval[];               // Danh sách các khoảng giữa các điểm mốc
-  showDerivative?: boolean;               // false nếu chỉ có 2 dòng (x và y, chuẩn Toán 10)
-}
+export type { BBTPoint, BBTInterval, BBTData };
 
 // ============================================================================
 // DỮ LIỆU MẪU CHUẨN SGK (MOCK DATA)
@@ -657,7 +638,7 @@ export const VariationTableGenerator: React.FC = () => {
         jsonText = response.text || "";
       } else {
         // Fallback qua proxy nội bộ ứng dụng
-        const res = await fetch("/api/chat", {
+        const res = await apiFetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

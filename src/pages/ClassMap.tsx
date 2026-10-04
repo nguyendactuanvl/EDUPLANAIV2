@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Shuffle, Printer, Settings2, Users, Upload } from "lucide-react";
 import { Student } from "../types";
 
@@ -300,3 +300,5 @@ export function ClassMap() {
     </div>
   );
 }
+
+export default ClassMap;

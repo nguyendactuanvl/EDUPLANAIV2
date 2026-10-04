@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { apiFetch } from '../lib/apiFetch';
 import { QuestionVisualizerPanel } from './math-tools/QuestionVisualizerPanel';
-import { TrendingUp, BarChart2 } from 'lucide-react';
+import { TrendingUp, BarChart2, Box, BarChart3 } from 'lucide-react';
 
 export interface QuestionData {
   id?: number;
@@ -56,7 +56,7 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [aiStatus, setAiStatus] = useState('');
   const [activeVisualizer, setActiveVisualizer] = useState<{
-    tab: 'bbt' | 'graph';
+    tab: 'bbt' | 'graph' | 'geometry3d' | 'statistics';
     target: 'content' | 'solution';
   } | null>(null);
 
@@ -299,12 +299,12 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
               </button>
             </div>
 
-            {/* Direct Tool integration buttons: BBT & Graph */}
-            <div className="flex items-center gap-1.5 border-t sm:border-t-0 sm:border-l border-slate-200 pt-2 sm:pt-0 sm:pl-3 w-full sm:w-auto">
+            {/* Direct Tool integration buttons: BBT, Graph, 3D, Statistics */}
+            <div className="flex items-center gap-1.5 border-t sm:border-t-0 sm:border-l border-slate-200 pt-2 sm:pt-0 sm:pl-3 w-full sm:w-auto flex-wrap">
               <button
                 type="button"
                 onClick={() => setActiveVisualizer(prev => prev?.tab === 'bbt' ? null : { tab: 'bbt', target: 'content' })}
-                className={`px-3 py-1 text-xs font-bold rounded-lg border shadow-2xs flex items-center gap-1 cursor-pointer transition-colors ${
+                className={`px-2.5 py-1 text-xs font-bold rounded-lg border shadow-2xs flex items-center gap-1 cursor-pointer transition-colors ${
                   activeVisualizer?.tab === 'bbt'
                     ? 'bg-emerald-600 text-white border-emerald-700'
                     : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
@@ -312,12 +312,12 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
                 title="Mở Module Bảng biến thiên (BBT): Khảo sát hàm số, tinh chỉnh và chèn vào câu hỏi/lời giải"
               >
                 <TrendingUp className="w-3.5 h-3.5" />
-                <span>📈 Module BBT</span>
+                <span>📈 BBT</span>
               </button>
               <button
                 type="button"
                 onClick={() => setActiveVisualizer(prev => prev?.tab === 'graph' ? null : { tab: 'graph', target: 'content' })}
-                className={`px-3 py-1 text-xs font-bold rounded-lg border shadow-2xs flex items-center gap-1 cursor-pointer transition-colors ${
+                className={`px-2.5 py-1 text-xs font-bold rounded-lg border shadow-2xs flex items-center gap-1 cursor-pointer transition-colors ${
                   activeVisualizer?.tab === 'graph'
                     ? 'bg-blue-600 text-white border-blue-700'
                     : 'bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-300'
@@ -325,7 +325,33 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
                 title="Mở Module Đồ thị: Khảo sát đồ thị tương tác, điều chỉnh hệ số và chèn vào câu hỏi/lời giải"
               >
                 <BarChart2 className="w-3.5 h-3.5" />
-                <span>📊 Module Đồ thị</span>
+                <span>📊 Đồ thị</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveVisualizer(prev => prev?.tab === 'geometry3d' ? null : { tab: 'geometry3d', target: 'content' })}
+                className={`px-2.5 py-1 text-xs font-bold rounded-lg border shadow-2xs flex items-center gap-1 cursor-pointer transition-colors ${
+                  activeVisualizer?.tab === 'geometry3d'
+                    ? 'bg-purple-600 text-white border-purple-700'
+                    : 'bg-purple-50 hover:bg-purple-100 text-purple-800 border-purple-300'
+                }`}
+                title="Mở Module Hình không gian 3D: Chóp, Lăng trụ, Hộp, Nón, Trụ, Cầu"
+              >
+                <Box className="w-3.5 h-3.5" />
+                <span>📦 Hình 3D</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveVisualizer(prev => prev?.tab === 'statistics' ? null : { tab: 'statistics', target: 'content' })}
+                className={`px-2.5 py-1 text-xs font-bold rounded-lg border shadow-2xs flex items-center gap-1 cursor-pointer transition-colors ${
+                  activeVisualizer?.tab === 'statistics'
+                    ? 'bg-amber-600 text-white border-amber-700'
+                    : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300'
+                }`}
+                title="Mở Module Thống kê: Biểu đồ đoạn thẳng, cột, ghép nhóm, bảng tần số"
+              >
+                <BarChart3 className="w-3.5 h-3.5" />
+                <span>📉 Thống kê</span>
               </button>
             </div>
           </div>
@@ -420,6 +446,23 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
                       title="Chèn bảng biến thiên hàm phân thức có tiệm cận"
                     >
                       Phân thức
+                    </button>
+                    <span className="text-slate-300">|</span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveVisualizer({ tab: 'geometry3d', target: 'content' })}
+                      className="px-2 py-0.5 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-300 rounded-md font-medium cursor-pointer"
+                      title="Mở Module vẽ Hình không gian 3D chèn vào câu hỏi"
+                    >
+                      + Hình 3D
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveVisualizer({ tab: 'statistics', target: 'content' })}
+                      className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-md font-medium cursor-pointer"
+                      title="Mở Module vẽ Biểu đồ & Bảng Thống kê chèn vào câu hỏi"
+                    >
+                      + Thống kê
                     </button>
                     <span className="text-slate-300">|</span>
                     <button
@@ -597,6 +640,24 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
                     >
                       <BarChart2 className="w-3 h-3 text-blue-600" />
                       <span>+ Đồ thị vào lời giải</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveVisualizer({ tab: 'geometry3d', target: 'solution' })}
+                      className="text-[11px] text-purple-700 hover:text-purple-900 font-semibold cursor-pointer flex items-center gap-1 bg-purple-50 px-2 py-0.5 rounded border border-purple-200 shadow-2xs transition-colors"
+                      title="Chèn Hình không gian 3D trực tiếp vào lời giải"
+                    >
+                      <Box className="w-3 h-3 text-purple-600" />
+                      <span>+ Hình 3D vào lời giải</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveVisualizer({ tab: 'statistics', target: 'solution' })}
+                      className="text-[11px] text-amber-700 hover:text-amber-900 font-semibold cursor-pointer flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 shadow-2xs transition-colors"
+                      title="Chèn Biểu đồ & Thống kê trực tiếp vào lời giải"
+                    >
+                      <BarChart3 className="w-3 h-3 text-amber-600" />
+                      <span>+ Thống kê vào lời giải</span>
                     </button>
                     <button
                       type="button"

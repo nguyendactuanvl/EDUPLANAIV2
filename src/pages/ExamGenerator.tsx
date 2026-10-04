@@ -1,5 +1,6 @@
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { embedTikzSvgsInText } from "../components/TikzRenderer";
+import { embedBbtSvgsInText, convertBbtTableToSvg, analyzeFunctionToBbt, generateBbtSvg } from "../lib/bbtRenderer";
 import { apiFetch } from '../lib/apiFetch';
 
 import { fullPlan } from "../data/mockData";
@@ -17,7 +18,8 @@ import { saveExamToCloud, SYSTEM_EXAM_WEBHOOK } from '../lib/cloudExamStore';
 import { STANDARDIZED_EXAM_TYPES, getDefaultDurationForExamType, formatExamTitle, normalizeExamType } from '../lib/examConfig';
 import { OnlineExamConfigModal } from "../components/OnlineExamConfigModal";
 import { SAMPLE_MATH_QUESTIONS, SAMPLE_MATH_EXAM_NAME, SAMPLE_MATH_DURATION } from '../data/sampleMathExam';
-import { parseRawExamText } from '../lib/examParser';
+import { parseRawExamText, formatAiQuestionsToParsed } from '../lib/examParser';
+import { attachCroppedFiguresToQuestions } from '../lib/cropUtils';
 import { UploadTeacherExamModal } from "../components/UploadTeacherExamModal";
 import { WordEquationModal } from "../components/WordEquationModal";
 import { SimilarExamsModal } from "../components/SimilarExamsModal";
@@ -35,7 +37,7 @@ import {
 } from '../lib/examMixer';
 import React, { useState, useRef, useEffect } from "react";
 import * as XLSX from 'xlsx';
-import { FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera, TrendingUp, BarChart2 } from "lucide-react";
+import { FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera, TrendingUp, BarChart2, Box, BarChart3 } from "lucide-react";
 
 interface Question {
   type?: "mc" | "tf" | "sa" | "essay" | "MULTIPLE_CHOICE" | "TRUE_FALSE" | "SHORT_ANSWER" | "ESSAY";
@@ -929,9 +931,12 @@ const [examName, setExamName] = useState("");
   const [numCodes, setNumCodes] = useState(4);
   const [startCode, setStartCode] = useState<number>(1001);
   const [editingExamQuestion, setEditingExamQuestion] = useState<{ question: Question; index: number } | null>(null);
+  const [isExamVisualizerOpen, setIsExamVisualizerOpen] = useState(false);
+  const [examVisualizerTab, setExamVisualizerTab] = useState<"bbt" | "graph" | "geometry3d" | "statistics">("bbt");
+  const [examVisualizerTargetQ, setExamVisualizerTargetQ] = useState<number>(1);
   const [activeVisualizer, setActiveVisualizer] = useState<{
     qIndex: number;
-    tab: "bbt" | "graph";
+    tab: "bbt" | "graph" | "geometry3d" | "statistics";
     target: "content" | "solution";
   } | null>(null);
 
@@ -975,6 +980,29 @@ const [examName, setExamName] = useState("");
 
   const handleAiFixBbtForExamQuestion = async (q: Question, idx: number) => {
     try {
+      // 1. Thử nhận diện hàm số từ đề bài để tạo BBT chuẩn xác 100% trong 0ms
+      const content = q.content || (q as any).question || '';
+      const formulaMatch = content.match(/(?:y|f\(x\))\s*=\s*([^,;.\n$]+)/i) || 
+                           content.match(/hàm\s*số\s*(?:\$)?(?:y\s*=\s*)?([^,;.\n$]+)/i);
+      if (formulaMatch) {
+        const formula = formulaMatch[1].trim();
+        const bbtData = analyzeFunctionToBbt(formula);
+        if (bbtData) {
+          const svg = generateBbtSvg(bbtData);
+          if (svg) {
+            const base64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : '';
+            if (base64) {
+              const snippet = `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n`;
+              const newQs = [...questions];
+              newQs[idx] = { ...newQs[idx], content: (newQs[idx].content || '') + snippet };
+              setQuestions(newQs);
+              return;
+            }
+          }
+        }
+      }
+
+      // 2. Gọi API fix-question nếu không phân tích trực tiếp được
       const res = await apiFetch('/api/fix-question', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -983,8 +1011,9 @@ const [examName, setExamName] = useState("");
       if (res.ok) {
         const data = await res.json();
         if (data && data.question) {
+          const formattedContent = embedBbtSvgsInText(embedTikzSvgsInText(data.question.content || ''));
           const newQs = [...questions];
-          newQs[idx] = { ...newQs[idx], ...data.question };
+          newQs[idx] = { ...newQs[idx], ...data.question, content: formattedContent };
           setQuestions(newQs);
           return;
         }
@@ -992,10 +1021,38 @@ const [examName, setExamName] = useState("");
     } catch (e) {
       console.warn("AI fix BBT error:", e);
     }
-    const fallbackBbt = `\n\n| $x$ | $-\\infty$ | | $-1$ | | $2$ | | $+\\infty$ |\n|---|---|---|---|---|---|---|---|\n| $y'$ | | $+$ | $0$ | $-$ | $0$ | $+$ |\n| $y$ | $-\\infty$ | $\\nearrow$ | $3$ | $\\searrow$ | $-1$ | $\\nearrow$ | $+\\infty$ |`;
+    const fallbackBbt = `| $x$ | $-\\infty$ | | $-1$ | | $2$ | | $+\\infty$ |\n|---|---|---|---|---|---|---|---|\n| $y'$ | | $+$ | $0$ | $-$ | $0$ | $+$ |\n| $y$ | $-\\infty$ | $\\nearrow$ | $3$ | $\\searrow$ | $-1$ | $\\nearrow$ | $+\\infty$ |`;
+    const fallbackSvg = convertBbtTableToSvg(fallbackBbt);
+    const base64 = fallbackSvg && typeof btoa !== 'undefined' ? btoa(encodeURIComponent(fallbackSvg)) : '';
+    const snippet = base64 ? `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n` : `\n\n${fallbackBbt}\n\n`;
     const newQs = [...questions];
-    newQs[idx] = { ...newQs[idx], content: (newQs[idx].content || '') + fallbackBbt };
+    newQs[idx] = { ...newQs[idx], content: (newQs[idx].content || '') + snippet };
     setQuestions(newQs);
+  };
+
+  const handleAutoGenerateGraphForExamQuestion = (q: Question, idx: number) => {
+    setActiveVisualizer({ qIndex: idx, tab: "graph", target: "content" });
+  };
+
+  const handleAutoGenerateAllBbtAndGraphs = () => {
+    let count = 0;
+    const updated = questions.map((q) => {
+      let content = q.content || (q as any).question || '';
+      let solution = q.solution || q.explanation || '';
+      const newContent = embedBbtSvgsInText(embedTikzSvgsInText(content));
+      const newSolution = embedBbtSvgsInText(embedTikzSvgsInText(solution));
+      if (newContent !== content || newSolution !== solution) {
+        count++;
+      }
+      return {
+        ...q,
+        content: newContent,
+        solution: newSolution,
+        explanation: newSolution
+      };
+    });
+    setQuestions(updated);
+    alert(`✨ Đã quét và tự động chuyển đổi toàn bộ BBT & Đồ thị sang dạng ảnh SVG chuẩn SGK (${count} câu được cập nhật)!`);
   };
 
   const handleAiRegenerateExamQuestion = async (q: Question, idx: number) => {
@@ -1063,10 +1120,56 @@ const [examName, setExamName] = useState("");
   };
 
   const handleImportText = () => {
-    if (!importRawText.trim()) return;
-    const parsed = parseRawExamText(importRawText);
+    const raw = importRawText.trim();
+    if (!raw) return;
+
+    // Nếu người dùng dán vào chuỗi JSON từ AI Studio (bắt đầu bằng '{' hoặc '[')
+    if (raw.startsWith('{') || raw.startsWith('[')) {
+      try {
+        let jsonObj = JSON.parse(raw);
+        let rawList: any[] = [];
+        if (Array.isArray(jsonObj)) {
+          rawList = jsonObj;
+        } else if (jsonObj && typeof jsonObj === 'object') {
+          if (Array.isArray(jsonObj.questions)) rawList = jsonObj.questions;
+          else if (Array.isArray(jsonObj.result)) rawList = jsonObj.result;
+          if (jsonObj.examTitle && typeof jsonObj.examTitle === 'string') {
+            setExamName(jsonObj.examTitle.trim());
+          }
+          if (typeof jsonObj.duration === 'number' && jsonObj.duration > 0) {
+            setDuration(jsonObj.duration);
+          }
+        }
+
+        if (rawList && rawList.length > 0) {
+          const parsed = formatAiQuestionsToParsed(rawList);
+          const currentMaxId = questions.reduce((max, q) => Math.max(max, q.id || 0), 0);
+          const formatted = parsed.map((q: any, idx: number) => ({
+            ...q,
+            id: currentMaxId + idx + 1,
+            topic: q.topic || 'Chủ đề bóc tách',
+            subtopic: q.subtopic || 'Nội dung kiến thức',
+            level: q.level || 'Thông hiểu',
+            content: embedBbtSvgsInText(embedTikzSvgsInText(q.content || (q as any).question || '')),
+            solution: embedBbtSvgsInText(embedTikzSvgsInText((q.solution || q.explanation || "").trim())),
+            explanation: embedBbtSvgsInText(embedTikzSvgsInText((q.solution || q.explanation || "").trim()))
+          }));
+
+          setQuestions(prev => [...prev, ...formatted]);
+          setShowImportTextModal(false);
+          setImportRawText("");
+          setActiveTab("exam");
+          alert(`Đã nhận diện định dạng JSON AI Studio và nạp thành công ${formatted.length} câu hỏi vào Đề Gốc!`);
+          return;
+        }
+      } catch (jsonErr) {
+        console.warn("Thử parse JSON không thành công, tiếp tục thử parse dạng văn bản thô:", jsonErr);
+      }
+    }
+
+    const parsed = parseRawExamText(raw);
     if (parsed.length === 0) {
-      alert("Không tìm thấy câu hỏi hợp lệ trong đoạn văn bản. Vui lòng định dạng theo mẫu: Câu 1: ... A. ... B. ... C. ... D. ...");
+      alert("Không tìm thấy câu hỏi hợp lệ trong đoạn văn bản. Vui lòng định dạng theo mẫu: Câu 1: ... A. ... B. ... C. ... D. ... hoặc dán chuỗi JSON hợp lệ.");
       return;
     }
     setError(null);
@@ -1287,15 +1390,26 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
       const data = parseApiResponse<any>(text);
       if (data && Array.isArray(data.questions) && data.questions.length > 0) {
         setExamName(data.examName || "Đề kiểm tra");
-        const formatted = data.questions.map((q: any, idx: number) => ({
+        let formatted = data.questions.map((q: any, idx: number) => ({
           ...q,
           id: q.id || idx + 1,
           topic: q.topic || 'Chủ đề trọng tâm',
           subtopic: q.subtopic || 'Nội dung kiến thức',
           level: q.level || 'Thông hiểu',
-          solution: (q.solution || q.explanation || "").trim(),
-          explanation: (q.solution || q.explanation || "").trim()
+          content: embedBbtSvgsInText(embedTikzSvgsInText(q.content || (q as any).question || (q as any).text || '')),
+          solution: embedBbtSvgsInText(embedTikzSvgsInText((q.solution || q.explanation || "").trim())),
+          explanation: embedBbtSvgsInText(embedTikzSvgsInText((q.solution || q.explanation || "").trim()))
         }));
+
+        // Nếu có ảnh / file đính kèm (matrixBase64), tự động crop và nhúng ảnh vào câu hỏi
+        if (matrixBase64) {
+          try {
+            formatted = await attachCroppedFiguresToQuestions(formatted, matrixBase64);
+          } catch (cropErr) {
+            console.warn("Lỗi tự động crop hình vẽ từ file ma trận/đề thi:", cropErr);
+          }
+        }
+
         setQuestions(formatted);
 
         // Tự động đồng bộ số lượng câu theo đúng ma trận tải lên
@@ -1325,7 +1439,13 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
 
   const handleShuffle = () => {
     if (questions.length === 0) return;
-    const mixed = mixExam(questions as any[], {
+    const processedQuestions = questions.map((q: any) => ({
+      ...q,
+      content: embedBbtSvgsInText(embedTikzSvgsInText(q.content || q.question || q.text || '')),
+      solution: embedBbtSvgsInText(embedTikzSvgsInText(q.solution || q.explanation || '')),
+      explanation: embedBbtSvgsInText(embedTikzSvgsInText(q.solution || q.explanation || ''))
+    }));
+    const mixed = mixExam(processedQuestions as any[], {
       numCodes: Math.min(Math.max(1, numCodes), 24),
       groupBySection: outputConfig.groupBySection !== false,
       shuffleQuestions: outputConfig.shuffleQuestions !== false,
@@ -2526,17 +2646,127 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                           );
                         })()}
                         {questions.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={toggleAllSolutions}
-                            className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-                            title="Bật/Tắt hiển thị lời giải chi tiết cho tất cả câu hỏi"
-                          >
-                            <span>{showAllSolutions ? "🙈 Ẩn tất cả lời giải" : "👁️ Hiện tất cả lời giải"}</span>
-                          </button>
+                          <>
+                            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg p-0.5">
+                              <span className="text-[11px] font-bold text-slate-600 pl-1.5 pr-0.5 flex items-center gap-1">
+                                🎨 Vẽ hình:
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => { setExamVisualizerTab("bbt"); setIsExamVisualizerOpen(true); }}
+                                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                                title="Mở Module Bảng biến thiên (BBT Chuẩn SGK)"
+                              >
+                                <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>BBT</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { setExamVisualizerTab("graph"); setIsExamVisualizerOpen(true); }}
+                                className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-300 rounded text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                                title="Mở Module Đồ thị hàm số & Bất phương trình 2D"
+                              >
+                                <BarChart2 className="w-3.5 h-3.5 text-blue-600" />
+                                <span>Đồ thị</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { setExamVisualizerTab("geometry3d"); setIsExamVisualizerOpen(true); }}
+                                className="px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-300 rounded text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                                title="Mở Module Hình học không gian 3D (Chóp, Lăng trụ, Hộp, Nón, Trụ, Cầu)"
+                              >
+                                <Box className="w-3.5 h-3.5 text-purple-600" />
+                                <span>Hình 3D</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { setExamVisualizerTab("statistics"); setIsExamVisualizerOpen(true); }}
+                                className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                                title="Mở Module Biểu đồ & Thống kê"
+                              >
+                                <BarChart3 className="w-3.5 h-3.5 text-amber-600" />
+                                <span>Thống kê</span>
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleAutoGenerateAllBbtAndGraphs}
+                              className="px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                              title="Tự động quét và chuẩn hóa toàn bộ Bảng biến thiên (BBT) & Đồ thị trong đề thi thành dạng ảnh SVG chuẩn SGK"
+                            >
+                              <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>✨ Tự động xuất BBT/Đồ thị ảnh</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={toggleAllSolutions}
+                              className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                              title="Bật/Tắt hiển thị lời giải chi tiết cho tất cả câu hỏi"
+                            >
+                              <span>{showAllSolutions ? "🙈 Ẩn tất cả lời giải" : "👁️ Hiện tất cả lời giải"}</span>
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
+
+                    {/* Modal Công cụ Vẽ hình Toán học GDPT 2018 Toàn diện */}
+                    {isExamVisualizerOpen && (
+                      <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto no-print">
+                        <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-4 border border-slate-200 relative animate-in fade-in zoom-in-95 duration-150">
+                          <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-2">
+                            <div className="flex items-center gap-2">
+                              <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-2xs">
+                                <Sparkles className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <h3 className="font-bold text-slate-800 text-base">
+                                  Công cụ Vẽ hình & Đồ thị Toán học (Soạn thảo Đề thi GDPT 2018)
+                                </h3>
+                                <p className="text-xs text-slate-500">
+                                  Vẽ BBT chuẩn SGK, Đồ thị 2D & Miền nghiệm BPT, Hình không gian 3D, Biểu đồ Thống kê chèn vào câu hỏi đề thi
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              {questions.length > 0 && (
+                                <div className="flex items-center gap-1.5 text-xs bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                                  <span className="font-semibold text-slate-700">Chèn vào:</span>
+                                  <select
+                                    value={examVisualizerTargetQ}
+                                    onChange={e => setExamVisualizerTargetQ(Number(e.target.value))}
+                                    className="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs font-bold text-slate-800 cursor-pointer"
+                                  >
+                                    {questions.map((_, i) => (
+                                      <option key={i} value={i + 1}>Câu {i + 1}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setIsExamVisualizerOpen(false)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                              >
+                                <X className="w-5 h-5" />
+                              </button>
+                            </div>
+                          </div>
+                          <QuestionVisualizerPanel
+                            questionNumber={examVisualizerTargetQ}
+                            questionContent={questions[examVisualizerTargetQ - 1]?.content || ""}
+                            solutionContent={questions[examVisualizerTargetQ - 1]?.solution || questions[examVisualizerTargetQ - 1]?.explanation || ""}
+                            defaultTab={examVisualizerTab}
+                            defaultTarget="content"
+                            onInsertSnippet={(target, snippet) => {
+                              handleInsertVisualizerSnippet(examVisualizerTargetQ - 1, target, snippet);
+                              setIsExamVisualizerOpen(false);
+                            }}
+                            onClose={() => setIsExamVisualizerOpen(false)}
+                          />
+                        </div>
+                      </div>
+                    )}
                     {questions.map((q, idx) => (
                       <div key={idx} className="pb-4 border-b border-slate-100 last:border-0">
                         <div className="font-medium text-slate-800 mb-3 flex items-start gap-2">
@@ -2550,7 +2780,7 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                               [Thực tế]
                             </span>
                           )}
-                          <div className="flex items-center gap-1 shrink-0 no-print">
+                          <div className="flex items-center gap-1 shrink-0 no-print flex-wrap">
                             <button
                               type="button"
                               onClick={() => {
@@ -2572,6 +2802,15 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                             </button>
                             <button
                               type="button"
+                              onClick={() => handleAiFixBbtForExamQuestion(q, idx)}
+                              className="text-xs px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded border border-amber-300 flex items-center gap-1 cursor-pointer transition-colors font-medium shadow-2xs"
+                              title="Tự động vẽ Bảng biến thiên (dạng ảnh SVG chuẩn SGK) cho câu hỏi này"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                              <span>✨ AI vẽ BBT ảnh</span>
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => {
                                 if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "graph" && activeVisualizer?.target === "content") {
                                   setActiveVisualizer(null);
@@ -2584,10 +2823,56 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                                   ? "bg-blue-600 text-white border-blue-700"
                                   : "bg-blue-50 text-blue-800 border-blue-300 hover:bg-blue-100"
                               }`}
-                              title="Tích hợp Module Đồ thị: Khảo sát hàm số trực quan, điều chỉnh hệ số và chèn đồ thị vào câu hỏi"
+                              title="Tích hợp Module Đồ thị & BPT: Khảo sát hàm số trực quan, điều chỉnh hệ số và chèn đồ thị vào câu hỏi"
                             >
                               <BarChart2 className="w-3.5 h-3.5" />
                               <span>Đồ thị</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "geometry3d" && activeVisualizer?.target === "content") {
+                                  setActiveVisualizer(null);
+                                } else {
+                                  setActiveVisualizer({ qIndex: idx, tab: "geometry3d", target: "content" });
+                                }
+                              }}
+                              className={`text-xs px-2 py-1 rounded border flex items-center gap-1 cursor-pointer transition-colors shadow-2xs font-semibold ${
+                                activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "geometry3d" && activeVisualizer?.target === "content"
+                                  ? "bg-purple-600 text-white border-purple-700"
+                                  : "bg-purple-50 text-purple-800 border-purple-300 hover:bg-purple-100"
+                              }`}
+                              title="Tích hợp Module Hình không gian 3D: Chóp, Lăng trụ, Hộp, Nón, Trụ, Cầu"
+                            >
+                              <Box className="w-3.5 h-3.5" />
+                              <span>Hình 3D</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "statistics" && activeVisualizer?.target === "content") {
+                                  setActiveVisualizer(null);
+                                } else {
+                                  setActiveVisualizer({ qIndex: idx, tab: "statistics", target: "content" });
+                                }
+                              }}
+                              className={`text-xs px-2 py-1 rounded border flex items-center gap-1 cursor-pointer transition-colors shadow-2xs font-semibold ${
+                                activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "statistics" && activeVisualizer?.target === "content"
+                                  ? "bg-amber-600 text-white border-amber-700"
+                                  : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
+                              }`}
+                              title="Tích hợp Module Thống kê: Chèn Biểu đồ hoặc Bảng tần số"
+                            >
+                              <BarChart3 className="w-3.5 h-3.5" />
+                              <span>Thống kê</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAutoGenerateGraphForExamQuestion(q, idx)}
+                              className="text-xs px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-800 rounded border border-blue-300 flex items-center gap-1 cursor-pointer transition-colors font-medium shadow-2xs"
+                              title="Mở công cụ xuất Đồ thị hàm số dạng ảnh cho câu hỏi này"
+                            >
+                              <span>📊 Xuất Đồ thị ảnh</span>
                             </button>
                             <button
                               onClick={() => setEditingExamQuestion({ question: q, index: idx })}
@@ -2671,6 +2956,13 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                               >
                                 <BarChart2 className="w-3.5 h-3.5" />
                                 <span>📊 Mở Module Đồ thị & Chèn</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleAutoGenerateGraphForExamQuestion(q, idx)}
+                                className="px-2.5 py-1 bg-blue-700 hover:bg-blue-800 text-white font-medium rounded-md shadow-2xs flex items-center gap-1 cursor-pointer transition-colors"
+                              >
+                                <span>✨ Tự động xuất Đồ thị ảnh</span>
                               </button>
                             </div>
                           </div>
@@ -2756,10 +3048,50 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                                   ? "bg-blue-600 text-white border-blue-700"
                                   : "bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-300"
                               }`}
-                              title="Tích hợp Module Đồ thị: Chèn Đồ thị vào lời giải chi tiết"
+                              title="Tích hợp Module Đồ thị: Chèn Đồ thị & BPT vào lời giải chi tiết"
                             >
                               <BarChart2 className="w-3.5 h-3.5" />
                               <span>+ Đồ thị vào lời giải</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!isSolutionOpen(q.id || idx + 1)) toggleSolution(q.id || idx + 1);
+                                if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "geometry3d" && activeVisualizer?.target === "solution") {
+                                  setActiveVisualizer(null);
+                                } else {
+                                  setActiveVisualizer({ qIndex: idx, tab: "geometry3d", target: "solution" });
+                                }
+                              }}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg border shadow-2xs transition-colors cursor-pointer ${
+                                activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "geometry3d" && activeVisualizer?.target === "solution"
+                                  ? "bg-purple-600 text-white border-purple-700"
+                                  : "bg-purple-50 hover:bg-purple-100 text-purple-800 border-purple-300"
+                              }`}
+                              title="Tích hợp Module Hình không gian 3D: Chèn hình chóp, lăng trụ, nón, trụ, cầu vào lời giải"
+                            >
+                              <Box className="w-3.5 h-3.5" />
+                              <span>+ Hình 3D vào lời giải</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!isSolutionOpen(q.id || idx + 1)) toggleSolution(q.id || idx + 1);
+                                if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "statistics" && activeVisualizer?.target === "solution") {
+                                  setActiveVisualizer(null);
+                                } else {
+                                  setActiveVisualizer({ qIndex: idx, tab: "statistics", target: "solution" });
+                                }
+                              }}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg border shadow-2xs transition-colors cursor-pointer ${
+                                activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "statistics" && activeVisualizer?.target === "solution"
+                                  ? "bg-amber-600 text-white border-amber-700"
+                                  : "bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300"
+                              }`}
+                              title="Tích hợp Module Thống kê: Chèn Biểu đồ hoặc Bảng tần số vào lời giải"
+                            >
+                              <BarChart3 className="w-3.5 h-3.5" />
+                              <span>+ Thống kê vào lời giải</span>
                             </button>
                           </div>
 
@@ -2777,6 +3109,7 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                                     type="button"
                                     onClick={() => setActiveVisualizer({ qIndex: idx, tab: "bbt", target: "solution" })}
                                     className="text-emerald-700 hover:text-emerald-900 font-semibold px-2 py-0.5 rounded bg-emerald-100/70 border border-emerald-200 cursor-pointer flex items-center gap-1 shadow-2xs"
+                                    title="Mở Module BBT để chèn vào lời giải"
                                   >
                                     <TrendingUp className="w-3 h-3" />
                                     <span>Mở BBT</span>
@@ -2785,9 +3118,28 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                                     type="button"
                                     onClick={() => setActiveVisualizer({ qIndex: idx, tab: "graph", target: "solution" })}
                                     className="text-blue-700 hover:text-blue-900 font-semibold px-2 py-0.5 rounded bg-blue-100/70 border border-blue-200 cursor-pointer flex items-center gap-1 shadow-2xs"
+                                    title="Mở Module Đồ thị để chèn vào lời giải"
                                   >
                                     <BarChart2 className="w-3 h-3" />
                                     <span>Mở Đồ thị</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveVisualizer({ qIndex: idx, tab: "geometry3d", target: "solution" })}
+                                    className="text-purple-700 hover:text-purple-900 font-semibold px-2 py-0.5 rounded bg-purple-100/70 border border-purple-200 cursor-pointer flex items-center gap-1 shadow-2xs"
+                                    title="Mở Module Hình không gian 3D để chèn vào lời giải"
+                                  >
+                                    <Box className="w-3 h-3" />
+                                    <span>Mở Hình 3D</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveVisualizer({ qIndex: idx, tab: "statistics", target: "solution" })}
+                                    className="text-amber-700 hover:text-amber-900 font-semibold px-2 py-0.5 rounded bg-amber-100/70 border border-amber-200 cursor-pointer flex items-center gap-1 shadow-2xs"
+                                    title="Mở Module Thống kê để chèn vào lời giải"
+                                  >
+                                    <BarChart3 className="w-3 h-3" />
+                                    <span>Mở Thống kê</span>
                                   </button>
                                 </div>
                               </div>

@@ -1,6 +1,6 @@
 import { apiFetch } from '../lib/apiFetch';
 import { exportHtmlToWord } from '../lib/exportUtils';
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Upload, Plus, Save, Trash2, Award, FileText, Loader2, FileImage, Search, Edit3, Download, Printer, Trophy } from "lucide-react";
 import { Student } from "../types";
 import { parseApiResponse } from "../lib/utils";
@@ -689,3 +689,5 @@ export function HomeroomManagement() {
     </div>
   );
 }
+
+export default HomeroomManagement;

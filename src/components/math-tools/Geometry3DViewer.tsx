@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { 
   RotateCw, ZoomIn, ZoomOut, RotateCcw, Download, Copy, Check, 
-  Box, Eye, Sparkles, Sliders 
+  Box, Eye, Sparkles, Sliders, Plus
 } from "lucide-react";
 import { Shape3DType, Point3D, Edge3D } from "./types";
 
@@ -10,12 +10,16 @@ interface Geometry3DViewerProps {
   title?: string;
   subtitle?: string;
   onSelectShape?: (shape: Shape3DType) => void;
+  onInsertImage?: (dataUrl: string) => void;
+  insertButtonLabel?: string;
 }
 
 export const Geometry3DViewer: React.FC<Geometry3DViewerProps> = ({
   initialShape = "pyramid_quad",
   title = "Công cụ vẽ Hình học không gian (3D Geometry)",
-  subtitle = "Chuẩn quy cách SGK Toán: Nét liền (nhìn thấy), nét đứt (khuất)"
+  subtitle = "Chuẩn quy cách SGK Toán: Nét liền (nhìn thấy), nét đứt (khuất)",
+  onInsertImage,
+  insertButtonLabel = "Chèn hình vào tài liệu"
 }) => {
   const [shape, setShape] = useState<Shape3DType>(initialShape);
   const [pitch, setPitch] = useState<number>(22); // elevation angle in degrees
@@ -161,7 +165,7 @@ export const Geometry3DViewer: React.FC<Geometry3DViewerProps> = ({
         { from: "B", to: "B1", dashed: false },
         { from: "C", to: "C1", dashed: false }
       ];
-    } else {
+    } else if (type === "cuboid") {
       // Cuboid / Cube ABCD.A'B'C'D'
       vertices = [
         // Bottom
@@ -193,6 +197,119 @@ export const Geometry3DViewer: React.FC<Geometry3DViewerProps> = ({
         { from: "C", to: "C1", dashed: false },
         { from: "D", to: "D1", dashed: false }
       ];
+    } else if (type === "cone") {
+      // Khối nón tròn xoay: đỉnh S, tâm đáy O, bán kính R
+      const R = 2.0;
+      const H = 3.2;
+      vertices = [
+        { id: "S", x: 0, y: 0, z: H, label: "S", labelOffset: { x: 0, y: -14 } },
+        { id: "O", x: 0, y: 0, z: 0, label: "O", labelOffset: { x: 0, y: 12 } },
+        { id: "A", x: -R, y: 0, z: 0, label: "A", labelOffset: { x: -14, y: 0 } },
+        { id: "B", x: R, y: 0, z: 0, label: "B", labelOffset: { x: 12, y: 0 } }
+      ];
+      // Generate base circle perimeter points
+      const numPts = 24;
+      for (let i = 0; i < numPts; i++) {
+        const theta = (i * 2 * Math.PI) / numPts;
+        const x = R * Math.cos(theta);
+        const y = (R * 0.5) * Math.sin(theta);
+        vertices.push({ id: `c_${i}`, x, y, z: 0, label: "" });
+      }
+      edges = [
+        // Đường sinh trái & phải
+        { from: "S", to: "A", dashed: false },
+        { from: "S", to: "B", dashed: false },
+        // Chiều cao SO & Bán kính OA
+        { from: "S", to: "O", dashed: true, color: "#ef4444", style: "altitude" },
+        { from: "O", to: "A", dashed: true, color: "#94a3b8" }
+      ];
+      // Vòng tròn đáy: nửa sau nét đứt, nửa trước nét liền
+      for (let i = 0; i < numPts; i++) {
+        const next = (i + 1) % numPts;
+        const theta = (i * 2 * Math.PI) / numPts;
+        // y > 0 is in the back (hidden) -> dashed
+        const isBack = Math.sin(theta) > 0.05;
+        edges.push({ from: `c_${i}`, to: `c_${next}`, dashed: isBack });
+      }
+    } else if (type === "cylinder") {
+      // Khối trụ tròn xoay: tâm đáy trên O1, tâm đáy dưới O, bán kính R
+      const R = 1.8;
+      const H = 2.8;
+      vertices = [
+        { id: "O1", x: 0, y: 0, z: H / 2, label: "O'", labelOffset: { x: 0, y: -12 } },
+        { id: "O", x: 0, y: 0, z: -H / 2, label: "O", labelOffset: { x: 0, y: 12 } },
+        { id: "A1", x: -R, y: 0, z: H / 2, label: "A'", labelOffset: { x: -14, y: -6 } },
+        { id: "B1", x: R, y: 0, z: H / 2, label: "B'", labelOffset: { x: 12, y: -6 } },
+        { id: "A", x: -R, y: 0, z: -H / 2, label: "A", labelOffset: { x: -14, y: 6 } },
+        { id: "B", x: R, y: 0, z: -H / 2, label: "B", labelOffset: { x: 12, y: 6 } }
+      ];
+      const numPts = 24;
+      for (let i = 0; i < numPts; i++) {
+        const theta = (i * 2 * Math.PI) / numPts;
+        const x = R * Math.cos(theta);
+        const y = (R * 0.5) * Math.sin(theta);
+        vertices.push({ id: `top_${i}`, x, y, z: H / 2, label: "" });
+        vertices.push({ id: `bot_${i}`, x, y, z: -H / 2, label: "" });
+      }
+      edges = [
+        // 2 đường sinh
+        { from: "A1", to: "A", dashed: false },
+        { from: "B1", to: "B", dashed: false },
+        // Trục OO'
+        { from: "O1", to: "O", dashed: true, color: "#ef4444", style: "altitude" },
+        { from: "O", to: "A", dashed: true, color: "#94a3b8" }
+      ];
+      // Đáy trên: toàn bộ nét liền
+      for (let i = 0; i < numPts; i++) {
+        const next = (i + 1) % numPts;
+        edges.push({ from: `top_${i}`, to: `top_${next}`, dashed: false });
+      }
+      // Đáy dưới: nửa sau nét đứt, nửa trước nét liền
+      for (let i = 0; i < numPts; i++) {
+        const next = (i + 1) % numPts;
+        const theta = (i * 2 * Math.PI) / numPts;
+        const isBack = Math.sin(theta) > 0.05;
+        edges.push({ from: `bot_${i}`, to: `bot_${next}`, dashed: isBack });
+      }
+    } else if (type === "sphere") {
+      // Khối cầu tròn xoay: tâm O, bán kính R
+      const R = 2.0;
+      vertices = [
+        { id: "O", x: 0, y: 0, z: 0, label: "O", labelOffset: { x: 0, y: 12 } },
+        { id: "A", x: -R, y: 0, z: 0, label: "A", labelOffset: { x: -14, y: 0 } },
+        { id: "B", x: R, y: 0, z: 0, label: "B", labelOffset: { x: 12, y: 0 } }
+      ];
+      const numPts = 32;
+      // Vòng tròn biên ngoài (đứng)
+      for (let i = 0; i < numPts; i++) {
+        const theta = (i * 2 * Math.PI) / numPts;
+        const x = R * Math.cos(theta);
+        const z = R * Math.sin(theta);
+        vertices.push({ id: `out_${i}`, x, y: 0, z, label: "" });
+      }
+      // Vòng xích đạo (ngang)
+      for (let i = 0; i < numPts; i++) {
+        const theta = (i * 2 * Math.PI) / numPts;
+        const x = R * Math.cos(theta);
+        const y = (R * 0.45) * Math.sin(theta);
+        vertices.push({ id: `eq_${i}`, x, y, z: 0, label: "" });
+      }
+      edges = [
+        // Bán kính OA
+        { from: "O", to: "A", dashed: true, color: "#ef4444" }
+      ];
+      // Vòng biên ngoài: nét liền
+      for (let i = 0; i < numPts; i++) {
+        const next = (i + 1) % numPts;
+        edges.push({ from: `out_${i}`, to: `out_${next}`, dashed: false });
+      }
+      // Vòng xích đạo: nửa sau nét đứt, nửa trước nét liền
+      for (let i = 0; i < numPts; i++) {
+        const next = (i + 1) % numPts;
+        const theta = (i * 2 * Math.PI) / numPts;
+        const isBack = Math.sin(theta) > 0.05;
+        edges.push({ from: `eq_${i}`, to: `eq_${next}`, dashed: isBack });
+      }
     }
 
     return { vertices, edges };
@@ -398,9 +515,24 @@ export const Geometry3DViewer: React.FC<Geometry3DViewerProps> = ({
 
         {/* Action buttons */}
         <div className="flex items-center gap-2">
+          {onInsertImage && (
+            <button
+              onClick={() => {
+                const exportCanvas = document.createElement("canvas");
+                render(exportCanvas, true);
+                onInsertImage(exportCanvas.toDataURL("image/png"));
+              }}
+              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+              title="Chèn ảnh vào tài liệu đang soạn thảo"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{insertButtonLabel}</span>
+            </button>
+          )}
+
           <button
             onClick={handleCopyImage}
-            className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
+            className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
             title="Sao chép ảnh vào clipboard để dán vào Word"
           >
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
@@ -409,7 +541,7 @@ export const Geometry3DViewer: React.FC<Geometry3DViewerProps> = ({
 
           <button
             onClick={handleExportPNG}
-            className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
+            className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Tải PNG</span>
@@ -418,14 +550,17 @@ export const Geometry3DViewer: React.FC<Geometry3DViewerProps> = ({
       </div>
 
       {/* Preset Selector Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-9 gap-2">
         {[
           { id: "pyramid_quad" as Shape3DType, label: "Chóp tứ giác (S.ABCD)" },
           { id: "pyramid_triangle" as Shape3DType, label: "Chóp tam giác (S.ABC)" },
-          { id: "pyramid_regular_quad" as Shape3DType, label: "Chóp tứ giác đều (SO ⊥ đáy)" },
-          { id: "pyramid_regular_tri" as Shape3DType, label: "Chóp tam giác đều (SO ⊥ đáy)" },
-          { id: "prism_triangular" as Shape3DType, label: "Lăng trụ tam giác (ABC.A'B'C')" },
-          { id: "cuboid" as Shape3DType, label: "Hình hộp chữ nhật / Lập phương" }
+          { id: "pyramid_regular_quad" as Shape3DType, label: "Chóp tứ giác đều" },
+          { id: "pyramid_regular_tri" as Shape3DType, label: "Chóp tam giác đều" },
+          { id: "prism_triangular" as Shape3DType, label: "Lăng trụ tam giác" },
+          { id: "cuboid" as Shape3DType, label: "Hộp CN / Lập phương" },
+          { id: "cone" as Shape3DType, label: "Khối nón tròn xoay" },
+          { id: "cylinder" as Shape3DType, label: "Khối trụ tròn xoay" },
+          { id: "sphere" as Shape3DType, label: "Khối cầu tròn xoay" }
         ].map(item => (
           <button
             key={item.id}

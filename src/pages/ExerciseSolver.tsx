@@ -1,10 +1,17 @@
 import { apiFetch } from '../lib/apiFetch';
 import { exportHtmlToWord } from '../lib/exportUtils';
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { Copy, Save, Upload, X, Sparkles, Loader2, Download, Presentation, ChevronLeft, ChevronRight, Maximize2, FileText, BookmarkPlus, Camera, Image as ImageIcon, Send, ArrowLeft } from 'lucide-react';
+import { 
+  Copy, Save, Upload, X, Sparkles, Loader2, Download, Presentation, 
+  ChevronLeft, ChevronRight, Maximize2, FileText, BookmarkPlus, Camera, 
+  Image as ImageIcon, Send, ArrowLeft, Crop, CheckCircle2, ImagePlus, 
+  Clipboard, Eye, EyeOff, RefreshCw, Trash2, Scissors 
+} from 'lucide-react';
 
-import { MarkdownRenderer } from "../components/MarkdownRenderer";
+import { MarkdownRenderer, fixMath } from "../components/MarkdownRenderer";
 import { ErrorBoundary } from "../components/ErrorBoundary";
+import { ImageCropperModal } from "../components/ImageCropperModal";
+import { renderAllPdfPages } from "../lib/pdfUtils";
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
@@ -26,8 +33,48 @@ const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
+// Helper to inject cropped image into problem stem and solution cleanly
+export const injectCroppedImageIntoSolution = (rawSolution: string, imgDataUrl: string, inSolution: boolean = true): string => {
+  if (!rawSolution || !imgDataUrl) return rawSolution;
+  let text = rawSolution;
+  const imgTag = `\n\n<img src="${imgDataUrl}" alt="Hình vẽ / Đồ thị bài toán" class="max-w-[480px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm" />\n\n`;
+
+  // Remove existing auto-injected images to avoid duplicates when re-cropping
+  text = text.replace(/<img[^>]*alt=["'](?:Hình vẽ \/ Đồ thị bài toán|Đồ thị \/ Hình vẽ minh họa lời giải|Hình minh họa đề bài|cropped_figure)[^>]*\/?>\s*/gi, '');
+
+  // 1. Inject into Đề bài (Problem statement)
+  if (text.includes('[HÌNH_ẢNH_ĐỀ_BÀI]')) {
+    text = text.replace(/\[HÌNH_ẢNH_ĐỀ_BÀI\]/g, imgTag);
+  } else if (/##\s*(?:Đề bài|Đề thi|Câu hỏi)/i.test(text)) {
+    text = text.replace(/(##\s*(?:Đề bài|Đề thi|Câu hỏi)[^\n]*\n)([\s\S]*?)(?=\n##\s*(?:Lời giải|Đáp án|Hướng dẫn giải)|$)/i, (_m, h2, body) => {
+      return `${h2}${body.trim()}${imgTag}`;
+    });
+  } else {
+    text = `${imgTag}${text}`;
+  }
+
+  // 2. Inject into Lời giải chi tiết / Đáp án (Solution / Answer) for intuitive visual comparison
+  if (inSolution) {
+    if (text.includes('[HÌNH_ẢNH_ĐÁP_ÁN]')) {
+      text = text.replace(/\[HÌNH_ẢNH_ĐÁP_ÁN\]/g, imgTag);
+    } else if (text.includes('[HÌNH_ẢNH_LỜI_GIẢI]')) {
+      text = text.replace(/\[HÌNH_ẢNH_LỜI_GIẢI\]/g, imgTag);
+    } else if (/##\s*(?:Lời giải|Đáp án|Hướng dẫn giải)/i.test(text)) {
+      const solIdx = text.search(/##\s*(?:Lời giải|Đáp án|Hướng dẫn giải)/i);
+      const solPart = text.slice(solIdx);
+      if (!solPart.includes(imgDataUrl)) {
+        text = text.replace(/(##\s*(?:Lời giải|Đáp án|Hướng dẫn giải)[^\n]*\n)/i, `$1${imgTag}`);
+      }
+    }
+  } else {
+    // If turned off in solution, remove any remaining placeholders in solution
+    text = text.replace(/\[HÌNH_ẢNH_ĐÁP_ÁN\]|\[HÌNH_ẢNH_LỜI_GIẢI\]/g, '');
+  }
+
+  return text;
+};
+
 export function ExerciseSolver() {
-  
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -38,17 +85,117 @@ export function ExerciseSolver() {
   const [solution, setSolution] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
-  
+
+  // Cropper and visual aids state
+  const [croppedImage, setCroppedImage] = useState<string | null>(null);
+  const [isCropperOpen, setIsCropperOpen] = useState(false);
+  const [cropperSourceImage, setCropperSourceImage] = useState<string>('');
+  const [pdfPages, setPdfPages] = useState<string[]>([]);
+  const [selectedPdfPageIdx, setSelectedPdfPageIdx] = useState(0);
+  const [isLoadingPdfPages, setIsLoadingPdfPages] = useState(false);
+  const [showInBothQuestionAndAnswer, setShowInBothQuestionAndAnswer] = useState(true);
+
   useEffect(() => {
     setHistoryItems(getHistory().filter(item => item.type === 'GBT'));
   }, []);
+
   const [isPresentationMode, setIsPresentationMode] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
   
   const exportRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cropperInputRef = useRef<HTMLInputElement>(null);
 
-  
+  // Process incoming file (image, PDF, docx, txt)
+  const processIncomingFile = async (file: File) => {
+    setSelectedFile(file);
+    setError(null);
+    setCroppedImage(null);
+    setPdfPages([]);
+    setSelectedPdfPageIdx(0);
+
+    if (file.type.startsWith('image/')) {
+      try {
+        const dataUrl = await fileToBase64(file);
+        const fullDataUrl = `data:${file.type || 'image/png'};base64,${dataUrl}`;
+        setCropperSourceImage(fullDataUrl);
+      } catch (err) {
+        console.error("Error reading image:", err);
+      }
+    } else if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      setIsLoadingPdfPages(true);
+      try {
+        const buffer = await file.arrayBuffer();
+        const pages = await renderAllPdfPages(buffer, 8, 1.5);
+        setPdfPages(pages);
+        if (pages.length > 0) {
+          setCropperSourceImage(pages[0]);
+          setSelectedPdfPageIdx(0);
+        }
+      } catch (err) {
+        console.warn("Could not render PDF pages:", err);
+      } finally {
+        setIsLoadingPdfPages(false);
+      }
+    } else {
+      setCropperSourceImage('');
+    }
+  };
+
+  // Listen for paste anywhere on window (Ctrl + V)
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const blob = items[i].getAsFile();
+          if (blob) {
+            const file = new File([blob], `screenshot_${Date.now()}.png`, { type: blob.type });
+            processIncomingFile(file);
+            break;
+          }
+        }
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
+
+  const handleSelectPdfPage = (idx: number) => {
+    setSelectedPdfPageIdx(idx);
+    if (pdfPages[idx]) {
+      setCropperSourceImage(pdfPages[idx]);
+    }
+  };
+
+  const handleCropComplete = (croppedDataUrl: string) => {
+    setCroppedImage(croppedDataUrl);
+    setIsCropperOpen(false);
+    if (solution) {
+      // Injects into both Đề bài and Lời giải chi tiết
+      const updated = injectCroppedImageIntoSolution(solution, croppedDataUrl, showInBothQuestionAndAnswer);
+      setSolution(updated);
+    }
+  };
+
+  const handleToggleShowInAnswer = () => {
+    const nextVal = !showInBothQuestionAndAnswer;
+    setShowInBothQuestionAndAnswer(nextVal);
+    if (solution && croppedImage) {
+      const updated = injectCroppedImageIntoSolution(solution, croppedImage, nextVal);
+      setSolution(updated);
+    }
+  };
+
+  const handleRemoveCroppedImage = () => {
+    setCroppedImage(null);
+    if (solution) {
+      const updated = solution.replace(/<img[^>]*alt=["'](?:Hình vẽ \/ Đồ thị bài toán|Đồ thị \/ Hình vẽ minh họa lời giải|Hình minh họa đề bài|cropped_figure)[^>]*\/?>\s*/gi, '');
+      setSolution(updated);
+    }
+  };
+
   const startCamera = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsCameraActive(true);
@@ -89,7 +236,7 @@ export function ExerciseSolver() {
         canvas.toBlob((blob) => {
           if (blob) {
             const file = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
-            setSelectedFile(file);
+            processIncomingFile(file);
             stopCamera();
           }
         }, 'image/jpeg', 0.9);
@@ -97,12 +244,10 @@ export function ExerciseSolver() {
     }
   };
 
-
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setSelectedFile(file);
-      setError(null);
+      processIncomingFile(file);
     }
   };
 
@@ -114,8 +259,7 @@ export function ExerciseSolver() {
     e.preventDefault();
     const file = e.dataTransfer.files?.[0];
     if (file) {
-      setSelectedFile(file);
-      setError(null);
+      processIncomingFile(file);
     }
   };
 
@@ -137,9 +281,8 @@ export function ExerciseSolver() {
     });
   };
 
-  
   const handleGenerateSimilar = async () => {
-    if (!selectedFile) {
+    if (!selectedFile && !solution) {
       setError('Vui lòng chọn file bài tập trước.');
       return;
     }
@@ -149,21 +292,27 @@ export function ExerciseSolver() {
 
     try {
       let fileData = '';
-      let mimeType = selectedFile.type;
+      let mimeType = selectedFile?.type || 'text/plain';
 
-      if (selectedFile.name.endsWith('.docx')) {
-        const text = await processDocx(selectedFile);
-        fileData = btoa(unescape(encodeURIComponent(text)));
+      if (selectedFile) {
+        if (selectedFile.name.endsWith('.docx')) {
+          const text = await processDocx(selectedFile);
+          fileData = btoa(unescape(encodeURIComponent(text)));
+          mimeType = 'text/plain';
+        } else {
+          fileData = await fileToBase64(selectedFile);
+        }
+      } else if (solution) {
+        fileData = btoa(unescape(encodeURIComponent(solution)));
         mimeType = 'text/plain';
-      } else {
-        fileData = await fileToBase64(selectedFile);
       }
 
       const response = await apiFetch('/api/generate-similar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          files: [{ data: fileData, type: mimeType }]
+          files: fileData ? [{ data: fileData, type: mimeType }] : [],
+          croppedImage: croppedImage || undefined
         })
       });
 
@@ -171,7 +320,11 @@ export function ExerciseSolver() {
       const data = parseApiResponse<any>(text);
       if (!response.ok) throw new Error(data.error || 'Failed to generate similar exercise');
       
-      setSolution(typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(data.result)));
+      let newSimilar = typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(data.result));
+      if (croppedImage) {
+        newSimilar = injectCroppedImageIntoSolution(newSimilar, croppedImage, showInBothQuestionAndAnswer);
+      }
+      setSolution(newSimilar);
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Đã xảy ra lỗi khi tạo bài tập tương tự. Vui lòng thử lại.');
@@ -180,7 +333,7 @@ export function ExerciseSolver() {
     }
   };
   
-const handleSolve = async () => {
+  const handleSolve = async () => {
     if (!selectedFile) {
       setError('Vui lòng chọn file bài tập trước.');
       return;
@@ -206,7 +359,8 @@ const handleSolve = async () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          files: [{ data: fileData, type: mimeType }]
+          files: [{ data: fileData, type: mimeType }],
+          croppedImage: croppedImage || undefined
         })
       });
 
@@ -222,6 +376,12 @@ const handleSolve = async () => {
         ? data.result 
         : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || (data.result ? JSON.stringify(data.result) : ''));
       newSolution = (newSolution || '').replace(/\s*(?:undefined|null)\s*$/gi, '').trim();
+
+      // Ensure cropped image is injected into both Đề bài and Lời giải chi tiết
+      if (croppedImage) {
+        newSolution = injectCroppedImageIntoSolution(newSolution, croppedImage, showInBothQuestionAndAnswer);
+      }
+
       setSolution(newSolution);
       saveToHistory({
         type: "GBT",
@@ -239,7 +399,6 @@ const handleSolve = async () => {
     }
   };
 
-  
   const handleSave = () => {
     if (!solution) return;
     saveToHistory({
@@ -303,10 +462,10 @@ const handleSolve = async () => {
         )}
         
         {!solution && (
-          <div className="max-w-2xl mx-auto">
+          <div className="max-w-3xl mx-auto space-y-4">
             <div 
-              className="border-2 border-dashed border-slate-300 rounded-xl p-6 lg:p-12 text-center hover:bg-slate-50 transition-colors cursor-pointer flex flex-col items-center justify-center min-h-[300px]"
-              onClick={() => { if (!isCameraActive) fileInputRef.current?.click() }}
+              className="border-2 border-dashed border-slate-300 rounded-xl p-6 lg:p-10 text-center hover:bg-slate-50 transition-colors cursor-pointer flex flex-col items-center justify-center min-h-[280px]"
+              onClick={() => { if (!isCameraActive && !selectedFile) fileInputRef.current?.click() }}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
             >
@@ -316,6 +475,20 @@ const handleSolve = async () => {
                 className="hidden" 
                 accept=".pdf,.docx,.doc,.txt,image/*" 
                 onChange={handleFileSelect} 
+              />
+              <input
+                type="file"
+                ref={cropperInputRef}
+                className="hidden"
+                accept="image/*"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    const dataUrl = await fileToBase64(file);
+                    setCropperSourceImage(`data:${file.type || 'image/png'};base64,${dataUrl}`);
+                    setIsCropperOpen(true);
+                  }
+                }}
               />
               
               {isCameraActive ? (
@@ -335,67 +508,236 @@ const handleSolve = async () => {
                 </div>
               ) : !selectedFile ? (
                 <>
-                  <div className="bg-blue-100 p-4 rounded-full mb-4">
+                  <div className="bg-blue-100 p-4 rounded-full mb-3">
                     <Upload className="w-8 h-8 text-blue-600" />
                   </div>
-                  <h3 className="text-lg font-semibold text-slate-700 mb-2">Tải lên hoặc chụp ảnh đề bài</h3>
-                  <p className="text-slate-500 mb-6 text-sm">Hỗ trợ file ảnh, PDF, Word (.docx), hoặc file text</p>
-                  <div className="flex flex-wrap justify-center gap-3">
-                    <button className="px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-sm">
+                  <h3 className="text-lg font-semibold text-slate-700 mb-1">Tải lên hoặc chụp ảnh đề bài</h3>
+                  <p className="text-slate-500 mb-5 text-sm">Hỗ trợ file ảnh (.png, .jpg), PDF, Word (.docx), hoặc phím tắt dán <b>Ctrl+V</b></p>
+                  
+                  <div className="flex flex-wrap justify-center items-center gap-2.5">
+                    <button 
+                      type="button"
+                      className="px-5 py-2.5 bg-blue-600 text-white font-medium rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-xs text-sm"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
                       <Upload className="w-4 h-4" /> Chọn File
                     </button>
                     <button 
-                      className="px-6 py-2.5 bg-emerald-600 text-white font-medium rounded-lg flex items-center gap-2 hover:bg-emerald-700 transition-colors shadow-sm"
+                      type="button"
+                      className="px-5 py-2.5 bg-emerald-600 text-white font-medium rounded-lg flex items-center gap-2 hover:bg-emerald-700 transition-colors shadow-xs text-sm"
                       onClick={startCamera}
                     >
                       <Camera className="w-4 h-4" /> Chụp Ảnh
                     </button>
                     <button 
-                      className="px-6 py-2.5 bg-purple-600 text-white font-medium rounded-lg flex items-center gap-2 hover:bg-purple-700 transition-colors shadow-sm mt-2 md:mt-0"
-                      onClick={(e) => { 
+                      type="button"
+                      className="px-4 py-2.5 border border-slate-300 text-slate-700 font-medium rounded-lg hover:bg-slate-100 flex items-center gap-2 transition-colors text-sm"
+                      onClick={async (e) => {
                         e.stopPropagation();
-                        // Create a dummy text file with an inequality problem
-                        const problemText = "Vẽ miền nghiệm của hệ bất phương trình sau và tìm giá trị lớn nhất của biểu thức F(x,y) = 2x + 1.5y trên miền nghiệm đó:\n1. x + y <= 4\n2. x > 0\n3. y >= 0";
-                        const blob = new Blob([problemText], { type: 'text/plain' });
-                        const file = new File([blob], "He_Bat_Phuong_Trinh.txt", { type: 'text/plain' });
-                        setSelectedFile(file);
-                        setError(null);
+                        try {
+                          const clipItems = await navigator.clipboard.read();
+                          for (const item of clipItems) {
+                            const imageType = item.types.find(t => t.startsWith('image/'));
+                            if (imageType) {
+                              const blob = await item.getType(imageType);
+                              const file = new File([blob], `clipboard_${Date.now()}.png`, { type: imageType });
+                              processIncomingFile(file);
+                              return;
+                            }
+                          }
+                          alert("Không tìm thấy ảnh trong clipboard. Bạn có thể nhấn Ctrl+V bất cứ lúc nào để dán ảnh chụp màn hình!");
+                        } catch {
+                          alert("Vui lòng nhấn phím tắt Ctrl + V (hoặc Cmd + V) để dán ảnh chụp màn hình đề bài!");
+                        }
                       }}
                     >
-                      <Sparkles className="w-4 h-4" /> Demo Hệ BPT
+                      <Clipboard className="w-4 h-4 text-slate-600" /> Dán Clipboard (Ctrl+V)
+                    </button>
+                    <button 
+                      type="button"
+                      className="px-4 py-2.5 bg-purple-50 text-purple-700 border border-purple-200 font-medium rounded-lg flex items-center gap-1.5 hover:bg-purple-100 transition-colors text-sm"
+                      onClick={(e) => { 
+                        e.stopPropagation();
+                        const problemText = "Cho hàm số bậc ba $y = f(x) = ax^3 + bx^2 + cx + d$ có đồ thị như hình vẽ.\n1. Tìm khoảng đồng biến và nghịch biến của hàm số.\n2. Xác định tọa độ điểm cực đại và cực tiểu.\n3. Tìm số nghiệm thực của phương trình $2f(x) - 3 = 0$.";
+                        const blob = new Blob([problemText], { type: 'text/plain' });
+                        const file = new File([blob], "BaiToan_KhaoSat_DoThi.txt", { type: 'text/plain' });
+                        processIncomingFile(file);
+                      }}
+                    >
+                      <Sparkles className="w-4 h-4 text-purple-600" /> Demo Toán đồ thị
                     </button>
                   </div>
                 </>
               ) : (
-                <div className="text-center w-full">
-                  <div className="bg-emerald-100 p-4 rounded-full mb-4 mx-auto w-16 h-16 flex items-center justify-center">
-                    <FileText className="w-8 h-8 text-emerald-600" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-emerald-700 mb-2 truncate px-4">{selectedFile.name}</h3>
-                  <p className="text-slate-500 mb-6 text-sm">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</p>
-                  
-                  <div className="flex justify-center gap-3">
+                <div className="w-full text-left">
+                  {/* File Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-emerald-100 p-2.5 rounded-lg text-emerald-700 shrink-0">
+                        <FileText className="w-6 h-6" />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-sm font-bold text-slate-800 truncate">{selectedFile.name}</h4>
+                        <p className="text-xs text-slate-500">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB • {selectedFile.type || 'Tệp tài liệu'}</p>
+                      </div>
+                    </div>
                     <button 
-                      className="px-4 py-2 border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-100 flex items-center gap-2 transition-colors"
-                      onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }}
+                      type="button"
+                      className="px-3 py-1.5 border border-slate-300 text-slate-600 hover:text-rose-600 hover:border-rose-300 rounded-lg text-xs font-medium flex items-center gap-1.5 self-start sm:self-auto transition-colors"
+                      onClick={(e) => { e.stopPropagation(); setSelectedFile(null); setCroppedImage(null); setCropperSourceImage(''); setPdfPages([]); }}
                     >
-                      <X className="w-4 h-4" /> Hủy
+                      <X className="w-3.5 h-3.5" /> Chọn tệp khác
+                    </button>
+                  </div>
+
+                  {/* PDF Multi-page Selector & Crop Option */}
+                  {pdfPages.length > 0 && (
+                    <div className="mb-4 p-4 bg-blue-50/70 border border-blue-200 rounded-xl space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                          <FileText className="w-4 h-4 text-blue-600" />
+                          Trang tài liệu PDF ({pdfPages.length} trang)
+                        </span>
+                        <span className="text-[11px] text-blue-700 font-medium">Chọn trang để cắt câu hỏi / đồ thị</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                        {pdfPages.map((pageData, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => handleSelectPdfPage(idx)}
+                            className={`shrink-0 flex flex-col items-center p-1.5 rounded-lg border text-xs transition-all ${
+                              selectedPdfPageIdx === idx 
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-xs' 
+                                : 'bg-white text-slate-700 border-slate-200 hover:border-blue-400'
+                            }`}
+                          >
+                            <img src={pageData} alt={`Trang ${idx + 1}`} className="w-14 h-18 object-cover rounded bg-white mb-1 shadow-2xs" />
+                            <span className="font-semibold">Trang {idx + 1}</span>
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1">
+                        <p className="text-xs text-slate-600">Đang chọn: <b>Trang {selectedPdfPageIdx + 1}</b></p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (pdfPages[selectedPdfPageIdx]) {
+                              setCropperSourceImage(pdfPages[selectedPdfPageIdx]);
+                              setIsCropperOpen(true);
+                            }
+                          }}
+                          className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors"
+                        >
+                          <Scissors className="w-3.5 h-3.5" />
+                          Cắt câu hỏi & đồ thị từ Trang {selectedPdfPageIdx + 1}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {isLoadingPdfPages && (
+                    <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center gap-2 text-xs text-slate-600">
+                      <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                      <span>Đang nạp các trang PDF để hỗ trợ cắt câu hỏi trực quan...</span>
+                    </div>
+                  )}
+
+                  {/* Image Crop trigger (when file is image) */}
+                  {selectedFile.type.startsWith('image/') && !croppedImage && cropperSourceImage && (
+                    <div className="mb-4 p-4 bg-indigo-50/70 border border-indigo-200 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <img src={cropperSourceImage} alt="Ảnh gốc" className="w-16 h-16 object-contain rounded-lg border border-indigo-200 bg-white shadow-2xs" />
+                        <div>
+                          <p className="text-xs font-bold text-indigo-950">Cắt vùng đề bài / đồ thị</p>
+                          <p className="text-[11px] text-indigo-700">Khuyên dùng: Cắt gọn khung câu hỏi và đồ thị để AI giải chính xác và tự động chèn vào đề lẫn đáp án.</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsCropperOpen(true)}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors shrink-0"
+                      >
+                        <Scissors className="w-4 h-4" />
+                        Cắt ảnh ngay
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Cropped Image Result Preview */}
+                  {croppedImage && (
+                    <div className="mb-4 p-4 bg-emerald-50/80 border border-emerald-300 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          Đã cắt ảnh câu hỏi / đồ thị thành công!
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsCropperOpen(true)}
+                            className="px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:text-emerald-900 hover:bg-emerald-100 rounded flex items-center gap-1"
+                          >
+                            <Crop className="w-3.5 h-3.5" /> Cắt lại
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleRemoveCroppedImage}
+                            className="px-2 py-1 text-xs font-semibold text-slate-500 hover:text-rose-600 rounded flex items-center gap-1"
+                            title="Xóa ảnh cắt, dùng toàn bộ file gốc"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Hủy cắt
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="bg-white p-2 rounded-lg border border-emerald-200 shadow-2xs flex justify-center">
+                        <img src={croppedImage} alt="Ảnh đã cắt" className="max-h-48 object-contain rounded" />
+                      </div>
+                      <p className="text-[11px] text-emerald-800 text-center font-medium">
+                        ✨ Ảnh này sẽ được tự động chèn vào cả <b>Đề bài</b> và <b>Lời giải chi tiết</b> để giáo viên và học sinh đối chiếu trực quan.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Solver Action Trigger */}
+                  <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-200">
+                    <button 
+                      type="button"
+                      className="px-4 py-2 border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-100 text-sm font-medium transition-colors"
+                      onClick={() => { setSelectedFile(null); setCroppedImage(null); setCropperSourceImage(''); setPdfPages([]); }}
+                    >
+                      Hủy
                     </button>
                     <button 
-                      className="px-6 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors shadow-sm"
-                      onClick={(e) => { e.stopPropagation(); handleSolve(); }}
+                      type="button"
+                      className="px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors shadow-sm text-sm"
+                      onClick={handleSolve}
                       disabled={isUploading}
                     >
                       {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                      Giải Bài Tập
+                      {isUploading ? 'Đang phân tích & giải bài...' : 'Giải Bài Tập Ngay'}
                     </button>
                   </div>
                 </div>
               )}
             </div>
             
+            {/* Visual helpful guide */}
+            <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2.5">
+              <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-amber-950 mb-0.5">Tính năng hình ảnh & đồ thị trực quan:</p>
+                <p className="text-amber-800 leading-relaxed">
+                  Nếu đề bài có đồ thị hàm số, bảng biến thiên hay hình học không gian, hãy nhấn <b>Cắt ảnh đề bài / đồ thị</b> để AI tự động đính kèm hình ảnh sắc nét vào cả <b>Đề bài</b> và <b>Lời giải chi tiết</b>. Khi xuất ra file Word (.doc), hình ảnh và công thức Toán sẽ được giữ nguyên 100%.
+                </p>
+              </div>
+            </div>
+
             {error && (
-              <div className="mt-4 p-4 bg-rose-50 text-rose-700 rounded-lg text-sm text-center border border-rose-200">
+              <div className="p-4 bg-rose-50 text-rose-700 rounded-lg text-sm text-center border border-rose-200">
                 {error}
               </div>
             )}
@@ -403,68 +745,153 @@ const handleSolve = async () => {
         )}
 
         {solution && (
-          <div className="space-y-6">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
-              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-blue-600" />
-                Lời giải chi tiết
-              </h3>
-              <div className="flex flex-wrap items-center gap-2">
-                <button 
-                  onClick={() => {}}
-                  disabled={false}
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm text-sm font-medium"
+          <div className="space-y-4">
+            {/* Solution Header Toolbar */}
+            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => { setSolution(''); }}
+                  className="px-3 py-1.5 border border-slate-300 text-slate-700 hover:bg-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
                 >
-                  {false ? <Loader2 className="w-4 h-4 animate-spin" /> : <BookmarkPlus className="w-4 h-4" />}
+                  <ArrowLeft className="w-3.5 h-3.5" /> Làm bài khác
+                </button>
+                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-blue-600" />
+                  Lời giải chi tiết
+                </h3>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Crop or change image trigger */}
+                <button 
+                  type="button"
+                  onClick={() => {
+                    if (cropperSourceImage) {
+                      setIsCropperOpen(true);
+                    } else {
+                      cropperInputRef.current?.click();
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 rounded-lg text-xs font-semibold transition-colors shadow-2xs"
+                  title="Cắt hoặc thay đổi ảnh đồ thị để chèn vào đề bài và lời giải"
+                >
+                  <Scissors className="w-3.5 h-3.5 text-indigo-600" />
+                  {croppedImage ? 'Cắt lại / Thay ảnh' : 'Cắt ảnh chèn vào'}
+                </button>
+
+                {/* Toggle image in both problem and solution */}
+                {croppedImage && (
+                  <button 
+                    type="button"
+                    onClick={handleToggleShowInAnswer}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-colors shadow-2xs ${
+                      showInBothQuestionAndAnswer 
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100' 
+                        : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
+                    }`}
+                    title="Bật/Tắt hiển thị hình ảnh đồ thị ở cả phần Đề bài và Lời giải chi tiết"
+                  >
+                    {showInBothQuestionAndAnswer ? <Eye className="w-3.5 h-3.5 text-emerald-600" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
+                    {showInBothQuestionAndAnswer ? 'Hiện ở cả Đề & Đáp án' : 'Chỉ hiện ở Đề bài'}
+                  </button>
+                )}
+
+                <button 
+                  onClick={handleSave}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-xs text-xs font-semibold"
+                >
+                  <BookmarkPlus className="w-3.5 h-3.5" />
                   Lưu thư viện
                 </button>
+
                 <button 
                   onClick={handleGenerateSimilar}
                   disabled={isGeneratingSimilar}
-                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-sm font-medium"
+                  className="flex items-center gap-1.5 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors shadow-xs text-xs font-semibold"
                 >
-                  {isGeneratingSimilar ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
+                  {isGeneratingSimilar ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />}
                   Tạo bài tương tự
                 </button>
-                <div className="flex gap-2">
+
+                <div className="flex gap-1.5">
                   <button 
                     onClick={() => handleExportWord(false)}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-sm"
+                    className="flex items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-xs text-xs font-semibold"
                   >
-                    <Download className="w-4 h-4" /> Word
+                    <Download className="w-3.5 h-3.5" /> Word
                   </button>
                   <button 
                     onClick={() => handleExportWord(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm text-sm"
+                    className="flex items-center gap-1 px-2.5 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-xs text-xs font-semibold"
                     title="Giữ nguyên mã LaTeX để dùng MathType"
                   >
                     LaTeX
                   </button>
                 </div>
+
                 <button 
                   onClick={() => handleExportPDF()}
-                  className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors shadow-sm"
+                  className="flex items-center gap-1.5 px-3 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors shadow-xs text-xs font-semibold"
                 >
-                  <span className="text-xs font-bold border-2 border-current px-1 rounded">PDF</span> Xuất PDF
+                  <span className="text-[10px] font-extrabold border border-current px-0.5 rounded">PDF</span> Xuất PDF
                 </button>
                 
                 <button 
                   onClick={() => { setIsPresentationMode(true); setCurrentSlide(0); }}
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm font-medium"
+                  className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors shadow-xs text-xs font-semibold"
                 >
-                  <Maximize2 className="w-4 h-4" /> Trình chiếu
+                  <Maximize2 className="w-3.5 h-3.5" /> Trình chiếu
                 </button>
               </div>
             </div>
 
-            <div className="bg-slate-50 rounded-xl p-8 border border-slate-200">
+            {/* Informational banner when image is attached */}
+            {croppedImage && (
+              <div className="p-3 bg-emerald-50/90 border border-emerald-300 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs text-emerald-900 shadow-2xs">
+                <div className="flex items-center gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>
+                    Hình vẽ / Đồ thị bài toán đã được cắt và chèn trực quan vào <b>Đề bài</b> {showInBothQuestionAndAnswer ? 'và' : 'nhưng không hiện ở'} <b>Lời giải chi tiết</b>.
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsCropperOpen(true)}
+                    className="px-2.5 py-1 bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-100 rounded font-semibold flex items-center gap-1 transition-colors"
+                  >
+                    <Crop className="w-3 h-3 text-emerald-600" /> Cắt lại vùng khác
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRemoveCroppedImage}
+                    className="px-2 py-1 text-slate-500 hover:text-rose-600 rounded"
+                    title="Gỡ ảnh khỏi bài giải"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Markdown Solution Document View */}
+            <div className="bg-slate-50 rounded-xl p-6 lg:p-8 border border-slate-200">
               <div ref={exportRef} className="markdown-body prose prose-slate max-w-none prose-headings:text-slate-800 prose-h2:text-2xl prose-h2:text-blue-700 prose-h2:border-b prose-h2:pb-2 prose-h3:text-xl prose-a:text-emerald-600">
-                <ErrorBoundary><MarkdownRenderer content={solution} /></ErrorBoundary>
+                <ErrorBoundary><MarkdownRenderer content={fixMath(solution)} /></ErrorBoundary>
               </div>
             </div>
           </div>
         )}
       </div>
+
+      {/* Image Cropper Modal */}
+      <ImageCropperModal
+        isOpen={isCropperOpen}
+        imageSrc={cropperSourceImage}
+        title={selectedFile?.type?.includes('pdf') ? `Cắt câu hỏi / đồ thị từ Trang ${selectedPdfPageIdx + 1}` : "Cắt ảnh đề bài / đồ thị bài toán"}
+        onCrop={handleCropComplete}
+        onClose={() => setIsCropperOpen(false)}
+      />
 
       {/* Presentation Mode Modal */}
       {isPresentationMode && presentationSlides.length > 0 && (
@@ -523,3 +950,5 @@ const handleSolve = async () => {
     </div>
   );
 }
+
+export default ExerciseSolver;
