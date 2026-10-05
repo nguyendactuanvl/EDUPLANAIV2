@@ -126,6 +126,23 @@ const MultiPointInput = ({ count, value, onChange, disabled }: { count: number, 
 };
 
 export function ExamGenerator() {
+  const [showCalculator, setShowCalculator] = useState(false);
+  const [geoGebraTarget, setGeoGebraTarget] = useState<{ qIndex: number; target: "content" | "solution" } | null>(null);
+
+  const [activeTab, setActiveTab] = useState<"matrix" | "exam" | "shuffle" | "banks" | "results">("matrix");
+  const [examResults, setExamResults] = useState<any[]>([]);
+  const [resultsLoading, setResultsLoading] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Review & Grading state
+  const [selectedResultForReview, setSelectedResultForReview] = useState<any | null>(null);
+  const [reviewFilter, setReviewFilter] = useState<'all' | 'correct' | 'wrong' | 'unanswered' | 'essay'>('all');
+  const [essayGradingScore, setEssayGradingScore] = useState<string>('');
+  const [teacherFeedback, setTeacherFeedback] = useState<string>('');
+  const [previewModalImage, setPreviewModalImage] = useState<string | null>(null);
+  const [imageRotation, setImageRotation] = useState<number>(0);
+  const [imageZoom, setImageZoom] = useState<number>(1);
+
   const handleExportCSV = () => {
     if (shuffledExams.length === 0) return;
     const csvContent = generateTNMakerCSV(shuffledExams as any[]);
@@ -207,22 +224,6 @@ export function ExamGenerator() {
       windowPrint.close();
     }, 250);
   };
-  const [showCalculator, setShowCalculator] = useState(false);
-  const [geoGebraTarget, setGeoGebraTarget] = useState<{ qIndex: number; target: "content" | "solution" } | null>(null);
-
-  const [activeTab, setActiveTab] = useState<"matrix" | "exam" | "shuffle" | "banks" | "results">("matrix");
-  const [examResults, setExamResults] = useState<any[]>([]);
-  const [resultsLoading, setResultsLoading] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  // Review & Grading state
-  const [selectedResultForReview, setSelectedResultForReview] = useState<any | null>(null);
-  const [reviewFilter, setReviewFilter] = useState<'all' | 'correct' | 'wrong' | 'unanswered' | 'essay'>('all');
-  const [essayGradingScore, setEssayGradingScore] = useState<string>('');
-  const [teacherFeedback, setTeacherFeedback] = useState<string>('');
-  const [previewModalImage, setPreviewModalImage] = useState<string | null>(null);
-  const [imageRotation, setImageRotation] = useState<number>(0);
-  const [imageZoom, setImageZoom] = useState<number>(1);
 
   // Helper để lấy danh sách chi tiết từng câu từ kết quả nộp bài
   const getDetailedAnswersFromResult = (result: any): any[] => {
