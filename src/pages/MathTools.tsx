@@ -13,6 +13,7 @@ import { GraphingAndAnalysisMain } from "../components/math-tools/GraphingAndAna
 import { VariationTableGenerator } from "../components/math-tools/VariationTableGenerator";
 import { GeoGebraDrawer } from "../components/math-tools/GeoGebraDrawer";
 import { ScientificCalculatorModal } from "../components/math-tools/ScientificCalculatorModal";
+import { SvgAiIllustrator } from "../components/math-tools/SvgAiIllustrator";
 
 
 // ==========================================
@@ -102,7 +103,7 @@ export function MathTools() {
   const [showGeoGebra, setShowGeoGebra] = useState(false);
 
   // Navigation: Sub-system Tab 1: Statistics vs Tab 2: Graphing & Analysis (KSHS) vs Tab 3: Bảng biến thiên AI
-  const [mainSubsystem, setMainSubsystem] = useState<"statistics" | "graphing" | "bbt_ai">("bbt_ai");
+  const [mainSubsystem, setMainSubsystem] = useState<"statistics" | "graphing" | "bbt_ai" | "svg_ai">("bbt_ai");
 
   // Main module view: Grade 10 (Ungrouped) or Grade 11-12 (Grouped)
   const [activeModule, setActiveModule] = useState<"grade10" | "grade11_12">("grade10");
@@ -803,11 +804,11 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
           </div>
 
           {/* Sub-system Navigation Tabs (Tabs chính phân hệ) */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80">
+          <div className="flex flex-wrap items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80 gap-1 md:gap-0">
             <button
               onClick={() => setMainSubsystem("bbt_ai")}
               className={cn(
-                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all",
+                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
                 mainSubsystem === "bbt_ai"
                   ? "bg-white text-indigo-800 shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
@@ -820,7 +821,7 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
             <button
               onClick={() => setMainSubsystem("statistics")}
               className={cn(
-                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all",
+                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
                 mainSubsystem === "statistics"
                   ? "bg-white text-emerald-800 shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
@@ -833,7 +834,7 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
             <button
               onClick={() => setMainSubsystem("graphing")}
               className={cn(
-                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all",
+                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
                 mainSubsystem === "graphing"
                   ? "bg-white text-blue-800 shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
@@ -841,6 +842,19 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
             >
               <Compass className="w-4 h-4 text-blue-600" />
               <span>3. Hỗ trợ Vẽ hình & KSHS</span>
+            </button>
+
+            <button
+              onClick={() => setMainSubsystem("svg_ai")}
+              className={cn(
+                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                mainSubsystem === "svg_ai"
+                  ? "bg-white text-indigo-850 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
+              <span>4. Vẽ hình mô phỏng (AI)</span>
             </button>
           </div>
         </div>
@@ -888,6 +902,13 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
       {mainSubsystem === "graphing" && (
         <div className="flex-1 flex flex-col">
           <GraphingAndAnalysisMain />
+        </div>
+      )}
+
+      {/* RENDER PHÂN HỆ 4: VẼ HÌNH MÔ PHỎNG AI THỰC TẾ */}
+      {mainSubsystem === "svg_ai" && (
+        <div className="flex-1 flex flex-col">
+          <SvgAiIllustrator />
         </div>
       )}
 

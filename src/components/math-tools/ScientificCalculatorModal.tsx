@@ -503,14 +503,14 @@ export const ScientificCalculatorModal: React.FC<CalculatorProps> = ({ onClose }
     <div className={`fixed z-50 flex items-center justify-center transition-all duration-300 ${
       isFullscreen 
         ? 'inset-0 bg-slate-950/80 backdrop-blur-md p-4' 
-        : 'bottom-20 right-6 w-[420px]'
+        : 'bottom-20 right-4 sm:right-6 w-[92vw] sm:w-[420px] max-w-[420px]'
     }`}>
       
       {/* Casio fx-580VN X Immersive Housing */}
       <div className={`bg-slate-900 border-4 border-slate-800 shadow-2xl flex flex-col transition-all duration-300 relative ${
         isFullscreen 
           ? 'w-full max-w-4xl h-[92vh] rounded-3xl p-6' 
-          : 'w-full rounded-2xl p-4'
+          : 'w-full rounded-2xl p-3 sm:p-4'
       }`}>
         
         {/* Casio Brand Watermark */}

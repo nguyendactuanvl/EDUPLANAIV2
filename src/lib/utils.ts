@@ -1559,6 +1559,12 @@ export function formatMathContent(raw?: string | null): string {
   if (!raw && raw !== '') return '';
   let str = normalizeMathLatex(String(raw));
 
+  // Tự động sửa dứt điểm các lỗi gãy / mất dấu backslash hoặc thừa dấu gạch chéo cho cases
+  str = str.replace(/\\*begin\s*\{?cases\*?\}?/gi, '\\begin{cases}');
+  str = str.replace(/\\*begincases/gi, '\\begin{cases}');
+  str = str.replace(/\\*end\s*\{?cases\*?\}?/gi, '\\end{cases}');
+  str = str.replace(/\\*endcases/gi, '\\end{cases}');
+
   // 1. Chuẩn hóa họ nghiệm lượng giác (đổi \begin{cases} có chứa k2\pi, k\pi, k \in \mathbb{Z}... sang \left[\begin{aligned}...\end{aligned}\right.)
   str = normalizeTrigSolutions(str);
 
@@ -2029,13 +2035,13 @@ export const fixMath = (text: any) => {
     // 0. Remove stray preamble packages that might be generated in math or TikZ
     t = t.replace(/\\(usetikzlibrary|usepackage)\s*\{[^}]*\}\s*/gi, '');
 
-    // 0.05. Sửa lỗi hệ phương trình bị mất gạch chéo và ngoặc nhọn:
-    // Bắt và chuyển đổi các chuỗi "begincases", "begin cases", "\begin cases" thành "\begin{cases}".
-    // Bắt và chuyển đổi "endcases", "end cases", "\end cases" thành "\end{cases}".
-    t = t.replace(/\\?begin\s*cases\b/gi, '\\begin{cases}');
-    t = t.replace(/\\?begincases\b/gi, '\\begin{cases}');
-    t = t.replace(/\\?end\s*cases\b/gi, '\\end{cases}');
-    t = t.replace(/\\?endcases\b/gi, '\\end{cases}');
+    // 0.05. Sửa lỗi hệ phương trình bị mất gạch chéo và ngoặc nhọn hoặc thừa dấu gạch chéo ngược:
+    // Bắt và chuyển đổi các chuỗi "begincases", "begin cases", "\\ begin{cases}" thành "\begin{cases}".
+    // Bắt và chuyển đổi "endcases", "end cases", "\\ end{cases}" thành "\end{cases}".
+    t = t.replace(/\\*begin\s*\{?cases\*?\}?/gi, '\\begin{cases}');
+    t = t.replace(/\\*begincases/gi, '\\begin{cases}');
+    t = t.replace(/\\*end\s*\{?cases\*?\}?/gi, '\\end{cases}');
+    t = t.replace(/\\*endcases/gi, '\\end{cases}');
 
     // 0.06. Sửa lỗi ký hiệu tập hợp và toán học bị dính khoảng trắng sau gạch chéo:
     // "\ \in", "\\ \in" -> "\in"
