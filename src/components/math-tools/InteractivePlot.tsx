@@ -388,6 +388,7 @@ export const InteractivePlot: React.FC<InteractivePlotProps> = ({
           const midPoint = toCanvas((xMin + xMax) / 2, asymp.m * ((xMin + xMax) / 2) + asymp.c, w, h);
           ctx.fillText(asymp.label, midPoint.px + 10, midPoint.py - 10);
         }
+      }
       ctx.restore();
     });
 
