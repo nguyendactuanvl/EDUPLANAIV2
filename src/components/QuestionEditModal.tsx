@@ -4,7 +4,7 @@ import { ScientificCalculatorModal } from './math-tools/ScientificCalculatorModa
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { apiFetch } from '../lib/apiFetch';
 import { QuestionVisualizerPanel } from './math-tools/QuestionVisualizerPanel';
-import { TrendingUp, BarChart2, Box, BarChart3, Calculator } from 'lucide-react';
+import { TrendingUp, BarChart2, Box, BarChart3, Calculator, ImagePlus, Link2 } from 'lucide-react';
 
 export interface QuestionData {
   id?: number;
@@ -309,6 +309,49 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
 
             {/* Direct Tool integration buttons: BBT, Graph, 3D, Statistics, GeoGebra, Calculator */}
             <div className="flex items-center gap-1.5 border-t sm:border-t-0 sm:border-l border-slate-200 pt-2 sm:pt-0 sm:pl-3 w-full sm:w-auto flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  const input = document.getElementById('questionImageUploader');
+                  if (input) (input as any).click();
+                }}
+                className="px-2.5 py-1 text-xs font-bold rounded-lg border shadow-2xs flex items-center gap-1 cursor-pointer transition-colors bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-300"
+                title="Tải ảnh hoặc đồ thị lên từ máy tính (Sơ đồ, đồ thị hàm số, hình vẽ hình học...)"
+              >
+                <ImagePlus className="w-3.5 h-3.5" />
+                <span>Chèn ảnh/Đồ thị</span>
+              </button>
+              <input
+                type="file"
+                id="questionImageUploader"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      const base64 = reader.result as string;
+                      setContent(prev => `${prev}\n\n![Hình vẽ](${base64})`);
+                    };
+                    reader.readAsDataURL(file);
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const url = prompt("Vui lòng nhập đường link hình ảnh (URL):");
+                  if (url && url.trim()) {
+                    setContent(prev => `${prev}\n\n![Hình vẽ](${url.trim()})`);
+                  }
+                }}
+                className="px-2 py-1 text-xs font-bold rounded-lg border shadow-2xs flex items-center gap-1 cursor-pointer transition-colors bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-300"
+                title="Chèn hình vẽ thông qua liên kết ảnh trực tiếp"
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                <span>Nhập URL ảnh</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setShowGeoGebra(true)}
