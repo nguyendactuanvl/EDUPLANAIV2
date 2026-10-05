@@ -2027,7 +2027,9 @@ export const wrapAllNakedMath = (str: string): string => {
 export const fixMath = (text: any) => {
     if (!text || text === 'undefined') return '';
     if (typeof text !== 'string') text = String(text);
-    let t = embedBbtSvgsInText(unflattenMarkdownTables(sanitizeLatexString(text.trim())));
+    // Normalize to NFC (Precomposed Form) to completely prevent Vietnamese diacritics split bugs in Chrome print/PDF
+    let t = text.normalize("NFC");
+    t = embedBbtSvgsInText(unflattenMarkdownTables(sanitizeLatexString(t.trim())));
     t = rescueCodeAndNestedText(t);
     t = normalizePropositionQuotes(t);
     t = normalizeLogicAndSetSymbols(normalizeMathLatex(t));
@@ -2304,6 +2306,9 @@ export const fixMath = (text: any) => {
 
     // 7. Giải cứu triệt để mã code, nested \text và xóa placeholder/undefined sót lại
     t = rescueCodeAndNestedText(t);
+
+    // Triệt tiêu hoàn toàn bất kỳ rò rỉ nào của chữ "undefined" hoặc "null" lẻ loi trong tài liệu tiếng Việt
+    t = t.replace(/(?<![a-zA-Z0-9_\$])(?:undefined|null)(?![a-zA-Z0-9_\$])/g, '');
 
     return t;
 };

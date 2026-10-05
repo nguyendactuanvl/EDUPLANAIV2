@@ -674,7 +674,13 @@ async function generateWithFallback(req: any, payloadOptions: any) {
             systemInstruction: config.systemInstruction || defaultSystemInstruction
           } 
         };
-        return await client.models.generateContent(updatedPayload);
+        const response = await client.models.generateContent(updatedPayload);
+        return {
+          ...response,
+          get text() {
+            return response.text ? response.text.normalize("NFC") : "";
+          }
+        } as any;
   
       } catch (e: any) {
         const status = e?.status;
@@ -1860,7 +1866,16 @@ app.all("/api/generate-worksheet", async (req, res) => {
         numMC,
         numEssay,
         includeRealWorld = true,
-        answerMode = 'full'
+        answerMode = 'full',
+        
+        // New advanced parameters from configured sidebar
+        additionalNotes = '',
+        numPartI = 12,
+        numPartII = 2,
+        numPartIII = 4,
+        numPartIV = 2,
+        realWorldPercent = 40,
+        hasParametric = true
       } = req.body;
       
       let stylePrompt = '';
@@ -1904,9 +1919,27 @@ YÊU CẦU PHONG CÁCH: A4 CHUẨN IN ẤN (Đen trắng / Tiết kiệm mực -
   + Phần III: BÀI TẬP TỰ LUẬN (Có dòng kẻ chấm chấm "......................................................" hoặc khung trống phù hợp để học sinh làm bài trực tiếp trên giấy in).`;
       }
 
-      let exercisePrompt = `Hình thức bài tập: ${type || "Kết hợp trắc nghiệm và tự luận"}.`;
-      if (numMC !== undefined || numEssay !== undefined) {
-        exercisePrompt += `\nCấu trúc số lượng câu dự kiến: ${numMC ? `${numMC} câu trắc nghiệm` : ''}${numMC && numEssay ? ', ' : ''}${numEssay ? `${numEssay} câu tự luận` : ''}${includeRealWorld ? ', có lồng ghép bài toán liên hệ thực tế cuộc sống.' : '.'}`;
+      let exercisePrompt = `Cấu trúc số lượng câu của các phần trong Phiếu học tập BẮT BUỘC sinh hoàn chỉnh:`;
+      if (numPartI > 0) {
+        exercisePrompt += `\n- PHẦN I: CÂU HỎI TRẮC NGHIỆM NHIỀU PHƯƠNG ÁN LỰA CHỌN: đúng chính xác ${numPartI} câu hỏi độc lập (mỗi câu gồm 4 phương án lựa chọn A, B, C, D).`;
+      }
+      if (numPartII > 0) {
+        exercisePrompt += `\n- PHẦN II: CÂU HỎI TRẮC NGHIỆM ĐÚNG / SAI: đúng chính xác ${numPartII} câu hỏi (mỗi câu gồm mệnh đề dẫn và 4 ý a, b, c, d độc lập phán đoán Đúng/Sai).`;
+      }
+      if (numPartIII > 0) {
+        exercisePrompt += `\n- PHẦN III: CÂU HỎI TRẮC NGHIỆM TRẢ LỜI NGẮN: đúng chính xác ${numPartIII} câu hỏi dứt khoát (đáp số là số nguyên, phân số tối giản hoặc số thập phân).`;
+      }
+      if (numPartIV > 0) {
+        exercisePrompt += `\n- PHẦN IV: BÀI TẬP TỰ LUẬN RÈN LUYỆN: đúng chính xác ${numPartIV} bài toán rèn luyện tư duy tự luận trình bày lập luận logic.`;
+      }
+
+      exercisePrompt += `\n- Tỷ lệ bài toán gắn với thực tiễn cuộc sống hoặc liên môn: Khoảng ${realWorldPercent}%.`;
+      exercisePrompt += hasParametric 
+        ? `\n- Phân hóa học sinh: CÓ một số bài toán ở mức độ vận dụng chứa tham số thực ($m, a, b, ...$).`
+        : `\n- Phân hóa học sinh: TUYỆT ĐỐI KHÔNG sử dụng bài toán chứa tham số, tập trung hoàn toàn vào số liệu cụ thể.`;
+
+      if (additionalNotes && additionalNotes.trim()) {
+        exercisePrompt += `\n- Trọng tâm cần nhấn mạnh / Yêu cầu riêng từ giáo viên: ${additionalNotes}`;
       }
 
       let answerPrompt = '';
@@ -1918,17 +1951,63 @@ YÊU CẦU PHONG CÁCH: A4 CHUẨN IN ẤN (Đen trắng / Tiết kiệm mực -
         answerPrompt = 'Ở cuối tài liệu, hãy cung cấp phần Hướng dẫn giải chi tiết từng câu, phân cách bằng tiêu đề "--- HƯỚNG DẪN CHẤM / ĐÁP ÁN CHI TIẾT ---". BẮT BUỘC giải thích chi tiết từng bước biến đổi, kèm lý do chọn đáp án, viết bằng công thức LaTeX chuẩn cho từng câu hỏi.';
       }
 
-      const prompt = `Bạn là một giáo viên xuất sắc môn ${subject || "chung"}. Hãy tạo một Phiếu học tập (Worksheet) thật chuyên nghiệp, trực quan cho học sinh lớp ${grade}, bài học/chủ đề: "${lesson}".
-      
+      const prompt = `Bạn là chuyên gia sư phạm Toán THPT hàng đầu tại Việt Nam, nắm vững 100% Chương trình Giáo dục phổ thông 2018 và bộ sách giáo khoa "Kết nối tri thức với cuộc sống" (KNTT).
+Nhiệm vụ của bạn là nhận thông tin cấu hình và tạo ra một "PHIẾU HỌC TẬP" hoàn chỉnh, khoa học, thẩm mỹ cao và chuẩn mực sư phạm cho học sinh lớp ${grade}, môn học ${subject || "Toán"}, bài học/chủ đề: "${lesson}".
+
+---
+### 1. QUY CHUẨN NỘI DUNG VÀ CHUYÊN MÔN TOÁN 2018 (BẮT BUỘC TUÂN THỦ)
+- Chuẩn SGK KNTT: Sử dụng chuẩn xác thuật ngữ, ký hiệu toán học theo bộ sách Kết nối tri thức với cuộc sống.
+- Ranh giới kiến thức chương trình mới:
+  + KHÔNG sử dụng phương pháp đổi biến số hay tích phân từng phần (đã giảm tải/không có trong CT 2018).
+  + Lớp 11: Không sử dụng phương pháp vectơ trong không gian 3D, không sử dụng định lý Menelaus trong hình không gian.
+  + Định nghĩa hình chữ nhật: Là tứ giác có 4 góc vuông.
+- Tích hợp thực tế & STEM: Đưa các bài toán gắn với thực tiễn, kinh tế, vật lý, đời sống; phần liên môn/STEM phải ghi rõ cụm từ "tích hợp stem/steam".
+- Phân hóa: 
+  + Thiết kế các câu hỏi chứa tham số ($m, a, b...$) ở mức vận dụng để phân hóa tư duy học sinh.
+  + Với mức nhận biết, thông hiểu, tuyệt đối chỉ tập trung vào rèn luyện bản chất số liệu cụ thể không có tham số.
+
+---
+### 2. PHONG CÁCH TRÌNH BÀY LAYOUT:
 ${stylePrompt}
 
-YÊU CẦU CHUNG:
-1. Phân hóa từ cơ bản đến vận dụng, bám sát chương trình GDPT 2018.
-2. ${exercisePrompt}
-3. Trình bày rõ ràng, để lại khoảng trống hợp lý giả định học sinh sẽ làm trực tiếp vào phiếu.
+---
+### 3. CẤU TRÚC PHIẾU HỌC TẬP (4 PHẦN CHUẨN ĐỔI MỚI CHUYÊN BIỆT):
+${exercisePrompt}
+
+Hãy trình bày các câu hỏi thành các phần rõ ràng như sau (nếu hình thức bài tập có đủ các phần tương ứng):
+- **PHẦN I: CÂU HỎI TRẮC NGHIỆM NHIỀU PHƯƠNG ÁN LỰA CHỌN** (Đúng số lượng yêu cầu)
+  + Bốn phương án ký hiệu: A.  B.  C.  D.
+  + QUY TẮC BẮT BUỘC: KHÔNG dùng bullet tròn/vuông trước các chữ cái A, B, C, D. Trình bày thẳng hàng hoặc chia 2/4 cột cân đối.
+- **PHẦN II: CÂU HỎI TRẮC NGHIỆM ĐÚNG / SAI** (Đúng số lượng yêu cầu)
+  + Mỗi câu gồm một mệnh đề dẫn xuất và 4 ý độc lập ký hiệu rõ ràng: a), b), c), d).
+  + Mỗi ý là một phát biểu hoàn chỉnh để học sinh phán đoán Đúng hoặc Sai.
+- **PHẦN III: CÂU HỎI TRẮC NGHIỆM TRẢ LỜI NGẮN** (Đúng số lượng yêu cầu)
+  + Đặt câu hỏi dứt khoát, kết quả cuối cùng là một số nguyên, phân số tối giản hoặc số thập phân.
+- **PHẦN IV: BÀI TẬP TỰ LUẬN RÈN LUYỆN** (Đúng số lượng yêu cầu)
+  + Các bài tập đòi hỏi lập luận logic, vẽ hình minh họa hoặc liên hệ giải quyết vấn đề thực tiễn.
+
+---
+### 4. QUY TẮC ĐỊNH DẠNG TOÁN HỌC & LATEX (CHUẨN MATHTYPE WORD)
 ${MATH_FORMATTING_RULES}
-4. ĐÁP ÁN: ${answerPrompt}
-5. BẮT BUỘC kiểm tra và SỬA LỖI CHÍNH TẢ tiếng Việt thật cẩn thận trước khi trả kết quả.`;
+- Với các tên điểm, tập hợp, đoạn thẳng, danh sách số có nhiều ký tự hoặc dấu phẩy, bọc trong ngoặc nhọn: \{A, B, C\}, \{1, 2, 3\}, \{M, N\}.
+- Với hàm số bậc nhất tuyến tính, ghi chuẩn: $y = ax + b$ (không dùng ngoặc nhọn quanh biểu thức tuyến tính).
+
+---
+### 5. KHU VỰC ĐÁP ÁN & LỜI GIẢI CHI TIẾT (ẨN / HIỆN KHOA HỌC)
+${answerPrompt}
+BẮT BUỘC đặt toàn bộ bảng đáp án nhanh và hướng dẫn giải chi tiết trong khối thẻ đóng/mở HTML <details> sau để giáo viên dễ dàng thu gọn/mở rộng khi giảng dạy:
+
+<details class="solution-box" style="margin-top: 25px; padding: 15px; border: 1px solid #10b981; border-radius: 8px; background-color: #f0fdf4;">
+  <summary style="font-weight: bold; cursor: pointer; color: #047857; font-size: 16px;">
+    👉 BẤM ĐỂ XEM ĐÁP ÁN VÀ LỜI GIẢI CHI TIẾT
+  </summary>
+  
+  [Chèn Bảng tổng hợp nhanh đáp án các Phần I, II, III ở đây]
+  
+  [Chèn Hướng dẫn giải chi tiết từng câu ở đây với lập luận đầy đủ, công thức LaTeX, và phương án đúng được gạch chân dạng \\underline{A} hoặc \\underline{a)}]
+</details>
+
+BẮT BUỘC kiểm tra và SỬA LỖI CHÍNH TẢ tiếng Việt thật cẩn thận trước khi trả kết quả.`;
 
       const response = await generateWithFallback(req, {
         contents: prompt,

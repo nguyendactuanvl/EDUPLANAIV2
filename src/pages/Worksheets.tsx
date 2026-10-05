@@ -21,6 +21,7 @@ import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMa
 import { parseRawExamText } from '../lib/examParser';
 import { printElement, ensureMathRendered } from '../lib/print';
 import { saveExamToCloud, saveExamToWebhook } from '../lib/cloudExamStore';
+import { KNTT_CURRICULUM } from "../data/knttCurriculum";
 
 export type LayoutStyle = 'a4_print' | 'infographic' | 'poster' | 'mindmap';
 
@@ -48,33 +49,13 @@ const LAYOUT_STYLE_OPTIONS: LayoutStyleOption[] = [
   },
   {
     id: 'infographic',
-    title: 'Infographic / Photographic',
-    shortTitle: 'Infographic',
-    badge: 'Hình ảnh & Màu sắc hiện đại',
-    desc: 'Bố cục dạng thẻ (Card UI), màu sắc trực quan, gợi ý khung hình vẽ thực tế và biểu đồ sinh động.',
+    title: 'Phiếu học tập 2 cột (Phong cách ảnh)',
+    shortTitle: 'Phiếu 2 cột màu sắc',
+    badge: 'Bố cục 2 cột Trực quan / Màu sắc sinh động',
+    desc: 'Bố cục 2 cột đặc biệt: Lý thuyết bên trái, câu hỏi thực hành bên phải, trang trí banner xanh đậm giống ảnh mẫu.',
     icon: Palette,
-    activeColor: 'border-indigo-600 ring-2 ring-indigo-600/15 bg-indigo-50/70 text-indigo-950',
-    badgeBg: 'bg-indigo-100 text-indigo-700'
-  },
-  {
-    id: 'poster',
-    title: 'Poster tóm tắt tư duy',
-    shortTitle: 'Poster tư duy',
-    badge: 'Cheat Sheet / Hero Boxes',
-    desc: 'Bố cục 1 trang tinh gọn, toàn bộ công thức đóng khung nổi bật, sơ đồ hóa các bước giải toán.',
-    icon: LayoutTemplate,
     activeColor: 'border-blue-600 ring-2 ring-blue-600/15 bg-blue-50/70 text-blue-950',
     badgeBg: 'bg-blue-100 text-blue-700'
-  },
-  {
-    id: 'mindmap',
-    title: 'Mindmap / Sơ đồ nhánh',
-    shortTitle: 'Sơ đồ nhánh',
-    badge: 'Cấu trúc cây đa cấp',
-    desc: 'Kiến thức phân cấp từ chủ đề trung tâm tỏa ra các nhánh lý thuyết, dạng bài và ví dụ điển hình.',
-    icon: GitFork,
-    activeColor: 'border-emerald-600 ring-2 ring-emerald-600/15 bg-emerald-50/70 text-emerald-950',
-    badgeBg: 'bg-emerald-100 text-emerald-700'
   }
 ];
 
@@ -85,11 +66,53 @@ export function Worksheets() {
   const [worksheetType, setWorksheetType] = useState("Kết hợp trắc nghiệm và tự luận");
   const [layoutStyle, setLayoutStyle] = useState<LayoutStyle>('a4_print');
 
-  // Tùy chọn bài tập nâng cao
+  // Hierarchy KNTT States
+  const [selectedSemester, setSelectedSemester] = useState<"semester_1" | "semester_2">("semester_1");
+  const [selectedChapterId, setSelectedChapterId] = useState<string>("");
+  const [selectedLessonId, setSelectedLessonId] = useState<string>("");
+  const [additionalNotes, setAdditionalNotes] = useState<string>("");
+
+  // Four custom part counts
+  const [numPartI, setNumPartI] = useState<number>(12); // Trắc nghiệm 4 lựa chọn (0-12)
+  const [numPartII, setNumPartII] = useState<number>(2); // Trắc nghiệm Đúng - Sai (0-6)
+  const [numPartIII, setNumPartIII] = useState<number>(4); // Trắc nghiệm Trả lời ngắn (0-6)
+  const [numPartIV, setNumPartIV] = useState<number>(2); // Tự luận (0-4)
+
+  const [realWorldPercent, setRealWorldPercent] = useState<number>(40); // 0% - 100%
+  const [hasParametric, setHasParametric] = useState<boolean>(true); // Có tham số
+
+  // Legacy compatibility fallbacks
   const [numMC, setNumMC] = useState<string>("auto");
   const [numEssay, setNumEssay] = useState<string>("auto");
   const [includeRealWorld, setIncludeRealWorld] = useState<boolean>(true);
   const [answerMode, setAnswerMode] = useState<'full' | 'summary' | 'none'>('full');
+
+  // Synchronize customLessonName with selected KNTT Lesson
+  useEffect(() => {
+    const gradeKey = `grade_${selectedGrade}` as "grade_10" | "grade_11" | "grade_12";
+    const semData = KNTT_CURRICULUM[gradeKey]?.[selectedSemester];
+    if (semData && semData.chapters.length > 0) {
+      let chapId = selectedChapterId;
+      let chapter = semData.chapters.find(c => c.id === chapId);
+      if (!chapter) {
+        chapter = semData.chapters[0];
+        setSelectedChapterId(chapter.id);
+        chapId = chapter.id;
+      }
+
+      let lesId = selectedLessonId;
+      let lesson = chapter.lessons.find(l => l.id === lesId);
+      if (!lesson) {
+        lesson = chapter.lessons[0];
+        setSelectedLessonId(lesson.id);
+        lesId = lesson.id;
+      }
+
+      if (lesson) {
+        setCustomLessonName(lesson.name);
+      }
+    }
+  }, [selectedGrade, selectedSemester, selectedChapterId, selectedLessonId]);
   
   const [suggestion, setSuggestion] = useState("");
   const [isEditing, setIsEditing] = useState(false);
@@ -429,7 +452,14 @@ export function Worksheets() {
           lesson: customLessonName,
           subject: subject,
           grade: selectedGrade,
-          type: worksheetType
+          type: worksheetType,
+          additionalNotes,
+          numPartI,
+          numPartII,
+          numPartIII,
+          numPartIV,
+          realWorldPercent,
+          hasParametric
         }),
         redirect: 'follow', // Bắt buộc để theo dõi chuyển hướng 302 từ Google Script sang Googleusercontent
       });
@@ -649,7 +679,15 @@ export function Worksheets() {
           numMC: numMC !== "auto" ? Number(numMC) : undefined,
           numEssay: numEssay !== "auto" ? Number(numEssay) : undefined,
           includeRealWorld: includeRealWorld,
-          answerMode: answerMode
+          answerMode: answerMode,
+          // New advanced parameters from configured sidebar
+          additionalNotes,
+          numPartI,
+          numPartII,
+          numPartIII,
+          numPartIV,
+          realWorldPercent,
+          hasParametric
         }),
         redirect: 'follow', // Bắt buộc để theo dõi chuyển hướng 302 từ Google Script sang Googleusercontent
       });
@@ -870,6 +908,25 @@ export function Worksheets() {
     }
   };
 
+  const splitContent = (content: string) => {
+    // Attempt to split content at first heading or question block mentioning "Bài tập", "Trắc nghiệm", "Câu 1", "Luyện tập"
+    const regex = /(?:PHẦN BÀI TẬP|BÀI TẬP|CÂU HỎI TRẮC NGHIỆM|##\s*Bài tập|##\s*Luyện tập|Câu 1:|Câu 1\.|###\s*A\.\s*Trắc nghiệm|##\s*A\.\s*TRẮC NGHIỆM|##\s*Bài tập tự luyện)/i;
+    const match = content.match(regex);
+    if (match && match.index !== undefined) {
+      return {
+        left: content.substring(0, match.index),
+        right: content.substring(match.index)
+      };
+    }
+    // Fallback: split roughly in half by paragraph if no clear separator
+    const paragraphs = content.split("\n\n");
+    const half = Math.ceil(paragraphs.length / 2);
+    return {
+      left: paragraphs.slice(0, half).join("\n\n"),
+      right: paragraphs.slice(half).join("\n\n")
+    };
+  };
+
   return (
     <div className="flex flex-col lg:flex-row min-h-full bg-slate-50 lg:overflow-hidden">
       {/* Left Sidebar - Settings */}
@@ -920,7 +977,7 @@ export function Worksheets() {
                 Môn học
               </label>
               <select
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
               >
@@ -930,47 +987,102 @@ export function Worksheets() {
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Khối lớp
-              </label>
-              <select 
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
-                value={selectedGrade}
-                onChange={(e) => setSelectedGrade(Number(e.target.value))}
-              >
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(g => (
-                  <option key={g} value={g}>Lớp {g}</option>
-                ))}
-              </select>
-            </div>
+            {/* Hierarchical KNTT Curriculum Selectors */}
+            <div className="p-3 bg-slate-50/50 rounded-xl border border-slate-200/60 space-y-3.5">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 uppercase tracking-wider">
+                <Sliders className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Chương trình SGK Kết nối tri thức</span>
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Bài học / Chủ đề
-              </label>
-              <input
-                type="text"
-                placeholder="Nhập tên bài hoặc chủ đề..."
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-                value={customLessonName}
-                onChange={(e) => setCustomLessonName(e.target.value)}
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Hình thức bài tập
-              </label>
-              <select
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-                value={worksheetType}
-                onChange={(e) => setWorksheetType(e.target.value)}
-              >
-                {worksheetTypes.map(type => (
-                  <option key={type} value={type}>{type}</option>
-                ))}
-              </select>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    Khối lớp
+                  </label>
+                  <select 
+                    className="w-full px-3 py-1.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white text-xs font-semibold text-slate-800"
+                    value={selectedGrade}
+                    onChange={(e) => {
+                      const gradeVal = Number(e.target.value);
+                      setSelectedGrade(gradeVal);
+                    }}
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(g => (
+                      <option key={g} value={g}>Lớp {g}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    Học kỳ
+                  </label>
+                  <select 
+                    className="w-full px-3 py-1.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white text-xs font-semibold text-slate-800"
+                    value={selectedSemester}
+                    onChange={(e) => setSelectedSemester(e.target.value as any)}
+                  >
+                    <option value="semester_1">Học kỳ 1</option>
+                    <option value="semester_2">Học kỳ 2</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                  Chương / Chủ đề
+                </label>
+                <select 
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white text-xs font-semibold text-slate-800"
+                  value={selectedChapterId}
+                  onChange={(e) => {
+                    setSelectedChapterId(e.target.value);
+                    setSelectedLessonId("");
+                  }}
+                >
+                  {(() => {
+                    const gradeKey = `grade_${selectedGrade}` as "grade_10" | "grade_11" | "grade_12";
+                    const chapters = KNTT_CURRICULUM[gradeKey]?.[selectedSemester]?.chapters || [];
+                    return chapters.map(chap => (
+                      <option key={chap.id} value={chap.id}>{chap.name}</option>
+                    ));
+                  })()}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                  Bài học cụ thể
+                </label>
+                <select 
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white text-xs font-semibold text-slate-800"
+                  value={selectedLessonId}
+                  onChange={(e) => setSelectedLessonId(e.target.value)}
+                >
+                  {(() => {
+                    const gradeKey = `grade_${selectedGrade}` as "grade_10" | "grade_11" | "grade_12";
+                    const chapters = KNTT_CURRICULUM[gradeKey]?.[selectedSemester]?.chapters || [];
+                    const selectedChapter = chapters.find(c => c.id === selectedChapterId) || chapters[0];
+                    const lessons = selectedChapter?.lessons || [];
+                    return lessons.map(les => (
+                      <option key={les.id} value={les.id}>{les.name}</option>
+                    ));
+                  })()}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                  Nội dung bổ sung / Trọng tâm nhấn mạnh (nếu có)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ví dụ: Tập trung vào GTLN của hàm phân thức..."
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white text-xs text-slate-800 font-medium"
+                  value={additionalNotes}
+                  onChange={(e) => setAdditionalNotes(e.target.value)}
+                />
+              </div>
             </div>
 
             {/* Layout Style Selector */}
@@ -981,7 +1093,7 @@ export function Worksheets() {
                   Phong cách trình bày (Layout Style)
                 </label>
                 <span className="text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full font-medium border border-indigo-200/60">
-                  4 phong cách
+                  2 phong cách
                 </span>
               </div>
 
@@ -1037,56 +1149,127 @@ export function Worksheets() {
               </div>
             </div>
 
-            {/* Advanced Exercise & Answer Settings */}
+            {/* Advanced Exercise & Answer Settings - New 4 Parts Selector */}
             <div className="pt-2 border-t border-slate-200/80">
-              <div className="bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 space-y-3">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  <Sliders className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Tùy biến câu hỏi & Đáp án</span>
+              <div className="bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 space-y-3.5">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 uppercase tracking-wider">
+                  <Sliders className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Cấu trúc 4 Phần Câu Hỏi</span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                      Số câu trắc nghiệm
+                <div className="grid grid-cols-2 gap-2 text-xs font-medium text-slate-700">
+                  <div className="bg-white p-2 border border-slate-200 rounded-lg">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      Phần I: Trắc nghiệm (A,B,C,D)
                     </label>
                     <select
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                      value={numMC}
-                      onChange={(e) => setNumMC(e.target.value)}
+                      className="w-full px-2 py-1 bg-slate-50 border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 focus:outline-none text-xs font-semibold"
+                      value={numPartI}
+                      onChange={(e) => setNumPartI(Number(e.target.value))}
                     >
-                      <option value="auto">Tự động (Khuyên dùng)</option>
-                      <option value="4">4 câu trắc nghiệm</option>
-                      <option value="8">8 câu trắc nghiệm</option>
-                      <option value="12">12 câu trắc nghiệm</option>
-                      <option value="16">16 câu trắc nghiệm</option>
+                      {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(n => (
+                        <option key={n} value={n}>{n} câu</option>
+                      ))}
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                      Số câu tự luận
+                  <div className="bg-white p-2 border border-slate-200 rounded-lg">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      Phần II: Đúng - Sai (a,b,c,d)
                     </label>
                     <select
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                      value={numEssay}
-                      onChange={(e) => setNumEssay(e.target.value)}
+                      className="w-full px-2 py-1 bg-slate-50 border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 focus:outline-none text-xs font-semibold"
+                      value={numPartII}
+                      onChange={(e) => setNumPartII(Number(e.target.value))}
                     >
-                      <option value="auto">Tự động</option>
-                      <option value="0">0 câu (Không có)</option>
-                      <option value="2">2 câu tự luận</option>
-                      <option value="3">3 câu tự luận</option>
-                      <option value="4">4 câu tự luận</option>
+                      {[0, 1, 2, 3, 4, 5, 6].map(n => (
+                        <option key={n} value={n}>{n} câu</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="bg-white p-2 border border-slate-200 rounded-lg">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      Phần III: Trả lời ngắn
+                    </label>
+                    <select
+                      className="w-full px-2 py-1 bg-slate-50 border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 focus:outline-none text-xs font-semibold"
+                      value={numPartIII}
+                      onChange={(e) => setNumPartIII(Number(e.target.value))}
+                    >
+                      {[0, 1, 2, 3, 4, 5, 6].map(n => (
+                        <option key={n} value={n}>{n} câu</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="bg-white p-2 border border-slate-200 rounded-lg">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      Phần IV: Tự luận rèn luyện
+                    </label>
+                    <select
+                      className="w-full px-2 py-1 bg-slate-50 border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 focus:outline-none text-xs font-semibold"
+                      value={numPartIV}
+                      onChange={(e) => setNumPartIV(Number(e.target.value))}
+                    >
+                      {[0, 1, 2, 3, 4].map(n => (
+                        <option key={n} value={n}>{n} bài</option>
+                      ))}
                     </select>
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                    Chế độ đáp án
+                {/* Real-world percentage slider */}
+                <div className="bg-white p-2.5 border border-slate-200 rounded-lg space-y-1.5">
+                  <div className="flex justify-between items-center text-[11px] font-bold text-slate-600">
+                    <span>Tỷ lệ bài toán thực tế</span>
+                    <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-mono">{realWorldPercent}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="5"
+                    className="w-full accent-emerald-600 cursor-pointer h-1.5 bg-slate-100 rounded-lg"
+                    value={realWorldPercent}
+                    onChange={(e) => setRealWorldPercent(Number(e.target.value))}
+                  />
+                </div>
+
+                {/* Parametric switch */}
+                <div className="bg-white p-2.5 border border-slate-200 rounded-lg space-y-2">
+                  <span className="block text-[11px] font-bold text-slate-600">Phân hóa tham số thực</span>
+                  <div className="flex flex-col gap-1.5 text-xs text-slate-700">
+                    <label className="flex items-center gap-2 cursor-pointer font-medium">
+                      <input
+                        type="radio"
+                        name="parametric_option"
+                        className="w-4 h-4 text-emerald-600 focus:ring-emerald-500 border-slate-300"
+                        checked={!hasParametric}
+                        onChange={() => setHasParametric(false)}
+                      />
+                      <span>Không có bài toán chứa tham số</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer font-medium">
+                      <input
+                        type="radio"
+                        name="parametric_option"
+                        className="w-4 h-4 text-emerald-600 focus:ring-emerald-500 border-slate-300"
+                        checked={hasParametric}
+                        onChange={() => setHasParametric(true)}
+                      />
+                      <span>Có bài toán chứa tham số ($m, a, b...$) để phân hóa học sinh</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Answer Mode selection */}
+                <div className="bg-white p-2.5 border border-slate-200 rounded-lg">
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    Chế độ đáp án hiển thị
                   </label>
                   <select
-                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                    className="w-full px-2 py-1 bg-slate-50 border border-slate-300 rounded text-xs font-semibold focus:ring-1 focus:ring-emerald-500 focus:outline-none"
                     value={answerMode}
                     onChange={(e) => setAnswerMode(e.target.value as any)}
                   >
@@ -1095,18 +1278,6 @@ export function Worksheets() {
                     <option value="none">Không kèm đáp án (cho học sinh làm bài)</option>
                   </select>
                 </div>
-
-                <label className="flex items-center gap-2 cursor-pointer pt-0.5">
-                  <input
-                    type="checkbox"
-                    checked={includeRealWorld}
-                    onChange={(e) => setIncludeRealWorld(e.target.checked)}
-                    className="w-3.5 h-3.5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300"
-                  />
-                  <span className="text-xs text-slate-700 font-medium">
-                    Ưu tiên bài toán liên hệ thực tế cuộc sống
-                  </span>
-                </label>
               </div>
             </div>
           </div>
@@ -2121,32 +2292,6 @@ export function Worksheets() {
                         </div>
                       )}
 
-                      {/* 2. Header decor for Infographic / Photographic */}
-                      {layoutStyle === 'infographic' && (
-                        <div className="mb-8">
-                          <div className="bg-gradient-to-r from-sky-600 via-indigo-600 to-purple-600 text-white p-6 sm:p-7 rounded-2xl shadow-md relative overflow-hidden">
-                            <div className="absolute right-0 top-0 translate-x-8 -translate-y-8 w-44 h-44 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
-                            <div className="flex flex-wrap items-center gap-2 mb-2.5">
-                              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-white/20 backdrop-blur-md text-sky-100 border border-white/20">
-                                {subject} • LỚP {selectedGrade}
-                              </span>
-                              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-400/20 text-emerald-200 border border-emerald-300/30 flex items-center gap-1">
-                                <Sparkles className="w-3.5 h-3.5" /> Infographic Học Tập Trực Quan
-                              </span>
-                            </div>
-                            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white mb-2">
-                              {customLessonName || "PHIẾU HỌC TẬP TRỰC QUAN"}
-                            </h1>
-                            <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-indigo-100 font-medium">
-                              <span className="flex items-center gap-1 bg-white/15 px-2.5 py-1 rounded-lg backdrop-blur-xs">💡 Ghi nhớ nhanh</span>
-                              <span className="flex items-center gap-1 bg-white/15 px-2.5 py-1 rounded-lg backdrop-blur-xs">⚡ Bí kíp thực chiến</span>
-                              <span className="flex items-center gap-1 bg-white/15 px-2.5 py-1 rounded-lg backdrop-blur-xs">⚠️ Bẫy sai lầm</span>
-                              <span className="flex items-center gap-1 bg-white/15 px-2.5 py-1 rounded-lg backdrop-blur-xs">🎯 Bài tập thực tế</span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
                       {/* 3. Header decor for Poster tóm tắt tư duy */}
                       {layoutStyle === 'poster' && (
                         <div className="mb-8">
@@ -2200,16 +2345,97 @@ export function Worksheets() {
                       )}
 
                       {/* Content Renderer with Layout-specific typography */}
-                      <div className={cn(
-                        "prose max-w-none",
-                        layoutStyle === 'a4_print' && "prose-slate font-serif [&_h1]:font-serif [&_h2]:font-serif [&_h3]:font-serif [&_table]:border-collapse [&_th]:border [&_th]:border-slate-800 [&_td]:border [&_td]:border-slate-800 leading-relaxed",
-                        layoutStyle === 'infographic' && "prose-indigo [&_h2]:bg-indigo-50/80 [&_h2]:text-indigo-950 [&_h2]:p-3.5 [&_h2]:rounded-xl [&_h2]:border-l-4 [&_h2]:border-indigo-600 [&_h2]:shadow-2xs [&_blockquote]:bg-amber-50/80 [&_blockquote]:border-l-4 [&_blockquote]:border-amber-400 [&_blockquote]:p-4 [&_blockquote]:rounded-r-xl [&_blockquote]:text-amber-950 [&_blockquote]:font-medium",
-                        layoutStyle === 'poster' && "prose-blue [&_h2]:bg-gradient-to-r [&_h2]:from-slate-900 [&_h2]:to-indigo-900 [&_h2]:text-white [&_h2]:p-3.5 [&_h2]:rounded-xl [&_h2]:font-black [&_blockquote]:bg-blue-50/80 [&_blockquote]:border-l-4 [&_blockquote]:border-blue-600 [&_blockquote]:p-4 [&_blockquote]:rounded-r-xl [&_blockquote]:shadow-2xs",
-                        layoutStyle === 'mindmap' && "prose-emerald [&_h2]:bg-emerald-50 [&_h2]:text-emerald-950 [&_h2]:p-3.5 [&_h2]:rounded-xl [&_h2]:border-l-4 [&_h2]:border-emerald-600 [&_h2]:font-bold [&_blockquote]:bg-teal-50 [&_blockquote]:border-l-4 [&_blockquote]:border-teal-500 [&_blockquote]:p-4 [&_blockquote]:rounded-r-xl"
-                      )}>
-                        <ErrorBoundary>
-                          <MarkdownRenderer content={fixMath(mainDocContent)} />
-                        </ErrorBoundary>
+                      {layoutStyle === 'infographic' ? (
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch text-slate-900 font-sans leading-relaxed">
+                          
+                          {/* COL 1: LEFT COLUMN (LÝ THUYẾT & ĐỊNH NGHĨA) */}
+                          <div className="lg:col-span-6 bg-white border-2 border-blue-900 rounded-2xl overflow-hidden flex flex-col justify-between shadow-xs">
+                            <div>
+                              {/* Deep blue header banner */}
+                              <div className="bg-[#1e40af] text-white p-5 text-center border-b-2 border-blue-900">
+                                <div className="flex items-center justify-center gap-2 mb-1.5">
+                                  <BookOpen className="w-5 h-5 text-sky-300" />
+                                  <span className="text-[11px] font-bold uppercase tracking-widest text-sky-200">PHIẾU HỌC TẬP: LÝ THUYẾT</span>
+                                </div>
+                                <h2 className="text-sm sm:text-base font-black uppercase text-white leading-tight">
+                                  {customLessonName || "TÓM TẮT LÝ THUYẾT"}
+                                </h2>
+                                <p className="text-[10px] text-sky-100 font-semibold mt-0.5">Chương trình {subject} {selectedGrade} (KNTT)</p>
+                              </div>
+
+                              {/* Student info */}
+                              <div className="p-3 bg-slate-50 border-b border-slate-100 text-[11px] sm:text-xs flex justify-between font-semibold text-slate-700">
+                                <span>Họ và tên: ................................................................</span>
+                                <span>Lớp: ........................</span>
+                              </div>
+
+                              {/* Left Content prose rendering */}
+                              <div className="p-5 prose prose-blue prose-sm max-w-none [&_h2]:bg-blue-50/80 [&_h2]:text-blue-950 [&_h2]:p-3 [&_h2]:rounded-xl [&_h2]:border-l-4 [&_h2]:border-blue-600 [&_h2]:text-[12px] [&_h2]:font-black [&_h2]:mt-5 [&_h2]:mb-3 [&_blockquote]:bg-amber-50/80 [&_blockquote]:border-l-4 [&_blockquote]:border-amber-400 [&_blockquote]:p-3.5 [&_blockquote]:rounded-r-xl [&_blockquote]:text-amber-950 [&_blockquote]:text-[11px] [&_blockquote]:font-semibold [&_blockquote]:not-italic [&_table]:border-collapse [&_th]:border [&_th]:border-slate-300 [&_td]:border [&_td]:border-slate-300 leading-relaxed font-sans">
+                                <MarkdownRenderer content={fixMath(splitContent(mainDocContent).left)} />
+                              </div>
+                            </div>
+
+                            {/* Decorative light bulb callout card at the bottom */}
+                            <div className="p-4 m-5 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
+                              <Sparkles className="w-5 h-5 text-amber-500 shrink-0 mt-0.5 animate-pulse" />
+                              <div>
+                                <p className="text-[10px] font-black uppercase text-amber-800 tracking-wider">Góc ôn tập cốt lõi</p>
+                                <p className="text-[11px] font-semibold text-amber-950 mt-0.5 leading-relaxed">
+                                  Nắm chắc khái niệm và phân tích các ví dụ mẫu sẽ giúp thầy cô rèn luyện tư duy tự luận và tăng tốc độ làm trắc nghiệm của học sinh!
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* COL 2: RIGHT COLUMN (PHẦN BÀI TẬP THỰC HÀNH) */}
+                          <div className="lg:col-span-6 bg-white border-2 border-blue-900 rounded-2xl overflow-hidden flex flex-col justify-between shadow-xs">
+                            <div>
+                              {/* Deep blue header banner */}
+                              <div className="bg-[#1e40af] text-white p-5 text-center border-b-2 border-blue-900">
+                                <div className="flex items-center justify-center gap-2 mb-1.5">
+                                  <Edit3 className="w-5 h-5 text-sky-300" />
+                                  <span className="text-[11px] font-bold uppercase tracking-widest text-sky-200">PHẦN BÀI TẬP THỰC HÀNH</span>
+                                </div>
+                                <h2 className="text-sm sm:text-base font-black uppercase text-white leading-tight">
+                                  (Phần Dành Cho Học Sinh Luyện Tập)
+                                </h2>
+                                <p className="text-[10px] text-sky-100 font-semibold mt-0.5">Yêu cầu hoàn thành đầy đủ các phần bên dưới</p>
+                              </div>
+
+                              {/* Student info */}
+                              <div className="p-3 bg-slate-50 border-b border-slate-100 text-[11px] sm:text-xs flex justify-between font-semibold text-slate-700">
+                                <span>Họ và tên: ................................................................</span>
+                                <span>Lớp: ........................</span>
+                              </div>
+
+                              {/* Right Content prose rendering */}
+                              <div className="p-5 prose prose-indigo prose-sm max-w-none [&_h2]:bg-indigo-50/80 [&_h2]:text-indigo-950 [&_h2]:p-3 [&_h2]:rounded-xl [&_h2]:border-l-4 [&_h2]:border-indigo-600 [&_h2]:text-[12px] [&_h2]:font-black [&_h2]:mt-5 [&_h2]:mb-3 [&_blockquote]:bg-rose-50/80 [&_blockquote]:border-l-4 [&_blockquote]:border-rose-400 [&_blockquote]:p-3.5 [&_blockquote]:rounded-r-xl [&_blockquote]:text-rose-950 [&_blockquote]:text-[11px] [&_blockquote]:font-semibold [&_blockquote]:not-italic [&_table]:border-collapse [&_th]:border [&_th]:border-slate-300 [&_td]:border [&_td]:border-slate-300 leading-relaxed font-sans">
+                                <MarkdownRenderer content={fixMath(splitContent(mainDocContent).right)} />
+                              </div>
+                            </div>
+
+                            {/* Decorative footer ribbon */}
+                            <div className="bg-[#1e40af] text-white p-4 text-center border-t-2 border-blue-900 mt-5 flex items-center justify-center gap-2">
+                              <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
+                              <span className="text-[10px] font-black uppercase tracking-wider text-sky-100">
+                                Học tốt Toán! • "Kiến thức hôm nay là hành trang cho tương lai!"
+                              </span>
+                            </div>
+                          </div>
+
+                        </div>
+                      ) : (
+                        <div className={cn(
+                          "prose max-w-none",
+                          layoutStyle === 'a4_print' && "prose-slate font-serif [&_h1]:font-serif [&_h2]:font-serif [&_h3]:font-serif [&_table]:border-collapse [&_th]:border [&_th]:border-slate-800 [&_td]:border [&_td]:border-slate-800 leading-relaxed",
+                          layoutStyle === 'poster' && "prose-blue [&_h2]:bg-gradient-to-r [&_h2]:from-slate-900 [&_h2]:to-indigo-900 [&_h2]:text-white [&_h2]:p-3.5 [&_h2]:rounded-xl [&_h2]:font-black [&_blockquote]:bg-blue-50/80 [&_blockquote]:border-l-4 [&_blockquote]:border-blue-600 [&_blockquote]:p-4 [&_blockquote]:rounded-r-xl [&_blockquote]:shadow-2xs",
+                          layoutStyle === 'mindmap' && "prose-emerald [&_h2]:bg-emerald-50 [&_h2]:text-emerald-950 [&_h2]:p-3.5 [&_h2]:rounded-xl [&_h2]:border-l-4 [&_h2]:border-emerald-600 [&_h2]:font-bold [&_blockquote]:bg-teal-50 [&_blockquote]:border-l-4 [&_blockquote]:border-teal-500 [&_blockquote]:p-4 [&_blockquote]:rounded-r-xl"
+                        )}>
+                          <ErrorBoundary>
+                            <MarkdownRenderer content={fixMath(mainDocContent)} />
+                          </ErrorBoundary>
+                        </div>
+                      )}
 
                         {/* Document Solution Section Accordion Toggle on Screen */}
                         {includeDetailedSolution && solutionDocContent && (
@@ -2251,9 +2477,8 @@ export function Worksheets() {
                           </div>
                         )}
                       </div>
-                    </div>
-                  </>
-                );
+                    </>
+                  );
               }
 
                 return (
@@ -2263,7 +2488,7 @@ export function Worksheets() {
                     </div>
                     <p className="text-lg font-bold text-slate-700">Phiếu học tập sẽ xuất hiện ở đây</p>
                     <p className="text-sm mt-1 text-slate-500 max-w-md text-center">
-                      Chọn môn học, chủ đề và phong cách trình bày mong muốn (A4 in ấn, Infographic, Poster tư duy hoặc Sơ đồ nhánh) rồi nhấn "Tạo bản Word/In".
+                      Chọn môn học, chủ đề và phong cách trình bày mong muốn (A4 Chuẩn in ấn hoặc Phiếu học tập dạng ảnh 2 cột) rồi nhấn "Tạo bản Word/In".
                     </p>
                     <div className="flex flex-wrap justify-center gap-2 mt-4">
                       {LAYOUT_STYLE_OPTIONS.map(s => (

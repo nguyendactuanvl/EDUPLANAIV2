@@ -575,6 +575,9 @@ export const MarkdownRenderer = ({
     });
   }
 
+  // 3.5 Triệt tiêu hoàn toàn bất kỳ rò rỉ nào của chữ "undefined" hoặc "null" lẻ loi trong tài liệu tiếng Việt
+  processedContent = processedContent.replace(/(?<![a-zA-Z0-9_\$])(?:undefined|null)(?![a-zA-Z0-9_\$])/g, '');
+
   // 4. Auto-scanner effect: whenever content updates or AI streams in new text,
   // scan the rendered DOM container with katex auto-render to catch any unparsed formula delimiters
   useEffect(() => {
