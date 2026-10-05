@@ -2775,23 +2775,27 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                       </div>
                     )}
                     {questions.map((q, idx) => (
-                      <div key={idx} className="pb-4 border-b border-slate-100 last:border-0">
-                        <div className="font-medium text-slate-800 mb-3 flex items-start gap-2">
-                          <span className="font-bold whitespace-nowrap mt-1">Câu {idx + 1}:</span> 
-                          <div className="flex-1 min-w-0">
-                            <MarkdownRenderer className="markdown-body" content={cleanQuestionStem(q.content || (q as any).question || (q as any).text || '', q.options, q.tfStatements)} /> 
-                          </div>
-                          <span className="text-xs text-emerald-600 font-normal mt-1 shrink-0">[{q.level}]</span>
-                          {isRealWorldQuestion(q) && (
-                            <span className="text-xs font-semibold px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded mt-1 shrink-0 flex items-center gap-1 shadow-2xs" title="Câu hỏi có ngữ cảnh ứng dụng thực tế (Chuẩn GDPT 2018)">
-                              [Thực tế]
+                      <div key={idx} className="pb-5 border-b border-slate-100 last:border-0 space-y-3">
+                        {/* 1. Professional Header Row for Question Actions & Metadata */}
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200/60 no-print">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-black text-sm text-indigo-950">Câu {idx + 1}:</span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md uppercase">
+                              [{q.level || 'Nhận biết'}]
                             </span>
-                          )}
-                          <div className="flex items-center gap-1 shrink-0 no-print flex-wrap">
+                            {isRealWorldQuestion(q) && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-md flex items-center gap-1 shadow-2xs" title="Câu hỏi có bối cảnh thực tế">
+                                🌍 Thực tế
+                              </span>
+                            )}
+                          </div>
+                          
+                          {/* Toolbar Action Buttons */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <button
                               type="button"
                               onClick={() => setGeoGebraTarget({ qIndex: idx, target: "content" })}
-                              className="text-xs px-2 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded border border-teal-300 flex items-center gap-1 cursor-pointer transition-colors font-medium shadow-2xs"
+                              className="text-[11px] px-2 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded border border-teal-300 flex items-center gap-1 cursor-pointer transition-colors font-semibold shadow-2xs"
                               title="Vẽ hình minh họa bằng GeoGebra và chèn vào câu hỏi"
                             >
                               <span>📐 GeoGebra</span>
@@ -2799,14 +2803,13 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                             <button
                               type="button"
                               onClick={() => {
-
                                 if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "bbt" && activeVisualizer?.target === "content") {
                                   setActiveVisualizer(null);
                                 } else {
                                   setActiveVisualizer({ qIndex: idx, tab: "bbt", target: "content" });
                                 }
                               }}
-                              className={`text-xs px-2 py-1 rounded border flex items-center gap-1 cursor-pointer transition-colors shadow-2xs font-semibold ${
+                              className={`text-[11px] px-2 py-1 rounded border flex items-center gap-1 cursor-pointer transition-colors shadow-2xs font-semibold ${
                                 activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "bbt" && activeVisualizer?.target === "content"
                                   ? "bg-emerald-600 text-white border-emerald-700"
                                   : "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100"
@@ -2819,7 +2822,7 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                             <button
                               type="button"
                               onClick={() => handleAiFixBbtForExamQuestion(q, idx)}
-                              className="text-xs px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded border border-amber-300 flex items-center gap-1 cursor-pointer transition-colors font-medium shadow-2xs"
+                              className="text-[11px] px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded border border-amber-300 flex items-center gap-1 cursor-pointer transition-colors font-semibold shadow-2xs"
                               title="Tự động vẽ Bảng biến thiên (dạng ảnh SVG chuẩn SGK) cho câu hỏi này"
                             >
                               <Sparkles className="w-3.5 h-3.5 text-amber-600" />
@@ -2834,7 +2837,7 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                                   setActiveVisualizer({ qIndex: idx, tab: "graph", target: "content" });
                                 }
                               }}
-                              className={`text-xs px-2 py-1 rounded border flex items-center gap-1 cursor-pointer transition-colors shadow-2xs font-semibold ${
+                              className={`text-[11px] px-2 py-1 rounded border flex items-center gap-1 cursor-pointer transition-colors shadow-2xs font-semibold ${
                                 activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "graph" && activeVisualizer?.target === "content"
                                   ? "bg-blue-600 text-white border-blue-700"
                                   : "bg-blue-50 text-blue-800 border-blue-300 hover:bg-blue-100"
@@ -2853,7 +2856,7 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                                   setActiveVisualizer({ qIndex: idx, tab: "geometry3d", target: "content" });
                                 }
                               }}
-                              className={`text-xs px-2 py-1 rounded border flex items-center gap-1 cursor-pointer transition-colors shadow-2xs font-semibold ${
+                              className={`text-[11px] px-2 py-1 rounded border flex items-center gap-1 cursor-pointer transition-colors shadow-2xs font-semibold ${
                                 activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "geometry3d" && activeVisualizer?.target === "content"
                                   ? "bg-purple-600 text-white border-purple-700"
                                   : "bg-purple-50 text-purple-800 border-purple-300 hover:bg-purple-100"
@@ -2872,7 +2875,7 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                                   setActiveVisualizer({ qIndex: idx, tab: "statistics", target: "content" });
                                 }
                               }}
-                              className={`text-xs px-2 py-1 rounded border flex items-center gap-1 cursor-pointer transition-colors shadow-2xs font-semibold ${
+                              className={`text-[11px] px-2 py-1 rounded border flex items-center gap-1 cursor-pointer transition-colors shadow-2xs font-semibold ${
                                 activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "statistics" && activeVisualizer?.target === "content"
                                   ? "bg-amber-600 text-white border-amber-700"
                                   : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
@@ -2885,39 +2888,64 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                             <button
                               type="button"
                               onClick={() => handleAutoGenerateGraphForExamQuestion(q, idx)}
-                              className="text-xs px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-800 rounded border border-blue-300 flex items-center gap-1 cursor-pointer transition-colors font-medium shadow-2xs"
+                              className="text-[11px] px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-800 rounded border border-blue-300 flex items-center gap-1 cursor-pointer transition-colors font-semibold shadow-2xs"
                               title="Mở công cụ xuất Đồ thị hàm số dạng ảnh cho câu hỏi này"
                             >
                               <span>📊 Xuất Đồ thị ảnh</span>
                             </button>
                             <button
+                              type="button"
                               onClick={() => setEditingExamQuestion({ question: q, index: idx })}
-                              className="text-xs px-2 py-1 bg-amber-50 text-amber-700 rounded border border-amber-200 hover:bg-amber-100 flex items-center gap-1 cursor-pointer transition-colors"
+                              className="text-[11px] px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded border border-amber-300 flex items-center gap-1 cursor-pointer transition-colors font-bold shadow-2xs"
                               title="Chỉnh sửa câu hỏi, chèn Bảng biến thiên, sửa phương án & lời giải"
                             >
                               ✏️ Sửa
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleAiRegenerateExamQuestion(q, idx)}
-                              className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded border border-blue-200 hover:bg-blue-100 flex items-center gap-1 cursor-pointer transition-colors"
+                              className="text-[11px] px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded border border-blue-300 flex items-center gap-1 cursor-pointer transition-colors font-bold shadow-2xs"
                               title="AI tạo lại câu này kèm Bảng biến thiên và lời giải chi tiết từng bước"
                             >
                               ✨ AI tạo lại
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleAiReplaceExamQuestion(q, idx)}
-                              className="text-xs px-2 py-1 bg-purple-50 text-purple-700 rounded border border-purple-200 hover:bg-purple-100 flex items-center gap-1 cursor-pointer transition-colors"
+                              className="text-[11px] px-2 py-1 bg-purple-100 hover:bg-purple-200 text-purple-800 rounded border border-purple-300 flex items-center gap-1 cursor-pointer transition-colors font-bold shadow-2xs"
                               title="Đổi câu tương đương khác"
                             >
                               🔄 Đổi câu
                             </button>
-                            <button onClick={() => saveToBank(q)} className="text-xs px-2 py-1 bg-slate-50 text-slate-600 rounded border border-slate-200 hover:bg-slate-100 shrink-0 cursor-pointer" title="Lưu vào Ngân hàng CH">+ Lưu NH</button>
-                            <button onClick={() => {
-                              if (confirm("Xóa câu hỏi này khỏi đề?")) {
-                                 const updated = questions.filter(item => item.id !== q.id);
-                                 setQuestions(updated);
-                              }
-                            }} className="text-xs px-2 py-1 bg-red-50 text-red-600 rounded border border-red-200 hover:bg-red-100 shrink-0 cursor-pointer" title="Xóa khỏi đề">Xóa</button>
+                            <button 
+                              type="button"
+                              onClick={() => saveToBank(q)} 
+                              className="text-[11px] px-2 py-1 bg-slate-100 text-slate-700 rounded border border-slate-300 hover:bg-slate-200 font-semibold cursor-pointer shadow-2xs" 
+                              title="Lưu vào Ngân hàng CH"
+                            >
+                              + Lưu NH
+                            </button>
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                if (confirm("Xóa câu hỏi này khỏi đề?")) {
+                                   const updated = questions.filter(item => item.id !== q.id);
+                                   setQuestions(updated);
+                                }
+                              }} 
+                              className="text-[11px] px-2 py-1 bg-red-100 text-red-700 rounded border border-red-300 hover:bg-red-200 font-bold cursor-pointer shadow-2xs" 
+                              title="Xóa khỏi đề"
+                            >
+                              Xóa
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* 2. Full-Width Question Stem Content Block */}
+                        <div className="font-medium text-slate-800 text-sm sm:text-base leading-relaxed pl-1 flex items-start gap-2">
+                          <span className="font-black text-indigo-950 whitespace-nowrap mt-1">Câu {idx + 1}:</span>
+                          <div className="flex-1 min-w-0">
+                            <MarkdownRenderer className="markdown-body" content={cleanQuestionStem(q.content || (q as any).question || (q as any).text || '', q.options, q.tfStatements)} /> 
                           </div>
                         </div>
 
