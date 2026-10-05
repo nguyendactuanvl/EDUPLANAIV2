@@ -647,6 +647,9 @@ async function generateWithFallback(req: any, payloadOptions: any) {
         
         const config = payloadOptions.config || {};
         const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán:
+- TẤT CẢ các biến số, tham số đơn lẻ (như x, y, m, a, b, c, d, S...) BẮT BUỘC phải đặt trong cặp dấu đô la: $x$, $y$, $m$, $a$, $b$, $c$, $d$, $S$. Tuyệt đối không viết chữ cái trần ngoài văn bản thông thường nếu đó đại diện cho toán học.
+- Tuyệt đối không bao giờ được viết các lệnh LaTeX trần trụi (như \\sin, \\cos, \\frac) mà không có dấu đô la kẹp bên ngoài.
+- LUÔN LUÔN sử dụng \\frac thay thế cho \\dfrac. Tuyệt đối KHÔNG dùng \\dfrac trong bất kỳ câu trả lời hay công thức nào.
 - Chỉ số dưới BẮT BUỘC dùng dấu gạch dưới: $u_1$, $u_6$, $S_{10}$, $N_0$, $N_t$.
 - Số mũ / lũy thừa BẮT BUỘC dùng dấu mũ: $q^5$, $2^9$, $2^{10}$, $a^2 + b^2$.
 - Phân số BẮT BUỘC dùng \\frac{tử}{mẫu}: $\\frac{1 - (-2)^{10}}{1 - (-2)}$, $\\frac{108}{54}$.

@@ -1881,12 +1881,26 @@ export function CanvasPdfViewer({ pdfBase64, pdfUrl, examTitle }: CanvasPdfViewe
         
         let loadingTask;
         if (pdfBase64) {
-          const raw = window.atob(pdfBase64);
-          const uint8Array = new Uint8Array(raw.length);
-          for (let i = 0; i < raw.length; i++) {
-            uint8Array[i] = raw.charCodeAt(i);
+          try {
+            let base64Clean = pdfBase64;
+            if (base64Clean.startsWith("data:")) {
+              base64Clean = base64Clean.substring(base64Clean.indexOf(",") + 1);
+            }
+            base64Clean = base64Clean.replace(/\s/g, "");
+            const raw = window.atob(base64Clean);
+            const uint8Array = new Uint8Array(raw.length);
+            for (let i = 0; i < raw.length; i++) {
+              uint8Array[i] = raw.charCodeAt(i);
+            }
+            loadingTask = pdfjs.getDocument({ data: uint8Array });
+          } catch (decodingError) {
+            console.error("Lỗi giải mã base64 trong CanvasPdfViewer, thử tải qua URL:", decodingError);
+            if (pdfUrl) {
+              loadingTask = pdfjs.getDocument(pdfUrl);
+            } else {
+              throw decodingError;
+            }
           }
-          loadingTask = pdfjs.getDocument({ data: uint8Array });
         } else if (pdfUrl) {
           loadingTask = pdfjs.getDocument(pdfUrl);
         } else {
@@ -1924,28 +1938,40 @@ export function CanvasPdfViewer({ pdfBase64, pdfUrl, examTitle }: CanvasPdfViewe
       )}
       
       {error && (
-        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-500 bg-white m-3 rounded-2xl border border-slate-200 min-h-[300px]">
-          <AlertCircle className="w-12 h-12 text-rose-500 mb-2 animate-bounce" />
-          <p className="text-sm font-bold text-rose-600 mb-2">⚠️ Trình duyệt chặn hiển thị PDF</p>
-          <p className="text-xs text-slate-600 max-w-sm mb-5 leading-relaxed">
-            Do chính sách bảo mật nghiêm ngặt hoặc sandboxing của ứng dụng Zalo/Facebook, đề thi PDF không thể hiển thị trực quan. Học sinh hãy click nút bên dưới để mở hoặc tải đề thi cực kỳ dễ dàng:
-          </p>
-          {pdfUrl && (
-            <div className="flex flex-col gap-2.5 w-full max-w-[240px]">
-              <button 
-                type="button"
-                onClick={() => window.open(pdfUrl, "_blank")}
-                className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs cursor-pointer shadow-xs transition-all flex items-center justify-center gap-1.5"
-              >
-                🌍 Mở đề trong Tab mới
-              </button>
-              <a 
-                href={pdfUrl} 
-                download={`${examTitle || 'De_Thi'}.pdf`}
-                className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs cursor-pointer shadow-xs transition-all flex items-center justify-center gap-1.5"
-              >
-                <Download className="w-3.5 h-3.5" /> Tải đề thi về máy
-              </a>
+        <div className="flex-1 flex flex-col bg-white h-full relative min-h-[350px]">
+          <div className="p-3 text-center text-slate-500 border-b border-slate-100 shrink-0 bg-rose-50/50">
+            <p className="text-xs font-bold text-rose-700 flex items-center justify-center gap-1.5">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-500 animate-pulse" />
+              Không nạp được bộ hiển thị Canvas. Đang dùng Trình xem Hệ thống dự phòng.
+            </p>
+            {pdfUrl && (
+              <div className="flex items-center justify-center gap-2 mt-1.5">
+                <button 
+                  type="button"
+                  onClick={() => window.open(pdfUrl, "_blank")}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-[11px] cursor-pointer shadow-xs transition-all flex items-center gap-1"
+                >
+                  🌍 Mở Tab mới
+                </button>
+                <a 
+                  href={pdfUrl} 
+                  download={`${examTitle || 'De_Thi'}.pdf`}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-lg text-[11px] cursor-pointer shadow-xs transition-all flex items-center gap-1"
+                >
+                  <Download className="w-3 h-3" /> Tải về máy
+                </a>
+              </div>
+            )}
+          </div>
+          {pdfUrl ? (
+            <iframe 
+              src={pdfUrl} 
+              className="w-full flex-1 border-0 h-full min-h-[400px]" 
+              title="PDF Viewer Fallback"
+            />
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-50">
+              <p className="text-xs text-slate-400">Không tìm thấy đường dẫn tệp tin PDF.</p>
             </div>
           )}
         </div>

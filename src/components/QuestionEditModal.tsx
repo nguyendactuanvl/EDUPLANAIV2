@@ -193,6 +193,42 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
       return;
     }
 
+    // Robust image URL / base64 extraction
+    let extractedImageUrl = question.imageUrl;
+    let hasFig = question.hasFigure || false;
+
+    if (content.includes('![Hình vẽ](')) {
+      try {
+        const parts = content.split('![Hình vẽ](');
+        if (parts[1]) {
+          extractedImageUrl = parts[1].split(')')[0];
+          hasFig = true;
+        }
+      } catch (e) {
+        console.error("Lỗi trích xuất ảnh ![Hình vẽ]:", e);
+      }
+    } else if (content.includes('src="')) {
+      try {
+        const match = content.match(/src=["']([^"']+)["']/);
+        if (match && match[1]) {
+          extractedImageUrl = match[1];
+          hasFig = true;
+        }
+      } catch (e) {
+        console.error("Lỗi trích xuất ảnh src=:", e);
+      }
+    } else if (content.includes('data:image/')) {
+      try {
+        const match = content.match(/(data:image\/[a-zA-Z+]+;base64,[a-zA-Z0-9+/=]+)/);
+        if (match && match[1]) {
+          extractedImageUrl = match[1];
+          hasFig = true;
+        }
+      } catch (e) {
+        console.error("Lỗi trích xuất ảnh base64:", e);
+      }
+    }
+
     const updated: QuestionData = {
       ...question,
       content,
@@ -205,8 +241,8 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
       tfStatements: type === 'tf' ? tfStatements : undefined,
       solution,
       explanation: solution,
-      imageUrl: content.includes('![Hình vẽ]') ? content.split('![Hình vẽ](')[1].split(')')[0] : question.imageUrl,
-      hasFigure: content.includes('![Hình vẽ]') ? true : question.hasFigure
+      imageUrl: extractedImageUrl,
+      hasFigure: hasFig
     };
 
     onSave(updated);
