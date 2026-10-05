@@ -1,8 +1,18 @@
 import React, { useState, useEffect, useRef } from "react";
 import { 
   FileText, Clock, FileCheck, CheckCircle2, XCircle, ChevronLeft, ChevronRight, Download,
-  HelpCircle, Settings, Send, Code, Play, RefreshCw, Upload, Copy, Info, Check, AlertCircle, AlertTriangle, Loader2, Sparkles
+  HelpCircle, Settings, Send, Code, Play, RefreshCw, Upload, Copy, Info, Check, AlertCircle, AlertTriangle, Loader2, Sparkles,
+  User, Users, BarChart, Search, Trash2, FileSpreadsheet
 } from "lucide-react";
+import * as XLSX from "xlsx";
+import { 
+  googleSignIn, 
+  googleSignOut, 
+  initAuth, 
+  createGoogleSheet, 
+  syncSubmissionsToSheet, 
+  getCachedToken 
+} from "../lib/googleAuth";
 
 // Types for Exam Configuration
 interface Part1Key {
@@ -89,6 +99,168 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
   // AI Extraction State
   const [isExtractingAnswers, setIsExtractingAnswers] = useState(false);
 
+  // Google Auth & Sync States
+  const [googleUser, setGoogleUser] = useState<any>(null);
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [isSyncingSheet, setIsSyncingSheet] = useState(false);
+
+  // Teacher Exams History & Submission Results State
+  const [examsHistory, setExamsHistory] = useState<any[]>([]);
+  const [selectedRoomForResults, setSelectedRoomForResults] = useState<string | null>(null);
+  const [selectedRoomResultsData, setSelectedRoomResultsData] = useState<any | null>(null);
+  const [isLoadingResults, setIsLoadingResults] = useState(false);
+  const [activeStudentDetails, setActiveStudentDetails] = useState<any | null>(null);
+  const [resultsSearchQuery, setResultsSearchQuery] = useState("");
+
+  // Listen to Google Auth changes
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      (user, token) => {
+        setGoogleUser(user);
+        setGoogleToken(token);
+      },
+      () => {
+        setGoogleUser(null);
+        setGoogleToken(null);
+      }
+    );
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  const handleGoogleLogin = async () => {
+    try {
+      const res = await googleSignIn();
+      if (res) {
+        setGoogleUser(res.user);
+        setGoogleToken(res.accessToken);
+        alert(`Đăng nhập Google thành công: ${res.user.displayName}`);
+      }
+    } catch (err: any) {
+      alert("Lỗi đăng nhập Google: " + err.message);
+    }
+  };
+
+  const handleGoogleLogout = async () => {
+    if (confirm("Bạn có chắc chắn muốn đăng xuất tài khoản Google không?")) {
+      await googleSignOut();
+      setGoogleUser(null);
+      setGoogleToken(null);
+    }
+  };
+
+  const handleCreateAndLinkSheet = async () => {
+    if (!selectedRoomResultsData) return;
+    const code = selectedRoomForResults;
+    if (!code) return;
+
+    setIsSyncingSheet(true);
+    try {
+      const sheet = await createGoogleSheet(selectedRoomResultsData.examTitle || code);
+      
+      const updatedData = {
+        ...selectedRoomResultsData,
+        linkedSheetId: sheet.id,
+        linkedSheetUrl: sheet.url
+      };
+
+      const saveRes = await fetch("/api/exams/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...updatedData, customId: code })
+      });
+
+      if (!saveRes.ok) {
+        throw new Error("Không thể cập nhật liên kết tệp Trang tính lên máy chủ.");
+      }
+
+      const subs = updatedData.submissions || [];
+      if (subs.length > 0) {
+        await syncSubmissionsToSheet(sheet.id, updatedData.examTitle || code, subs);
+      }
+
+      setSelectedRoomResultsData(updatedData);
+
+      const updatedHistory = examsHistory.map((h: any) => {
+        if (h.code === code) {
+          return { ...h, linkedSheetId: sheet.id, linkedSheetUrl: sheet.url };
+        }
+        return h;
+      });
+      setExamsHistory(updatedHistory);
+      localStorage.setItem("eduplan_teacher_exams_history", JSON.stringify(updatedHistory));
+
+      alert("🚀 Đã khởi tạo và liên kết Google Sheet thành công! Bảng điểm đã được đồng bộ hóa.");
+    } catch (err: any) {
+      alert("Lỗi tạo/liên kết Trang tính: " + err.message);
+    } finally {
+      setIsSyncingSheet(false);
+    }
+  };
+
+  const handleSyncExistingSheet = async () => {
+    if (!selectedRoomResultsData) return;
+    const code = selectedRoomForResults;
+    if (!code) return;
+
+    const sheetId = selectedRoomResultsData.linkedSheetId;
+    if (!sheetId) return;
+
+    setIsSyncingSheet(true);
+    try {
+      const subs = selectedRoomResultsData.submissions || [];
+      await syncSubmissionsToSheet(sheetId, selectedRoomResultsData.examTitle || code, subs);
+      alert("⚡ Đã đồng bộ hóa dữ liệu bảng điểm mới nhất lên Google Sheets thành công!");
+    } catch (err: any) {
+      alert("Lỗi đồng bộ Trang tính: " + err.message);
+    } finally {
+      setIsSyncingSheet(false);
+    }
+  };
+
+  const handleDeleteSubmission = async (subIndex: number) => {
+    if (!selectedRoomResultsData) return;
+    const code = selectedRoomForResults;
+    if (!code) return;
+
+    const student = selectedRoomResultsData.submissions[subIndex];
+    if (!confirm(`Bạn có chắc chắn muốn xóa kết quả làm bài của học sinh ${student.studentName} (Lớp ${student.studentClass})? Hành động này sẽ cập nhật lại máy chủ và Google Sheet.`)) {
+      return;
+    }
+
+    const updatedSubmissions = selectedRoomResultsData.submissions.filter((_: any, i: number) => i !== subIndex);
+    const updatedData = {
+      ...selectedRoomResultsData,
+      submissions: updatedSubmissions
+    };
+
+    try {
+      const saveRes = await fetch("/api/exams/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...updatedData, customId: code })
+      });
+
+      if (!saveRes.ok) {
+        throw new Error("Không thể cập nhật danh sách bài làm lên máy chủ.");
+      }
+
+      if (updatedData.linkedSheetId) {
+        try {
+          await syncSubmissionsToSheet(updatedData.linkedSheetId, updatedData.examTitle || code, updatedSubmissions);
+        } catch (sheetErr) {
+          console.warn("Lỗi đồng bộ xóa bài làm lên Google Sheet:", sheetErr);
+        }
+      }
+
+      setSelectedRoomResultsData(updatedData);
+      alert("🗑️ Đã xóa bài làm và cập nhật đồng bộ thành công!");
+    } catch (err: any) {
+      alert("Lỗi khi xóa bài làm: " + err.message);
+    }
+  };
+
   // Countdown timer
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [timeSpent, setTimeSpent] = useState<number>(0);
@@ -109,6 +281,16 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
   useEffect(() => {
     const savedUrl = localStorage.getItem("eduplan_de_online_pdf_script_url") || "";
     setScriptUrl(savedUrl);
+
+    // Load created exams history from localStorage
+    try {
+      const savedHistory = localStorage.getItem("eduplan_teacher_exams_history");
+      if (savedHistory) {
+        setExamsHistory(JSON.parse(savedHistory));
+      }
+    } catch (e) {
+      console.warn("Lỗi tải lịch sử phòng thi từ localStorage:", e);
+    }
   }, []);
 
   // Fetch shared room details if studentModeData is passed
@@ -134,6 +316,8 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
       if (Array.isArray(data.part1Keys)) setPart1Keys(data.part1Keys);
       if (Array.isArray(data.part2Keys)) setPart2Keys(data.part2Keys);
       if (Array.isArray(data.part3Keys)) setPart3Keys(data.part3Keys);
+      
+      setSharedRoomId(code.trim().toUpperCase());
 
       if (data.pdfBase64) {
         setPdfBase64(data.pdfBase64);
@@ -260,12 +444,110 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
         throw new Error("Không thể lưu cấu hình phòng thi lên máy chủ chia sẻ.");
       }
       const data = await res.json();
-      setSharedRoomId(data.examId.toUpperCase());
+      const code = data.examId.toUpperCase();
+      setSharedRoomId(code);
+
+      // Save shared room to teacher's local history
+      try {
+        const savedHistoryRaw = localStorage.getItem("eduplan_teacher_exams_history") || "[]";
+        const savedHistory = JSON.parse(savedHistoryRaw);
+        
+        const roomMeta = {
+          code: code,
+          title: examTitle.trim(),
+          duration: duration,
+          createdAt: new Date().toISOString(),
+          scriptUrl: scriptUrl.trim()
+        };
+
+        const existingIdx = savedHistory.findIndex((r: any) => r.code === code);
+        if (existingIdx >= 0) {
+          savedHistory[existingIdx] = roomMeta;
+        } else {
+          savedHistory.unshift(roomMeta);
+        }
+
+        localStorage.setItem("eduplan_teacher_exams_history", JSON.stringify(savedHistory));
+        setExamsHistory(savedHistory);
+      } catch (histErr) {
+        console.warn("Lỗi lưu lịch sử phòng thi:", histErr);
+      }
     } catch (err: any) {
       alert("Lỗi khi tạo phòng thi: " + err.message);
     } finally {
       setIsSharing(false);
     }
+  };
+
+  // Load results from backend for a specific room
+  const handleLoadRoomResults = async (code: string) => {
+    setIsLoadingResults(true);
+    setSelectedRoomForResults(code);
+    setSelectedRoomResultsData(null);
+    try {
+      const res = await fetch(`/api/exams/${code.toUpperCase()}`);
+      if (!res.ok) {
+        throw new Error("Không thể tải thông tin phòng thi này.");
+      }
+      const data = await res.json();
+      setSelectedRoomResultsData(data);
+    } catch (e: any) {
+      alert("Lỗi tải kết quả: " + e.message);
+    } finally {
+      setIsLoadingResults(false);
+    }
+  };
+
+  // Delete a room from teacher's local history
+  const handleDeleteRoomFromHistory = (code: string) => {
+    if (confirm(`Bạn có chắc muốn xóa lưu trữ phòng thi ${code} khỏi lịch sử trên máy này? (Dữ liệu trên máy chủ vẫn được giữ lại)`)) {
+      const updated = examsHistory.filter(r => r.code !== code);
+      setExamsHistory(updated);
+      localStorage.setItem("eduplan_teacher_exams_history", JSON.stringify(updated));
+      if (selectedRoomForResults === code) {
+        setSelectedRoomForResults(null);
+        setSelectedRoomResultsData(null);
+      }
+    }
+  };
+
+  // Export Room Results to Excel
+  const handleExportResultsToExcel = () => {
+    if (!selectedRoomResultsData || !selectedRoomResultsData.submissions || selectedRoomResultsData.submissions.length === 0) {
+      alert("Không có dữ liệu học sinh nộp bài để xuất Excel!");
+      return;
+    }
+
+    const submissions = selectedRoomResultsData.submissions;
+    const excelRows = submissions.map((sub: any, idx: number) => {
+      return {
+        "STT": idx + 1,
+        "Họ và tên": sub.studentName,
+        "Lớp": sub.studentClass,
+        "Thời gian nộp": sub.submitTime,
+        "Tổng điểm (10)": sub.totalScore,
+        "Điểm Phần I": sub.scorePart1,
+        "Điểm Phần II": sub.scorePart2,
+        "Điểm Phần III": sub.scorePart3
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(excelRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Kết quả phòng thi");
+    
+    // Auto-size columns
+    const maxLen = excelRows.reduce((acc: any, row: any) => {
+      Object.keys(row).forEach((key, colIdx) => {
+        const valLen = String(row[key]).length;
+        const keyLen = key.length;
+        acc[colIdx] = Math.max(acc[colIdx] || 0, valLen, keyLen);
+      });
+      return acc;
+    }, []);
+    worksheet["!cols"] = maxLen.map((len: number) => ({ wch: len + 3 }));
+
+    XLSX.writeFile(workbook, `Ket_qua_phong_thi_${selectedRoomForResults}_${(selectedRoomResultsData.examTitle || "De_Thi").replace(/\s+/g, "_")}.xlsx`);
   };
 
   // AI Answer Key Extractor Handler
@@ -633,18 +915,30 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
       }
     } catch (e) {
       console.warn("Lỗi gửi điểm lên Google Sheets:", e);
-    } finally {
-      setSubmitResult({
-        success: true,
-        score: scores.totalScore,
-        part1: scores.scorePart1,
-        part2: scores.scorePart2,
-        part3: scores.scorePart3,
-        details: scores.details
-      });
-      setScreen("result");
-      setIsSubmitting(false);
     }
+
+    try {
+      if (sharedRoomId) {
+        await fetch(`/api/exams/${sharedRoomId}/submit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      }
+    } catch (apiErr) {
+      console.warn("Lỗi gửi điểm lên máy chủ lưu trữ dự phòng:", apiErr);
+    }
+
+    setSubmitResult({
+      success: true,
+      score: scores.totalScore,
+      part1: scores.scorePart1,
+      part2: scores.scorePart2,
+      part3: scores.scorePart3,
+      details: scores.details
+    });
+    setScreen("result");
+    setIsSubmitting(false);
   };
 
   if (isLoadingExam) {
@@ -1250,6 +1544,331 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
             </div>
           </div>
 
+          {/* C. TEACHER EXAMS HISTORY & RESULTS DASHBOARD */}
+          <div className="lg:col-span-12 mt-6 space-y-6">
+            
+            {/* Box 1: Saved Exams Store / History of shared rooms */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <FileText className="w-4 h-4 text-rose-500" />
+                Quản lý Lưu trữ Đề thi / Phòng thi đã tạo ({examsHistory.length})
+              </span>
+
+              {examsHistory.length === 0 ? (
+                <div className="p-8 border border-dashed border-slate-200 rounded-xl text-center text-slate-400">
+                  <AlertCircle className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+                  <p className="text-xs font-semibold">Chưa có đề thi trực tuyến nào được tạo trên máy tính này.</p>
+                  <p className="text-[10px] text-slate-400 mt-1">Các đề thi trực tuyến sau khi tạo thành công sẽ tự động được lưu trữ và hiển thị tại đây.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {examsHistory.map((room) => (
+                    <div 
+                      key={room.code} 
+                      className={`p-4 border rounded-xl flex flex-col justify-between gap-3 transition-all ${
+                        selectedRoomForResults === room.code 
+                          ? "bg-indigo-50/50 border-indigo-300 shadow-3xs" 
+                          : "bg-slate-50/50 border-slate-200 hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="bg-indigo-100 text-indigo-700 text-[10px] font-black px-2 py-0.5 rounded-md font-mono">
+                            {room.code}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            {room.createdAt ? new Date(room.createdAt).toLocaleDateString("vi-VN") : "Hôm nay"}
+                          </span>
+                        </div>
+                        <h4 className="text-xs font-bold text-slate-800 line-clamp-1">
+                          {room.title || "Đề thi PDF"}
+                        </h4>
+                        <div className="text-[10px] text-slate-500 space-y-0.5">
+                          <p>⏱️ Thời gian: <strong>{room.duration} phút</strong></p>
+                          {room.linkedSheetUrl && (
+                            <p className="text-emerald-600 font-semibold truncate">
+                              🟢 Trang tính đã liên kết
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-slate-100">
+                        <button
+                          onClick={() => handleLoadRoomResults(room.code)}
+                          className="py-1 px-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1"
+                        >
+                          <BarChart className="w-3 h-3" /> Kết quả
+                        </button>
+                        <button
+                          onClick={() => {
+                            const link = `${window.location.origin}${window.location.pathname}?view=exam_pdf&data=${room.code}`;
+                            navigator.clipboard.writeText(link);
+                            alert("Đã copy link học sinh cho phòng: " + room.code);
+                          }}
+                          className="py-1 px-2 bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1"
+                        >
+                          <Copy className="w-3 h-3" /> Link
+                        </button>
+                        <button
+                          onClick={() => handleDeleteRoomFromHistory(room.code)}
+                          className="py-1 px-2 bg-rose-50 hover:bg-rose-100 text-rose-600 text-[10px] font-bold rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3" /> Xóa
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Box 2: Submissions Dashboard (displayed when loaded) */}
+            {selectedRoomForResults && (
+              <div id="submissionsDashboard" className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-5 scroll-mt-6">
+                
+                {/* Dashboard Header */}
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                      <Users className="w-5 h-5 text-indigo-600" />
+                      Báo cáo kết quả phòng thi: <span className="font-mono text-indigo-600 font-extrabold">{selectedRoomForResults}</span>
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Kỳ thi: <strong>{selectedRoomResultsData?.examTitle || "Đề thi PDF"}</strong> • Thời gian: <strong>{selectedRoomResultsData?.duration || 90} phút</strong>
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={handleExportResultsToExcel}
+                      disabled={isLoadingResults || !selectedRoomResultsData?.submissions?.length}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                    >
+                      <Download className="w-4 h-4" /> Xuất Excel
+                    </button>
+                    <button
+                      onClick={() => handleLoadRoomResults(selectedRoomForResults)}
+                      disabled={isLoadingResults}
+                      className="px-3.5 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isLoadingResults ? "animate-spin" : ""}`} /> Làm mới
+                    </button>
+                  </div>
+                </div>
+
+                {/* Google Sheets Live Link and Connection Settings */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 bg-emerald-50 rounded-xl text-emerald-600">
+                        <FileSpreadsheet className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-800">Đồng bộ hóa Google Sheets Giáo viên</p>
+                        <p className="text-[10px] text-slate-400">Đồng bộ thời gian thực bảng điểm của học sinh bằng tài khoản Google cá nhân.</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {googleUser ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] bg-indigo-50 text-indigo-700 font-bold px-2.5 py-1 rounded-lg">
+                            {googleUser.displayName || googleUser.email}
+                          </span>
+                          <button
+                            onClick={handleGoogleLogout}
+                            className="text-[10px] font-bold text-rose-500 hover:underline cursor-pointer"
+                          >
+                            Đăng xuất
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={handleGoogleLogin}
+                          className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors shadow-xs"
+                        >
+                          🔑 Đăng nhập Google Sheets
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {googleUser && (
+                    <div className="pt-2.5 border-t border-slate-150 flex flex-wrap items-center justify-between gap-3 text-xs">
+                      {selectedRoomResultsData?.linkedSheetUrl ? (
+                        <div className="flex items-center gap-1.5 text-emerald-700 font-black">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          <span>Đã liên kết Trang tính:</span>
+                          <a 
+                            href={selectedRoomResultsData.linkedSheetUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="text-indigo-600 hover:underline inline-flex items-center gap-0.5"
+                          >
+                            Mở Google Sheet ↗
+                          </a>
+                        </div>
+                      ) : (
+                        <div className="text-amber-600 font-semibold">
+                          ⚠️ Chưa liên kết tệp Google Sheets.
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        {selectedRoomResultsData?.linkedSheetId ? (
+                          <button
+                            onClick={handleSyncExistingSheet}
+                            disabled={isSyncingSheet || isLoadingResults}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg cursor-pointer transition-colors disabled:opacity-50"
+                          >
+                            {isSyncingSheet ? "Đang đồng bộ..." : "⚡ Đồng bộ dữ liệu Trang tính"}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={handleCreateAndLinkSheet}
+                            disabled={isSyncingSheet || isLoadingResults}
+                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold rounded-lg cursor-pointer transition-colors disabled:opacity-50"
+                          >
+                            {isSyncingSheet ? "Đang tạo..." : "🚀 Tạo & Liên kết Google Sheet mới"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Loading state indicator */}
+                {isLoadingResults ? (
+                  <div className="p-12 text-center text-slate-400 space-y-2">
+                    <Loader2 className="w-8 h-8 text-indigo-600 animate-spin mx-auto" />
+                    <p className="text-xs font-semibold animate-pulse">Đang tải danh sách học sinh nộp bài thi...</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Aggregated Statistical Cards */}
+                    {(() => {
+                      const subs = selectedRoomResultsData?.submissions || [];
+                      if (subs.length === 0) return null;
+                      
+                      const scores = subs.map((s: any) => s.totalScore);
+                      const avg = Number((scores.reduce((a: number, b: number) => a + b, 0) / scores.length).toFixed(2));
+                      const max = Math.max(...scores);
+                      const min = Math.min(...scores);
+
+                      return (
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div className="bg-slate-50 border border-slate-150 p-3 rounded-2xl">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Số học sinh đã nộp</span>
+                            <span className="text-lg font-black text-slate-800">{subs.length} em</span>
+                          </div>
+                          <div className="bg-blue-50/50 border border-blue-150 p-3 rounded-2xl">
+                            <span className="text-[10px] text-blue-500 font-bold uppercase block mb-1">Điểm trung bình</span>
+                            <span className="text-lg font-black text-blue-800">{avg}đ</span>
+                          </div>
+                          <div className="bg-emerald-50/50 border border-emerald-150 p-3 rounded-2xl">
+                            <span className="text-[10px] text-emerald-500 font-bold uppercase block mb-1">Điểm cao nhất</span>
+                            <span className="text-lg font-black text-emerald-800">{max}đ</span>
+                          </div>
+                          <div className="bg-rose-50/50 border border-rose-150 p-3 rounded-2xl">
+                            <span className="text-[10px] text-rose-500 font-bold uppercase block mb-1">Điểm thấp nhất</span>
+                            <span className="text-lg font-black text-rose-800">{min}đ</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Results Table Section */}
+                    {(!selectedRoomResultsData?.submissions || selectedRoomResultsData.submissions.length === 0) ? (
+                      <div className="p-8 border border-dashed border-slate-200 rounded-xl text-center text-slate-400">
+                        <Users className="w-10 h-10 mx-auto text-slate-300 mb-2 animate-pulse" />
+                        <p className="text-xs font-semibold">Hiện chưa có học sinh nào nộp bài cho phòng thi này.</p>
+                        <p className="text-[10px] text-slate-400 mt-1">Đường dẫn làm bài: {window.location.origin}{window.location.pathname}?view=exam_pdf&data={selectedRoomForResults}</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        
+                        {/* Search and Filters */}
+                        <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-1.5 max-w-sm">
+                          <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                          <input
+                            type="text"
+                            value={resultsSearchQuery}
+                            onChange={(e) => setResultsSearchQuery(e.target.value)}
+                            placeholder="Tìm học sinh theo tên hoặc lớp..."
+                            className="bg-transparent text-xs text-slate-700 focus:outline-none w-full font-medium"
+                          />
+                        </div>
+
+                        {/* Responsive Table */}
+                        <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                          <div className="overflow-x-auto">
+                            <table className="w-full border-collapse text-left text-xs">
+                              <thead>
+                                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold">
+                                  <th className="py-2.5 px-3 w-12 text-center">STT</th>
+                                  <th className="py-2.5 px-3">Họ và tên</th>
+                                  <th className="py-2.5 px-3 w-20 text-center">Lớp</th>
+                                  <th className="py-2.5 px-3 text-center">Thời gian nộp</th>
+                                  <th className="py-2.5 px-3 w-24 text-center">Tổng điểm</th>
+                                  <th className="py-2.5 px-3 text-center hidden md:table-cell">Điểm các phần</th>
+                                  <th className="py-2.5 px-3 w-28 text-center">Hành động</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
+                                {selectedRoomResultsData.submissions
+                                  .filter((sub: any) => {
+                                    const q = resultsSearchQuery.trim().toLowerCase();
+                                    if (!q) return true;
+                                    return (
+                                      (sub.studentName || "").toLowerCase().includes(q) ||
+                                      (sub.studentClass || "").toLowerCase().includes(q)
+                                    );
+                                  })
+                                  .map((sub: any, idx: number) => (
+                                    <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                                      <td className="py-2.5 px-3 text-center font-bold text-slate-400">{idx + 1}</td>
+                                      <td className="py-2.5 px-3 font-bold text-slate-800">{sub.studentName}</td>
+                                      <td className="py-2.5 px-3 text-center font-bold">{sub.studentClass}</td>
+                                      <td className="py-2.5 px-3 text-center text-[10px] text-slate-400">{sub.submitTime}</td>
+                                      <td className="py-2.5 px-3 text-center text-sm font-black font-mono text-emerald-600">
+                                        {sub.totalScore.toFixed(2)}đ
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center text-[10px] text-slate-500 hidden md:table-cell leading-tight">
+                                        P.I: <span className="font-bold text-blue-600">{sub.scorePart1}đ</span> • 
+                                        P.II: <span className="font-bold text-emerald-600">{sub.scorePart2}đ</span> • 
+                                        P.III: <span className="font-bold text-indigo-600">{sub.scorePart3}đ</span>
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center">
+                                        <div className="flex items-center justify-center gap-1.5">
+                                          <button
+                                            onClick={() => setActiveStudentDetails({ ...sub, index: idx })}
+                                            className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-md text-[10px] font-bold cursor-pointer transition-colors"
+                                          >
+                                            Chi tiết
+                                          </button>
+                                          <button
+                                            onClick={() => handleDeleteSubmission(idx)}
+                                            className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-md text-[10px] font-bold cursor-pointer transition-colors"
+                                          >
+                                            Xóa
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
         </div>
       )}
 
@@ -1829,6 +2448,178 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
                 className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs cursor-pointer transition-colors"
               >
                 Đồng ý & Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* STUDENT SUBMISSION DETAIL REVIEW POPUP MODAL */}
+      {activeStudentDetails && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between p-4 border-b border-slate-150 bg-slate-900 text-white shrink-0">
+              <div>
+                <h2 className="text-sm font-bold flex items-center gap-2">
+                  <User className="w-5 h-5 text-indigo-400" />
+                  Chi tiết bài làm: {activeStudentDetails.studentName}
+                </h2>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Lớp: <strong className="text-white">{activeStudentDetails.studentClass}</strong> • Thời gian nộp: <strong>{activeStudentDetails.submitTime}</strong>
+                </p>
+              </div>
+              <button 
+                onClick={() => setActiveStudentDetails(null)}
+                className="text-slate-400 hover:text-white hover:bg-slate-800 p-1.5 rounded-lg transition-colors cursor-pointer"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-5 flex-1 bg-slate-50">
+              
+              {/* Score summary panel */}
+              <div className="bg-slate-950 text-white rounded-2xl p-4 text-center">
+                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Tổng điểm đạt được</div>
+                <div className="text-4xl font-black text-emerald-400 mt-1 mb-1 font-mono">
+                  {activeStudentDetails.totalScore.toFixed(2)} <span className="text-sm text-slate-400 font-normal">/ 10.0đ</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2.5 pt-2.5 border-t border-slate-850 text-[10px] text-slate-300">
+                  <div>
+                    <p className="font-bold text-blue-300">Phần I: {activeStudentDetails.scorePart1.toFixed(2)}đ</p>
+                    <p className="text-[9px] text-slate-400">Trắc nghiệm</p>
+                  </div>
+                  <div>
+                    <p className="font-bold text-emerald-300">Phần II: {activeStudentDetails.scorePart2.toFixed(2)}đ</p>
+                    <p className="text-[9px] text-slate-400">Đúng / Sai</p>
+                  </div>
+                  <div>
+                    <p className="font-bold text-indigo-300">Phần III: {activeStudentDetails.scorePart3.toFixed(2)}đ</p>
+                    <p className="text-[9px] text-slate-400">Trả lời ngắn</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Detailed answers */}
+              {activeStudentDetails.details && (
+                <div className="space-y-4 text-left">
+                  
+                  {/* Part I review */}
+                  {activeStudentDetails.details.part1 && (
+                    <div className="bg-white border border-slate-200 rounded-xl p-3.5 space-y-2.5 shadow-3xs">
+                      <p className="text-xs font-bold text-blue-900 border-b border-slate-100 pb-1.5">
+                        PHẦN I: Trắc nghiệm 4 lựa chọn (12 câu)
+                      </p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                        {Object.keys(activeStudentDetails.details.part1).map((qNum) => {
+                          const item = activeStudentDetails.details.part1[qNum];
+                          return (
+                            <div 
+                              key={qNum} 
+                              className={`p-2 rounded-lg border text-[11px] flex justify-between items-center ${
+                                item.isCorrect 
+                                  ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
+                                  : "bg-rose-50/50 border-rose-200 text-rose-800"
+                              }`}
+                            >
+                              <span className="font-bold">Câu {qNum}:</span>
+                              <span className="font-mono font-black">
+                                {item.student || "-"} {item.isCorrect ? "✓" : `(Đs: ${item.correct})`}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Part II review */}
+                  {activeStudentDetails.details.part2 && (
+                    <div className="bg-white border border-slate-200 rounded-xl p-3.5 space-y-3 shadow-3xs">
+                      <p className="text-xs font-bold text-emerald-900 border-b border-slate-100 pb-1.5">
+                        PHẦN II: Trắc nghiệm Đúng / Sai (4 câu)
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                        {Object.keys(activeStudentDetails.details.part2).map((qNum) => {
+                          const item = activeStudentDetails.details.part2[qNum];
+                          const displayQNum = Number(qNum) + 12;
+                          return (
+                            <div key={qNum} className="border border-slate-150 p-3 rounded-xl bg-slate-50/50 space-y-2">
+                              <div className="flex justify-between items-center border-b border-slate-150 pb-1">
+                                <span className="font-black text-slate-800 text-[11px]">Câu {displayQNum}:</span>
+                                <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded text-[9px] font-black">
+                                  Đúng {item.correctCount || 0}/4 ý (+{item.points || 0}đ)
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                                {["a", "b", "c", "d"].map((letter) => {
+                                  const sub = item.subDetails?.[letter] || { correct: null, student: null, isCorrect: false };
+                                  return (
+                                    <div 
+                                      key={letter} 
+                                      className={`p-1 rounded flex justify-between items-center px-2 font-bold ${
+                                        sub.isCorrect 
+                                          ? "bg-emerald-100/70 text-emerald-800" 
+                                          : "bg-rose-100/50 text-rose-800"
+                                      }`}
+                                    >
+                                      <span>{letter})</span>
+                                      <span className="font-black">
+                                        {sub.student === null ? "-" : sub.student ? "Đ" : "S"} 
+                                        {sub.isCorrect ? " ✓" : ` (Đs: ${sub.correct ? "Đ" : "S"})`}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Part III review */}
+                  {activeStudentDetails.details.part3 && (
+                    <div className="bg-white border border-slate-200 rounded-xl p-3.5 space-y-2.5 shadow-3xs">
+                      <p className="text-xs font-bold text-indigo-900 border-b border-slate-100 pb-1.5">
+                        PHẦN III: Trắc nghiệm Trả lời ngắn (6 câu)
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {Object.keys(activeStudentDetails.details.part3).map((qNum) => {
+                          const item = activeStudentDetails.details.part3[qNum];
+                          return (
+                            <div 
+                              key={qNum} 
+                              className={`p-2 rounded-lg border text-[11px] flex justify-between items-center ${
+                                item.isCorrect 
+                                  ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
+                                  : "bg-rose-50/50 border-rose-200 text-rose-800"
+                              }`}
+                            >
+                              <span className="font-bold">Câu {qNum}:</span>
+                              <span className="font-mono">
+                                Đs: <strong className="text-slate-800 font-extrabold">{item.student || "-"}</strong> 
+                                {item.isCorrect ? " ✓" : ` (Đs chuẩn: ${item.correct})`}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              )}
+
+            </div>
+
+            <div className="p-4 bg-slate-100 border-t border-slate-200 flex justify-end shrink-0">
+              <button 
+                onClick={() => setActiveStudentDetails(null)}
+                className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs cursor-pointer transition-colors"
+              >
+                Đóng bài làm
               </button>
             </div>
           </div>

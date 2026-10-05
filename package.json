@@ -23,6 +23,7 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "file-saver": "^2.0.5",
+    "firebase": "^12.19.0",
     "glob": "^13.0.6",
     "html-to-docx": "^1.8.0",
     "html-to-image": "^1.11.13",

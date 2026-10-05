@@ -2421,6 +2421,92 @@ app.get("/api/exams/:id", async (req, res) => {
   }
 });
 
+// Submit student response endpoint
+app.post("/api/exams/:id/submit", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  const rawId = (req.params.id || '').trim().toUpperCase();
+  const submission = req.body; // { studentName, studentClass, submitTime, totalScore, scorePart1, scorePart2, scorePart3, details }
+
+  if (!submission || !submission.studentName) {
+    return res.status(400).json({ error: "Thông tin bài làm học sinh không hợp lệ." });
+  }
+
+  let data = sharedExamsStore.get(rawId) 
+    || sharedExamsStore.get(rawId.toLowerCase()) 
+    || sharedExamsStore.get(rawId.toUpperCase());
+
+  if (!data) {
+    loadExamsFromDisk();
+    data = sharedExamsStore.get(rawId) 
+      || sharedExamsStore.get(rawId.toLowerCase()) 
+      || sharedExamsStore.get(rawId.toUpperCase());
+  }
+
+  // If still not found, pull from persistent cloud KV
+  if (!data) {
+    try {
+      const kvRes = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/jaku8xjm/${encodeURIComponent(rawId.toUpperCase())}`, {
+        signal: AbortSignal.timeout(5000)
+      });
+      if (kvRes.ok) {
+        const val = await kvRes.json();
+        if (val && typeof val === 'string') {
+          const decompressed = LZString.decompressFromEncodedURIComponent(val);
+          if (decompressed) {
+            data = JSON.parse(decompressed);
+          }
+        }
+      }
+    } catch (kvFetchErr) {
+      console.warn("Lỗi fetch cloud KV khi nộp bài:", kvFetchErr);
+    }
+  }
+
+  if (!data) {
+    return res.status(404).json({ error: "Không tìm thấy phòng thi tương ứng trên hệ thống." });
+  }
+
+  // Initialize submissions array
+  data.submissions = data.submissions || [];
+
+  // Prevent immediate duplicate submissions (e.g. accidental double clicks within 3 minutes)
+  const isDuplicate = data.submissions.some((s: any) => 
+    s.studentName === submission.studentName && 
+    s.studentClass === submission.studentClass &&
+    Math.abs(new Date(s.timestamp || Date.now()).getTime() - new Date().getTime()) < 3 * 60 * 1000
+  );
+
+  if (!isDuplicate) {
+    submission.timestamp = new Date().toISOString();
+    data.submissions.push(submission);
+    
+    // Save to memory
+    sharedExamsStore.set(rawId, data);
+    sharedExamsStore.set(rawId.toUpperCase(), data);
+    sharedExamsStore.set(rawId.toLowerCase(), data);
+    
+    // Save to disk cache
+    saveExamsToDisk();
+
+    // Async upload back to cloud KV
+    try {
+      const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(data));
+      fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/jaku8xjm/${encodeURIComponent(rawId.toUpperCase())}/${encodeURIComponent(compressed)}`, { 
+        method: 'POST' 
+      }).catch(() => {});
+    } catch (kvUpdateErr) {
+      console.warn("Lỗi đồng bộ nộp bài lên Cloud KV:", kvUpdateErr);
+    }
+  }
+
+  res.json({ success: true, message: "Đã ghi nhận kết quả làm bài của học sinh!" });
+});
+
 // Clean link return without external shorteners that Zalo blocks
 app.post("/api/shorten", async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
