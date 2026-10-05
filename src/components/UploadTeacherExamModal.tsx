@@ -1545,7 +1545,7 @@ export function UploadTeacherExamModal({
       {editingQuestion && (
         <QuestionEditModal
           isOpen={!!editingQuestion}
-          question={editingQuestion}
+          question={editingQuestion as any}
           questionNumber={questions.findIndex(q => q.id === editingId) + 1}
           subject={subject}
           grade={grade}

@@ -19,6 +19,7 @@ export function Sidebar({ activeTab, setActiveTab, onOpenSettings }: SidebarProp
         { id: "math_tools", label: "Công cụ Toán học", icon: Calculator },
         { id: "pdf2word", label: "Chuyển PDF sang Word", icon: FileEdit },
         { id: "exam", label: "Tạo & Trộn đề", icon: FileCheck },
+        { id: "de_online_pdf", label: "Đề online từ file PDF của GV", icon: FileText },
       ]
     },
     {

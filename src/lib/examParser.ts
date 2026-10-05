@@ -598,7 +598,7 @@ export function parseRawExamText(rawText: string): ParsedQuestion[] {
         const solText = explanation ? fixMath(cleanMath(explanation)) : "";
         results.push({
           id: sectionQuestionId++,
-          section: sec.type === 'tf' ? 2 : sec.type === 'sa' ? 3 : sec.type === 'essay' ? 4 : 1,
+          section: (sec.type as string) === 'tf' ? 2 : (sec.type as string) === 'sa' ? 3 : (sec.type as string) === 'essay' ? 4 : 1,
           type: "tf",
           level: "Thông hiểu",
           content: fixMath(cleanMath(stem.replace(/^(?:Câu|Bài|Question|Q)?\s*\d+[\.:\s]*/i, '').trim() || `Câu ${sectionQuestionId}`)),
@@ -642,7 +642,7 @@ export function parseRawExamText(rawText: string): ParsedQuestion[] {
           const solText = explanation ? fixMath(cleanMath(explanation)) : "";
           results.push({
             id: sectionQuestionId++,
-            section: sec.type === 'tf' ? 2 : sec.type === 'sa' ? 3 : sec.type === 'essay' ? 4 : 1,
+            section: (sec.type as string) === 'tf' ? 2 : (sec.type as string) === 'sa' ? 3 : (sec.type as string) === 'essay' ? 4 : 1,
             type: "mc",
             level: "Nhận biết",
             content: fixMath(cleanMath(stem || `Câu ${sectionQuestionId}`)),
@@ -663,7 +663,7 @@ export function parseRawExamText(rawText: string): ParsedQuestion[] {
         const solText = explanation ? fixMath(cleanMath(explanation)) : "";
         results.push({
           id: sectionQuestionId++,
-          section: sec.type === 'tf' ? 2 : sec.type === 'sa' ? 3 : sec.type === 'essay' ? 4 : 1,
+          section: (sec.type as string) === 'tf' ? 2 : (sec.type as string) === 'sa' ? 3 : (sec.type as string) === 'essay' ? 4 : 1,
           type: "sa",
           level: "Vận dụng",
           content: fixMath(cleanMath(mainBlock.replace(/^(?:Câu|Bài|Question|Q)?\s*\d+[\.:\s]*/i, '').trim() || `Câu ${sectionQuestionId}`)),
@@ -678,7 +678,7 @@ export function parseRawExamText(rawText: string): ParsedQuestion[] {
       const solText = explanation ? fixMath(cleanMath(explanation)) : (extractedCorrect ? fixMath(cleanMath(extractedCorrect)) : "Lời giải và hướng dẫn chấm chi tiết");
       results.push({
         id: sectionQuestionId++,
-        section: sec.type === 'tf' ? 2 : sec.type === 'sa' ? 3 : sec.type === 'essay' ? 4 : 1,
+        section: (sec.type as string) === 'tf' ? 2 : (sec.type as string) === 'sa' ? 3 : (sec.type as string) === 'essay' ? 4 : 1,
         type: "essay",
         level: "1.0 điểm",
         content: fixMath(cleanMath(mainBlock.replace(/^(?:Câu|Bài|Question|Q)?\s*\d+[\.:\s]*/i, '').trim() || `Câu ${sectionQuestionId}`)),

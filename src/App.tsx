@@ -68,6 +68,7 @@ const HomeroomManagement = safeLazy(() => import('./pages/HomeroomManagement'), 
 const WeeklyTimetable = safeLazy(() => import('./pages/WeeklyTimetable'), "WeeklyTimetable");
 const Gamification = safeLazy(() => import('./pages/Gamification'), "Gamification");
 const MathTools = safeLazy(() => import('./pages/MathTools'), "MathTools");
+const DeOnlinePdf = safeLazy(() => import('./pages/DeOnlinePdf'), "DeOnlinePdf");
 
 
 
@@ -110,6 +111,17 @@ export default function App() {
   const studentExamId = urlParams.get('examId') || urlParams.get('exam') || urlParams.get('code') || urlParams.get('pin') || urlParams.get('p') || hashParams.get('pin') || hashParams.get('p') || hashParams.get('examId') || pathExamId;
   const studentExamData = urlParams.get('examData') || urlParams.get('d') || hashParams.get('examData') || hashParams.get('d');
   const isStudentMode = urlParams.get('mode') === 'student' || urlParams.get('view') === 'exam' || hashParams.get('mode') === 'student';
+
+  const viewMode = urlParams.get('view') || hashParams.get('view');
+  const examPdfData = urlParams.get('data') || hashParams.get('d') || hashParams.get('data') || hashParams.get('d');
+
+  if (viewMode === 'exam_pdf' && examPdfData) {
+    return (
+      <Suspense fallback={<div className="flex h-screen items-center justify-center bg-slate-100 font-sans font-medium text-slate-500">Đang tải phòng thi PDF...</div>}>
+        <DeOnlinePdf studentModeData={examPdfData} />
+      </Suspense>
+    );
+  }
 
   if (studentExamData || studentExamId) {
     return (
@@ -189,6 +201,7 @@ export default function App() {
               {activeTab === "timetable" && <WeeklyTimetable />}
               {activeTab === "exam" && <ExamGenerator />}
               {activeTab === "pdf2word" && <PdfToWord />}
+              {activeTab === "de_online_pdf" && <DeOnlinePdf />}
               {activeTab === "circulars" && <Circulars />}
               {activeTab === "history" && <HistoryPage />}
             </Suspense>

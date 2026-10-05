@@ -2851,6 +2851,133 @@ app.post('/api/export-docx', async (req, res) => {
   }
 });
 
+app.post("/api/extract-answers-pdf", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  try {
+    const { file, type } = resolveSingleFile(req.body);
+    if (!file) {
+      return res.status(400).json({ error: "Không tìm thấy tệp tin PDF nào được tải lên." });
+    }
+
+    const pdfBuffer = Buffer.from(file, 'base64');
+    let pdfText = "";
+    try {
+      pdfText = await extractTextFromPdf(pdfBuffer);
+    } catch (e) {
+      console.warn("Lỗi trích xuất văn bản thô PDF (chuyển sang đọc multimodal):", e);
+    }
+
+    const promptText = `Bạn là chuyên gia phân tích đề thi và khảo thí Toán học xuất sắc hàng đầu.
+Hãy đọc và phân tích kỹ tệp đề thi PDF được đính kèm (và văn bản trích xuất đối chiếu dưới đây nếu có). Nhiệm vụ của bạn là trích xuất hoặc tự giải đề thi để đưa ra Bảng đáp án chính xác 100%.
+
+THẦY CÔ CÓ THỂ CUNG CẤP FILE ĐỀ THEO 2 DẠNG:
+Dạng 1: Đề thi có đính kèm bảng đáp án sẵn ở cuối hoặc trang nào đó. Bảng đáp án có thể chia làm nhiều cột tương ứng với các Mã đề thi khác nhau (ví dụ: 1201, 1202, 1203, 1204,...).
+   - Bạn BẮT BUỘC phải tìm cột Mã đề đầu tiên (ví dụ mã đề 1201 hoặc mã đề nhỏ nhất nằm ở cột đầu tiên từ bên trái qua trong bảng).
+   - Trích xuất toàn bộ đáp án của Mã đề đó và đối chiếu khớp số câu hỏi.
+   - Đối với Phần II (Trắc nghiệm Đúng/Sai): Bảng đáp án có thể ghi dạng chữ viết tắt 'Đ Đ S S', 'S Đ S Đ', 'Đ, S, Đ, S', 'D S D S', 'TTFF', 'T F T F', 'Đ-S-Đ-S', 'a-S, b-Đ, c-S, d-Đ' hoặc chia thành các cột con Đúng / Sai. Bạn hãy ánh xạ chuẩn xác ý 1, 2, 3, 4 tương ứng với a, b, c, d của câu đó:
+     * Ký hiệu đại diện cho ĐÚNG (true): "Đ", "D", "T", "Đúng", "True", "✓", "X" (nếu đánh dấu X ở cột Đúng).
+     * Ký hiệu đại diện cho SAI (false): "S", "F", "Sai", "False", "✗", "X" (nếu đánh dấu X ở cột Sai).
+   - Đối với Phần III (Trả lời ngắn): Trích xuất chính xác đáp số số cụ thể, ví dụ: "4", "30", "2026", "0.5" hoặc "0,5" (giữ nguyên độ dài số, tối đa 5 ký tự).
+
+Dạng 2: Đề thi CHỈ có câu hỏi và KHÔNG có sẵn bảng đáp án.
+   - Bạn phải đóng vai trò là một AI Giải Toán xuất sắc, tự đọc kỹ từng câu hỏi trong đề thi PDF và giải chính xác 100% để tìm ra đáp số chuẩn xác nhất cho từng phần:
+     * Phần I: Chọn phương án đúng A, B, C hoặc D.
+     * Phần II (Đúng/Sai): Xác định tính Đúng (true) hoặc Sai (false) cho từng ý a, b, c, d của từng câu.
+     * Phần III (Trả lời ngắn): Giải và tính toán ra đáp số số cụ thể (ví dụ: 4, 30, 2026, 0.5, 12, 124).
+
+QUY ĐỊNH CẤU TRÚC PHẦN ĐỀ VÀ SỐ CÂU:
+- Phần I (part1): Gồm 12 câu trắc nghiệm 4 lựa chọn (tương ứng từ Câu 1 đến Câu 12).
+- Phần II (part2): Gồm 4 câu trắc nghiệm Đúng/Sai (tương ứng từ Câu 13 đến Câu 16, hoặc Câu 1 đến Câu 4 của Phần II). Mỗi câu gồm 4 ý a, b, c, d. Bạn hãy gán đúng kết quả cho từng ý {"a": true/false, "b": true/false, "c": true/false, "d": true/false}.
+- Phần III (part3): Gồm 6 câu trắc nghiệm trả lời ngắn (tương ứng từ Câu 17 đến Câu 22, hoặc Câu 1 đến Câu 6 của Phần III). Mỗi câu có đáp án là một số cụ thể.
+
+${pdfText ? `VĂN BẢN TRÍCH XUẤT ĐỐI CHIẾU THÔ:\n${pdfText.substring(0, 30000)}` : ""}
+
+YÊU CẦU TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI CẤU TRÚC SAU (TUYỆT ĐỐI KHÔNG VIẾT CHỮ HAY GIẢI THÍCH NGOÀI LỀ):
+{
+  "part1": [
+    {"question": 1, "correct": "A"},
+    {"question": 2, "correct": "B"},
+    {"question": 3, "correct": "C"},
+    {"question": 4, "correct": "D"},
+    {"question": 5, "correct": "A"},
+    {"question": 6, "correct": "B"},
+    {"question": 7, "correct": "C"},
+    {"question": 8, "correct": "D"},
+    {"question": 9, "correct": "A"},
+    {"question": 10, "correct": "B"},
+    {"question": 11, "correct": "C"},
+    {"question": 12, "correct": "D"}
+  ],
+  "part2": [
+    {
+      "question": 1,
+      "statements": {"a": true, "b": false, "c": true, "d": false}
+    },
+    {
+      "question": 2,
+      "statements": {"a": false, "b": true, "c": false, "d": true}
+    },
+    {
+      "question": 3,
+      "statements": {"a": true, "b": true, "c": false, "d": false}
+    },
+    {
+      "question": 4,
+      "statements": {"a": false, "b": false, "c": true, "d": true}
+    }
+  ],
+  "part3": [
+    {"question": 1, "correct": "25"},
+    {"question": 2, "correct": "-3.5"},
+    {"question": 3, "correct": "102"},
+    {"question": 4, "correct": "0.5"},
+    {"question": 5, "correct": "1"},
+    {"question": 6, "correct": "12"}
+  ]
+}`;
+
+    const userParts: any[] = [];
+    if (file) {
+      userParts.push({
+        inlineData: {
+          mimeType: "application/pdf",
+          data: file
+        }
+      });
+    }
+    userParts.push({ text: promptText });
+
+    const response = await generateWithFallback(req, {
+      contents: [
+        {
+          role: "user",
+          parts: userParts
+        }
+      ],
+      config: {
+        responseMimeType: "application/json",
+        temperature: 0.1
+      }
+    });
+
+    if (!response || !response.text) {
+      throw new Error("Không nhận được phản hồi từ AI trích xuất đáp án.");
+    }
+
+    const parsed = safeJsonParse(response.text.trim(), {});
+    res.json(parsed);
+
+  } catch (error: any) {
+    console.error("Lỗi trích xuất đáp án PDF:", error);
+    handleAiError(error, req, res);
+  }
+});
+
 app.use("/api", (req, res) => {
   res.status(404).json({ error: "API endpoint không tồn tại." });
 });
