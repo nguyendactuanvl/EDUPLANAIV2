@@ -99,9 +99,10 @@ export function generateBbtSvg(data: BBTData): string {
   const { points, intervals, functionName, domainNote } = data;
   const numPoints = points.length;
 
-  const leftLabelWidth = 68;
-  const colSpacing = Math.max(105, Math.min(160, Math.round(520 / Math.max(numPoints - 1, 1))));
-  const contentWidth = Math.max(480, (numPoints - 1) * colSpacing + 80);
+  const leftLabelWidth = 72;
+  const paddingX = 54;
+  const colSpacing = Math.max(120, Math.min(180, Math.round(540 / Math.max(numPoints - 1, 1))));
+  const contentWidth = Math.max(520, (numPoints - 1) * colSpacing + 2 * paddingX);
   const totalWidth = leftLabelWidth + contentWidth;
 
   const hasDerivativeRow = data.showDerivative !== false && (
@@ -114,7 +115,6 @@ export function generateBbtSvg(data: BBTData): string {
   const rowYHeight = 130;
   const totalHeight = rowXHeight + rowYPrimeHeight + rowYHeight;
 
-  const paddingX = 42;
   const usableWidth = contentWidth - 2 * paddingX;
   const stepX = numPoints > 1 ? usableWidth / (numPoints - 1) : usableWidth;
 

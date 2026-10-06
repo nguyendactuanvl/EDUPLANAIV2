@@ -102,8 +102,8 @@ export function MathTools() {
   const [showCalculator, setShowCalculator] = useState(false);
   const [showGeoGebra, setShowGeoGebra] = useState(false);
 
-  // Navigation: Sub-system Tab 1: Statistics vs Tab 2: Graphing & Analysis (KSHS) vs Tab 3: Bảng biến thiên AI
-  const [mainSubsystem, setMainSubsystem] = useState<"statistics" | "graphing" | "bbt_ai" | "svg_ai">("bbt_ai");
+  // Navigation: Sub-system Tab 1: Graphing & Analysis (KSHS) vs Tab 2: SVG Simulation (AI) vs Tab 3: Bảng biến thiên AI vs Tab 4: Statistics
+  const [mainSubsystem, setMainSubsystem] = useState<"graphing" | "svg_ai" | "bbt_ai" | "statistics">("graphing");
 
   // Main module view: Grade 10 (Ungrouped) or Grade 11-12 (Grouped)
   const [activeModule, setActiveModule] = useState<"grade10" | "grade11_12">("grade10");
@@ -806,32 +806,6 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
           {/* Sub-system Navigation Tabs (Tabs chính phân hệ) */}
           <div className="flex flex-wrap items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80 gap-1 md:gap-0">
             <button
-              onClick={() => setMainSubsystem("bbt_ai")}
-              className={cn(
-                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
-                mainSubsystem === "bbt_ai"
-                  ? "bg-white text-indigo-800 shadow-xs"
-                  : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              <Sparkles className="w-4 h-4 text-indigo-600" />
-              <span>1. Bảng biến thiên AI (Chuẩn SGK)</span>
-            </button>
-
-            <button
-              onClick={() => setMainSubsystem("statistics")}
-              className={cn(
-                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
-                mainSubsystem === "statistics"
-                  ? "bg-white text-emerald-800 shadow-xs"
-                  : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              <BarChart3 className="w-4 h-4 text-emerald-600" />
-              <span>2. Công cụ Thống kê 10, 11, 12</span>
-            </button>
-
-            <button
               onClick={() => setMainSubsystem("graphing")}
               className={cn(
                 "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
@@ -841,7 +815,7 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
               )}
             >
               <Compass className="w-4 h-4 text-blue-600" />
-              <span>3. Hỗ trợ Vẽ hình & KSHS</span>
+              <span>1. Hỗ trợ Vẽ hình & KSHS</span>
             </button>
 
             <button
@@ -854,7 +828,33 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
               )}
             >
               <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
-              <span>4. Vẽ hình mô phỏng (AI)</span>
+              <span>2. Vẽ hình mô phỏng (AI)</span>
+            </button>
+
+            <button
+              onClick={() => setMainSubsystem("bbt_ai")}
+              className={cn(
+                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                mainSubsystem === "bbt_ai"
+                  ? "bg-white text-indigo-800 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <Sparkles className="w-4 h-4 text-indigo-600" />
+              <span>3. Bảng biến thiên AI (Chuẩn SGK)</span>
+            </button>
+
+            <button
+              onClick={() => setMainSubsystem("statistics")}
+              className={cn(
+                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                mainSubsystem === "statistics"
+                  ? "bg-white text-emerald-800 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <BarChart3 className="w-4 h-4 text-emerald-600" />
+              <span>4. Công cụ Thống kê 10, 11, 12</span>
             </button>
           </div>
         </div>
@@ -891,6 +891,20 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
         </div>
       </div>
 
+      {/* RENDER PHÂN HỆ 1: VẼ HÌNH & KHẢO SÁT HÀM SỐ (KSHS) */}
+      {mainSubsystem === "graphing" && (
+        <div className="flex-1 flex flex-col">
+          <GraphingAndAnalysisMain />
+        </div>
+      )}
+
+      {/* RENDER PHÂN HỆ 2: VẼ HÌNH MÔ PHỎNG AI THỰC TẾ */}
+      {mainSubsystem === "svg_ai" && (
+        <div className="flex-1 flex flex-col">
+          <SvgAiIllustrator />
+        </div>
+      )}
+
       {/* RENDER PHÂN HỆ 3: BẢNG BIẾN THIÊN AI CHUẨN SGK */}
       {mainSubsystem === "bbt_ai" && (
         <div className="flex-1 flex flex-col">
@@ -898,21 +912,7 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
         </div>
       )}
 
-      {/* RENDER PHÂN HỆ 2: VẼ HÌNH & KHẢO SÁT HÀM SỐ (KSHS) */}
-      {mainSubsystem === "graphing" && (
-        <div className="flex-1 flex flex-col">
-          <GraphingAndAnalysisMain />
-        </div>
-      )}
-
-      {/* RENDER PHÂN HỆ 4: VẼ HÌNH MÔ PHỎNG AI THỰC TẾ */}
-      {mainSubsystem === "svg_ai" && (
-        <div className="flex-1 flex flex-col">
-          <SvgAiIllustrator />
-        </div>
-      )}
-
-      {/* RENDER PHÂN HỆ 1: CÔNG CỤ THỐNG KÊ 10, 11, 12 */}
+      {/* RENDER PHÂN HỆ 4: CÔNG CỤ THỐNG KÊ 10, 11, 12 */}
       {mainSubsystem === "statistics" && (
         <div className="flex-1 flex flex-col">
           {/* Sub-bar for Statistics Grade Selection */}

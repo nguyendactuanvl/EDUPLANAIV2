@@ -1067,6 +1067,86 @@ export const fullPlan: KHGDRow[] = [
     digitalComp: "1.1.NC1b: Dùng công cụ tính lãi suất trực tuyến để lập kế hoạch tài chính.",
     aiComp: "12.C2.1; 12.C3.2: AI tư vấn danh mục đầu tư an toàn.",
     stem: "Không", note: "Chuyên đề"
+  },
+
+  // HOẠT ĐỘNG TRẢI NGHIỆM, HƯỚNG NGHIỆP (HĐTN, HN) 10
+  {
+    id: "hdtn10-1", subject: "Hoạt động trải nghiệm, hướng nghiệp", grade: 10, stt: 1,
+    lesson: "Chủ đề 1: Phát huy truyền thống nhà trường và xây dựng nề nếp lớp học", periods: 3,
+    requirement: "Thực hiện được các quy định, nội quy của nhà trường; thể hiện trách nhiệm xây dựng nề nếp và văn hóa học đường tích cực.",
+    digitalComp: "2.1.NC1a: Tìm kiếm và chia sẻ tài liệu số về truyền thống nhà trường.",
+    aiComp: "10.C1.1: Sử dụng AI thiết kế thông điệp truyền thông về văn hóa học đường.",
+    stem: "Không", note: "HĐTN, HN"
+  },
+  {
+    id: "hdtn10-2", subject: "Hoạt động trải nghiệm, hướng nghiệp", grade: 10, stt: 2,
+    lesson: "Chủ đề 2: Khám phá bản thân và nhận diện hứng thú nghề nghiệp", periods: 4,
+    requirement: "Xác định được điểm mạnh, điểm yếu, sở thích và định hướng nghề nghiệp ban đầu phù hợp với năng lực cá nhân.",
+    digitalComp: "3.1.NC1a: Sử dụng bài test trắc nghiệm tính cách và nghề nghiệp trực tuyến (Holland, MBTI).",
+    aiComp: "10.A1.2: Ứng dụng AI phân tích hồ sơ năng lực và gợi ý nhóm ngành nghề phù hợp.",
+    stem: "Có", note: "HĐTN, HN"
+  },
+  {
+    id: "hdtn10-3", subject: "Hoạt động trải nghiệm, hướng nghiệp", grade: 10, stt: 3,
+    lesson: "Chủ đề 3: Quản lí cảm xúc và ứng xử tích cực trong các mối quan hệ", periods: 3,
+    requirement: "Biết cách nhận diện và điều chỉnh cảm xúc cá nhân, giải quyết mâu thuẫn một cách xây dựng trong gia đình và trường học.",
+    digitalComp: "2.2.NC1b: Thực hành giao tiếp an toàn, văn minh trên không gian mạng.",
+    aiComp: "10.C2.1: Phân tích các tình huống ứng xử giao tiếp qua trợ lí ảo AI.",
+    stem: "Không", note: "HĐTN, HN"
+  },
+
+  // NỘI DUNG GIÁO DỤC ĐỊA PHƯƠNG 10
+  {
+    id: "gddp10-1", subject: "Nội dung giáo dục địa phương", grade: 10, stt: 1,
+    lesson: "Chủ đề 1: Lịch sử và truyền thống văn hóa địa phương", periods: 4,
+    requirement: "Tìm hiểu các di tích lịch sử, danh lam thắng cảnh và lễ hội truyền thống tiêu biểu của tỉnh/thành phố.",
+    digitalComp: "1.1.NC1a: Thu thập tư liệu số, hình ảnh và video về di sản văn hóa địa phương.",
+    aiComp: "10.D1.1: Biên tập bài thuyết minh di tích lịch sử địa phương với sự hỗ trợ của AI.",
+    stem: "Không", note: "GD Địa phương"
+  },
+  {
+    id: "gddp10-2", subject: "Nội dung giáo dục địa phương", grade: 10, stt: 2,
+    lesson: "Chủ đề 2: Tiềm năng phát triển kinh tế - xã hội và ngành nghề truyền thống", periods: 4,
+    requirement: "Phân tích tiềm năng thế mạnh kinh tế địa phương, thực trạng các làng nghề truyền thống và cơ hội việc làm.",
+    digitalComp: "3.2.NC1a: Thiết kế infographic hoặc video ngắn giới thiệu sản phẩm OCOP địa phương.",
+    aiComp: "10.C3.2: Ứng dụng AI xây dựng kế hoạch quảng bá sản phẩm truyền thống địa phương.",
+    stem: "Có", note: "GD Địa phương"
+  },
+
+  // GIÁO DỤC QUỐC PHÒNG VÀ AN NINH (GDQP-AN) 10
+  {
+    id: "gdqp10-1", subject: "Giáo dục quốc phòng và an ninh", grade: 10, stt: 1,
+    lesson: "Bài 1: Một số nội dung cơ bản về lịch sử nghệ thuật quân sự Việt Nam", periods: 4,
+    requirement: "Nêu được những nét cơ bản về truyền thống đánh giặc giữ nước của dân tộc Việt Nam qua các thời kì lịch sử.",
+    digitalComp: "2.1.NC1a: Tra cứu tư liệu bảo tàng quân đội số hóa 3D.",
+    aiComp: "Không yêu cầu",
+    stem: "Không", note: "GDQP-AN"
+  },
+  {
+    id: "gdqp10-2", subject: "Giáo dục quốc phòng và an ninh", grade: 10, stt: 2,
+    lesson: "Bài 2: Điều lệnh đội ngũ từng người không có súng", periods: 4,
+    requirement: "Thực hiện thành thạo các động tác điều lệnh đội ngũ tại chỗ và di động cơ bản.",
+    digitalComp: "1.2.NC1b: Xem video phân tích động tác chuẩn trên nền tảng số.",
+    aiComp: "Không yêu cầu",
+    stem: "Không", note: "GDQP-AN"
+  },
+
+  // GIÁO DỤC THỂ CHẤT (THỂ DỤC) 10
+  {
+    id: "gdtc10-1", subject: "Giáo dục thể chất", grade: 10, stt: 1,
+    lesson: "Chủ đề 1: Sử dụng các yếu tố tự nhiên và dinh dưỡng để rèn luyện sức khỏe", periods: 2,
+    requirement: "Hiểu biết về nguyên tắc sử dụng ánh nắng, không khí, nước và chế độ ăn uống khoa học nâng cao thể lực.",
+    digitalComp: "1.1.NC1a: Sử dụng ứng dụng theo dõi calo và chỉ số sức khỏe thể chất (BMI).",
+    aiComp: "10.A1.1: Gợi ý thực đơn và chế độ tập luyện cá nhân hóa bằng AI.",
+    stem: "Có", note: "Giáo dục thể chất"
+  },
+  {
+    id: "gdtc10-2", subject: "Giáo dục thể chất", grade: 10, stt: 2,
+    lesson: "Chủ đề 2: Kĩ thuật chạy cự li ngắn và phát triển sức nhanh", periods: 6,
+    requirement: "Thực hiện đúng kĩ thuật xuất phát thấp, chạy lao, chạy giữa quãng và về đích; rèn luyện ý chí và tính kiên trì.",
+    digitalComp: "3.1.NC1a: Sử dụng camera quay chậm phân tích góc đạp sau trong chạy ngắn.",
+    aiComp: "Không yêu cầu",
+    stem: "Không", note: "Giáo dục thể chất"
   }
 ];
 

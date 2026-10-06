@@ -3,11 +3,13 @@ import { exportHtmlToWord } from '../lib/exportUtils';
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Upload, X, FileText, Loader2, Download, AlertCircle, 
-  Clipboard, CheckCircle2, Clock, Layers, Sliders, Sparkles, Zap
+  Clipboard, CheckCircle2, Clock, Layers, Sliders, Sparkles, Zap,
+  Image as ImageIcon, Scissors, PlusCircle
 } from 'lucide-react';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
-import { parseApiResponse } from '../lib/utils';
-import { getPdfTotalPages, renderPdfPageRange } from '../lib/pdfUtils';
+import { parseApiResponse, normalizeOcrChoicesAndFormatting } from '../lib/utils';
+import { getPdfTotalPages, renderPdfPageRange, renderPdfPageToDataUrl } from '../lib/pdfUtils';
+import { ImageCropperModal } from '../components/ImageCropperModal';
 import mammoth from 'mammoth';
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -40,6 +42,12 @@ export function PdfToWord() {
 
   const [resultText, setResultText] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+
+  // PDF Page image cache for cropping
+  const [pdfPageImages, setPdfPageImages] = useState<{ [pageNum: number]: string }>({});
+  const [isCropperOpen, setIsCropperOpen] = useState(false);
+  const [cropperSourceImage, setCropperSourceImage] = useState<string>('');
+  const [targetReplacePlaceholder, setTargetReplacePlaceholder] = useState<string | null>(null);
   
   const exportRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -57,13 +65,14 @@ export function PdfToWord() {
     setSelectedFile(file);
     setError(null);
     setResultText('');
+    setPdfPageImages({});
 
     const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
     if (isPdf) {
       try {
         const buffer = await file.arrayBuffer();
         setFileArrayBuffer(buffer);
-        const total = await getPdfTotalPages(buffer);
+        const total = await getPdfTotalPages(buffer.slice(0));
         setPdfTotalPages(total);
 
         if (total <= 5) {
@@ -86,6 +95,10 @@ export function PdfToWord() {
       setPageMode('all');
       setFromPage(1);
       setToPage(1);
+      if (file.type.startsWith('image/')) {
+        const base64 = await fileToBase64(file);
+        setPdfPageImages({ 1: `data:${file.type || 'image/png'};base64,${base64}` });
+      }
     }
   };
 
@@ -228,68 +241,133 @@ export function PdfToWord() {
     startProgressTracking(pagesToProcess);
 
     try {
-      let fileListForApi: { data: string; type: string; name: string }[] = [];
+      let finalResult = '';
 
-      if (isPdf && fileArrayBuffer) {
-        // Render exact PDF page range to high-resolution PNG Data URLs
-        setProgressStatus(`📄 Đang bóc tách trực tiếp trang ${startP} đến ${endP}...`);
-        const { pages } = await renderPdfPageRange(fileArrayBuffer, startP, endP, 1.5);
-        
-        if (pages.length > 0) {
-          fileListForApi = pages.map((dataUrl, idx) => ({
+      if (isPdf && selectedFile) {
+        // Multi-page PDF: Process page-by-page for 100% reliability, zero timeouts, and crisp progress tracking
+        const freshBuffer = await selectedFile.arrayBuffer();
+        const pageResults: string[] = [];
+        const pageImagesMap: { [pageNum: number]: string } = {};
+
+        for (let p = startP; p <= endP; p++) {
+          const currentPageIndex = p - startP + 1;
+          const pct = Math.min(95, Math.round(((currentPageIndex - 1) / pagesToProcess) * 90) + 8);
+          setProgressPercent(pct);
+          setProgressStatus(`📄 Đang bóc tách & số hóa Trang ${p}/${endP} (Tiến độ ${currentPageIndex}/${pagesToProcess} trang)...`);
+
+          // Render only this 1 page to high-res PNG
+          const { dataUrl } = await renderPdfPageToDataUrl(freshBuffer.slice(0), p, 1.5);
+          pageImagesMap[p] = dataUrl;
+
+          const singleFile = [{
             data: dataUrl.split(',')[1],
             type: 'image/png',
-            name: `Trang_${startP + idx}.png`
-          }));
-        } else {
-          // Fallback if client-side rendering fails
-          const fileData = await fileToBase64(selectedFile);
-          fileListForApi = [{ data: fileData, type: 'application/pdf', name: selectedFile.name }];
+            name: `Trang_${p}.png`
+          }];
+
+          const response = await apiFetch('/api/pdf-to-word', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              files: singleFile,
+              pageNum: p,
+              totalPages: pdfTotalPages
+            })
+          });
+
+          if (!response.ok) {
+            let errorData;
+            let errText = await response.text();
+            try {
+               errorData = JSON.parse(errText);
+            } catch {
+               errorData = { error: errText };
+            }
+            let errorMsg = errorData.error || `Có lỗi xảy ra khi xử lý Trang ${p}`;
+            if (typeof errorMsg === 'object') errorMsg = JSON.stringify(errorMsg);
+            throw new Error(errorMsg);
+          }
+
+          const text = await response.text();
+          const data = parseApiResponse<any>(text);
+          let pageText = typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || '');
+          
+          if (pageText) {
+            pageText = pageText.replace(/```(?:tikz|latex)?\s*\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}\s*```/gi, '\n[Hình vẽ minh họa]\n');
+            pageText = pageText.replace(/```tikz[\s\S]*?```/gi, '\n[Hình vẽ minh họa]\n');
+            pageText = pageText.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/gi, '\n[Hình vẽ minh họa]\n');
+            pageText = normalizeOcrChoicesAndFormatting(pageText);
+          }
+
+          pageResults.push(pageText.trim());
         }
-      } else if (selectedFile.name.endsWith('.docx')) {
-        const text = await processDocx(selectedFile);
-        const fileData = btoa(unescape(encodeURIComponent(text)));
-        fileListForApi = [{ data: fileData, type: 'text/plain', name: selectedFile.name }];
+
+        setPdfPageImages(pageImagesMap);
+
+        // Combine all pages with standard page separation markers
+        finalResult = pageResults.map((t, idx) => {
+          const currP = startP + idx;
+          const nextP = currP + 1;
+          const sep = idx < pageResults.length - 1 ? `\n\n--- [Hết Trang ${currP} / Sang Trang ${nextP}] ---\n\n` : '';
+          return t + sep;
+        }).join('');
+
+        finalResult = normalizeOcrChoicesAndFormatting(finalResult);
+
       } else {
-        // Image
-        const fileData = await fileToBase64(selectedFile);
-        fileListForApi = [{ data: fileData, type: selectedFile.type || 'image/png', name: selectedFile.name }];
-      }
-
-      const response = await apiFetch('/api/pdf-to-word', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          files: fileListForApi
-        })
-      });
-
-      if (!response.ok) {
-        let errorData;
-        let errText = await response.text();
-        try {
-           errorData = JSON.parse(errText);
-        } catch {
-           errorData = { error: errText };
+        // Single Image or DOCX
+        let fileListForApi: { data: string; type: string; name: string }[] = [];
+        if (selectedFile.name.endsWith('.docx')) {
+          const text = await processDocx(selectedFile);
+          const fileData = btoa(unescape(encodeURIComponent(text)));
+          fileListForApi = [{ data: fileData, type: 'text/plain', name: selectedFile.name }];
+        } else {
+          // Image
+          const fileData = await fileToBase64(selectedFile);
+          fileListForApi = [{ data: fileData, type: selectedFile.type || 'image/png', name: selectedFile.name }];
         }
-        
-        let errorMsg = errorData.error || 'Có lỗi xảy ra khi xử lý file';
-        if (typeof errorMsg === 'object') errorMsg = JSON.stringify(errorMsg);
-        throw new Error(errorMsg);
+
+        const response = await apiFetch('/api/pdf-to-word', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            files: fileListForApi
+          })
+        });
+
+        if (!response.ok) {
+          let errorData;
+          let errText = await response.text();
+          try {
+             errorData = JSON.parse(errText);
+          } catch {
+             errorData = { error: errText };
+          }
+          let errorMsg = errorData.error || 'Có lỗi xảy ra khi xử lý file';
+          if (typeof errorMsg === 'object') errorMsg = JSON.stringify(errorMsg);
+          throw new Error(errorMsg);
+        }
+
+        const text = await response.text();
+        const data = parseApiResponse<any>(text);
+        let rawRes = typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(data.result));
+        if (rawRes) {
+          rawRes = rawRes.replace(/```(?:tikz|latex)?\s*\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}\s*```/gi, '\n[Hình vẽ minh họa]\n');
+          rawRes = rawRes.replace(/```tikz[\s\S]*?```/gi, '\n[Hình vẽ minh họa]\n');
+          rawRes = rawRes.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/gi, '\n[Hình vẽ minh họa]\n');
+        }
+        finalResult = rawRes;
       }
 
-      const text = await response.text();
-      const data = parseApiResponse<any>(text);
-      
       // Stop progress timer & jump to 100%
       if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
       setProgressPercent(100);
       setProgressStatus('🎉 Số hóa hoàn tất thành công!');
 
       setTimeout(() => {
-        setResultText(typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(data.result)));
+        setResultText(finalResult);
         setIsUploading(false);
-      }, 500);
+      }, 400);
 
     } catch (err: any) {
       if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
@@ -309,6 +387,31 @@ export function PdfToWord() {
       }
       setIsUploading(false);
     }
+  };
+
+  const handleOpenCropper = (pageNum: number, placeholderTag?: string) => {
+    const src = pdfPageImages[pageNum] || (selectedFile && selectedFile.type.startsWith('image/') ? Object.values(pdfPageImages)[0] : '');
+    if (src) {
+      setCropperSourceImage(src);
+      setTargetReplacePlaceholder(placeholderTag || null);
+      setIsCropperOpen(true);
+    }
+  };
+
+  const handleCropComplete = (croppedDataUrl: string) => {
+    setIsCropperOpen(false);
+    if (!croppedDataUrl) return;
+
+    const imgTag = `\n\n<img src="${croppedDataUrl}" alt="Hình vẽ / Đồ thị minh họa" class="max-w-[420px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm" />\n\n`;
+
+    if (targetReplacePlaceholder && resultText.includes(targetReplacePlaceholder)) {
+      setResultText(prev => prev.replace(targetReplacePlaceholder, imgTag));
+    } else if (/\[Hình (?:vẽ|ảnh)[^\]]*\]/i.test(resultText)) {
+      setResultText(prev => prev.replace(/\[Hình (?:vẽ|ảnh)[^\]]*\]/i, imgTag));
+    } else {
+      setResultText(prev => prev + imgTag);
+    }
+    setTargetReplacePlaceholder(null);
   };
 
   const handleExportWord = (keepLatex: boolean = false) => {
@@ -567,7 +670,7 @@ export function PdfToWord() {
                 - AI được tối ưu đặc biệt để nhận diện và gõ lại chuẩn 100% công thức Toán/Lý/Hóa LaTeX, phân đoạn trang dạng <i>--- [Hết Trang X / Sang Trang Y] ---</i> và giữ nguyên các phương án $A, B, C, D$.
               </p>
               <p>
-                - Với hình vẽ/đồ thị phức tạp, AI sẽ thêm ghi chú vị trí <i>[Hình vẽ...]</i> để thầy/cô chủ động chèn hình ảnh minh họa từ tài liệu gốc.
+                - Với hình vẽ/đồ thị, thầy/cô có thể dùng thanh công cụ <b>Cắt hình từ trang PDF gốc</b> bên dưới để nhúng trực tiếp đồ thị sắc nét vào tài liệu Word.
               </p>
             </div>
           </div>
@@ -618,6 +721,40 @@ export function PdfToWord() {
             </div>
           </div>
 
+          {/* Quick Crop & Attach Image from PDF pages */}
+          {Object.keys(pdfPageImages).length > 0 && (
+            <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 via-indigo-50/60 to-purple-50/50 rounded-xl border border-blue-200/80 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-blue-600 text-white rounded-lg shadow-xs">
+                  <Scissors className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <span>Cắt hình vẽ / Đồ thị từ trang PDF gốc chèn vào Word:</span>
+                    <span className="text-[10px] px-2 py-0.5 bg-blue-100 text-blue-700 font-semibold rounded-full">Tiện ích</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Bấm chọn trang dưới đây để mở công cụ kéo chọn hình vẽ và nhúng trực tiếp vào văn bản:</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                {Object.keys(pdfPageImages).map(pStr => {
+                  const pNum = Number(pStr);
+                  return (
+                    <button
+                      key={pNum}
+                      onClick={() => handleOpenCropper(pNum)}
+                      className="px-3 py-1.5 bg-white border border-blue-300 text-blue-700 hover:bg-blue-600 hover:text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs hover:shadow-xs"
+                    >
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      <span>Cắt Trang {pNum}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="bg-slate-50/70 rounded-xl p-6 lg:p-8 border border-slate-200">
             <div ref={exportRef}>
               <MarkdownRenderer content={resultText} />
@@ -625,6 +762,14 @@ export function PdfToWord() {
           </div>
         </div>
       )}
+
+      {/* Image Cropper Modal */}
+      <ImageCropperModal
+        isOpen={isCropperOpen}
+        imageSrc={cropperSourceImage}
+        onCrop={handleCropComplete}
+        onClose={() => setIsCropperOpen(false)}
+      />
     </div>
   );
 }

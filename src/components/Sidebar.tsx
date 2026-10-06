@@ -12,14 +12,14 @@ export function Sidebar({ activeTab, setActiveTab, onOpenSettings }: SidebarProp
     {
       title: "Chuyên môn & Soạn giảng",
       items: [
+        { id: "math_tools", label: "Công cụ Toán học", icon: Calculator },
+        { id: "de_online_pdf", label: "Đề online từ file PDF của GV", icon: FileText },
         { id: "khgd", label: "Kế hoạch giáo dục", icon: Calendar },
         { id: "khdh", label: "Kế hoạch dạy học", icon: BookOpen },
         { id: "worksheets", label: "Phiếu học tập", icon: ClipboardList },
         { id: "exercise", label: "Giải bài tập", icon: Sparkles },
-        { id: "math_tools", label: "Công cụ Toán học", icon: Calculator },
         { id: "pdf2word", label: "Chuyển PDF sang Word", icon: FileEdit },
         { id: "exam", label: "Tạo & Trộn đề", icon: FileCheck },
-        { id: "de_online_pdf", label: "Đề online từ file PDF của GV", icon: FileText },
       ]
     },
     {

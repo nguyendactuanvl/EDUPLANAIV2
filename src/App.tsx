@@ -74,7 +74,7 @@ const DeOnlinePdf = safeLazy(() => import('./pages/DeOnlinePdf'), "DeOnlinePdf")
 
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("khgd");
+  const [activeTab, setActiveTab] = useState("math_tools");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [retryStatus, setRetryStatus] = useState<{ attempt: number, maxRetries: number, message?: string } | null>(null);

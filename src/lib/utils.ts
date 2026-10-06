@@ -450,21 +450,33 @@ export function sanitizeLatexString(text: string): string {
   if (!text) return '';
   let s = text.replace(/\\dfrac\b/g, '\\frac');
 
+  // 0. Sửa lỗi double/multiple backslash và khoảng trắng sau backslash cho các lệnh LaTeX phổ biến:
+  // Ví dụ: "\\ \setminus", "\\\ \frac", "\ \pi", "\\ \mathbb{R}", "\\ \left", "\\ \right"
+  s = s.replace(/\\+\s*\\+\s*/g, '\\');
+  s = s.replace(/\\+\s+(frac|sqrt|sin|cos|tan|cot|left|right|begin|end|text|pi|infty|mathbb|setminus|quad|mid|cap|cup|in|notin|subset|supset|subseteq|supseteq|ne|neq|le|ge|leq|geq|times|cdot|pm|lim|to|alpha|beta|gamma|theta|Delta|Omega|circ|overline|vert|parallel|perp|cases|aligned|matrix|array)\b/gi, '\\$1');
+  s = s.replace(/\\+(frac|sqrt|sin|cos|tan|cot|left|right|begin|end|text|pi|infty|mathbb|setminus|quad|mid|cap|cup|in|notin|subset|supset|subseteq|supseteq|ne|neq|le|ge|leq|geq|times|cdot|pm|lim|to|alpha|beta|gamma|theta|Delta|Omega|circ|overline|vert|parallel|perp|cases|aligned|matrix|array)\b/gi, '\\$1');
+
+  // Sửa lỗi đóng mở ngoặc nhọn bị dính nhiều backslash: "\\ \left\\\{\\" -> "\left\{", "\\ \right\\\}" -> "\right\}"
+  s = s.replace(/\\+\s*left\s*\\+\s*\{/gi, '\\left\\{');
+  s = s.replace(/\\+\s*right\s*\\+\s*\}/gi, '\\right\\}');
+  s = s.replace(/\\+\s*left\s*\[/gi, '\\left[');
+  s = s.replace(/\\+\s*right\s*\]/gi, '\\right]');
+  s = s.replace(/\\+\s*left\s*\(/gi, '\\left(');
+  s = s.replace(/\\+\s*right\s*\)/gi, '\\right)');
+
   // 1. Chuẩn hóa ký hiệu Hy Lạp viết thiếu backslash:
-  // Thay thế từ độc lập Delta thành \Delta (nếu chưa có dấu \)
   s = s.replace(/(?<!\\)\bDelta\b/g, '\\Delta');
 
   // Chuẩn hóa pi: thay thế 2pi, k2pi, hoặc \bpi\b đứng độc lập thành \pi
   // Bảo vệ không đụng vào từ tiếng Anh thông thường (pin, topic, spin, opinion, v.v.)
   s = s.replace(/(\d+)\s*pi\b/g, '$1\\pi');
+  s = s.replace(/k(\d*)\s*pi\b/gi, 'k$1\\pi');
   s = s.replace(/(?<![\\a-zA-Z])\bpi\b(?![a-zA-Z])/g, '\\pi');
 
   // 2. Sửa lỗi escape đơn vị đo:
-  // Thay thế 6textcm, 4textm, 10textcm, 6\textcm, 6\text{cm} thành $1\text{ $2}
   s = s.replace(/(\d+)\s*\\*text\s*\{?\s*([a-zA-Z]+)\s*\}?/g, '$1\\text{ $2}');
 
   // 3. Sửa lỗi cú pháp số mũ / ký hiệu độ:
-  // Thay thế 50^\ circ, 50^\\ circ, 50^{\ circ}, 50^{\\ circ}, 50^circ thành 50^\circ
   s = s.replace(/\^\{\s*\\+\s*circ\s*\}/g, '^\\circ');
   s = s.replace(/\^\{\s*circ\s*\}/g, '^\\circ');
   s = s.replace(/\^\s*\\+\s*circ\b/g, '^\\circ');
@@ -518,12 +530,66 @@ export function wrapNakedMathEnvironments(text: string): string {
 }
 
 /**
+ * Chuẩn hóa các phương án trắc nghiệm và văn bản từ OCR số hóa:
+ * - Xóa sạch các thực thể HTML dư thừa (&nbsp;, &ensp;, &emsp;).
+ * - Sửa lỗi phương án B, C, D bị kẹp chung vào bên trong một dấu $...$ của phương án trước.
+ * - Tách các lựa chọn trắc nghiệm A., B., C., D. đứng chung dòng thành các dòng độc lập.
+ * - Đảm bảo mỗi phương án A., B., C., D. và mệnh đề a), b), c), d) rõ ràng, sạch đẹp.
+ */
+export function normalizeOcrChoicesAndFormatting(text: string): string {
+  if (!text) return '';
+  let s = text;
+
+  // 1. Xóa sạch &nbsp;, &ensp;, &emsp;
+  s = s.replace(/&(?:nbsp|ensp|emsp);+/gi, ' ');
+
+  // 2. Sửa lỗi phương án bị kẹp bên trong dấu $...$:
+  // Ví dụ: $|\vec{AB}| = |\vec{CD}| **D.**\vec{AB} = \vec{CD}$
+  // hoặc: $|\vec{AB}| = |\vec{CD}| D. \vec{AB} = \vec{CD}$
+  s = s.replace(/\$([^\$\n]*?)\s*(?:\*\*([B-D])\.\*\*|\b([B-D])\.)\s*([^\$\n]*?)\$/g, (_m, part1, opt1, opt2, part2) => {
+    const opt = opt1 || opt2;
+    const cleanP1 = part1.trim() ? `$${part1.trim()}$` : '';
+    const cleanP2 = part2.trim() ? `$${part2.trim()}$` : '';
+    return `${cleanP1}\n\n${opt}. ${cleanP2}`;
+  });
+
+  // 3. Tách các phương án trắc nghiệm A., B., C., D. đứng cùng một dòng
+  // Ngoại trừ các dòng bảng Markdown (| ... |)
+  const lines = s.split('\n');
+  const processedLines: string[] = [];
+
+  for (let line of lines) {
+    if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+      processedLines.push(line);
+      continue;
+    }
+
+    // Nếu dòng chứa nhiều phương án trắc nghiệm dính liền nhau
+    if (/\bA\.\s+[\s\S]*?\bB\.\s+/i.test(line) || /\bB\.\s+[\s\S]*?\bC\.\s+/i.test(line) || /\bC\.\s+[\s\S]*?\bD\.\s+/i.test(line)) {
+      let splitLine = line.replace(/(\s+)(?=\b[B-D]\.\s+)/g, '\n');
+      splitLine = splitLine.replace(/([^\n])\s+(?=\bA\.\s+)/g, '$1\n');
+      processedLines.push(splitLine);
+    } else {
+      processedLines.push(line);
+    }
+  }
+
+  s = processedLines.join('\n');
+  return s;
+}
+
+/**
  * Tiền xử lý nội dung toán tổng thể trước khi xuất Word (.docx) hoặc xuất HTML In
  */
 export function preProcessMathContent(content: string): string {
   if (!content) return '';
   let res = rescueCodeAndNestedText(sanitizeLatexString(content));
   res = cleanVietnameseUnicode(res);
+  res = normalizeOcrChoicesAndFormatting(res);
+  // Sanitize dangling tikz code blocks that pollute Word export
+  res = res.replace(/```(?:tikz|latex)?\s*\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}\s*```/gi, '\n[Hình vẽ minh họa]\n');
+  res = res.replace(/```tikz[\s\S]*?```/gi, '\n[Hình vẽ minh họa]\n');
+  res = res.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/gi, '\n[Hình vẽ minh họa]\n');
   res = wrapNakedMathEnvironments(res);
   res = res.replace(/(?:=\s*)?undefined(?![a-zA-Z0-9_\$])/gi, '').replace(/\bundefined\b/gi, '');
   return res;
@@ -735,8 +801,8 @@ export const cleanVietnameseUnicode = (str: string): string => {
   if (!str) return '';
   let res = rescueCodeAndNestedText(str);
 
-  // 1. Chuẩn hóa sang Unicode Dựng Sẵn (NFC)
-  res = res.normalize('NFC');
+  // 1. Chuyển đổi ký tự toán Unicode nghiêng/đậm (Mathematical Alphanumeric Symbols) sang chuẩn ASCII
+  res = res.normalize('NFKD').normalize('NFC');
 
   // 2. Triệt tiêu các ký tự dấu thanh bị gãy rụng đứng cạnh chữ cái
   res = res
@@ -764,7 +830,31 @@ export const cleanVietnameseUnicode = (str: string): string => {
     .replace(/ố[`']/g, 'ồ')
     .replace(/([a-zA-Z\u00C0-\u1EF9])[\s]*[`´'](?=[a-zA-Z\u00C0-\u1EF9\s]|$)/g, '$1');
 
-  // 3. Xử lý thiếu gạch đầu mệnh đề phủ định (\overline{P}, \overline{Q}, ...)
+  // 3. Sửa lỗi dính chữ tiếng Việt với công thức và hàm lượng giác
+  res = res
+    .replace(/\bcủasinxluôn\b/gi, 'của $\\sin x$ luôn')
+    .replace(/\bcủasinx\b/gi, 'của $\\sin x$')
+    .replace(/\bthànhcos2x\b/gi, 'thành $\\cos 2x$')
+    .replace(/\bthànhcos\b/gi, 'thành $\\cos$')
+    .replace(/\bvớit\b/gi, 'với $t$')
+    .replace(/\bgồmx\b/gi, 'gồm $x$')
+    .replace(/\bgồm(?=\\frac|\d|[a-zA-Z]\b)/gi, 'gồm ')
+    .replace(/\bvếphảibằng\b/gi, 'vế phải bằng')
+    .replace(/\bvếphải\b/gi, 'vế phải')
+    .replace(/\bvếtrái\b/gi, 'vế trái')
+    .replace(/\bĐểmnguyên\b/gi, 'Để $m$ nguyên')
+    .replace(/\bđểmnguyên\b/gi, 'để $m$ nguyên')
+    .replace(/\bĐểm\b/gi, 'Để $m$')
+    .replace(/\bđểm\b/gi, 'để $m$')
+    .replace(/\bcó(\d+)nghiệm\b/gi, 'có $1 nghiệm')
+    .replace(/\bxétm\b/gi, 'xét $m$')
+    .replace(/\bchọnm\b/gi, 'chọn $m$')
+    .replace(/(\b(?:sin|cos|tan|cot)[a-z0-9]*)eq0/gi, '$1 \\neq 0')
+    .replace(/(\b(?:sin|cos|tan|cot)[a-z0-9]*)eq1/gi, '$1 \\neq 1')
+    .replace(/(\b[a-zA-Z])eq(\d+)/gi, '$1 \\neq $2')
+    .replace(/(\b[a-zA-Z])eq(?=\\frac|\d)/gi, '$1 \\neq ');
+
+  // 4. Xử lý thiếu gạch đầu mệnh đề phủ định (\overline{P}, \overline{Q}, ...)
   res = res
     .replace(/([PQAB])[\u0304\u0305]/g, '$\\overline{$1}$')
     .replace(/\\bar\{([A-Za-z])\}/g, '\\overline{$1}')
@@ -1623,14 +1713,8 @@ export function cleanOptionText(opt: any): string {
   text = normalizeLogicAndSetSymbols(text);
   text = text.replace(/<br\s*\/?>/gi, ' ').replace(/\s{2,}/g, ' ');
 
-  // Tiền xử lý dứt điểm các lỗi vỡ công thức phép hiệu và tách dấu khác
-  text = sanitizeMathBeforeRender(text);
-
-  // Tách rời chữ tiếng Việt bị dính vào công thức và sửa rách dấu $$
-  text = fixInlineOptionText(text);
-
   // 1. Remove leading option prefixes like "A.", "A)", "A:", "a.", "a)", "**A.**", "<b>A.</b>", "- A.", "- **A.**"
-  // Triệt tiêu hoàn toàn nguy cơ lặp lại nhãn phương án hoặc dị dạng (vd: - **A.** .−**A.**, - * * A . * *)
+  // Triệt tiêu hoàn toàn nguy cơ lặp lại nhãn phương án hoặc dị dạng
   // BẢO VỆ tên tập hợp: KHÔNG bóc nhầm chữ A của tập hợp như A = {1; 2} hoặc A = [-1; 3]
   text = text
     .replace(/^(?:[-*−\.\s]|\*{1,2})*([A-Da-d])[\.\:\)](?:<\/b>|\*{1,2})?\s*(?:[-*−\.\s]|\*{1,2})*(?:\1[\.\:\)](?:<\/b>|\*{1,2})?\s*)*/, '')
@@ -1638,82 +1722,49 @@ export function cleanOptionText(opt: any): string {
     .replace(/^\([A-Da-d]\)\s*(?!=\s*)/, '')
     .trim();
 
-  // 2. Remove trailing orphan dollar signs after punctuation (e.g. ". $", ".$", ";$", ",$")
-  text = text.replace(/([\.\;\,])\s*\$+$/g, '$1').trim();
-  text = text.replace(/([\.\;\,])\s*\$+(\s)/g, '$1$2').trim();
-
-  // 3. Remove redundant outer $ or $$ wrapping the entire option (chỉ khi là một công thức đơn lẻ, không bóc nhầm các biểu thức nối bởi hoặc/và/hay)
-  const dollarCount = (text.match(/(?<!\\)\$/g) || []).length;
-  const hasConjunction = /\b(hoặc|và|hay)\b/i.test(text);
-  if (!hasConjunction && (dollarCount === 2 || (dollarCount === 4 && text.startsWith('$$') && text.endsWith('$$')))) {
-    // Chỉ bóc nếu không chứa trích dẫn mệnh đề có ngoặc kép
-    if (!/^[“"”]|:\s*[“"”]/.test(text)) {
-      text = text.replace(/^\s*\${1,2}\s*([\s\S]*?)\s*\${1,2}\s*$/, '$1').trim();
-    }
-  }
-
-  // 4. Remove trailing orphan dollar signs after punctuation again
-  text = text.replace(/([\.\;\,])\s*\$+$/g, '$1').trim();
-
-  // 5. If there is an odd number of dollar signs and the string ends with a dollar sign, remove the trailing orphan dollar
-  let currentDollars = (text.match(/(?<!\\)\$/g) || []).length;
-  if (currentDollars % 2 !== 0 && text.endsWith('$')) {
-    text = text.replace(/\s*\$+$/, '').trim();
-  }
-
-  // 6. Normalize infinity in all forms
+  // 2. Chuẩn hóa vô cực và các ký hiệu toán
   text = normalizeInfinity(text);
 
-  // 7. If it contains a LaTeX block environment (cases, array, matrix, aligned, etc.)
-  // Wrap it tightly as inline math $...$ so it renders right next to "A." without stray dollars or newlines
+  // 3. Nếu có liên từ tiếng Việt (hoặc, và, hay), xử lý tách liên từ
+  const hasConjunction = /\b(hoặc|và|hay)\b/i.test(text);
+  if (hasConjunction) {
+    return fixInlineOptionText(text);
+  }
+
+  // 4. Nếu là khối môi trường LaTeX (cases, aligned, array, matrix, v.v.)
   if (/\\begin\s*\{cases\*?\}/.test(text)) {
     text = text.replace(/\\begin\s*\{cases\*?\}([\s\S]*?)\\end\s*\{cases\*?\}/g, (_m, b) => `\\begin{cases}\n${normalizeCasesBody(b)}\n\\end{cases}`);
   }
-  if (/\\begin\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}/.test(text)) {
+  if (/\\begin\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}/.test(text) || /\\left\s*\[/.test(text)) {
     const unwrapped = text.replace(/^\s*\${1,4}\s*([\s\S]*?)\s*\${1,4}\s*$/, '$1').trim();
     return `$${unwrapped}$`;
   }
 
-  // 7.5 Chuẩn hóa mệnh đề trích dẫn: \overline{P}: "..." hoặc P: "..."
-  text = normalizePropositionQuotes(text);
+  // 5. Kiểm tra nếu là biểu thức toán học (khoảng, đoạn, công thức, biến số, hàm lượng giác, phân số, căn số, phương trình)
+  // Bóc $ ngoài cùng nếu có để chuẩn hóa bên trong, sau đó bọc lại $ sạch sẽ
+  const unwrapped = text.replace(/^\s*\${1,2}\s*([\s\S]*?)\s*\${1,2}\s*$/, '$1').trim();
+  
+  // Nhận diện nếu unwrapped là toán học
+  const isPureMath = 
+    /^[\[\(]\s*[^;,]+?[;,]\s*[^;,]+?[\]\)]$/.test(unwrapped) || // Khoảng đoạn (-1; 1), [0; 2pi]
+    /^\\?\{[^}]+\\?\}$/.test(unwrapped) || // Tập hợp {1; 2}
+    /^[A-Za-z]\s*=\s*/.test(unwrapped) || // y = cosx, x = 1, A = ...
+    /\b(?:sin|cos|tan|cot|lim|log|ln|frac|sqrt|pi|infty|mathbb|setminus|cap|cup|in|notin|subset|ge|le|geq|leq|ne|neq|pm|times|cdot)\b/i.test(unwrapped) ||
+    /^[0-9\+\-\*\/=\^\_\.\,\;\:\s\(\)\[\]\{\}\<\>\le\ge\ne\pm\pi\\]+$/.test(unwrapped) || // Chỉ toàn ký tự toán và số
+    /^[a-zA-Z]$/.test(unwrapped); // Biến đơn lẻ như x, y, m, a, b
 
-  // 8. If it is a mathematical interval or set: e.g. "(-1; 1)", "(0; 1)", "(-\infty; -1)", "(-1; +\infty)", "[0; 5]", "{1; 2}", "A = {1; 2}", "A = \{-1; 3\}"
-  if (/^[\[\(]\s*[^;,\n]+?[;,]\s*[^;,\n]+?[\]\)]$/.test(text) || /^\{[^}\n]+\}$/.test(text) || /^\\\{[^}\n]+\\\}$/.test(text)) {
-    if (!text.startsWith('$') && !text.endsWith('$')) {
-      return `$${text}$`;
-    }
-    return text;
-  }
-  if (/^[A-Za-z]\s*(?:\\(?:cap|cup|setminus)\s*[A-Za-z]\s*)*=\s*\\?\{[^}\n]+\\?\}$/.test(text)) {
-    if (!text.startsWith('$') && !text.endsWith('$')) {
-      return normalizeSetNotation(text);
-    }
-  }
-
-  // 9. Check if text already has complete $...$ pairs
-  const hasMatchedDollars = /(?<!\\)\$[^$\n]+?(?<!\\)\$/.test(text);
-  currentDollars = (text.match(/(?<!\\)\$/g) || []).length;
-
-  // TUYỆT ĐỐI không tự động gắn thêm dấu $ vào cuối chuỗi nếu chuỗi đã có cặp dấu $...$ hoàn chỉnh!
-  if (!hasMatchedDollars && currentDollars === 0) {
-    const hasVietnameseWords = /[a-zA-Zàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]{2,}\s+[a-zA-Zàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]{2,}/i.test(text);
-    if (!hasVietnameseWords && /(?:[\\^_=><\+\-\*\/]|\d+[a-zA-Z]|[a-zA-Z]\d+)/.test(text) && !/^(đúng|sai|có|không|luôn|tất cả|cả|đáp án|phương án|với|hàm số|điểm)\b/i.test(text)) {
-      if (!text.startsWith('$') && !text.endsWith('$')) {
-        text = `$${text}$`;
-      }
-    }
+  if (isPureMath) {
+    // Sửa các hàm lượng giác viết thường thiếu \ (sinx -> \sin x, cosx -> \cos x, tanx -> \tan x, cotx -> \cot x)
+    let sanitizedMath = unwrapped
+      .replace(/(?<!\\)\b(sin|cos|tan|cot)\s*([a-zA-Z0-9])/gi, '\\$1 $2')
+      .replace(/(?<!\\)\b(sin|cos|tan|cot)\b/gi, '\\$1')
+      .replace(/(?<!\\)\b(frac|sqrt|pm|le|ge|ne)\b/gi, '\\$1');
+    return `$${sanitizedMath}$`;
   }
 
-  // Đảm bảo bóc tách từ nối và chuẩn hóa lại lần cuối
+  // 6. Nếu là văn bản thường có chứa công thức xen kẽ (ví dụ: "Hàm số đồng biến trên $R$")
   text = sanitizeMathBeforeRender(text);
   text = fixInlineOptionText(text);
-
-  // Final cleanup of any trailing orphan dollar or trailing dollar after punctuation
-  text = text.replace(/([\.\;\,])\s*\$+$/g, '$1').trim();
-  const finalDollars = (text.match(/(?<!\\)\$/g) || []).length;
-  if (finalDollars % 2 !== 0 && text.endsWith('$')) {
-    text = text.replace(/\s*\$+$/, '').trim();
-  }
 
   return sanitizeExamQuestion(text);
 }

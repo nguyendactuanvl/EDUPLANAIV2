@@ -27,7 +27,7 @@ interface VariationTableProps {
 }
 
 export const VariationTable: React.FC<VariationTableProps> = ({
-  title = "Bảng biến thiên (BBT)",
+  title,
   points,
   intervals,
   showDerivative = true,
@@ -56,20 +56,15 @@ export const VariationTable: React.FC<VariationTableProps> = ({
   const svgHtml = generateBbtSvg(bbtData);
 
   return (
-    <div className={`bg-white rounded-2xl border border-slate-200 p-4 shadow-xs overflow-x-auto ${className}`}>
+    <div className={`bg-white rounded-xl border border-slate-200 p-2 sm:p-3 shadow-xs overflow-x-auto ${className}`}>
       {title && (
-        <div className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+        <div className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-blue-500"></span>
           <span>{title}</span>
-          {!showDerivative && (
-            <span className="text-[10px] font-normal text-slate-400 normal-case ml-auto bg-slate-100 px-2 py-0.5 rounded-full">
-              Chuẩn SGK Toán 10 (2 dòng)
-            </span>
-          )}
         </div>
       )}
 
-      {/* BBT SGK Standard Vector SVG */}
+      {/* BBT SGK Standard Vector SVG - Hiển thị duy nhất BBT chuẩn gọn */}
       <div className="w-full flex justify-center overflow-x-auto" dangerouslySetInnerHTML={{ __html: svgHtml }} />
     </div>
   );

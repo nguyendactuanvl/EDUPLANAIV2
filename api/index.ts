@@ -2037,7 +2037,7 @@ app.all("/api/pdf-to-word", async (req, res) => {
     return keepAliveExecute(req, res, async () => {
 
       const files = resolveFiles(req.body);
-      const { croppedImage } = req.body || {};
+      const { croppedImage, pageNum, totalPages } = req.body || {};
       if (!files || files.length === 0) {
         return res.status(400).json({ error: "No files provided" });
       }
@@ -2052,25 +2052,31 @@ app.all("/api/pdf-to-word", async (req, res) => {
         });
       }
 
+      const isSinglePageMode = typeof pageNum === 'number';
       const prompt = `Bạn là một trợ lý AI chuyên gia số hóa tài liệu giáo dục và chuyển đổi định dạng từ PDF/Hình ảnh sang văn bản Word (.docx).
-Nhiệm vụ của bạn là đọc toàn bộ nội dung từ tài liệu đính kèm (dù gồm nhiều trang) và xuất ra văn bản chính xác 100%, tuân thủ nghiêm ngặt toàn bộ các quy tắc sau:
+Nhiệm vụ của bạn là đọc toàn bộ nội dung từ ${isSinglePageMode ? `Trang ${pageNum}/${totalPages || 1} của tài liệu đính kèm` : 'tất cả các trang của tài liệu đính kèm'} và xuất ra văn bản chính xác 100%, tuân thủ nghiêm ngặt toàn bộ các quy tắc sau:
 
-1. XỬ LÝ NHIỀU TRANG VÀ PHÂN ĐOẠN TÀI LIỆU:
-- Quét và chuyển đổi tuần tự từ trang đầu tiên đến trang cuối cùng của tài liệu mà không được tự ý bỏ qua hay tóm tắt nội dung.
-- Ở ranh giới chuyển tiếp giữa các trang, hãy đánh dấu rõ ràng bằng dòng: "--- [Hết Trang X / Sang Trang Y] ---" để người dùng dễ theo dõi và đối chiếu với bản gốc (thay X và Y bằng số thứ tự trang tương ứng).
+1. QUY TẮC SỐ HÓA & ĐẦY ĐỦ 100% (BẮT BUỘC):
+- Đọc và số hóa 100% toàn bộ nội dung trên trang từ dòng đầu tiên đến dòng cuối cùng.
+- TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG CẮT XÉN, KHÔNG BỎ QUA BẤT KỲ CÂU HỎI NÀO VÌ BẤT KỲ LÝ DO GÌ. Quét trọn vẹn từng câu hỏi (Câu 1, Câu 2, Câu 3, Câu 4, Câu 5, Câu 6...), các câu trắc nghiệm Đúng/Sai a), b), c), d), các lựa chọn A, B, C, D, bảng biến thiên, bảng đáp án.
+- Nếu trang có phần chuyển tiếp từ trang trước (ví dụ câu hỏi tiếp diễn từ đầu trang), PHẢI gõ đầy đủ các câu chữ tiếp theo đó.
+${!isSinglePageMode ? '- Ở ranh giới chuyển tiếp giữa các trang, bắt buộc đánh dấu bằng dòng: "--- [Hết Trang X / Sang Trang Y] ---" (thay X và Y bằng số trang tương ứng).' : ''}
 
-2. CHUẨN HÓA CÔNG THỨC TOÁN / LÝ / HÓA:
-- Mọi biến số, số liệu kèm đơn vị, biểu thức đại số, hàm số, phương trình, bất phương trình, tọa độ, ký hiệu hình học đều phải đặt trong dấu đô la: $công_thức$ (ví dụ: $x$, $y = ax + b$, \{M, N\}, \{1, 2, 3\}).
+2. CHUẨN HÓA CÔNG THỨC TOÁN / LÝ / HÓA (CHUẨN LATEX):
+- Mọi biến số, số liệu kèm đơn vị, biểu thức đại số, hàm số, phương trình, bất phương trình, tọa độ, ký hiệu hình học, vectơ đều phải đặt trong dấu đô la: $công_thức$ (ví dụ: $x$, $y = ax + b$, $\\vec{AB}$, $\\vec{u}$, $\\vec{i}$, $\\vec{j}$, $\\vec{k}$, \\{M, N\\}, \\{1, 2, 3\\}, $[-2; 2]$, $\\mathbb{R}$).
 - Với công thức độc lập đứng riêng dòng, sử dụng hai dấu đô la: $$công_thức$$.
+- LUÔN DÙNG \\frac thay cho \\dfrac.
 - Tuyệt đối không để sót ký hiệu toán ở dạng text thường. Giữ cú pháp chuẩn LaTeX tương thích hoàn toàn để chuyển đổi sang MathType hoặc công cụ Equation trong Microsoft Word.
-${MATH_FORMATTING_RULES}
 
 3. GIỮ NGUYÊN CẤU TRÚC ĐỀ THI VÀ VĂN BẢN:
 - Giữ nguyên số thứ tự đề mục, bài tập (ví dụ: Câu 1:, Câu 2:, Bài 1:).
 - Với các phương án trắc nghiệm: trình bày rõ ràng A., B., C., D. trên từng dòng độc lập; không tự ý thêm các ký hiệu bullet (chấm tròn, gạch đầu dòng) phía trước chữ cái phương án.
-- Giữ nguyên bảng biểu bằng cú pháp bảng Markdown chuẩn nếu tài liệu có bảng thống kê hay ma trận hoặc BẢNG BIẾN THIÊN (hàng $x$, $y'$, $y$ với các mũi tên \\nearrow, \\searrow, ký hiệu \\| tại điểm gián đoạn).
+- BẢNG BIẾN THIÊN / BẢNG XÉT DẤU: Trình bày bằng Markdown Table chuẩn có đầy đủ hàng $x$, $y'$, $y$ và các mũi tên $\\nearrow, \\searrow$, dấu $+$, $-$, giá trị $0$.
+- BẢNG ĐÁP ÁN: Trình bày bằng Markdown Table chuẩn tương ứng đúng với bảng trong tài liệu gốc.
 
-4. HÌNH ẢNH / HÌNH VẼ: Do hạn chế kỹ thuật số hóa, nếu gặp biểu đồ, hình vẽ, đồ thị, hãy thêm một chú thích rõ ràng bằng chữ ở vị trí đó (Ví dụ: [Hình vẽ đồ thị hàm số...] hoặc [Hình ảnh mô tả...]) để người dùng biết vị trí cần chèn lại ảnh gốc.
+4. TUYỆT ĐỐI CẤM SINH MÃ TIKZ / CODE ĐỒ HỌA:
+- Do xuất ra văn bản Word (.docx), TUYỆT ĐỐI KHÔNG sinh mã TikZ (không viết \\begin{tikzpicture}, không viết từ khóa "tikz" hay bất kỳ khối mã đồ họa nào vào văn bản).
+- Khi gặp biểu đồ, hình vẽ, đồ thị, hình lăng trụ, hình chóp hay hình ảnh minh họa, CHỈ CẦN ghi chú thích duy nhất dạng chữ trong ngoặc vuông: [Hình vẽ: ...] hoặc [Đồ thị: ...] (Ví dụ: [Hình vẽ: Hình lăng trụ tam giác $ABC.A'B'C'$], [Hình vẽ: Hình chóp đều $S.ABCD$ trong hệ trục $Oxyz$], [Đồ thị: Đồ thị hàm số $y = f(x)$]) để người dùng biết vị trí cần chèn lại ảnh gốc.
 
 Đầu ra của bạn phải hoàn toàn là nội dung tài liệu đã được số hóa dạng Markdown chuẩn, không thêm các câu chào hỏi thừa hay giải thích ngoài lề!`;
 
@@ -2088,10 +2094,17 @@ ${MATH_FORMATTING_RULES}
         ],
         config: {
           temperature: 0.1,
+          maxOutputTokens: 16384,
         }
       });
       
       let resultText = response.text || "";
+      
+      // Clean up only closed TikZ code blocks safely without eating text
+      resultText = resultText.replace(/```(?:tikz|latex)?\s*\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}\s*```/gi, '\n[Hình vẽ minh họa]\n');
+      resultText = resultText.replace(/```tikz[\s\S]*?```/gi, '\n[Hình vẽ minh họa]\n');
+      resultText = resultText.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/gi, '\n[Hình vẽ minh họa]\n');
+
       if (croppedImage) {
         const imgTag = `\n\n<img src="${croppedImage}" alt="Hình vẽ minh họa tài liệu" class="max-w-[480px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm" />\n\n`;
         if (/\[Hình (?:vẽ|ảnh)[^\]]*\]/i.test(resultText)) {

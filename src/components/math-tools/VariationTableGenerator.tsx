@@ -117,21 +117,21 @@ interface VariationTableViewProps {
 }
 
 export const VariationTableView: React.FC<VariationTableViewProps> = ({ data, containerRef }) => {
-  const { points, intervals, functionName, domainNote } = data;
+  const { points, intervals } = data;
   const numPoints = points.length;
 
-  // Kích thước chuẩn đồ họa SVG
+  // Kích thước chuẩn đồ họa SVG gọn gàng, chống tràn viền và không bị che hai đầu
   const leftLabelWidth = 72; // Độ rộng cột nhãn bên trái (x, y', y)
-  const contentWidth = 580;  // Độ rộng vùng nội dung biến thiên
+  const paddingX = 54;       // Khoảng cách an toàn hai đầu không bị che mất
+  const colSpacing = Math.max(120, Math.min(180, Math.round(540 / Math.max(numPoints - 1, 1))));
+  const contentWidth = Math.max(520, (numPoints - 1) * colSpacing + 2 * paddingX);
   const totalWidth = leftLabelWidth + contentWidth;
 
-  const rowXHeight = 42;      // Chiều cao hàng x
-  const rowYPrimeHeight = 42; // Chiều cao hàng y'
-  const rowYHeight = 135;     // Chiều cao hàng y (đủ độ thoáng để vẽ mũi tên dài thanh thoát)
-  const totalHeight = rowXHeight + rowYPrimeHeight + rowYHeight;
+  const rowXHeight = 38;      // Chiều cao hàng x
+  const rowYPrimeHeight = 38; // Chiều cao hàng y'
+  const rowYHeight = 124;     // Chiều cao hàng y
+  const totalHeight = rowXHeight + rowYPrimeHeight + rowYHeight; // 200px
 
-  // Tính tọa độ X của các điểm mốc trên trục x (phân bổ đều cân đối)
-  const paddingX = 40;
   const usableWidth = contentWidth - 2 * paddingX;
   const stepX = numPoints > 1 ? usableWidth / (numPoints - 1) : usableWidth;
 
@@ -142,7 +142,7 @@ export const VariationTableView: React.FC<VariationTableViewProps> = ({ data, co
   // Tính tọa độ Y của nhãn trong hàng y
   const getYPosValue = (pos?: "top" | "bottom" | "middle") => {
     const yStart = rowXHeight + rowYPrimeHeight;
-    if (pos === "top") return yStart + 24;
+    if (pos === "top") return yStart + 22;
     if (pos === "bottom") return yStart + rowYHeight - 16;
     return yStart + rowYHeight / 2 + 4;
   };
@@ -170,26 +170,26 @@ export const VariationTableView: React.FC<VariationTableViewProps> = ({ data, co
 
     // Xác định điểm bắt đầu của mũi tên
     let y1 = getYPosValue(p1.isAsymptote ? p1.yRightPosition || "bottom" : p1.yPosition);
-    let x1 = p1.isAsymptote ? startX + 16 : startX + 18;
+    let x1 = p1.isAsymptote ? startX + 14 : startX + 16;
 
     // Xác định điểm kết thúc của mũi tên
     let y2 = getYPosValue(p2.isAsymptote ? p2.yLeftPosition || "top" : p2.yPosition);
-    let x2 = p2.isAsymptote ? endX - 16 : endX - 18;
+    let x2 = p2.isAsymptote ? endX - 14 : endX - 16;
 
     // Khoảng cách an toàn để đầu mũi tên và đuôi mũi tên không chạm sát đè lên chữ số
     const dx = x2 - x1;
     const dy = y2 - y1;
     const dist = Math.hypot(dx, dy);
 
-    if (dist > 30) {
-      const margin = 10;
+    if (dist > 25) {
+      const margin = 8;
       const nx = dx / dist;
       const ny = dy / dist;
       arrows.push({
         x1: x1 + nx * margin,
-        y1: y1 + ny * margin - 4,
+        y1: y1 + ny * margin - 3,
         x2: x2 - nx * margin,
-        y2: y2 - ny * margin - 4,
+        y2: y2 - ny * margin - 3,
         key: `arrow-${i}`
       });
     }
@@ -198,31 +198,19 @@ export const VariationTableView: React.FC<VariationTableViewProps> = ({ data, co
   return (
     <div 
       ref={containerRef}
-      className="bg-white p-6 rounded-2xl border border-slate-300 shadow-sm inline-block select-none"
-      style={{ minWidth: `${totalWidth + 48}px` }}
+      className="bg-white p-2 sm:p-3 rounded-xl border border-slate-300 shadow-xs inline-block max-w-full overflow-hidden select-none"
     >
-      {/* Tiêu đề hàm số & Tập xác định */}
-      <div className="mb-4 text-center">
-        <h3 className="text-base sm:text-lg font-bold text-slate-800 tracking-tight font-serif">
-          BẢNG BIẾN THIÊN {functionName ? `: ${formatMathSymbol(functionName)}` : ""}
-        </h3>
-        {domainNote && (
-          <p className="text-xs text-slate-500 font-serif italic mt-0.5">
-            {formatMathSymbol(domainNote)}
-          </p>
-        )}
-      </div>
-
-      {/* KHUNG BẢNG BIẾN THIÊN CHUẨN SGK TOÁN THPT (QUY TẮC ĐỒ HỌA TUYỆT ĐỐI) */}
+      {/* KHUNG BẢNG BIẾN THIÊN CHUẨN SGK TOÁN THPT (CHỈ HIỂN THỊ DUY NHẤT BẢNG BIẾN THIÊN) */}
       <div 
         className="relative bg-white rounded-lg overflow-hidden border-2 border-slate-800"
-        style={{ width: `${totalWidth}px`, height: `${totalHeight}px` }}
+        style={{ width: `${totalWidth}px`, height: `${totalHeight}px`, maxWidth: '100%' }}
       >
         <svg 
-          width={totalWidth} 
-          height={totalHeight} 
+          width="100%" 
+          height="100%" 
           viewBox={`0 0 ${totalWidth} ${totalHeight}`}
-          className="absolute inset-0"
+          preserveAspectRatio="xMidYMid meet"
+          className="block w-full h-full"
         >
           <defs>
             {/* Đầu mũi tên hình học sắc nét chuẩn SGK */}
@@ -287,10 +275,10 @@ export const VariationTableView: React.FC<VariationTableViewProps> = ({ data, co
           {/* CỘT NHÃN BÊN TRÁI: x, y', y */}
           <text 
             x={leftLabelWidth / 2} 
-            y={27} 
+            y={24} 
             textAnchor="middle" 
             fontFamily="'Times New Roman', Times, serif" 
-            fontSize="18" 
+            fontSize="17" 
             fontStyle="italic" 
             fontWeight="bold" 
             fill="#0f172a"
@@ -300,10 +288,10 @@ export const VariationTableView: React.FC<VariationTableViewProps> = ({ data, co
 
           <text 
             x={leftLabelWidth / 2} 
-            y={rowXHeight + 27} 
+            y={rowXHeight + 25} 
             textAnchor="middle" 
             fontFamily="'Times New Roman', Times, serif" 
-            fontSize="18" 
+            fontSize="17" 
             fontStyle="italic" 
             fontWeight="bold" 
             fill="#0f172a"
@@ -316,7 +304,7 @@ export const VariationTableView: React.FC<VariationTableViewProps> = ({ data, co
             y={rowXHeight + rowYPrimeHeight + rowYHeight / 2 + 6} 
             textAnchor="middle" 
             fontFamily="'Times New Roman', Times, serif" 
-            fontSize="18" 
+            fontSize="17" 
             fontStyle="italic" 
             fontWeight="bold" 
             fill="#0f172a"
@@ -331,10 +319,10 @@ export const VariationTableView: React.FC<VariationTableViewProps> = ({ data, co
               <text
                 key={`x-${idx}`}
                 x={xPos}
-                y={27}
+                y={25}
                 textAnchor="middle"
                 fontFamily="'Times New Roman', Times, serif"
-                fontSize="16"
+                fontSize="15"
                 fontWeight="bold"
                 fill="#0f172a"
               >
@@ -372,10 +360,10 @@ export const VariationTableView: React.FC<VariationTableViewProps> = ({ data, co
               <text
                 key={`sign-${idx}`}
                 x={midX}
-                y={rowXHeight + 28}
+                y={rowXHeight + 25}
                 textAnchor="middle"
                 fontFamily="'Times New Roman', Times, serif"
-                fontSize="20"
+                fontSize="18"
                 fontWeight="bold"
                 fill="#1e40af"
               >

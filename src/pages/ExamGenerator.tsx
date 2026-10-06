@@ -15,7 +15,18 @@ import { exportHtmlToWord } from '../lib/exportUtils';
 import { cn, fixMath, cleanQuestionStem, parseApiResponse, cleanOptionText, getPublicAppUrl, isRealWorldQuestion, sanitizeShortAnswerInput, validateShortAnswer, compareShortAnswers, sanitizeLatexString } from '../lib/utils';
 import { ensureMathRendered } from '../lib/print';
 import { saveExamToCloud, SYSTEM_EXAM_WEBHOOK } from '../lib/cloudExamStore';
-import { STANDARDIZED_EXAM_TYPES, getDefaultDurationForExamType, formatExamTitle, normalizeExamType } from '../lib/examConfig';
+import { 
+  STANDARDIZED_EXAM_TYPES, 
+  getDefaultDurationForExamType, 
+  formatExamTitle, 
+  normalizeExamType,
+  SCHOOL_LEVELS,
+  GRADES_BY_LEVEL,
+  SUBJECTS_BY_LEVEL,
+  NUM_EXAM_CODES_OPTIONS,
+  PARAMETER_PROBLEM_OPTIONS,
+  ParameterOption
+} from '../lib/examConfig';
 import { OnlineExamConfigModal } from "../components/OnlineExamConfigModal";
 import { SAMPLE_MATH_QUESTIONS, SAMPLE_MATH_EXAM_NAME, SAMPLE_MATH_DURATION } from '../data/sampleMathExam';
 import { parseRawExamText, formatAiQuestionsToParsed } from '../lib/examParser';
@@ -71,6 +82,7 @@ interface MatrixConfig {
   duration: number;
   examType: string;
   numCodes: number;
+  parameterOption?: ParameterOption;
   qCounts: any;
   qPoints: any;
   qEnabled: any;
@@ -709,22 +721,59 @@ export function ExamGenerator() {
       alert("Đã xảy ra lỗi khi tạo file Excel: " + (err?.message || ""));
     }
   };
-  const [subject, setSubject] = useState("Toán");
-  const [grade, setGrade] = useState("9");
+  const [subject, setSubject] = useState("Toán học");
+  const [grade, setGrade] = useState("10");
   const [totalQuestions, setTotalQuestions] = useState(20);
   const [matrix, setMatrix] = useState("");
   const [customPrompt, setCustomPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  
   const [duration, setDuration] = useState(45);
   const [examType, setExamType] = useState<string>("Đề kiểm tra giữa kỳ 1");
   const [isOnlineConfigModalOpen, setIsOnlineConfigModalOpen] = useState(false);
   const [qCounts, setQCounts] = useState({ mc: 12, tf: 4, sa: 6, essay: 0 });
-  const [schoolLevel, setSchoolLevel] = useState("THCS");
+  const [schoolLevel, setSchoolLevel] = useState<string>("THPT");
+  const [parameterOption, setParameterOption] = useState<ParameterOption>("auto");
   const [generateMode, setGenerateMode] = useState<"auto" | "from_matrix_file">("auto");
   const [autoDetectStructure, setAutoDetectStructure] = useState(false);
+
+  const handleSchoolLevelChange = (lvl: string) => {
+    setSchoolLevel(lvl);
+    const availableGrades = GRADES_BY_LEVEL[lvl] || [];
+    const isGradeValid = availableGrades.some(g => g.value === grade);
+    const newGrade = isGradeValid ? grade : (availableGrades[0]?.value || "10");
+    setGrade(newGrade);
+
+    const availableSubjects = SUBJECTS_BY_LEVEL[lvl] || [];
+    const isSubjValid = availableSubjects.includes(subject);
+    const newSubj = isSubjValid ? subject : (availableSubjects[0] || "Toán học");
+    setSubject(newSubj);
+
+    const newDur = getDefaultDurationForExamType(examType, lvl, newGrade, newSubj);
+    setDuration(newDur);
+    if (!examName || examName === "Đề kiểm tra" || examName.startsWith("ĐỀ ")) {
+      setExamName(formatExamTitle(examType, newSubj, newGrade));
+    }
+  };
+
+  const handleGradeChange = (gr: string) => {
+    setGrade(gr);
+    const newDur = getDefaultDurationForExamType(examType, schoolLevel, gr, subject);
+    setDuration(newDur);
+    if (!examName || examName === "Đề kiểm tra" || examName.startsWith("ĐỀ ")) {
+      setExamName(formatExamTitle(examType, subject, gr));
+    }
+  };
+
+  const handleSubjectChange = (subj: string) => {
+    setSubject(subj);
+    const newDur = getDefaultDurationForExamType(examType, schoolLevel, grade, subj);
+    setDuration(newDur);
+    if (!examName || examName === "Đề kiểm tra" || examName.startsWith("ĐỀ ")) {
+      setExamName(formatExamTitle(examType, subj, grade));
+    }
+  };
 
   const handleExamTypeChange = (newType: string) => {
     setExamType(newType);
@@ -803,6 +852,7 @@ export function ExamGenerator() {
       id: Date.now().toString(),
       name,
       schoolLevel, subject, grade, duration, examType, numCodes,
+      parameterOption,
       qCounts, qPoints, qEnabled, levels, outputConfig, matrix, customPrompt,
       realWorldConfig: {
         enabled: enableRealWorld,
@@ -827,6 +877,9 @@ export function ExamGenerator() {
       setExamType(normalizeExamType(conf.examType));
       if (!examName || examName === "Đề kiểm tra" || examName.startsWith("ĐỀ ")) {
         setExamName(formatExamTitle(conf.examType, conf.subject, conf.grade));
+      }
+      if (conf.parameterOption) {
+        setParameterOption(conf.parameterOption);
       }
       setNumCodes(conf.numCodes);
       setQCounts(conf.qCounts);
@@ -1327,6 +1380,21 @@ ${pin ? `🔑 Hoặc vào trang: ${publicBase} và nhập Mã phòng thi: ${pin}
 `.trim();
       }
 
+      let paramPrompt = "";
+      if (parameterOption === "with_params") {
+        paramPrompt = `
+YÊU CẦU VỀ BÀI TOÁN CHỨA THAM SỐ:
+- Trong các câu hỏi ở mức độ Thông hiểu, Vận dụng và Vận dụng cao, hãy BAO GỒM các bài toán chứa tham số (ví dụ: tham số $m, a, b, k...$).
+- Đảm bảo câu hỏi có tham số được phát biểu chặt chẽ, chuẩn xác về mặt toán học (ví dụ: tìm các giá trị nguyên của $m$ để hàm số đồng biến/nghịch biến/có cực trị, phương trình có nghiệm thỏa mãn điều kiện, bất phương trình nghiệm đúng với mọi x...).
+`.trim();
+      } else if (parameterOption === "without_params") {
+        paramPrompt = `
+YÊU CẦU VỀ BÀI TOÁN KHÔNG CHỨA THAM SỐ:
+- TUYỆT ĐỐI KHÔNG sử dụng bài toán chứa tham số ($m, a, b, k...$).
+- Tất cả các hàm số, phương trình, bất phương trình, tọa độ và bài toán PHẢI sử dụng hệ số số thực cụ thể.
+`.trim();
+      }
+
       const advancedPrompt = `
 Thang điểm yêu cầu:
 ${qEnabled.mc ? `- Trắc nghiệm lựa chọn: ${qPoints.mc} điểm/câu` : ""}
@@ -1345,7 +1413,7 @@ ${outputConfig.answers ? "- Có đáp án chi tiết." : ""}
 ${outputConfig.spec ? "- Kèm theo bảng đặc tả." : ""}
 ${outputConfig.matrix ? "- Kèm theo ma trận đề." : ""}
 
-${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC ĐẶC BIỆT KHI RA CÂU HỎI PHẦN III (TRẢ LỜI NGẮN) CHO CHỦ ĐỀ TẬP HỢP:
+${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC ĐẶC BIỆT KHI RA CÂU HỎI PHẦN III (TRẢ LỜI NGẮN) CHO CHỦ ĐỀ TẬP HỢP:
 - TUYỆT ĐỐI KHÔNG ra đề yêu cầu "Tìm tập hợp", "Viết kết quả dưới dạng khoảng/đoạn/nửa khoảng" hay biểu diễn nghiệm dưới dạng tập hợp.
 - BẮT BUỘC câu hỏi phải có đáp số là một con số cụ thể, ví dụ:
   + "Tập hợp $A \\cap B$ có bao nhiêu phần tử là số nguyên?"
@@ -1611,82 +1679,71 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                 {/* 1. THÔNG TIN ĐỀ */}
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                   <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4">
-                    <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm">1</span> THÔNG TIN ĐỀ
+                    <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-bold">1</span> THÔNG TIN ĐỀ THI & MA TRẬN
                   </h3>
+                  
+                  {/* Hàng 1: Cấp học - Lớp - Môn học */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                     <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">Cấp học</label>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Cấp học</label>
                       <select 
                         value={schoolLevel} 
-                        onChange={e => {
-                          const lvl = e.target.value;
-                          setSchoolLevel(lvl);
-                          const newDur = getDefaultDurationForExamType(examType, lvl, grade, subject);
-                          setDuration(newDur);
-                          if (!examName || examName === "Đề kiểm tra" || examName.startsWith("ĐỀ ")) {
-                            setExamName(formatExamTitle(examType, subject, grade));
-                          }
-                        }} 
-                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-sm"
+                        onChange={e => handleSchoolLevelChange(e.target.value)} 
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium bg-white"
                       >
-                        <option value="Tiểu học">Tiểu học</option>
-                        <option value="THCS">THCS</option>
-                        <option value="THPT">THPT</option>
+                        {SCHOOL_LEVELS.map(lvl => (
+                          <option key={lvl} value={lvl}>{lvl}</option>
+                        ))}
                       </select>
                     </div>
+
                     <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">Lớp</label>
-                      <input 
-                        type="text" 
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Lớp (Khối lớp)</label>
+                      <select 
                         value={grade} 
-                        onChange={e => {
-                          const gr = e.target.value;
-                          setGrade(gr);
-                          const newDur = getDefaultDurationForExamType(examType, schoolLevel, gr, subject);
-                          setDuration(newDur);
-                          if (!examName || examName === "Đề kiểm tra" || examName.startsWith("ĐỀ ")) {
-                            setExamName(formatExamTitle(examType, subject, gr));
-                          }
-                        }} 
-                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-sm font-medium" 
-                      />
+                        onChange={e => handleGradeChange(e.target.value)} 
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium bg-white"
+                      >
+                        {(GRADES_BY_LEVEL[schoolLevel] || GRADES_BY_LEVEL["THPT"]).map(g => (
+                          <option key={g.value} value={g.value}>{g.label}</option>
+                        ))}
+                      </select>
                     </div>
+
                     <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">Môn học</label>
-                      <input 
-                        type="text" 
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Môn học</label>
+                      <select 
                         value={subject} 
-                        onChange={e => {
-                          const subj = e.target.value;
-                          setSubject(subj);
-                          const newDur = getDefaultDurationForExamType(examType, schoolLevel, grade, subj);
-                          setDuration(newDur);
-                          if (!examName || examName === "Đề kiểm tra" || examName.startsWith("ĐỀ ")) {
-                            setExamName(formatExamTitle(examType, subj, grade));
-                          }
-                        }} 
-                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-sm font-medium" 
-                      />
+                        onChange={e => handleSubjectChange(e.target.value)} 
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium bg-white"
+                      >
+                        {(SUBJECTS_BY_LEVEL[schoolLevel] || SUBJECTS_BY_LEVEL["THPT"]).map(subj => (
+                          <option key={subj} value={subj}>{subj}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
+
+                  {/* Hàng 2: Loại đề - Thời gian - Số mã đề */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                     <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
                         Loại đề <span className="text-emerald-600 font-normal">(Gợi ý số phút tự động)</span>
                       </label>
                       <select 
                         value={examType} 
                         onChange={e => handleExamTypeChange(e.target.value)} 
-                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-sm font-medium text-slate-800 shadow-2xs"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium text-slate-800 shadow-2xs bg-white"
                       >
                         {STANDARDIZED_EXAM_TYPES.map(type => (
                           <option key={type} value={type}>{type}</option>
                         ))}
                       </select>
                     </div>
+
                     <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">
-                        Thời gian (phút) <span className="text-slate-400 font-normal">(Có thể sửa)</span>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Thời gian (phút) <span className="text-slate-400 font-normal">(Tùy chỉnh)</span>
                       </label>
                       <input 
                         type="number" 
@@ -1694,21 +1751,63 @@ ${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC 
                         max={300}
                         value={duration} 
                         onChange={e => setDuration(Math.max(1, Number(e.target.value)))} 
-                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-sm font-bold text-slate-800" 
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-bold text-slate-800 bg-white" 
                       />
                     </div>
+
                     <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">Số mã đề</label>
-                      <input type="number" value={numCodes} onChange={e=>setNumCodes(Number(e.target.value))} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-sm font-medium" />
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Số mã đề cần trộn</label>
+                      <select 
+                        value={numCodes} 
+                        onChange={e => setNumCodes(Number(e.target.value))} 
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium bg-white"
+                      >
+                        {NUM_EXAM_CODES_OPTIONS.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
-                  <div className="mb-4">
-                      <label className="block text-xs font-medium text-slate-500 mb-1">Tên bài / chủ đề / phạm vi kiến thức</label>
-                      <input type="text" value={matrix} onChange={e=>setMatrix(e.target.value)} placeholder="Ví dụ: Bài 2 - Phương trình bậc nhất hai ẩn..." className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-sm" />
+
+                  {/* Hàng 3: Tùy chọn bài toán tham số & Tên bài / chủ đề */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                        <span>Bài toán chứa tham số</span>
+                        <span className="text-[11px] text-indigo-600 font-normal">$m, a, b...$</span>
+                      </label>
+                      <select 
+                        value={parameterOption} 
+                        onChange={e => setParameterOption(e.target.value as ParameterOption)} 
+                        className="w-full px-3 py-2 border border-indigo-200 bg-indigo-50/40 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm font-medium text-slate-800"
+                      >
+                        {PARAMETER_PROBLEM_OPTIONS.map(p => (
+                          <option key={p.value} value={p.value}>{p.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Tên bài / chủ đề / phạm vi kiến thức</label>
+                      <input 
+                        type="text" 
+                        value={matrix} 
+                        onChange={e => setMatrix(e.target.value)} 
+                        placeholder="Ví dụ: Hàm số bậc hai, Khảo sát chất lượng đầu năm..." 
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white" 
+                      />
+                    </div>
                   </div>
+
                   <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">Yêu cầu riêng của giáo viên</label>
-                      <textarea value={customPrompt} onChange={e=>setCustomPrompt(e.target.value)} placeholder="Nhập yêu cầu bổ sung..." className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-sm" rows={2}></textarea>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Yêu cầu riêng của giáo viên</label>
+                    <textarea 
+                      value={customPrompt} 
+                      onChange={e => setCustomPrompt(e.target.value)} 
+                      placeholder="Nhập yêu cầu bổ sung (VD: thêm câu vận dụng cao về min-max hình học, kiểm tra kỹ nghiệm ngoại lai...)" 
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white" 
+                      rows={2}
+                    />
                   </div>
                 </div>
 

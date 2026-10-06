@@ -37,6 +37,7 @@ import {
   type FileChild,
 } from 'docx';
 import {
+  cleanOptionText,
   fixInlineOptionText,
   sanitizeMathBeforeRender,
   sanitizeLatexString,
@@ -111,7 +112,7 @@ function latexToOmmlComponent(rawTex: string, isBlock: boolean = false): any {
 
   // Fallback: styled italic text in Cambria Math (native Word mathematical typography)
   return new TextRun({
-    text: cleanTex,
+    text: normalizeRawMathSymbols(cleanTex),
     italics: true,
     font: 'Cambria Math',
     size: 24,
@@ -692,18 +693,6 @@ function parseInlineContent(
   }
 
   return runs;
-}
-
-/**
- * Strips leading choice letters (A., B., C., D., A), B), C), D)) so labels are not duplicated.
- */
-function cleanOptionText(text: string): string {
-  const stripped = text
-    .replace(/^\s*(?:[-*]\s*)?(?:\*{0,2})[A-D][\.\:\)]?(?:\*{0,2})[\.\:\)]?\s*/i, '')
-    .replace(/^[\s\.\:\)]+/, '')
-    .trim();
-  const sanitized = sanitizeMathBeforeRender(stripped);
-  return fixInlineOptionText(sanitized);
 }
 
 /**

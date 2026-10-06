@@ -10,11 +10,34 @@ if (typeof window !== 'undefined') {
 }
 
 /**
+ * Helper to safely clone buffer so pdfjsLib worker thread transfers never detach original ArrayBuffer
+ */
+function getSafePdfData(pdfData: ArrayBuffer | Uint8Array): Uint8Array {
+  if (!pdfData) {
+    throw new Error('No PDF data provided');
+  }
+  if (pdfData instanceof ArrayBuffer) {
+    if (pdfData.byteLength === 0) {
+      throw new Error('PDF ArrayBuffer is detached');
+    }
+    return new Uint8Array(pdfData.slice(0));
+  }
+  if (ArrayBuffer.isView(pdfData)) {
+    if (pdfData.buffer.byteLength === 0) {
+      throw new Error('PDF Uint8Array buffer is detached');
+    }
+    return new Uint8Array(pdfData.slice(0));
+  }
+  return new Uint8Array(pdfData);
+}
+
+/**
  * Quick inspection to get total number of pages in a PDF
  */
 export async function getPdfTotalPages(pdfData: ArrayBuffer | Uint8Array): Promise<number> {
   try {
-    const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+    const safeData = getSafePdfData(pdfData);
+    const loadingTask = pdfjsLib.getDocument({ data: safeData });
     const pdf = await loadingTask.promise;
     return pdf.numPages || 1;
   } catch (err) {
@@ -31,7 +54,8 @@ export async function renderPdfPageToDataUrl(
   pageNum: number = 1,
   scale: number = 1.5
 ): Promise<{ dataUrl: string; width: number; height: number; numPages: number }> {
-  const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+  const safeData = getSafePdfData(pdfData);
+  const loadingTask = pdfjsLib.getDocument({ data: safeData });
   const pdf = await loadingTask.promise;
   const numPages = pdf.numPages;
 
@@ -76,7 +100,8 @@ export async function renderPdfPageRange(
   scale: number = 1.5
 ): Promise<{ pages: string[]; totalPages: number }> {
   try {
-    const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+    const safeData = getSafePdfData(pdfData);
+    const loadingTask = pdfjsLib.getDocument({ data: safeData });
     const pdf = await loadingTask.promise;
     const totalPages = pdf.numPages;
 
