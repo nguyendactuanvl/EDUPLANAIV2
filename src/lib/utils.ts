@@ -328,6 +328,10 @@ export function normalizeCasesBody(body: string): string {
   if (!body) return '';
   let s = body.trim();
 
+  // Strip column alignment specs like {l}, {c}, {r}, {ll}, {l|l}, etc. at the start (from \begin{array}{l})
+  s = s.replace(/^\s*\{[a-zA-Z*| ]+\}\s*/, '');
+  s = s.replace(/^\s*\b[lcr]+\b\s*(?=[a-zA-Z0-9\-\+\{\(\\])/, '');
+
   const normIneq = (op: string): string => {
     const o = op.toLowerCase().replace(/^\\/, '');
     if (o === '<=' || o === 'le' || o === 'leq' || o === 'leqslant') return '\\le';
@@ -426,7 +430,7 @@ export function normalizeTrigSolutions(text: string): string {
 
   // 1. Chuyển \left[\begin{cases} ... \end{cases}\right. hoặc \left[\begin{matrix} ... \end{matrix}\right. hoặc \left[\begin{array} ... \end{array}\right.
   //    thành \left[\begin{aligned} ... \end{aligned}\right.
-  s = s.replace(/\\left\s*\[\s*\\begin\s*\{(?:cases|matrix|array)\*?\}([\s\S]*?)\\end\s*\{(?:cases|matrix|array)\*?\}\s*\\right\.?/g, (_m, body) => {
+  s = s.replace(/\\left\s*\[\s*\\begin\s*\{(?:cases|matrix|array)\*?\}(?:\s*\{[a-zA-Z*| ]+\})?([\s\S]*?)\\end\s*\{(?:cases|matrix|array)\*?\}\s*\\right\.?/g, (_m, body) => {
     return `\\left[\\begin{aligned}\n${formatAlignedTrigBody(body)}\n\\end{aligned}\\right.`;
   });
 
@@ -890,7 +894,8 @@ export const cleanVietnameseUnicode = (str: string): string => {
     .replace(/ê[`']/g, 'ề')
     .replace(/ế[´'’^]/g, 'ế')
     .replace(/ố[´'’^]/g, 'ố')
-    .replace(/([a-zA-Z\u00C0-\u1EF9])[\s]*[`´'’^](?=[a-zA-Z\u00C0-\u1EF9\s]|$)/g, '$1')
+    // Chỉ loại bỏ dấu thanh gãy rụng trên nguyên âm tiếng Việt, TUYỆT ĐỐI KHÔNG xóa dấu đạo hàm y', f'(x), y'', ...
+    .replace(/([aAeEiIoOuU\u00C0-\u1EF9])[\s]*[`´^](?=[a-zA-Z\u00C0-\u1EF9\s]|$)/g, '$1')
     .replace(/`([A-ZÀ-Ỹa-zà-ỹ])/g, '$1')
     .replace(/´([A-ZÀ-Ỹa-zà-ỹ])/g, '$1');
 
@@ -1168,7 +1173,7 @@ export const normalizeSetNotation = (text: string): string => {
       const braceStart = startIdx + name.length;
 
       const before = inner.slice(0, braceStart);
-      if (/\\[a-zA-Z]+$/.test(before) && !/\\[a-zA-Z]+$/.test(before.replace(/\\(setminus|cup|cap|subset|supset|subseteq|supseteq|in|notin)$/, ""))) {
+      if (/(?:\\[a-zA-Z]+_?|[_^])\s*$/.test(before) && !/\\[a-zA-Z]+$/.test(before.replace(/\\(setminus|cup|cap|subset|supset|subseteq|supseteq|in|notin)$/, ""))) {
         result += inner.slice(i, braceStart + 1);
         i = braceStart + 1;
         continue;
@@ -1242,7 +1247,7 @@ export const normalizeSetNotation = (text: string): string => {
     const braceStart = startIdx + name.length;
 
     const before = s.slice(0, braceStart);
-    if (/\\[a-zA-Z]+$/.test(before) && !/\\[a-zA-Z]+$/.test(before.replace(/\\(setminus|cup|cap|subset|supset|subseteq|supseteq|in|notin)$/, ""))) {
+    if (/(?:\\[a-zA-Z]+_?|[_^])\s*$/.test(before) && !/\\[a-zA-Z]+$/.test(before.replace(/\\(setminus|cup|cap|subset|supset|subseteq|supseteq|in|notin)$/, ""))) {
       result += s.slice(i, braceStart + openBrace.length);
       i = braceStart + openBrace.length;
       continue;
@@ -2404,7 +2409,7 @@ export const fixMath = (text: any) => {
     });
 
     // Convert $$...$$ in True/False statements or explanation lines (e.g. "c) Đúng (Vì $$...$$)" or "- a) Đúng ...")
-    t = t.replace(/(^|\n)\s*([-\*]\s+|(?:\d+|[a-d])[\.\:\)]\s+)([\s\S]*?)($|\n)/g, (match, prefix, bullet, content, suffix) => {
+    t = t.replace(/(^|\n)\s*([-\*]\s+|(?:\d+|[a-d])[\.\:\)]\s+)([^\n]*)($|\n)/g, (match, prefix, bullet, content, suffix) => {
         const cleaned = content.replace(/\$\$\s*([\s\S]*?)\s*\$\$/g, (m, math) => {
             return `$${math.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim()}$`;
         });
@@ -2412,7 +2417,7 @@ export const fixMath = (text: any) => {
     });
 
     // 2.8. Normalize spaces, trailing punctuation, infinity, and strip newlines inside inline $ ... $ so remark-math and KaTeX recognize them
-    t = t.replace(/(?<!\$)\$(?!\$)([\s\S]+?)(?<!\$)\$(?!\$)/g, (match, formula) => {
+    t = t.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)(?<!\$)\$(?!\$)/g, (match, formula) => {
         if (formula.includes('$$')) return match;
         let trimmed = formula.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
         if (!trimmed) return match;

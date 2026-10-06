@@ -3,11 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { Analytics } from '@vercel/analytics/react';
-import { Menu, Sparkles, Key, AlertCircle } from "lucide-react";
+import { Menu, Sparkles, Key, AlertCircle, HelpCircle } from "lucide-react";
 import React, { useState, Suspense, useEffect } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SettingsModal } from "./components/SettingsModal";
+import { UserGuideModal } from "./components/UserGuideModal";
 
 function safeLazy<T extends React.ComponentType<any>>(
   factory: () => Promise<any>,
@@ -77,16 +78,19 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("math_tools");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [retryStatus, setRetryStatus] = useState<{ attempt: number, maxRetries: number, message?: string } | null>(null);
 
   useEffect(() => {
     const handleShowModal = () => setIsSettingsOpen(true);
+    const handleShowGuide = () => setIsGuideOpen(true);
     const handleRetryStatus = (e: any) => {
       setRetryStatus(e.detail);
       setTimeout(() => setRetryStatus(null), 14000);
     };
 
     window.addEventListener('show-api-key-modal', handleShowModal);
+    window.addEventListener('show-user-guide-modal', handleShowGuide);
     window.addEventListener('api-retry-status', handleRetryStatus);
     
     const storedKey = localStorage.getItem("eduplan_gemini_api_key_v2");
@@ -96,6 +100,7 @@ export default function App() {
 
     return () => {
       window.removeEventListener('show-api-key-modal', handleShowModal);
+      window.removeEventListener('show-user-guide-modal', handleShowGuide);
       window.removeEventListener('api-retry-status', handleRetryStatus);
     };
   }, []);
@@ -165,6 +170,10 @@ export default function App() {
             setIsSettingsOpen(true);
             setIsSidebarOpen(false);
           }}
+          onOpenGuide={() => {
+            setIsGuideOpen(true);
+            setIsSidebarOpen(false);
+          }}
         />
       </div>
 
@@ -177,6 +186,14 @@ export default function App() {
              <span className="font-bold text-lg sm:hidden">EduPlan</span>
           </div>
           <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setIsGuideOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 text-slate-700 border border-slate-200 rounded-md text-xs font-medium hover:bg-slate-200 transition-colors"
+              title="Hướng dẫn sử dụng"
+            >
+              <HelpCircle className="h-3.5 w-3.5 text-emerald-600" />
+              <span>HDSD</span>
+            </button>
             <button onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-md text-xs font-medium hover:bg-emerald-100 transition-colors">
               <Key className="h-3.5 w-3.5" />
               <span>API Key</span>
@@ -209,6 +226,7 @@ export default function App() {
         </div>
       </main>
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <UserGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
       <Analytics />
     </div>
   );

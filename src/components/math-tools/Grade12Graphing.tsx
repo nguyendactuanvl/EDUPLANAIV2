@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { InteractivePlot } from "./InteractivePlot";
 import { VariationTable, VariationTablePoint, VariationInterval } from "./VariationTable";
 import { MarkdownRenderer, MathSpan } from "../MarkdownRenderer";
-import { formatCubic, formatQuadratic, formatQuartic } from "../../lib/mathFormatters";
+import { formatCubic, formatQuadratic, formatQuartic, formatLinearEquation } from "../../lib/mathFormatters";
 import { FunctionPlotData, Point2D, AsymptoteLine } from "./types";
 import { Copy, Check } from "lucide-react";
 
@@ -111,8 +111,8 @@ export const Grade12Graphing: React.FC = () => {
       );
 
       extremaMarkdown = `Hàm số có 2 điểm cực trị:
-- ${isFirstMax ? "Điểm cực đại" : "Điểm cực tiểu"}: $x = ${Number(x1.toFixed(2))}$, giá trị cực trị $y = ${Number(y1.toFixed(2))}$.
-- ${isFirstMax ? "Điểm cực tiểu" : "Điểm cực đại"}: $x = ${Number(x2.toFixed(2))}$, giá trị cực trị $y = ${Number(y2.toFixed(2))}$.`;
+- ${isFirstMax ? "Điểm cực đại của hàm số" : "Điểm cực tiểu của hàm số"}: $x = ${Number(x1.toFixed(2))}$, giá trị ${isFirstMax ? "cực đại" : "cực tiểu"} $y_{\\text{${isFirstMax ? "CĐ" : "CT"}}} = ${Number(y1.toFixed(2))}$ (điểm ${isFirstMax ? "cực đại" : "cực tiểu"} của đồ thị: $(${Number(x1.toFixed(2))}; ${Number(y1.toFixed(2))})$).
+- ${isFirstMax ? "Điểm cực tiểu của hàm số" : "Điểm cực đại của hàm số"}: $x = ${Number(x2.toFixed(2))}$, giá trị ${isFirstMax ? "cực tiểu" : "cực đại"} $y_{\\text{${isFirstMax ? "CT" : "CĐ"}}} = ${Number(y2.toFixed(2))}$ (điểm ${isFirstMax ? "cực tiểu" : "cực đại"} của đồ thị: $(${Number(x2.toFixed(2))}; ${Number(y2.toFixed(2))})$).`;
 
       if (a > 0) {
         bbtPoints = [
@@ -379,8 +379,8 @@ export const Grade12Graphing: React.FC = () => {
       );
 
       extremaMarkdown = `Hàm số có 2 điểm cực trị:
-- ${isFirstMax ? "Điểm cực đại" : "Điểm cực tiểu"}: $x = ${Number(x1.toFixed(2))}$, giá trị cực trị $y = ${Number(y1.toFixed(2))}$.
-- ${isFirstMax ? "Điểm cực tiểu" : "Điểm cực đại"}: $x = ${Number(x2.toFixed(2))}$, giá trị cực trị $y = ${Number(y2.toFixed(2))}$.`;
+- ${isFirstMax ? "Điểm cực đại của hàm số" : "Điểm cực tiểu của hàm số"}: $x = ${Number(x1.toFixed(2))}$, giá trị ${isFirstMax ? "cực đại" : "cực tiểu"} $y_{\\text{${isFirstMax ? "CĐ" : "CT"}}} = ${Number(y1.toFixed(2))}$ (điểm ${isFirstMax ? "cực đại" : "cực tiểu"} của đồ thị: $(${Number(x1.toFixed(2))}; ${Number(y1.toFixed(2))})$).
+- ${isFirstMax ? "Điểm cực tiểu của hàm số" : "Điểm cực đại của hàm số"}: $x = ${Number(x2.toFixed(2))}$, giá trị ${isFirstMax ? "cực tiểu" : "cực đại"} $y_{\\text{${isFirstMax ? "CT" : "CĐ"}}} = ${Number(y2.toFixed(2))}$ (điểm ${isFirstMax ? "cực tiểu" : "cực đại"} của đồ thị: $(${Number(x2.toFixed(2))}; ${Number(y2.toFixed(2))})$).`;
 
       if (isBranchUp) {
         bbtPoints = [
@@ -532,8 +532,8 @@ export const Grade12Graphing: React.FC = () => {
       );
 
       extremaMarkdown = `Hàm số có 3 điểm cực trị:
-- ${isCenterMax ? "Điểm cực đại" : "Điểm cực tiểu"}: $x = 0$, giá trị cực trị $y = ${c}$.
-- Hai ${isCenterMax ? "điểm cực tiểu" : "điểm cực đại"}: $x = \\pm ${Number(xExt.toFixed(2))}$, giá trị cực trị $y = ${Number(yExt.toFixed(2))}$.`;
+- ${isCenterMax ? "Điểm cực đại của hàm số" : "Điểm cực tiểu của hàm số"}: $x = 0$, giá trị ${isCenterMax ? "cực đại" : "cực tiểu"} $y_{\\text{${isCenterMax ? "CĐ" : "CT"}}} = ${c}$ (điểm ${isCenterMax ? "cực đại" : "cực tiểu"} của đồ thị: $(0; ${c})$).
+- Hai ${isCenterMax ? "điểm cực tiểu của hàm số" : "điểm cực đại của hàm số"}: $x = \\pm ${Number(xExt.toFixed(2))}$, giá trị ${isCenterMax ? "cực tiểu" : "cực đại"} $y_{\\text{${isCenterMax ? "CT" : "CĐ"}}} = ${Number(yExt.toFixed(2))}$ (hai điểm ${isCenterMax ? "cực tiểu" : "cực đại"} của đồ thị: $(\\pm ${Number(xExt.toFixed(2))}; ${Number(yExt.toFixed(2))})$).`;
 
       if (a > 0) {
         bbtPoints = [
@@ -576,7 +576,7 @@ export const Grade12Graphing: React.FC = () => {
       });
 
       extremaMarkdown = `Hàm số có 1 điểm cực trị duy nhất:
-- ${isMin ? "Điểm cực tiểu" : "Điểm cực đại"}: $x = 0$, giá trị cực trị $y = ${c}$.`;
+- ${isMin ? "Điểm cực tiểu của hàm số" : "Điểm cực đại của hàm số"}: $x = 0$, giá trị ${isMin ? "cực tiểu" : "cực đại"} $y_{\\text{${isMin ? "CT" : "CĐ"}}} = ${c}$ (điểm ${isMin ? "cực tiểu" : "cực đại"} của đồ thị: $(0; ${c})$).`;
 
       if (a > 0) {
         bbtPoints = [
@@ -695,6 +695,10 @@ export const Grade12Graphing: React.FC = () => {
   const fullReportMarkdown = useMemo(() => {
     if (funcType === "cubic") {
       const { a, b, c, d, aPrime, bPrime, cPrime, roots, xInflection, yInflection, extremaMarkdown } = cubicAnalysis;
+      const rootsTex = roots.length === 2 
+        ? `$$y' = 0 \\iff \\left[\\begin{aligned} x &= ${Number(roots[0].toFixed(2))} \\\\ x &= ${Number(roots[1].toFixed(2))} \\end{aligned}\\right.$$`
+        : `$$y' = 0 \\text{ vô nghiệm hoặc có nghiệm kép (hàm số không có cực trị)}$$`;
+
       return `### SƠ ĐỒ KHẢO SÁT HÀM SỐ BẬC BA: $y = ${formatCubic(a, b, c, d)}$
 
 #### 1. Tập xác định:
@@ -702,10 +706,13 @@ $D = \\mathbb{R}$.
 
 #### 2. Sự biến thiên:
 - **Đạo hàm:**
-  $$y' = ${aPrime}x^2 ${bPrime >= 0 ? "+ " + bPrime : "- " + Math.abs(bPrime)}x ${cPrime >= 0 ? "+ " + cPrime : "- " + Math.abs(cPrime)}$$
+  $$y' = ${formatQuadratic(aPrime, bPrime, cPrime)}$$
+
 - **Nghiệm đạo hàm & Cực trị:**
-  ${roots.length === 2 ? `$$y' = 0 \\iff \\left[\\begin{array}{l} x = ${Number(roots[0].toFixed(2))} \\\\ x = ${Number(roots[1].toFixed(2))} \\end{array}\\right.$$` : `$$y' = 0 \\text{ vô nghiệm hoặc có nghiệm kép}$$`}
+  ${rootsTex}
+
   ${extremaMarkdown}
+
 - **Giới hạn tại vô cực:**
   $$\\lim_{x \\to +\\infty} y = ${a > 0 ? "+\\infty" : "-\\infty"}, \\quad \\lim_{x \\to -\\infty} y = ${a > 0 ? "-\\infty" : "+\\infty"}$$
 
@@ -715,47 +722,58 @@ $D = \\mathbb{R}$.
 - Đồ thị nhận điểm uốn $I$ làm tâm đối xứng.`;
     } else if (funcType === "rational1_1") {
       const { a, b, c, d, adMinusBc, xAsymptote, yAsymptote } = rational1Analysis;
-      return `### SƠ ĐỒ KHẢO SÁT HÀM SỐ PHÂN THỨC: $y = \\frac{${a}x ${b >= 0 ? "+ " + b : "- " + Math.abs(b)}}{${c}x ${d >= 0 ? "+ " + d : "- " + Math.abs(d)}}$
+      const denomTex = `(${formatLinearEquation(c, 0, d).replace(/\s*=\s*0$/, '')})^2`;
+      return `### SƠ ĐỒ KHẢO SÁT HÀM SỐ PHÂN THỨC: $y = \\frac{${formatLinearEquation(a, 0, b).replace(/\s*=\s*0$/, '')}}{${formatLinearEquation(c, 0, d).replace(/\s*=\s*0$/, '')}}$
 
 #### 1. Tập xác định:
 $D = \\mathbb{R} \\setminus \\{${Number(xAsymptote.toFixed(2))}\\}$.
 
 #### 2. Sự biến thiên:
 - **Đạo hàm:**
-  $$y' = \\frac{ad - bc}{(${c}x ${d >= 0 ? "+ " + d : "- " + Math.abs(d)})^2} = \\frac{${adMinusBc}}{(${c}x ${d >= 0 ? "+ " + d : "- " + Math.abs(d)})^2}$$
+  $$y' = \\frac{ad - bc}{(${formatLinearEquation(c, 0, d).replace(/\s*=\s*0$/, '')})^2} = \\frac{${adMinusBc}}{(${formatLinearEquation(c, 0, d).replace(/\s*=\s*0$/, '')})^2}$$
+
   ${adMinusBc > 0 ? `Vì $y' > 0, \\forall x \\ne ${Number(xAsymptote.toFixed(2))}$ nên hàm số đồng biến trên từng khoảng xác định $(-\\infty; ${Number(xAsymptote.toFixed(2))})$ và $(${Number(xAsymptote.toFixed(2))}; +\\infty)$.` : `Vì $y' < 0, \\forall x \\ne ${Number(xAsymptote.toFixed(2))}$ nên hàm số nghịch biến trên từng khoảng xác định $(-\\infty; ${Number(xAsymptote.toFixed(2))})$ và $(${Number(xAsymptote.toFixed(2))}; +\\infty)$.`}
+
 - **Cực trị:** Hàm số không có cực trị.
+
 - **Giới hạn và Tiệm cận:**
-  - $\\lim_{x \\to (${Number(xAsymptote.toFixed(2))})^-} y = ${adMinusBc > 0 ? "+\\infty" : "-\\infty"}$, $\\lim_{x \\to (${Number(xAsymptote.toFixed(2))})^+} y = ${adMinusBc > 0 ? "-\\infty" : "+\\infty"}$ $\\implies$ Đường thẳng $x = ${Number(xAsymptote.toFixed(2))}$ là **tiệm cận đứng**.
-  - $\\lim_{x \\to \\pm\\infty} y = \\frac{a}{c} = ${Number(yAsymptote.toFixed(2))}$ $\\implies$ Đường thẳng $y = ${Number(yAsymptote.toFixed(2))}$ là **tiệm cận ngang**.
+  - $\\lim_{x \\to (${Number(xAsymptote.toFixed(2))})^-} y = ${adMinusBc > 0 ? "+\\infty" : "-\\infty"}$, $\\lim_{x \\to (${Number(xAsymptote.toFixed(2))})^+} y = ${adMinusBc > 0 ? "-\\infty" : "+\\infty"}$ $\\implies x = ${Number(xAsymptote.toFixed(2))}$ là **tiệm cận đứng**.
+  - $\\lim_{x \\to \\pm\\infty} y = \\frac{${a}}{${c}} = ${Number(yAsymptote.toFixed(2))}$ $\\implies y = ${Number(yAsymptote.toFixed(2))}$ là **tiệm cận ngang**.
 
 #### 3. Đồ thị:
 - **Tâm đối xứng:** Đồ thị nhận giao điểm hai đường tiệm cận $I(${Number(xAsymptote.toFixed(2))}; ${Number(yAsymptote.toFixed(2))})$ làm tâm đối xứng.
-- **Giao điểm với trục tọa độ:**
+- **Giao điểm với các trục tọa độ:**
   - Với $Oy$: Cho $x = 0 \\implies y = ${d !== 0 ? Number((b / d).toFixed(2)) : "không xác định"}$.
   - Với $Ox$: Cho $y = 0 \\implies x = ${a !== 0 ? Number((-b / a).toFixed(2)) : "vô nghiệm"}$.`;
     } else if (funcType === "rational2_1") {
       const { a, b, c, d, e, m, n, r, xAsymptote, yCenter, numA, numB, numC, deltaPrime, roots, extremaMarkdown, isBranchUp } = rational2Analysis;
-      return `### SƠ ĐỒ KHẢO SÁT HÀM SỐ PHÂN THỨC: $y = \\frac{${a}x^2 ${b >= 0 ? "+ " + b : "- " + Math.abs(b)}x ${c >= 0 ? "+ " + c : "- " + Math.abs(c)}}{${d}x ${e >= 0 ? "+ " + e : "- " + Math.abs(e)}}$
+      const rootsTex = roots.length === 2
+        ? `$$y' = 0 \\iff \\left[\\begin{aligned} x &= ${Number(roots[0].toFixed(2))} \\\\ x &= ${Number(roots[1].toFixed(2))} \\end{aligned}\\right.$$`
+        : `$$y' = 0 \\text{ vô nghiệm hoặc có nghiệm kép (}\\Delta' \\le 0\\text{)}$$`;
+
+      return `### SƠ ĐỒ KHẢO SÁT HÀM SỐ PHÂN THỨC: $y = \\frac{${formatQuadratic(a, b, c)}}{${formatLinearEquation(d, 0, e).replace(/\s*=\s*0$/, '')}}$
 
 #### 1. Tập xác định:
 $D = \\mathbb{R} \\setminus \\{${Number(xAsymptote.toFixed(2))}\\}$.
 
 #### 2. Dạng phân tích (Chia đa thức):
 Thực hiện phép chia tử số cho mẫu số ta được:
-$$y = (${Number(m.toFixed(2))}x ${n >= 0 ? "+ " + Number(n.toFixed(2)) : "- " + Math.abs(Number(n.toFixed(2)))}) + \\frac{${Number(r.toFixed(2))}}{${d}x ${e >= 0 ? "+ " + e : "- " + Math.abs(e)}}$$
+$$y = (${formatLinearEquation(Number(m.toFixed(2)), 0, Number(n.toFixed(2))).replace(/\s*=\s*0$/, '')}) + \\frac{${Number(r.toFixed(2))}}{${formatLinearEquation(d, 0, e).replace(/\s*=\s*0$/, '')}}$$
 
 #### 3. Sự biến thiên & Cực trị:
 - **Đạo hàm:**
-  $$y' = \\frac{(${numA})x^2 ${numB >= 0 ? "+ " + numB : "- " + Math.abs(numB)}x ${numC >= 0 ? "+ " + numC : "- " + Math.abs(numC)}}{(${d}x ${e >= 0 ? "+ " + e : "- " + Math.abs(e)})^2}$$
+  $$y' = \\frac{${formatQuadratic(numA, numB, numC)}}{(${formatLinearEquation(d, 0, e).replace(/\s*=\s*0$/, '')})^2}$$
+
 - **Nghiệm đạo hàm & Cực trị:**
-  ${roots.length === 2 ? `$$y' = 0 \\iff \\left[\\begin{array}{l} x = ${Number(roots[0].toFixed(2))} \\\\ x = ${Number(roots[1].toFixed(2))} \\end{array}\\right.$$` : `$$y' = 0 \\text{ vô nghiệm hoặc có nghiệm kép (}\\Delta' \\le 0\\text{)}$$`}
+  ${rootsTex}
+
   ${extremaMarkdown}
+
 - **Đường tiệm cận đứng:**
   $$\\lim_{x \\to (${Number(xAsymptote.toFixed(2))})^-} y = ${isBranchUp ? "-\\infty" : "+\\infty"}, \\quad \\lim_{x \\to (${Number(xAsymptote.toFixed(2))})^+} y = ${isBranchUp ? "+\\infty" : "-\\infty"} \\implies x = ${Number(xAsymptote.toFixed(2))}$$
+
 - **Đường tiệm cận xiên:**
-  $$\\lim_{x \\to \\pm\\infty} [y - (${Number(m.toFixed(2))}x ${n >= 0 ? "+ " + Number(n.toFixed(2)) : "- " + Math.abs(Number(n.toFixed(2)))})] = \\lim_{x \\to \\pm\\infty} \\frac{${Number(r.toFixed(2))}}{${d}x ${e >= 0 ? "+ " + e : "- " + Math.abs(e)}} = 0$$
-  $$\\implies y = ${Number(m.toFixed(2))}x ${n >= 0 ? "+ " + Number(n.toFixed(2)) : "- " + Math.abs(Number(n.toFixed(2)))}$$
+  $$\\lim_{x \\to \\pm\\infty} \\left[ y - (${formatLinearEquation(Number(m.toFixed(2)), 0, Number(n.toFixed(2))).replace(/\s*=\s*0$/, '')}) \\right] = 0 \\implies y = ${formatLinearEquation(Number(m.toFixed(2)), 0, Number(n.toFixed(2))).replace(/\s*=\s*0$/, '')}$$
 
 #### 4. Đồ thị:
 - **Tâm đối xứng:** Giao điểm hai đường tiệm cận $I(${Number(xAsymptote.toFixed(2))}; ${Number(yCenter.toFixed(2))})$.
@@ -769,9 +787,11 @@ $D = \\mathbb{R}$.
 
 #### 2. Sự biến thiên:
 - **Đạo hàm:**
-  $$y' = ${4 * a}x^3 ${2 * b >= 0 ? "+ " + (2 * b) : "- " + Math.abs(2 * b)}x = 2x(${2 * a}x^2 ${b >= 0 ? "+ " + b : "- " + Math.abs(b)})$$
+  $$y' = ${4 * a}x^3 ${2 * b >= 0 ? "+ " + (2 * b) : "- " + Math.abs(2 * b)}x = 2x(${formatQuadratic(2 * a, 0, b)})$$
+
 - **Cực trị:**
   ${extremaMarkdown}
+
 - **Giới hạn tại vô cực:**
   $$\\lim_{x \\to \\pm\\infty} y = ${a > 0 ? "+\\infty" : "-\\infty"}$$
 
@@ -790,6 +810,7 @@ $D = \\mathbb{R}$.
 - **Trục đối xứng:** Đường thẳng $x = ${Number(xVertex.toFixed(2))}$.
 - **Chiều biến thiên:**
   ${isMin ? `Hàm số nghịch biến trên khoảng $(-\\infty; ${Number(xVertex.toFixed(2))})$ và đồng biến trên khoảng $(${Number(xVertex.toFixed(2))}; +\\infty)$.` : `Hàm số đồng biến trên khoảng $(-\\infty; ${Number(xVertex.toFixed(2))})$ và nghịch biến trên khoảng $(${Number(xVertex.toFixed(2))}; +\\infty)$.`}
+
   Giá trị ${isMin ? "nhỏ nhất" : "lớn nhất"} của hàm số là $y = ${Number(yVertex.toFixed(2))}$ tại $x = ${Number(xVertex.toFixed(2))}$.
 
 #### 3. Đồ thị:

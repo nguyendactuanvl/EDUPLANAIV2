@@ -14,6 +14,7 @@ import { VariationTableGenerator } from "../components/math-tools/VariationTable
 import { GeoGebraDrawer } from "../components/math-tools/GeoGebraDrawer";
 import { ScientificCalculatorModal } from "../components/math-tools/ScientificCalculatorModal";
 import { SvgAiIllustrator } from "../components/math-tools/SvgAiIllustrator";
+import { Advanced3DSimulator } from "../components/math-tools/Advanced3DSimulator";
 
 
 // ==========================================
@@ -102,8 +103,8 @@ export function MathTools() {
   const [showCalculator, setShowCalculator] = useState(false);
   const [showGeoGebra, setShowGeoGebra] = useState(false);
 
-  // Navigation: Sub-system Tab 1: Graphing & Analysis (KSHS) vs Tab 2: SVG Simulation (AI) vs Tab 3: Bảng biến thiên AI vs Tab 4: Statistics
-  const [mainSubsystem, setMainSubsystem] = useState<"graphing" | "svg_ai" | "bbt_ai" | "statistics">("graphing");
+  // Navigation: Sub-system Tab 1: Graphing & Analysis (KSHS) vs Tab 2: 3D Simulation vs Tab 3: SVG Simulation (AI) vs Tab 4: Bảng biến thiên AI vs Tab 5: Statistics
+  const [mainSubsystem, setMainSubsystem] = useState<"graphing" | "sim_3d" | "svg_ai" | "bbt_ai" | "statistics">("graphing");
 
   // Main module view: Grade 10 (Ungrouped) or Grade 11-12 (Grouped)
   const [activeModule, setActiveModule] = useState<"grade10" | "grade11_12">("grade10");
@@ -819,6 +820,19 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
             </button>
 
             <button
+              onClick={() => setMainSubsystem("sim_3d")}
+              className={cn(
+                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                mainSubsystem === "sim_3d"
+                  ? "bg-emerald-600 text-white shadow-md font-bold"
+                  : "text-emerald-700 hover:text-emerald-900 hover:bg-emerald-50 font-bold"
+              )}
+            >
+              <Layers className="w-4 h-4 text-emerald-500 animate-pulse" />
+              <span>2. Kho Mô Phỏng 3D Cắt Ghép & Tối Ưu</span>
+            </button>
+
+            <button
               onClick={() => setMainSubsystem("svg_ai")}
               className={cn(
                 "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
@@ -828,7 +842,7 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
               )}
             >
               <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
-              <span>2. Vẽ hình mô phỏng (AI)</span>
+              <span>3. Vẽ hình mô phỏng (AI)</span>
             </button>
 
             <button
@@ -841,7 +855,7 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
               )}
             >
               <Sparkles className="w-4 h-4 text-indigo-600" />
-              <span>3. Bảng biến thiên AI (Chuẩn SGK)</span>
+              <span>4. Bảng biến thiên AI</span>
             </button>
 
             <button
@@ -854,7 +868,7 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
               )}
             >
               <BarChart3 className="w-4 h-4 text-emerald-600" />
-              <span>4. Công cụ Thống kê 10, 11, 12</span>
+              <span>5. Thống kê 10, 11, 12</span>
             </button>
           </div>
         </div>
@@ -895,6 +909,13 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
       {mainSubsystem === "graphing" && (
         <div className="flex-1 flex flex-col">
           <GraphingAndAnalysisMain />
+        </div>
+      )}
+
+      {/* RENDER PHÂN HỆ 2: KHO MÔ PHỎNG 3D CẮT GHÉP & TỐI ƯU TOÁN THỰC TẾ */}
+      {mainSubsystem === "sim_3d" && (
+        <div className="flex-1 flex flex-col p-4 max-w-7xl mx-auto w-full">
+          <Advanced3DSimulator />
         </div>
       )}
 

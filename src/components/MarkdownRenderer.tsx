@@ -432,7 +432,7 @@ export const MarkdownRenderer = ({
 
   // Normalize spaces inside inline $ ... $ so remark-math recognizes them (e.g. "$ 1 $" -> "$1$", "$ x = 2 $" -> "$x = 2$")
   // Strip any newlines \n and excess spaces inside $ ... $, and pull trailing punctuation OUT of the inline math block ($0.$ -> $0$.)
-  processedContent = processedContent.replace(/(?<!\$)\$(?!\$)([\s\S]+?)(?<!\$)\$(?!\$)/g, (match, formula) => {
+  processedContent = processedContent.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)(?<!\$)\$(?!\$)/g, (match, formula) => {
     if (formula.includes('$$')) return match;
     let trimmed = formula.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
     if (!trimmed) return match;

@@ -1,13 +1,18 @@
-import { Trophy, BookOpen, Calendar, FileText, Settings, Sparkles, Clock, ClipboardList, FileEdit, FileCheck, Users, ShieldCheck, CalendarDays, Key, Calculator } from "lucide-react";
+import { 
+  Trophy, BookOpen, Calendar, FileText, Settings, Sparkles, Clock, 
+  ClipboardList, FileEdit, FileCheck, Users, ShieldCheck, CalendarDays, 
+  Key, Calculator, HelpCircle, PlayCircle 
+} from "lucide-react";
 import { cn } from "../lib/utils";
 
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   onOpenSettings?: () => void;
+  onOpenGuide?: () => void;
 }
 
-export function Sidebar({ activeTab, setActiveTab, onOpenSettings }: SidebarProps) {
+export function Sidebar({ activeTab, setActiveTab, onOpenSettings, onOpenGuide }: SidebarProps) {
   const navGroups = [
     {
       title: "Chuyên môn & Soạn giảng",
@@ -33,6 +38,7 @@ export function Sidebar({ activeTab, setActiveTab, onOpenSettings }: SidebarProp
     {
       title: "Tiện ích & Hồ sơ",
       items: [
+        { id: "user_guide", label: "Hướng dẫn sử dụng", icon: HelpCircle, isAction: true },
         { id: "timetable", label: "TKB & Công việc", icon: CalendarDays },
         { id: "circulars", label: "Tài liệu & Thông tư", icon: FileText },
         { id: "history", label: "Lịch sử đã tạo", icon: Clock },
@@ -63,19 +69,33 @@ export function Sidebar({ activeTab, setActiveTab, onOpenSettings }: SidebarProp
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
+                const isAction = (item as any).isAction;
                 return (
                   <li key={item.id}>
                     <button
-                      onClick={() => setActiveTab(item.id)}
+                      onClick={() => {
+                        if (item.id === "user_guide") {
+                          onOpenGuide?.();
+                        } else {
+                          setActiveTab(item.id);
+                        }
+                      }}
                       className={cn(
-                        "w-full flex items-center gap-3 px-6 py-3 text-sm font-medium transition-colors",
-                        isActive
-                          ? "bg-emerald-500/10 text-emerald-400 border-r-4 border-emerald-500"
-                          : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                        "w-full flex items-center gap-3 px-6 py-3 text-sm font-medium transition-colors cursor-pointer",
+                        item.id === "user_guide"
+                          ? "text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
+                          : isActive
+                            ? "bg-emerald-500/10 text-emerald-400 border-r-4 border-emerald-500"
+                            : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
                       )}
                     >
-                      <Icon className="h-5 w-5" />
-                      {item.label}
+                      <Icon className={cn("h-5 w-5", item.id === "user_guide" && "text-emerald-400")} />
+                      <span className="flex-1 text-left">{item.label}</span>
+                      {item.id === "user_guide" && (
+                        <span className="px-1.5 py-0.5 text-[10px] font-bold bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30">
+                          HD
+                        </span>
+                      )}
                     </button>
                   </li>
                 );
@@ -88,7 +108,7 @@ export function Sidebar({ activeTab, setActiveTab, onOpenSettings }: SidebarProp
       <div className="p-6 border-t border-slate-800">
         <button 
           onClick={onOpenSettings}
-          className="flex items-center gap-3 text-sm font-medium text-emerald-400 hover:text-emerald-300 transition-colors w-full text-left"
+          className="flex items-center gap-3 text-sm font-medium text-emerald-400 hover:text-emerald-300 transition-colors w-full text-left cursor-pointer"
         >
           <Key className="h-5 w-5" />
           Nhập mã API key của bạn ở đây
