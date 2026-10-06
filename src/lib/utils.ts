@@ -801,34 +801,52 @@ export const cleanVietnameseUnicode = (str: string): string => {
   if (!str) return '';
   let res = rescueCodeAndNestedText(str);
 
-  // 1. Chuyển đổi ký tự toán Unicode nghiêng/đậm (Mathematical Alphanumeric Symbols) sang chuẩn ASCII
-  res = res.normalize('NFKD').normalize('NFC');
+  // 1. Luôn chuẩn hóa trực tiếp sang NFC (Precomposed Form) để ghép liền dấu thanh tiếng Việt
+  res = res.normalize('NFC');
 
-  // 2. Triệt tiêu các ký tự dấu thanh bị gãy rụng đứng cạnh chữ cái
+  // 2. Triệt tiêu triệt để các ký tự dấu thanh bị gãy rụng hoặc dấu phẩy/accent tách rời
   res = res
-    .replace(/PHÂ\s*[`']\s*N/gi, 'PHẦN')
-    .replace(/THỐ\s*[´']\s*NG/gi, 'THỐNG')
-    .replace(/TRĂ\s*[´']\s*C/gi, 'TRẮC')
-    .replace(/NHIÊ\s*[`']\s*U/gi, 'NHIỀU')
-    .replace(/nhấ\s*[´']\s*t/gi, 'nhất')
-    .replace(/viế\s*[´']\s*t/gi, 'viết')
-    .replace(/biế\s*[´']\s*n/gi, 'biến')
-    .replace(/Số\s*[´']/gi, 'Số')
-    .replace(/đề\s*[`']/gi, 'đề')
-    .replace(/tố\s*[´']/gi, 'tố')
-    .replace(/Â[`']/g, 'Ầ')
-    .replace(/Â´/g, 'Ấ')
-    .replace(/Ă´/g, 'Ắ')
+    .replace(/PHÂ\s*[`'´’^]\s*N/gi, 'PHẦN')
+    .replace(/TẮ\s*[`'´’^]\s*T/gi, 'TẮT')
+    .replace(/THUYẾ\s*[`'´’^]\s*T/gi, 'THUYẾT')
+    .replace(/TRỌ\s*[`'´’^]\s*NG/gi, 'TRỌNG')
+    .replace(/TÂ\s*[`'´’^]\s*M/gi, 'TÂM')
+    .replace(/THỐ\s*[´'’^]\s*NG/gi, 'THỐNG')
+    .replace(/TRĂ\s*[´'’^]\s*C/gi, 'TRẮC')
+    .replace(/NHIÊ\s*[`'´’^]\s*U/gi, 'NHIỀU')
+    .replace(/PHƯƠ\s*[`'´’^]\s*NG/gi, 'PHƯƠNG')
+    .replace(/LỰ\s*[`'´’^]\s*A/gi, 'LỰA')
+    .replace(/CHỌ\s*[`'´’^]\s*N/gi, 'CHỌN')
+    .replace(/nhấ\s*[´'’^]\s*t/gi, 'nhất')
+    .replace(/viế\s*[´'’^]\s*t/gi, 'viết')
+    .replace(/biế\s*[´'’^]\s*n/gi, 'biến')
+    .replace(/tiế\s*[´'’^]\s*p/gi, 'tiếp')
+    .replace(/kiế\s*[´'’^]\s*n/gi, 'kiến')
+    .replace(/thứ\s*[´'’^]\s*c/gi, 'thức')
+    .replace(/bằ\s*[`'´’^]\s*ng/gi, 'bằng')
+    .replace(/số\s*[´'’^]\s*ng|số\s*[`'´’^]\s*ng/gi, 'sống')
+    .replace(/thế\s*[´'’^]|thế\s*[`'´’^]/gi, 'thế')
+    .replace(/cấ\s*[´'’^]\s*p|cấp\s*[`'´’^]/gi, 'cấp')
+    .replace(/cấ\s*[´'’^]\s*u|cấu\s*[`'´’^]/gi, 'cấu')
+    .replace(/điề\s*[`'´’^]\s*u|điều\s*[`'´’^]/gi, 'điều')
+    .replace(/Đố\s*[´'’^]\s*i|Đối\s*[`'´’^]|Đố\s*[`'´’^]\s*i/gi, 'Đối')
+    .replace(/đố\s*[´'’^]\s*i|đối\s*[`'´’^]|đố\s*[`'´’^]\s*i/gi, 'đối')
+    .replace(/tố\s*[´'’^]|tố\s*[`'´’^]/gi, 'tố')
+    .replace(/Số\s*[´'’^]/gi, 'Số')
+    .replace(/đề\s*[`'´’^]/gi, 'đề')
+    .replace(/Â[`'´’^]/g, 'Ầ')
+    .replace(/Ă[´'’^]/g, 'Ắ')
     .replace(/Ă[`']/g, 'Ằ')
-    .replace(/ô´/g, 'ố')
+    .replace(/ô[´'’^]/g, 'ố')
     .replace(/ô[`']/g, 'ồ')
-    .replace(/ê´/g, 'ế')
+    .replace(/ê[´'’^]/g, 'ế')
     .replace(/ê[`']/g, 'ề')
-    .replace(/ề[`']/g, 'ề')
-    .replace(/ế´/g, 'ế')
-    .replace(/ố´/g, 'ố')
-    .replace(/ố[`']/g, 'ồ')
-    .replace(/([a-zA-Z\u00C0-\u1EF9])[\s]*[`´'](?=[a-zA-Z\u00C0-\u1EF9\s]|$)/g, '$1');
+    .replace(/ế[´'’^]/g, 'ế')
+    .replace(/ố[´'’^]/g, 'ố')
+    .replace(/([a-zA-Z\u00C0-\u1EF9])[\s]*[`´'’^](?=[a-zA-Z\u00C0-\u1EF9\s]|$)/g, '$1');
+
+  // Chuẩn hóa lần cuối về NFC
+  res = res.normalize('NFC');
 
   // 3. Sửa lỗi dính chữ tiếng Việt với công thức và hàm lượng giác
   res = res

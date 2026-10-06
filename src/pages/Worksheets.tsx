@@ -2251,22 +2251,27 @@ export function Worksheets() {
                       {/* Preview Canvas Container Styled by LayoutStyle */}
                       <div 
                         ref={exportRef}
-                      className={cn(
-                        "transition-all duration-300",
-                        layoutStyle === 'a4_print' && "bg-white p-8 md:p-12 shadow-sm border border-slate-300 rounded-xl min-h-[500px] font-serif text-slate-900 max-w-[210mm] mx-auto",
-                        layoutStyle === 'infographic' && "bg-gradient-to-b from-sky-50/40 via-white to-indigo-50/30 p-6 md:p-10 shadow-md border-2 border-indigo-200/80 rounded-2xl min-h-[500px]",
-                        layoutStyle === 'poster' && "bg-white p-6 md:p-10 shadow-xl border-4 border-indigo-500/80 rounded-3xl min-h-[500px]",
-                        layoutStyle === 'mindmap' && "bg-slate-50/80 p-6 md:p-10 shadow-md border-2 border-emerald-300/80 rounded-2xl min-h-[500px]"
-                      )}
-                    >
+                        style={{
+                          fontFamily: layoutStyle === 'a4_print' 
+                            ? "'Times New Roman', 'Liberation Serif', 'Be Vietnam Pro', Georgia, serif" 
+                            : "'Inter', 'Be Vietnam Pro', system-ui, -apple-system, sans-serif"
+                        }}
+                        className={cn(
+                          "transition-all duration-300 antialiased",
+                          layoutStyle === 'a4_print' && "bg-white p-8 md:p-12 shadow-sm border border-slate-300 rounded-xl min-h-[500px] text-slate-900 max-w-[210mm] mx-auto text-[15px] leading-relaxed",
+                          layoutStyle === 'infographic' && "bg-gradient-to-b from-sky-50/40 via-white to-indigo-50/30 p-6 md:p-10 shadow-md border-2 border-indigo-200/80 rounded-2xl min-h-[500px]",
+                          layoutStyle === 'poster' && "bg-white p-6 md:p-10 shadow-xl border-4 border-indigo-500/80 rounded-3xl min-h-[500px]",
+                          layoutStyle === 'mindmap' && "bg-slate-50/80 p-6 md:p-10 shadow-md border-2 border-emerald-300/80 rounded-2xl min-h-[500px]"
+                        )}
+                      >
                       {/* 1. Header decor for A4 Chuẩn In Ấn (Chuẩn Sư Phạm GDPT 2018) */}
                       {layoutStyle === 'a4_print' && (
                         <div className="border-2 border-slate-800 mb-8 p-4 bg-white text-xs sm:text-sm text-slate-800 leading-normal">
                           <div className="grid grid-cols-2 gap-4 pb-3 border-b border-slate-300">
                             <div className="text-center font-bold">
                               <p className="uppercase text-[11px] sm:text-xs tracking-wider text-slate-700">SỞ GIÁO DỤC VÀ ĐÀO TẠO</p>
-                              <p className="uppercase text-[12px] sm:text-sm text-slate-900 font-extrabold">TRƯỜNG THPT: ................................................</p>
-                              <p className="text-[11px] font-semibold text-slate-600">TỔ CHUYÊN MÔN: TOÁN - TIN HỌC</p>
+                              <p className="uppercase text-[12px] sm:text-sm text-slate-900 font-extrabold">TRƯỜNG: ................................................</p>
+                              <p className="text-[11px] font-semibold text-slate-600 uppercase">TỔ CHUYÊN MÔN: {subject || "KHOA HỌC TỰ NHIÊN"}</p>
                             </div>
                             <div className="text-center">
                               <p className="font-black uppercase text-slate-900 text-sm sm:text-base tracking-wide">PHIẾU HỌC TẬP</p>
