@@ -31,6 +31,7 @@ import { parseRawExamText, parseExamWithAI, ParsedQuestion } from '../lib/examPa
 import { exportHtmlToWord } from '../lib/exportUtils';
 import { formatMathContent, sanitizeLatexString } from '../lib/utils';
 import { QuestionEditModal, QuestionData } from './QuestionEditModal';
+import { getHeaderConfig } from '../lib/headerConfig';
 
 export interface SimilarQuestion {
   id: number;
@@ -73,6 +74,8 @@ export function SimilarExamsModal({
   grade = '12',
   onApplyAsOriginalExam
 }: SimilarExamsModalProps) {
+  const headerConfig = getHeaderConfig();
+
   // Input source state
   const [sourceMode, setSourceMode] = useState<'existing' | 'upload'>(
     initialQuestions.length > 0 ? 'existing' : 'upload'
@@ -885,12 +888,19 @@ export function SimilarExamsModal({
                     {/* Standard MoET Header */}
                     <div className="grid grid-cols-2 gap-4 pb-4 border-b border-black text-center text-xs sm:text-sm">
                       <div>
-                        <p className="font-bold uppercase">SỞ GD&ĐT ....................................</p>
-                        <p className="font-bold">TRƯỜNG THPT .............................</p>
+                        <p className="font-bold uppercase">{headerConfig.department || "SỞ GD&ĐT ...................................."}</p>
+                        <p className="font-bold uppercase">
+                          {headerConfig.schoolName 
+                            ? (headerConfig.schoolName.trim().toUpperCase().startsWith("TRƯỜNG") ? headerConfig.schoolName.trim().toUpperCase() : `TRƯỜNG ${headerConfig.schoolName.trim().toUpperCase()}`) 
+                            : "TRƯỜNG THPT ............................."}
+                        </p>
+                        {headerConfig.teacherName && (
+                          <p className="font-medium text-xs mt-0.5">GV: {headerConfig.teacherName}</p>
+                        )}
                       </div>
                       <div>
                         <p className="font-bold uppercase">{currentExam.examName}</p>
-                        <p className="italic">Năm học 2025 - 2026</p>
+                        <p className="italic">Năm học {headerConfig.schoolYear || "2026 - 2027"}</p>
                         <p className="font-bold text-xs mt-1">MÃ ĐỀ THI: {currentExam.code}</p>
                       </div>
                     </div>
@@ -1181,12 +1191,19 @@ export function SimilarExamsModal({
                   {/* Header */}
                   <div className="grid grid-cols-2 gap-4 pb-4 border-b border-black text-center text-sm font-serif">
                     <div>
-                      <p className="font-bold uppercase">SỞ GD&ĐT ....................................</p>
-                      <p className="font-bold">TRƯỜNG THPT .............................</p>
+                      <p className="font-bold uppercase">{headerConfig.department || "SỞ GD&ĐT ...................................."}</p>
+                      <p className="font-bold uppercase">
+                        {headerConfig.schoolName 
+                          ? (headerConfig.schoolName.trim().toUpperCase().startsWith("TRƯỜNG") ? headerConfig.schoolName.trim().toUpperCase() : `TRƯỜNG ${headerConfig.schoolName.trim().toUpperCase()}`) 
+                          : "TRƯỜNG THPT ............................."}
+                      </p>
+                      {headerConfig.teacherName && (
+                        <p className="font-medium text-xs mt-0.5">GV: {headerConfig.teacherName}</p>
+                      )}
                     </div>
                     <div>
                       <p className="font-bold uppercase">{exam.examName}</p>
-                      <p className="italic">Năm học 2025 - 2026</p>
+                      <p className="italic">Năm học {headerConfig.schoolYear || "2026 - 2027"}</p>
                       <p className="font-bold mt-1">MÃ ĐỀ: {exam.code}</p>
                     </div>
                   </div>

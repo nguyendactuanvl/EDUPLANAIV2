@@ -1,6 +1,11 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* Chuẩn hóa Font chữ Times New Roman cho văn bản sư phạm (không can thiệp font toán KaTeX) */
+body, html, #root, .font-serif, .markdown-body, .prose, .choice-label {
+  font-family: 'Times New Roman', 'Tinos', 'Liberation Serif', Georgia, serif;
+}
+
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
 }
@@ -56,7 +61,7 @@
   border-collapse: collapse;
 }
 
-/* Fix for KaTeX fractions overlapping in Tailwind typography */
+/* Fix for KaTeX fractions overlapping in Tailwind typography and prevent delimiter/equation line breaks */
 .katex {
   line-height: normal !important;
   text-rendering: auto;
@@ -67,19 +72,48 @@
   line-height: normal !important;
 }
 
-/* Khóa chặt dấu ngoặc nhọn hệ phương trình/bất phương trình (\begin{cases}, \left\{...) cùng dòng với các phương trình bên trong */
-.katex .minner {
-  display: inline-flex !important;
-  flex-wrap: nowrap !important;
-  align-items: center !important;
+.katex .katex-html {
   white-space: nowrap !important;
 }
 
-.katex .minner > .mopen,
-.katex .minner > .mclose,
-.katex .minner > .mtable {
-  flex-shrink: 0 !important;
+.katex .base {
+  white-space: nowrap !important;
+  display: inline-flex !important;
+  align-items: center !important;
   vertical-align: middle !important;
+}
+
+/* Chuẩn hóa hiển thị dấu ngoặc nhọn hệ phương trình/bất phương trình (\begin{cases}, \left\{...) và ma trận */
+.katex .minner {
+  line-height: normal !important;
+  vertical-align: middle !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+}
+
+.katex .delimsizing {
+  line-height: normal !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  flex-shrink: 0 !important;
+}
+
+.katex .mopen,
+.katex .mclose {
+  line-height: normal !important;
+  vertical-align: middle !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  flex-shrink: 0 !important;
+}
+
+.katex .mtable {
+  line-height: normal !important;
+  vertical-align: middle !important;
+  display: inline-table !important;
+  white-space: nowrap !important;
 }
 
 /* --- HIỂN THỊ GIỚI HẠN (LIMITS) CHUẨN SÁCH GIÁO KHOA --- */

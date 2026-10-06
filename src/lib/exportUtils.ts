@@ -99,8 +99,27 @@ function latexToOmmlComponent(rawTex: string, isBlock: boolean = false): any {
     const match = mathmlHtml.match(/<math[\s\S]*?<\/math>/i);
     if (match) {
       const convertFn = typeof mml2omml === 'function' ? mml2omml : ((mml2omml as any)?.mml2omml || (mml2omml as any)?.default || mml2omml);
-      const omml = convertFn(match[0]);
+      let omml = convertFn(match[0]);
       if (omml && omml.includes('m:oMath')) {
+        // Tối ưu hóa dấu ngoặc nhọn hệ phương trình/bất phương trình (\begin{cases}, \left\{...) sang cấu trúc OMML Stretchy Delimiter <m:d>
+        // Bắt mọi trường hợp dấu { đứng trước ma trận <m:m> hoặc <m:eqArr> (kể cả có xml:space="preserve")
+        omml = omml.replace(
+          /(?:<m:r[^>]*>[\s\S]*?<m:t[^>]*>\s*\{\s*<\/m:t>[\s\S]*?<\/m:r>\s*)(<(?:m:eqArr|m:m)[\s\S]*?<\/(?:m:eqArr|m:m)>)/g,
+          '<m:d><m:dPr><m:begChr m:val="{"/><m:endChr m:val=""/><m:grow m:val="1"/></m:dPr><m:e>$1</m:e></m:d>'
+        );
+
+        // Tối ưu hóa dấu ngoặc vuông hệ tuyển nghiệm lượng giác (\left[...) sang OMML Stretchy Delimiter <m:d>
+        omml = omml.replace(
+          /(?:<m:r[^>]*>[\s\S]*?<m:t[^>]*>\s*\[\s*<\/m:t>[\s\S]*?<\/m:r>\s*)(<(?:m:eqArr|m:m)[\s\S]*?<\/(?:m:eqArr|m:m)>)/g,
+          '<m:d><m:dPr><m:begChr m:val="["/><m:endChr m:val=""/><m:grow m:val="1"/></m:dPr><m:e>$1</m:e></m:d>'
+        );
+
+        // Căn trái nội dung trong hệ phương trình/bất phương trình để trình bày chuẩn mực trong Word
+        omml = omml.replace(/(<m:dPr><m:begChr m:val="[\{\[]"[\s\S]*?<m:mcJc m:val=")center(")/g, '$1left$2');
+
+        // Đảm bảo mọi thẻ <m:dPr> đều có <m:grow m:val="1"/> để dấu ngoặc tự động co giãn full chiều cao của hệ
+        omml = omml.replace(/<m:dPr>((?:(?!<m:grow)[\s\S])*?)<\/m:dPr>/g, '<m:dPr><m:grow m:val="1"/>$1</m:dPr>');
+
         const comp = ImportedXmlComponent.fromXmlString(omml);
         const root = comp && (comp as any).root && (comp as any).root[0] ? (comp as any).root[0] : comp;
         return root;

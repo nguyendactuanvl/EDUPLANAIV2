@@ -460,11 +460,25 @@ export function preprocessExamText(text: string): string {
   // Ensure newlines before Câu \d+ or Bài \d+
   s = s.replace(/(?<=[^\s])\s+(?=(?:Câu|Bài|Question|Q)\s*\d+[\.:\s\-])/gi, '\n\n');
 
-  // Ensure newlines before options A, B, C, D
-  s = s.replace(/(?<=[^\s])\s+(?=[A-D][\.\:\)]\s+)/g, '\n');
+  // Từ ngữ chỉ điểm/hình học/giới từ không được coi là phương án trắc nghiệm
+  const geoWordPattern = /(?:tại|điểm|đỉnh|gọi|qua|với|từ|trên|của|cho|và|thuộc|đến|cạnh|đường|mặt\s*phẳng|chiếu\s*lên|tọa\s*độ|tâm|trọng\s*tâm|trực\s*tâm|bán\s*kính|vectơ|vector|tam\s*giác(?:\s+[a-zA-Z\.]+)?|tứ\s*diện(?:\s+[a-zA-Z\.]+)?|hình\s*chóp(?:\s+[a-zA-Z\.]+)?|đoạn\s*thẳng)$/i;
 
-  // Ensure newlines before sub-statements a), b), c), d)
-  s = s.replace(/(?<=[^\s])\s+(?=[a-d]\)\s+)/gi, '\n');
+  // Tách các phương án B, C, D bị dính liền vào số/chữ/ký hiệu trước đó (vd: 12B. 16, 17,6D. 18,4)
+  s = s.replace(/([0-9\$\)\}\],.:;?!])\s*(?=(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?[B-D][\.:\)])/g, (match, p1, offset) => {
+    const before = s.slice(Math.max(0, offset - 25), offset + p1.length);
+    if (geoWordPattern.test(before.trim())) return match;
+    return `${p1}\n`;
+  });
+
+  // Tách phương án A bị dính vào đuôi đề bài (vd: $.A. 12, .A. 12, ?A. 12, :A. 12)
+  s = s.replace(/([0-9\$\)\}\],.:;?!])\s*(?=(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?A[\.:\)])/g, (match, p1, offset) => {
+    const before = s.slice(Math.max(0, offset - 25), offset + p1.length);
+    if (geoWordPattern.test(before.trim())) return match;
+    return `${p1}\n`;
+  });
+
+  // Tách các mệnh đề a), b), c), d) (chữ thường) của câu hỏi Đúng/Sai ra từng dòng riêng biệt
+  s = s.replace(/([^\n])\s*(?=(?:^|\s)(?:[-*]\s*)?(?:\(?\s*[a-d]\s*[\)\.]))\s*/g, '$1\n');
 
   return s;
 }
@@ -496,12 +510,14 @@ export function parseRawExamText(rawText: string): ParsedQuestion[] {
       });
     }
     
-    // Xác định loại phần từ header
-    if (/PHẦN\s*(?:II\b|2\b)|ĐÚNG\s*[\/\-]?\s*SAI/i.test(header)) {
+    // Xác định loại phần từ header (Ưu tiên từ khóa rõ nghĩa trước, sau đó mới đến số la mã)
+    if (/TRẮC\s*NGHIỆM.*(?:NHIỀU\s*PHƯƠNG\s*ÁN|LỰA\s*CHỌN|4\s*LỰA\s*CHỌN)/i.test(header) || (/PHẦN\s*(?:I\b|1\b)/i.test(header) && !/ĐÚNG\s*[\/\-]?\s*SAI/i.test(header))) {
+      currentSectionType = "mc";
+    } else if (/ĐÚNG\s*[\/\-]?\s*SAI/i.test(header) || (/PHẦN\s*(?:II\b|2\b)/i.test(header) && !/TRẮC\s*NGHIỆM.*(?:NHIỀU|LỰA\s*CHỌN)/i.test(header))) {
       currentSectionType = "tf";
-    } else if (/PHẦN\s*(?:III\b|3\b)|TRẢ\s*LỜI\s*NGẮN|ĐIỀN\s*SỐ/i.test(header)) {
+    } else if (/TRẢ\s*LỜI\s*NGẮN|ĐIỀN\s*SỐ/i.test(header) || /PHẦN\s*(?:III\b|3\b)/i.test(header)) {
       currentSectionType = "sa";
-    } else if (/PHẦN\s*(?:IV\b|4\b)|TỰ\s*LUẬN/i.test(header)) {
+    } else if (/TỰ\s*LUẬN/i.test(header) || /PHẦN\s*(?:IV\b|4\b)/i.test(header)) {
       currentSectionType = "essay";
     } else {
       currentSectionType = "mc";
@@ -573,19 +589,23 @@ export function parseRawExamText(rawText: string): ParsedQuestion[] {
       }
 
       // 1. Kiểm tra Đúng/Sai (Phần II hoặc block có a), b), c), d))
-      const hasTf = sec.type === 'tf' || /(?:^|\n)\s*[a-d]\)[\s\S]*?(?:^|\n)\s*[b-d]\)/i.test(mainBlock);
+      // QUY TẮC BẢO VỆ: Nếu block có các mệnh đề a), b), c), d) (chữ thường) thì ưu tiên Đúng/Sai (tf)
+      const hasTfSubstatements = /(?:^|\n|\s+)\(?\s*[a-d]\s*[\)\.][\s\S]*?\(?\s*[b-d]\s*[\)\.]/.test(mainBlock);
+      const hasTf = hasTfSubstatements || sec.type === 'tf';
 
-      if (hasTf) {
-        const stemMatch = mainBlock.match(/^(?:(?:Câu|Bài|Question|Q)?\s*\d+[\.:\s]*)?([\s\S]*?)(?=(?:^|\n)\s*[a-d]\))/i);
+      if (hasTf && hasTfSubstatements) {
+        const stemMatch = mainBlock.match(/^(?:(?:Câu|Bài|Question|Q)?\s*\d+[\.:\s]*)?([\s\S]*?)(?=(?:^|\n|\s+)\(?\s*[a-d]\s*[\)\.])/);
         const stem = stemMatch ? stemMatch[1].trim() : mainBlock.split('\n')[0];
         
         const statements: { statement: string; correct: boolean }[] = [];
-        const stmtRegex = /(?:^|\n)\s*([a-d])\)[\s\t]*([^\n]+)/gi;
+        // Chuẩn hóa ngắt dòng trước mỗi mệnh đề a), b), c), d)
+        const normalizedTfBlock = mainBlock.replace(/([^\n])\s*(?=(?:[-*]\s*)?(?:\(?\s*[a-d]\s*[\)\.]\s+))/g, '$1\n');
+        const stmtRegex = /(?:^|\n)\s*(?:[-*]\s*)?\(?([a-d])[\)\.][\s\t]*([^\n]+)/g;
         let stmtMatch: RegExpExecArray | null;
-        while ((stmtMatch = stmtRegex.exec(mainBlock)) !== null) {
+        while ((stmtMatch = stmtRegex.exec(normalizedTfBlock)) !== null) {
           const stmtText = stmtMatch[2].trim();
           const isTrue = /(?:\[Đ\]|\(Đ\)|- Đúng|: Đúng)/i.test(stmtText);
-          const cleanStmt = stmtText.replace(/(?:\[[ĐS]\]|\([ĐS]\)|- (Đúng|Sai)|: (Đúng|Sai))/gi, '').replace(/^[a-d][\.\:\)]\s*/i, '').trim();
+          const cleanStmt = stmtText.replace(/(?:\[[ĐS]\]|\([ĐS]\)|- (Đúng|Sai)|: (Đúng|Sai))/gi, '').replace(/^\(?\s*[a-d][\.\:\)]\s*/, '').trim();
           statements.push({ statement: fixMath(cleanMath(cleanStmt)), correct: isTrue });
         }
 
@@ -598,7 +618,7 @@ export function parseRawExamText(rawText: string): ParsedQuestion[] {
         const solText = explanation ? fixMath(cleanMath(explanation)) : "";
         results.push({
           id: sectionQuestionId++,
-          section: (sec.type as string) === 'tf' ? 2 : (sec.type as string) === 'sa' ? 3 : (sec.type as string) === 'essay' ? 4 : 1,
+          section: (sec.type as string) === 'tf' ? 2 : (sec.type as string) === 'sa' ? 3 : (sec.type as string) === 'essay' ? 4 : 2,
           type: "tf",
           level: "Thông hiểu",
           content: fixMath(cleanMath(stem.replace(/^(?:Câu|Bài|Question|Q)?\s*\d+[\.:\s]*/i, '').trim() || `Câu ${sectionQuestionId}`)),
@@ -610,19 +630,56 @@ export function parseRawExamText(rawText: string): ParsedQuestion[] {
       }
 
       // 2. Kiểm tra Trắc nghiệm 4 lựa chọn (Phần I hoặc có A., B., C., D.)
-      const optMatchA = mainBlock.search(/(?:^|\n|\s{2,}|\t)(\*?\s*[A-D]\*?|\([A-D]\))[\.:\)]\s*/i);
+      // Tìm vị trí bắt đầu thực sự của khối 4 phương án A, B, C, D
+      // Tránh nhầm lẫn với các điểm hình học trong câu dẫn như "vuông tại A.", "điểm B."
+      const geoWordStemPattern = /(?:tại|điểm|đỉnh|gọi|qua|với|từ|trên|của|cho|và|thuộc|đến|cạnh|đường|mặt\s*phẳng|chiếu\s*lên|tọa\s*độ|tâm|trọng\s*tâm|trực\s*tâm|bán\s*kính|vectơ|vector|tam\s*giác(?:\s+[a-zA-Z\.]+)?|tứ\s*diện(?:\s+[a-zA-Z\.]+)?|hình\s*chóp(?:\s+[a-zA-Z\.]+)?|đoạn\s*thẳng)\s*$/i;
+
+      const aMatches = [...mainBlock.matchAll(/(?:(?:\r?\n)+\s*|[.:;?!]\s*|\$|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?A(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/gi)];
+      let optMatchA = -1;
+
+      if (aMatches.length > 0) {
+        for (let i = aMatches.length - 1; i >= 0; i--) {
+          const m = aMatches[i];
+          const aIdx = m.index! + m[0].indexOf('A');
+          const beforeA = mainBlock.substring(0, aIdx).trim();
+
+          if (geoWordStemPattern.test(beforeA)) continue;
+
+          const afterA = mainBlock.substring(aIdx);
+          const hasB = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?B(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
+          const hasC = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?C(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
+          const hasD = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?D(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
+
+          if (hasB && (hasC || hasD)) {
+            optMatchA = aIdx;
+            break;
+          }
+        }
+      }
+
+      if (optMatchA === -1 && aMatches.length > 0 && sec.type === 'mc') {
+        const lastM = aMatches[aMatches.length - 1];
+        const lastIdx = lastM.index! + lastM[0].indexOf('A');
+        const before = mainBlock.substring(0, lastIdx).trim();
+        if (!geoWordStemPattern.test(before)) {
+          optMatchA = lastIdx;
+        }
+      }
+
       if (sec.type === 'mc' || optMatchA !== -1) {
         if (optMatchA !== -1) {
           const stem = mainBlock.substring(0, optMatchA).replace(/^(?:Câu|Bài|Question|Q)?\s*\d+[\.:\s]*/i, '').trim();
-          const optionsContent = mainBlock.substring(optMatchA);
+          let optionsContent = mainBlock.substring(optMatchA);
+          // Cắt bỏ phần header phân mục bị dính ở cuối phương án D (như ### PHẦN II...)
+          optionsContent = optionsContent.replace(/(?:\r?\n\s*(?:###?\s*|\*\*)?(?:PHẦN\s*(?:[I|V|X\d]+|\d+)|B\.\s*TỰ\s*LUẬN|BÀI\s*TẬP\s*TỰ\s*LUẬN|Lời\s*giải|HDG)[\s\S]*)$/i, '');
 
           const options: string[] = [];
           let asteriskCorrectIdx = -1;
-          const optRegex = /(?:^|\n|\s{2,}|\t)(\*?\s*[A-D]\*?|\([A-D]\))[\.:\)]\s*([\s\S]*?)(?=(?:(?:^|\n|\s{2,}|\t)(?:\*?\s*[A-D]\*?|\([A-D]\))[\.:\)])|$)/gi;
+          const optRegex = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?([A-D])(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*([\s\S]*?)(?=(?:(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?[A-D](?:\*{0,2}|<\/b>|\))?[\.:\)])|$)/gi;
           let optMatch: RegExpExecArray | null;
           while ((optMatch = optRegex.exec(optionsContent)) !== null) {
-            const marker = optMatch[1];
-            if (marker.includes('*')) {
+            const marker = optMatch[0];
+            if (marker.includes('*') && !marker.includes('**')) {
               asteriskCorrectIdx = options.length;
             }
             options.push(fixMath(cleanOptionText(optMatch[2])));

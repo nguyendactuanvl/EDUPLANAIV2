@@ -56,7 +56,27 @@ export function latexToOMML(rawTex: string, isBlock: boolean = false): string {
   if (!mathml) return '';
   try {
     const convertFn = typeof mml2omml === 'function' ? mml2omml : ((mml2omml as any)?.mml2omml || (mml2omml as any)?.default || mml2omml);
-    const omml = convertFn(mathml);
+    let omml = convertFn(mathml);
+    if (omml && omml.includes('m:oMath')) {
+      // Tối ưu hóa dấu ngoặc nhọn hệ phương trình/bất phương trình (\begin{cases}, \left\{...) sang cấu trúc OMML Stretchy Delimiter <m:d>
+      // Bắt mọi trường hợp dấu { đứng trước ma trận <m:m> hoặc <m:eqArr> (kể cả có xml:space="preserve")
+      omml = omml.replace(
+        /(?:<m:r[^>]*>[\s\S]*?<m:t[^>]*>\s*\{\s*<\/m:t>[\s\S]*?<\/m:r>\s*)(<(?:m:eqArr|m:m)[\s\S]*?<\/(?:m:eqArr|m:m)>)/g,
+        '<m:d><m:dPr><m:begChr m:val="{"/><m:endChr m:val=""/><m:grow m:val="1"/></m:dPr><m:e>$1</m:e></m:d>'
+      );
+
+      // Tối ưu hóa dấu ngoặc vuông hệ tuyển nghiệm lượng giác (\left[...) sang OMML Stretchy Delimiter <m:d>
+      omml = omml.replace(
+        /(?:<m:r[^>]*>[\s\S]*?<m:t[^>]*>\s*\[\s*<\/m:t>[\s\S]*?<\/m:r>\s*)(<(?:m:eqArr|m:m)[\s\S]*?<\/(?:m:eqArr|m:m)>)/g,
+        '<m:d><m:dPr><m:begChr m:val="["/><m:endChr m:val=""/><m:grow m:val="1"/></m:dPr><m:e>$1</m:e></m:d>'
+      );
+
+      // Căn trái nội dung trong hệ phương trình/bất phương trình để trình bày chuẩn mực trong Word
+      omml = omml.replace(/(<m:dPr><m:begChr m:val="[\{\[]"[\s\S]*?<m:mcJc m:val=")center(")/g, '$1left$2');
+
+      // Đảm bảo mọi thẻ <m:dPr> đều có <m:grow m:val="1"/> để dấu ngoặc tự động co giãn full chiều cao của hệ
+      omml = omml.replace(/<m:dPr>((?:(?!<m:grow)[\s\S])*?)<\/m:dPr>/g, '<m:dPr><m:grow m:val="1"/>$1</m:dPr>');
+    }
     return omml || '';
   } catch (err) {
     console.warn('Lỗi chuyển đổi OMML:', err);

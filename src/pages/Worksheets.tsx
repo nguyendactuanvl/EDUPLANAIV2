@@ -6,12 +6,14 @@ import React, { useState, useRef, useEffect } from "react";
 import { 
   BookOpen, Download, AlertCircle, Edit3, Eye, Printer, Share2, Copy, CheckCircle2, 
   ExternalLink, Upload, FileText, Palette, LayoutTemplate, GitFork, Sparkles, Zap, Image as ImageIcon, Sliders, Check,
-  TrendingUp, BarChart2, Plus, Box, BarChart3
+  TrendingUp, BarChart2, Plus, Box, BarChart3, School, User
 } from "lucide-react";
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { UploadTeacherExamModal } from "../components/UploadTeacherExamModal";
 import { QuestionEditModal } from "../components/QuestionEditModal";
+import { HeaderConfigModal } from "../components/HeaderConfigModal";
+import { HeaderConfig, getHeaderConfig, saveHeaderConfig } from "../lib/headerConfig";
 import { QuestionVisualizerPanel } from "../components/math-tools/QuestionVisualizerPanel";
 import { analyzeFunctionToBbt, generateBbtSvg, convertBbtTableToSvg } from "../lib/bbtRenderer";
 import { getTikzSvg, embedTikzSvgsInText } from "../components/TikzRenderer";
@@ -135,6 +137,16 @@ export function Worksheets() {
   const [editingQuestion, setEditingQuestion] = useState<{ question: any; index: number } | null>(null);
   const [isAutoGeneratingImages, setIsAutoGeneratingImages] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Header information (Trường học, Giáo viên, Năm học 2026-2027...)
+  const [headerConfig, setHeaderConfig] = useState<HeaderConfig>(() => getHeaderConfig());
+  const [isHeaderModalOpen, setIsHeaderModalOpen] = useState(false);
+
+  const handleSaveHeaderConfig = (newCfg: HeaderConfig) => {
+    setHeaderConfig(newCfg);
+    saveHeaderConfig(newCfg);
+    showToast("Đã lưu thông tin tiêu đề trường & giáo viên!");
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -1599,6 +1611,18 @@ export function Worksheets() {
                   )}
                 </button>
 
+                {/* Tùy chỉnh thông tin Tiêu đề (Trường, GV, Năm học 2026-2027) */}
+                <button
+                  type="button"
+                  onClick={() => setIsHeaderModalOpen(true)}
+                  className="px-3 py-1.5 sm:py-2 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-xs sm:text-sm font-semibold rounded-lg flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                  title="Tùy chỉnh thông tin Trường học, Họ và tên giáo viên, Năm học 2026 - 2027 xuất hiện ở đầu phiếu..."
+                >
+                  <School className="w-4 h-4 text-emerald-600" />
+                  <span className="hidden sm:inline">Tiêu đề (Trường, GV, 2026-2027)</span>
+                  <span className="sm:hidden">Tiêu đề</span>
+                </button>
+
                 {/* Export PDF / In */}
                 <button
                   onClick={handleExportPDF}
@@ -1708,20 +1732,33 @@ export function Worksheets() {
                   return (
                     <div 
                       ref={exportRef}
-                      className="bg-white p-8 md:p-12 shadow-sm border border-slate-300 rounded-xl min-h-[500px] font-serif text-slate-900 max-w-[210mm] mx-auto space-y-6"
+                      style={{
+                        fontFamily: "'Times New Roman', 'Tinos', 'Liberation Serif', 'Be Vietnam Pro', Georgia, serif"
+                      }}
+                      className="bg-white p-8 md:p-12 shadow-sm border border-slate-300 rounded-xl min-h-[500px] font-serif text-slate-900 max-w-[210mm] mx-auto space-y-6 text-[15px] leading-relaxed"
                     >
                       {/* School Exam Header for A4 Print (Chuẩn Sư Phạm GDPT 2018) */}
                       <div className="border-2 border-slate-800 mb-6 p-4 bg-white text-xs sm:text-sm text-slate-800 leading-normal">
                         <div className="grid grid-cols-2 gap-4 pb-3 border-b border-slate-300">
                           <div className="text-center font-bold">
-                            <p className="uppercase text-[11px] sm:text-xs tracking-wider text-slate-700">SỞ GIÁO DỤC VÀ ĐÀO TẠO</p>
-                            <p className="uppercase text-[12px] sm:text-sm text-slate-900 font-extrabold">TRƯỜNG THPT: ................................................</p>
-                            <p className="text-[11px] font-semibold text-slate-600">TỔ CHUYÊN MÔN: TOÁN - TIN HỌC</p>
+                            <p className="uppercase text-[11px] sm:text-xs tracking-wider text-slate-700">{headerConfig.department || "SỞ GIÁO DỤC VÀ ĐÀO TẠO"}</p>
+                            <p className="uppercase text-[12px] sm:text-sm text-slate-900 font-extrabold">{headerConfig.schoolName ? `TRƯỜNG: ${headerConfig.schoolName}` : "TRƯỜNG THPT: ................................................"}</p>
+                            <p className="text-[11px] font-semibold text-slate-600 uppercase">{headerConfig.subjectGroup || `TỔ CHUYÊN MÔN: ${subject || "TOÁN - TIN HỌC"}`}</p>
+                            <p className="text-[11px] font-semibold text-slate-800 mt-0.5">
+                              {headerConfig.teacherName ? `Giáo viên: ${headerConfig.teacherName}` : "Giáo viên: ................................................"}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => setIsHeaderModalOpen(true)}
+                              className="no-print mt-1 text-[10px] text-emerald-600 hover:text-emerald-800 underline font-normal cursor-pointer flex items-center justify-center gap-1 mx-auto"
+                            >
+                              ✏️ Chỉnh sửa thông tin Trường / GV / Năm học
+                            </button>
                           </div>
                           <div className="text-center">
                             <p className="font-black uppercase text-slate-900 text-sm sm:text-base tracking-wide">PHIẾU HỌC TẬP</p>
                             <p className="font-bold text-emerald-800 text-xs sm:text-sm mt-0.5 uppercase">BÀI: {customLessonName || "BÀI HỌC"}</p>
-                            <p className="text-[11px] text-slate-600 mt-0.5">Môn: {subject} • Lớp {selectedGrade} • Năm học 2024 - 2025</p>
+                            <p className="text-[11px] text-slate-600 mt-0.5">Môn: {subject} • Lớp {selectedGrade} • Năm học {headerConfig.schoolYear || "2026 - 2027"}</p>
                           </div>
                         </div>
 
@@ -2253,8 +2290,8 @@ export function Worksheets() {
                         ref={exportRef}
                         style={{
                           fontFamily: layoutStyle === 'a4_print' 
-                            ? "'Times New Roman', 'Liberation Serif', 'Be Vietnam Pro', Georgia, serif" 
-                            : "'Inter', 'Be Vietnam Pro', system-ui, -apple-system, sans-serif"
+                            ? "'Times New Roman', 'Tinos', 'Liberation Serif', 'Be Vietnam Pro', Georgia, serif" 
+                            : "'Be Vietnam Pro', 'Inter', system-ui, -apple-system, sans-serif"
                         }}
                         className={cn(
                           "transition-all duration-300 antialiased",
@@ -2269,14 +2306,24 @@ export function Worksheets() {
                         <div className="border-2 border-slate-800 mb-8 p-4 bg-white text-xs sm:text-sm text-slate-800 leading-normal">
                           <div className="grid grid-cols-2 gap-4 pb-3 border-b border-slate-300">
                             <div className="text-center font-bold">
-                              <p className="uppercase text-[11px] sm:text-xs tracking-wider text-slate-700">SỞ GIÁO DỤC VÀ ĐÀO TẠO</p>
-                              <p className="uppercase text-[12px] sm:text-sm text-slate-900 font-extrabold">TRƯỜNG: ................................................</p>
-                              <p className="text-[11px] font-semibold text-slate-600 uppercase">TỔ CHUYÊN MÔN: {subject || "KHOA HỌC TỰ NHIÊN"}</p>
+                              <p className="uppercase text-[11px] sm:text-xs tracking-wider text-slate-700">{headerConfig.department || "SỞ GIÁO DỤC VÀ ĐÀO TẠO"}</p>
+                              <p className="uppercase text-[12px] sm:text-sm text-slate-900 font-extrabold">{headerConfig.schoolName ? `TRƯỜNG: ${headerConfig.schoolName}` : "TRƯỜNG THPT: ................................................"}</p>
+                              <p className="text-[11px] font-semibold text-slate-600 uppercase">{headerConfig.subjectGroup || `TỔ CHUYÊN MÔN: ${subject || "TOÁN - TIN HỌC"}`}</p>
+                              <p className="text-[11px] font-semibold text-slate-800 mt-0.5">
+                                {headerConfig.teacherName ? `Giáo viên: ${headerConfig.teacherName}` : "Giáo viên: ................................................"}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => setIsHeaderModalOpen(true)}
+                                className="no-print mt-1 text-[10px] text-emerald-600 hover:text-emerald-800 underline font-normal cursor-pointer flex items-center justify-center gap-1 mx-auto"
+                              >
+                                ✏️ Chỉnh sửa thông tin Trường / GV / Năm học
+                              </button>
                             </div>
                             <div className="text-center">
                               <p className="font-black uppercase text-slate-900 text-sm sm:text-base tracking-wide">PHIẾU HỌC TẬP</p>
                               <p className="font-bold text-emerald-800 text-xs sm:text-sm mt-0.5 uppercase">BÀI: {customLessonName || "BÀI HỌC"}</p>
-                              <p className="text-[11px] text-slate-600 mt-0.5">Môn: {subject} • Lớp {selectedGrade} • Năm học 2024 - 2025</p>
+                              <p className="text-[11px] text-slate-600 mt-0.5">Môn: {subject} • Lớp {selectedGrade} • Năm học {headerConfig.schoolYear || "2026 - 2027"}</p>
                             </div>
                           </div>
 
@@ -2525,6 +2572,15 @@ export function Worksheets() {
         onClose={() => setIsUploadExamModalOpen(false)}
         defaultSubject={subject}
         defaultGrade={selectedGrade}
+      />
+
+      {/* Header Config Modal (Trường, GV, Năm học 2026-2027) */}
+      <HeaderConfigModal
+        isOpen={isHeaderModalOpen}
+        onClose={() => setIsHeaderModalOpen(false)}
+        config={headerConfig}
+        onSave={handleSaveHeaderConfig}
+        title="Tùy chỉnh thông tin tiêu đề phiếu học tập (Trường, GV, Năm học 2026 - 2027...)"
       />
 
       {/* Question Edit Modal with integrated BBT & Graph visualizer */}

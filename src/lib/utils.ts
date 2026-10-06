@@ -317,40 +317,78 @@ export function rescueVietnameseFromMath(text: string): string {
 
 /**
  * Chuẩn hóa thân môi trường cases (\begin{cases} ... \end{cases}):
- * 1. Sửa lỗi dính dòng giữa các bất phương trình: ví dụ \ge 1002x hoặc \ge 80x -> 100 \\ 2x, 80 \\ x
- * 2. Phân tách nếu hai điều kiện cách nhau bởi dấu phẩy (như x \ge 0, y \ge 0)
- * 3. Thay thế các ký tự gãy dòng `\ ` thành `\\ `
- * 4. Nếu giữa các phương trình xuống hàng mà thiếu `\\`, tự động bổ sung `\\`
- * 5. Đảm bảo mọi dòng luôn được phân tách bằng double backslash `\\`
+ * 1. Khôi phục các bất đẳng thức kép (bđt kép) bị đứt gãy hoặc rách dòng (0 \le x \\ le4 -> 0 \le x \le 4)
+ * 2. Bảo vệ toàn diện các bất đẳng thức kép (0 \le x \le 4, -1 < x \le 3, 0 \le y \le 5...)
+ * 3. Phân tách nếu hai điều kiện cách nhau bởi dấu phẩy (như x \ge 0, y \ge 0 hoặc x > 0, y > 0, x + y \le 10)
+ * 4. Thay thế các ký tự gãy dòng `\ `, `\-` thành `\\ `
+ * 5. Tuyệt đối KHÔNG làm biến dạng các lệnh LaTeX hợp lệ (\le, \ge, \sqrt, \frac, \sin, \cos...)
+ * 6. Đảm bảo mọi bất phương trình/phương trình LUÔN NẰM TRÊN MỘT DÒNG RIÊNG BIỆT với double backslash `\\`
  */
 export function normalizeCasesBody(body: string): string {
   if (!body) return '';
-  let s = body;
+  let s = body.trim();
 
-  // 1. Phân tách nếu hai điều kiện cách nhau bởi dấu phẩy (như x \ge 0, y \ge 0 hoặc x > 0, y > 0)
-  s = s.replace(/([<>=]|\\ge|\\le|\\leq|\\geq|\\neq)\s*(-?\d+)\s*,\s*([a-zA-Z\d\\]+[\s\S]*?(?:[<>=]|\\ge|\\le|\\leq|\\geq|\\neq))/g, '$1 $2 \\\\ $3');
+  const normIneq = (op: string): string => {
+    const o = op.toLowerCase().replace(/^\\/, '');
+    if (o === '<=' || o === 'le' || o === 'leq' || o === 'leqslant') return '\\le';
+    if (o === '>=' || o === 'ge' || o === 'geq' || o === 'geqslant') return '\\ge';
+    if (o === '<' || o === '>') return o;
+    if (o === '!=' || o === 'ne' || o === 'neq') return '\\neq';
+    return op.startsWith('\\') ? op : `\\${op}`;
+  };
 
-  // 2. Nếu gãy dòng bởi dấu gạch chéo đơn `\ ` trước biến hoặc số -> chuyển thành `\\ `
-  s = s.replace(/(?<!\\)\\\s+([a-zA-Z0-9\-\+\{\(])/g, '\\\\ $1');
-
-  // 3. Nếu giữa các dòng xuống hàng thực sự mà thiếu `\\` -> bổ sung `\\`
-  s = s.replace(/([^\\])\n\s*([a-zA-Z0-9\-\+\{\(\\])/g, '$1 \\\\\n $2');
-
-  // 4. Sửa lỗi dính dòng giữa các bất phương trình/phương trình (như \ge 1002x hoặc \ge 80x, > 0x, < 0x):
-  s = s.replace(/([<>=]|\\ge|\\le|\\leq|\\geq|\\neq)\s*0\s*([a-zA-Z\d][^\\\n]*?(?:[<>=]|\\ge|\\le|\\leq|\\geq|\\neq))/g, '$1 0 \\\\\n $2');
-  s = s.replace(/([<>=]|\\ge|\\le|\\leq|\\geq|\\neq)\s*0\s*([a-zA-Z]\b)/g, '$1 0 \\\\\n $2');
-  s = s.replace(/([<>=]|\\ge|\\le|\\leq|\\geq|\\neq)\s*(\d+)\s*([a-zA-Z\d][^\\\n]*?(?:[<>=]|\\ge|\\le|\\leq|\\geq|\\neq))/g, (_m, op, num, rest) => {
-    const subMatch = num.match(/^(\d+?0+)([1-9][a-zA-Z].*)$/);
-    if (subMatch) {
-      return `${op} ${subMatch[1]} \\\\ ${subMatch[2]} ${rest}`;
-    }
-    return `${op} ${num} \\\\ ${rest}`;
+  // 0. Khôi phục các bất đẳng thức kép (bđt kép) bị đứt gãy hoặc rách dòng từ trước:
+  // Ví dụ: "0 \le x \\ le4" hoặc "0 \le x \\ le 4" -> "0 \le x \le 4"
+  s = s.replace(/([0-9a-zA-Z\)\}\]])\s*\\\\\s*(?:\\)?(le|leq|ge|geq|ne|neq|<|>|<=|>=)\s*([+-]?\d+|[a-zA-Z0-9\(\{\]])/gi, (_m, a, op, b) => {
+    return `${a} ${normIneq(op)} ${b}`;
   });
 
-  // 5. Chuẩn hóa tất cả các dấu \\ bên trong cases: đảm bảo luôn là double backslash `\\` kèm ngắt dòng đẹp
-  s = s.replace(/(?<!\\)\\\\(?!\\)\s*/g, ' \\\\\n');
+  // Khôi phục dạng le4, le5, ge0 dính liền trong thân hệ:
+  s = s.replace(/(?<=[0-9a-zA-Z\s])\b(le|ge|leq|geq|ne|neq)(\d+)\b/gi, (_m, op, num) => {
+    return `${normIneq(op)} ${num}`;
+  });
 
-  return s.trim();
+  // Bảo vệ toàn diện các bất đẳng thức kép (BĐT kép) trên cùng 1 dòng
+  // (Tuyệt đối KHÔNG nuốt qua ký tự xuống dòng, \\ hoặc dấu phẩy phân tách điều kiện)
+  const compoundTokens: string[] = [];
+  const ineqOpStr = "(?:<=|>=|<|>|\\\\le|\\\\ge|\\\\leq|\\\\geq|\\\\leqslant|\\\\geqslant|\\ble\\b|\\bge\\b|\\bleq\\b|\\bgeq\\b)";
+  const compoundRegex = new RegExp(
+    `([+-]?(?:\\d+(?:[.,]\\d+)?|[a-zA-Z]|\\\\[a-zA-Z]+(?:\\{[^{}]*\\})*))\\s*(${ineqOpStr})\\s*([^\\\\\\n,;]+?)\\s*(${ineqOpStr})\\s*([+-]?(?:\\d+(?:[.,]\\d+)?|[a-zA-Z]|\\\\[a-zA-Z]+(?:\\{[^{}]*\\})*))`,
+    "gi"
+  );
+  s = s.replace(compoundRegex, (_m, left, op1, mid, op2, right) => {
+    const token = `___COMPOUND_INEQ_${compoundTokens.length}___`;
+    compoundTokens.push(`${left.trim()} ${normIneq(op1)} ${mid.trim()} ${normIneq(op2)} ${right.trim()}`);
+    return token;
+  });
+
+  // 1. Chuẩn hóa double-backslashes, dấu gạch đứng (|) và ngắt dòng thành ký hiệu phân tách duy nhất
+  s = s.replace(/\\\\+/g, ' ___SPLIT___ ');
+  s = s.replace(/\|+/g, ' ___SPLIT___ ');
+
+  // 2. Phân tách nếu hai điều kiện cách nhau bởi dấu phẩy, chấm phẩy hoặc ngắt dòng
+  s = s.replace(/,\s*(?=[a-zA-Z0-9\-\+\{\(\\]|___COMPOUND_INEQ_)/g, ' ___SPLIT___ ');
+  s = s.replace(/;\s*(?=[a-zA-Z0-9\-\+\{\(\\]|___COMPOUND_INEQ_)/g, ' ___SPLIT___ ');
+  s = s.replace(/\n+/g, ' ___SPLIT___ ');
+
+  // 3. Phân tách nếu hai biểu thức đứng sát nhau chỉ cách nhau bởi khoảng trắng
+  s = s.replace(/([<>=]|\\ge|\\le|\\leq|\\geq|\\neq)\s*(-?\d+)\s+(?=(?:[-+]?\s*(?:\d+[a-zA-Z]|[a-zA-Z]|\\sqrt|\\frac|\\sin|\\cos|\\tan|\\cot|___COMPOUND_INEQ_)\b))/g, '$1 $2 ___SPLIT___ ');
+
+  // 4. Tách thành từng dòng độc lập và làm sạch
+  const rawRows = s.split('___SPLIT___');
+  const cleanRows = rawRows.map(r => {
+    let row = r.trim();
+    // Khôi phục lại các bất đẳng thức kép nguyên vẹn 100%
+    row = row.replace(/___COMPOUND_INEQ_(\d+)___/g, (_m, idx) => compoundTokens[Number(idx)] || '');
+    // Xóa sạch các dấu backslash đơn sót lại ở đầu hoặc cuối dòng
+    row = row.replace(/^\\+(?![a-zA-Z])\s*/, '');
+    row = row.replace(/\\+$/, '');
+    // Xóa sạch các dấu backslash đơn sót lại trước biến đơn lẻ (như \x -> x, \y -> y), không xóa lệnh LaTeX
+    row = row.replace(/(?:^|\s)\\([xyzmtanbcdfghijkopqrsuvwXYZMT])\b(?!le|ge|leq|geq|ne|neq|sqrt|frac|sin|cos|tan|cot|ln|log|pi)/g, ' $1');
+    return row.trim();
+  }).filter(r => r.length > 0 && r !== '\\');
+
+  return cleanRows.join(' \\\\\n');
 }
 
 /**
@@ -450,11 +488,9 @@ export function sanitizeLatexString(text: string): string {
   if (!text) return '';
   let s = text.replace(/\\dfrac\b/g, '\\frac');
 
-  // 0. Sửa lỗi double/multiple backslash và khoảng trắng sau backslash cho các lệnh LaTeX phổ biến:
-  // Ví dụ: "\\ \setminus", "\\\ \frac", "\ \pi", "\\ \mathbb{R}", "\\ \left", "\\ \right"
-  s = s.replace(/\\+\s*\\+\s*/g, '\\');
-  s = s.replace(/\\+\s+(frac|sqrt|sin|cos|tan|cot|left|right|begin|end|text|pi|infty|mathbb|setminus|quad|mid|cap|cup|in|notin|subset|supset|subseteq|supseteq|ne|neq|le|ge|leq|geq|times|cdot|pm|lim|to|alpha|beta|gamma|theta|Delta|Omega|circ|overline|vert|parallel|perp|cases|aligned|matrix|array)\b/gi, '\\$1');
-  s = s.replace(/\\+(frac|sqrt|sin|cos|tan|cot|left|right|begin|end|text|pi|infty|mathbb|setminus|quad|mid|cap|cup|in|notin|subset|supset|subseteq|supseteq|ne|neq|le|ge|leq|geq|times|cdot|pm|lim|to|alpha|beta|gamma|theta|Delta|Omega|circ|overline|vert|parallel|perp|cases|aligned|matrix|array)\b/gi, '\\$1');
+  // 0. Sửa lỗi 3 backslash trở lên thành 2 hoặc 1 backslash (BẢO VỆ TUYỆT ĐỐI DOUBLE BACKSLASH `\\` DÙNG ĐỂ NGẮT DÒNG HỆ PT / HỆ BPT / CASES / MATRIX):
+  s = s.replace(/\\{3,}/g, '\\\\');
+  s = s.replace(/(?<!\\)\\\s+(frac|sqrt|sin|cos|tan|cot|left|right|begin|end|text|pi|infty|mathbb|setminus|quad|mid|cap|cup|in|notin|subset|supset|subseteq|supseteq|ne|neq|le|ge|leq|geq|times|cdot|pm|lim|to|alpha|beta|gamma|theta|Delta|Omega|circ|overline|vert|parallel|perp|cases|aligned|matrix|array)\b/gi, '\\$1');
 
   // Sửa lỗi đóng mở ngoặc nhọn bị dính nhiều backslash: "\\ \left\\\{\\" -> "\left\{", "\\ \right\\\}" -> "\right\}"
   s = s.replace(/\\+\s*left\s*\\+\s*\{/gi, '\\left\\{');
@@ -543,17 +579,26 @@ export function normalizeOcrChoicesAndFormatting(text: string): string {
   // 1. Xóa sạch &nbsp;, &ensp;, &emsp;
   s = s.replace(/&(?:nbsp|ensp|emsp);+/gi, ' ');
 
-  // 2. Sửa lỗi phương án bị kẹp bên trong dấu $...$:
-  // Ví dụ: $|\vec{AB}| = |\vec{CD}| **D.**\vec{AB} = \vec{CD}$
-  // hoặc: $|\vec{AB}| = |\vec{CD}| D. \vec{AB} = \vec{CD}$
-  s = s.replace(/\$([^\$\n]*?)\s*(?:\*\*([B-D])\.\*\*|\b([B-D])\.)\s*([^\$\n]*?)\$/g, (_m, part1, opt1, opt2, part2) => {
-    const opt = opt1 || opt2;
-    const cleanP1 = part1.trim() ? `$${part1.trim()}$` : '';
-    const cleanP2 = part2.trim() ? `$${part2.trim()}$` : '';
-    return `${cleanP1}\n\n${opt}. ${cleanP2}`;
+  // 1.5 Tách các phương án trắc nghiệm bị dính liền vào nhau hoặc dính vào đuôi câu hỏi
+  // Chỉ tách khi KHÔNG nằm sau các từ ngữ hình học hoặc giới từ (vd: "tại A.", "điểm B.", "từ C.")
+  const geoWordPattern = /(?:tại|điểm|đỉnh|gọi|qua|với|từ|trên|của|cho|và|thuộc|đến|cạnh|đường|mặt\s*phẳng|chiếu\s*lên|tọa\s*độ|tâm|trọng\s*tâm|trực\s*tâm|bán\s*kính|vectơ|vector|tam\s*giác(?:\s+[a-zA-Z\.]+)?|tứ\s*diện(?:\s+[a-zA-Z\.]+)?|hình\s*chóp(?:\s+[a-zA-Z\.]+)?|đoạn\s*thẳng)$/i;
+
+  s = s.replace(/([0-9\$\)\}\],.:;?!])\s*(?=(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?[B-D][\.:\)])/g, (match, p1, offset) => {
+    const before = s.slice(Math.max(0, offset - 25), offset + p1.length);
+    if (geoWordPattern.test(before.trim())) return match;
+    return `${p1}\n`;
   });
 
-  // 3. Tách các phương án trắc nghiệm A., B., C., D. đứng cùng một dòng
+  s = s.replace(/([0-9\$\)\}\],.:;?!])\s*(?=(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?A[\.:\)])/g, (match, p1, offset) => {
+    const before = s.slice(Math.max(0, offset - 25), offset + p1.length);
+    if (geoWordPattern.test(before.trim())) return match;
+    return `${p1}\n`;
+  });
+
+  // Tách các mệnh đề a), b), c), d) của câu hỏi Đúng/Sai ra từng dòng riêng biệt
+  s = s.replace(/([^\n])\s*(?=(?:^|\s)(?:[-*]\s*)?(?:\(?\s*[a-d]\s*\)))\s*/g, '$1\n');
+
+  // 2. Tách các phương án trắc nghiệm A., B., C., D. đứng cùng một dòng thành các dòng độc lập
   // Ngoại trừ các dòng bảng Markdown (| ... |)
   const lines = s.split('\n');
   const processedLines: string[] = [];
@@ -564,10 +609,12 @@ export function normalizeOcrChoicesAndFormatting(text: string): string {
       continue;
     }
 
-    // Nếu dòng chứa nhiều phương án trắc nghiệm dính liền nhau
-    if (/\bA\.\s+[\s\S]*?\bB\.\s+/i.test(line) || /\bB\.\s+[\s\S]*?\bC\.\s+/i.test(line) || /\bC\.\s+[\s\S]*?\bD\.\s+/i.test(line)) {
-      let splitLine = line.replace(/(\s+)(?=\b[B-D]\.\s+)/g, '\n');
-      splitLine = splitLine.replace(/([^\n])\s+(?=\bA\.\s+)/g, '$1\n');
+    // Nếu dòng chứa nhiều phương án trắc nghiệm dính liền nhau (ví dụ: A. ... B. ... C. ... D. ...)
+    if (/(?:^|\s+)(?:[-*]\s*)?(?:\*{0,2})A[\.\)](?:\*{0,2})\s*[\s\S]*?(?:[-*]\s*)?(?:\*{0,2})B[\.\)](?:\*{0,2})\s*/i.test(line) ||
+        /(?:^|\s+)(?:[-*]\s*)?(?:\*{0,2})B[\.\)](?:\*{0,2})\s*[\s\S]*?(?:[-*]\s*)?(?:\*{0,2})C[\.\)](?:\*{0,2})\s*/i.test(line) ||
+        /(?:^|\s+)(?:[-*]\s*)?(?:\*{0,2})C[\.\)](?:\*{0,2})\s*[\s\S]*?(?:[-*]\s*)?(?:\*{0,2})D[\.\)](?:\*{0,2})\s*/i.test(line)) {
+      let splitLine = line.replace(/(\s*)(?=(?:[-*]\s*)?(?:\*{0,2})[B-D][\.\)](?:\*{0,2})\s*)/g, '\n');
+      splitLine = splitLine.replace(/([^\n])\s*(?=(?:[-*]\s*)?(?:\*{0,2})A[\.\)](?:\*{0,2})\s*(?!Trắc nghiệm|Tự luận|Khẳng định|Mệnh đề))/g, '$1\n');
       processedLines.push(splitLine);
     } else {
       processedLines.push(line);
@@ -843,7 +890,9 @@ export const cleanVietnameseUnicode = (str: string): string => {
     .replace(/ê[`']/g, 'ề')
     .replace(/ế[´'’^]/g, 'ế')
     .replace(/ố[´'’^]/g, 'ố')
-    .replace(/([a-zA-Z\u00C0-\u1EF9])[\s]*[`´'’^](?=[a-zA-Z\u00C0-\u1EF9\s]|$)/g, '$1');
+    .replace(/([a-zA-Z\u00C0-\u1EF9])[\s]*[`´'’^](?=[a-zA-Z\u00C0-\u1EF9\s]|$)/g, '$1')
+    .replace(/`([A-ZÀ-Ỹa-zà-ỹ])/g, '$1')
+    .replace(/´([A-ZÀ-Ỹa-zà-ỹ])/g, '$1');
 
   // Chuẩn hóa lần cuối về NFC
   res = res.normalize('NFC');
@@ -1302,6 +1351,8 @@ export const sanitizeExamQuestion = (rawContent: string): string => {
   }
 
   // BƯỚC 2: BẢO VỆ CÁC KHỐI MÔI TRƯỜNG TOÁN HỌC, KHỐI CODE, BẢNG BIẾN THIÊN, ẢNH VÀ MATH HỢP LỆ TRƯỚC HẾT
+  // Chuẩn hóa và chữa lành các hệ phương trình / bất phương trình chứa bất đẳng thức kép (bđt kép) trước khi bảo vệ
+  content = content.replace(/\\begin\s*\{cases\*?\}([\s\S]*?)\\end\s*\{cases\*?\}/g, (_m, body) => `\\begin{cases}\n${normalizeCasesBody(body)}\n\\end{cases}`);
   const envTokens: string[] = [];
   content = unflattenMarkdownTables(content);
   content = content.replace(/(```[\s\S]*?```|`[^`\n]+`|<img[\s\S]*?>|<svg[\s\S]*?<\/svg>|<tikz-diagram[\s\S]*?<\/tikz-diagram>|<svg-wrapper[\s\S]*?<\/svg-wrapper>|\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\}|\\left\s*\[\s*\\begin\s*\{aligned\*?\}[\s\S]*?\\end\s*\{aligned\*?\}\s*\\right\.?|\\begin\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}[\s\S]*?\\end\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}|(?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gim, (match) => {
@@ -1381,6 +1432,8 @@ export const sanitizeExamQuestion = (rawContent: string): string => {
     .replace(/([A-Za-z0-9\)])\s*(?<!\\)setminus\s*([A-Za-z0-9\(])/g, '$1 \\setminus $2')
     .replace(/(?<!\\)\bsetminus\b/g, '\\setminus')
     .replace(/=\s*emptyset/gi, '= \\emptyset')
+    .replace(/(?<![a-zA-Z\\])\b(le|leq)(\d+)\b/gi, '\\le $2')
+    .replace(/(?<![a-zA-Z\\])\b(ge|geq)(\d+)\b/gi, '\\ge $2')
     .replace(/leq(\d+)\s*và\s*([A-Za-z])/gi, '\\le $1 và $2')
     .replace(/leq(\d+)/gi, '\\le $1 ')
     .replace(/geq(\d+)/gi, '\\ge $1 ')
@@ -1390,6 +1443,19 @@ export const sanitizeExamQuestion = (rawContent: string): string => {
 
   // Dọn dẹp dấu $$ bị rách dán sát trước toán tử (vd: [-3; 2)$$\cap hoặc (-2; 3)$$\Rightarrow)
   content = content.replace(/([\)\]\}0-9a-zA-Z])\s*\$\$\s*(?=(\\(?:cap|cup|setminus|Rightarrow|Leftrightarrow|in|notin|subset|supset|subseteq|supseteq|approx|neq|le|ge|leq|geq)|[=+\-*\/]))/gi, '$1 ');
+
+  // Bọc bất đẳng thức kép trần trụi ngoài math (vd: 0 \le x \le 4, -1 < x \le 3, a \le 2x - 1 \le b, 0 <= x <= 4)
+  content = content.replace(/(?<![a-zA-Z0-9\$\\\(\[\{\^\-\+])([+-]?(?:\d+(?:[.,]\d+)?|[a-zA-Z]|\\\w+(?:\{[^{}]*\})*))\s*\\?(le|ge|leq|geq|leqslant|geqslant|ne|neq|<|>|<=|>=)(?![a-zA-Z])\s*([a-zA-Z0-9\+\-\s\*\/\(\)\{\}\^\_\\]+?)\s*\\?(le|ge|leq|geq|leqslant|geqslant|ne|neq|<|>|<=|>=)(?![a-zA-Z])\s*([+-]?(?:\d+(?:[.,]\d+)?|[a-zA-Z]|\\\w+(?:\{[^{}]*\})*))(?![a-zA-Z0-9\$\\])/g, (_m, a, op1, mid, op2, b) => {
+    const norm = (o: string) => {
+      const lower = o.toLowerCase().replace(/^\\/, '');
+      if (lower === '<=' || lower === 'le' || lower === 'leq' || lower === 'leqslant') return '\\le';
+      if (lower === '>=' || lower === 'ge' || lower === 'geq' || lower === 'geqslant') return '\\ge';
+      if (lower === '<' || lower === '>') return lower;
+      return `\\${lower}`;
+    };
+    mathTokens.push(`$${a.trim()} ${norm(op1)} ${mid.trim()} ${norm(op2)} ${b.trim()}$`);
+    return `\uE000MB_${mathTokens.length - 1}\uE001`;
+  });
 
   // Bọc các lệnh toán học trần trụi ngoài math:
   content = content.replace(/\b([a-zA-Z0-9]+)\s*\\(in|notin|subset|subseteq)\s*([a-zA-Z0-9]+)\b/g, (_m, a, op, b) => `$${a} \\${op} ${b}$`);
@@ -1525,6 +1591,7 @@ export const normalizeMathContent = sanitizeMathBeforeRender;
 export const normalizeMathLatex = (rawText: string): string => {
   if (!rawText) return '';
   let text = normalizeLogicAndSetSymbols(sanitizeMathBeforeRender(rawText)).replace(/\\dfrac\b/g, '\\frac');
+  text = text.replace(/\\begin\s*\{cases\*?\}([\s\S]*?)\\end\s*\{cases\*?\}/g, (_m, body) => `\\begin{cases}\n${normalizeCasesBody(body)}\n\\end{cases}`);
 
   // BƯỚC 0: Tách rời các từ nối tiếng Việt bị dính liền với ký tự toán và sửa rách dấu $$ (vd: 3hoặcm -> 3 hoặc m, $$hoặc$$ -> hoặc)
   text = text
@@ -1676,6 +1743,11 @@ export function formatMathContent(raw?: string | null): string {
   // 1. Chuẩn hóa họ nghiệm lượng giác (đổi \begin{cases} có chứa k2\pi, k\pi, k \in \mathbb{Z}... sang \left[\begin{aligned}...\end{aligned}\right.)
   str = normalizeTrigSolutions(str);
 
+  // 1.8 Tự động chuyển đổi các biểu thức hệ dạng { bpt1 \ bpt2 \ ... } hoặc { bpt1 \\ bpt2 } hoặc \left\{ bpt1 \ bpt2 sang \begin{cases} ... \end{cases}
+  str = str.replace(/\\?\{\s*([^{}]+?(?:[<>=]|\\ge|\\le|\\leq|\\geq|\\neq)[^{}]+?(?:\\\\|\\|\n|,)[^{}]+?(?:[<>=]|\\ge|\\le|\\leq|\\geq|\\neq)[^{}]+?)\s*\\?\}/g, (_match, body) => {
+    return `\\begin{cases}\n${normalizeCasesBody(body)}\n\\end{cases}`;
+  });
+
   // 2. Chuẩn hóa \left\{ \begin{aligned} ... \end{aligned} \right. hoặc \left\{ \begin{array} ... \end{array} \right. sang \begin{cases} ... \end{cases}
   str = str.replace(/\\left\s*\\\{\s*\\begin\s*\{(?:aligned|array|matrix)\*?\}([\s\S]*?)\\end\s*\{(?:aligned|array|matrix)\*?\}\s*\\right\.?/g, (_m, body) => {
     return `\\begin{cases}\n${normalizeCasesBody(body)}\n\\end{cases}`;
@@ -1725,8 +1797,9 @@ export function cleanOptionText(opt: any): string {
   if (!opt && opt !== 0) return '';
   let text = sanitizeLatexString(String(opt).trim());
   
-  // 0. Triệt tiêu undefined rò rỉ và dọn dẹp unicode
+  // 0. Triệt tiêu undefined rò rỉ, dọn dẹp unicode và cắt bỏ các tiêu đề phần bị dính vào đuôi phương án D
   text = text.replace(/(?:=\s*)?undefined(?![a-zA-Z0-9_\$])/gi, '').replace(/\bundefined\b/gi, '');
+  text = text.replace(/(?:\r?\n|\s)*(?:###?\s*|\*\*)?(?:PHẦN\s*(?:[I|V|X\d]+|\d+)|B\.\s*TỰ\s*LUẬN|BÀI\s*TẬP\s*TỰ\s*LUẬN|Lời\s*giải|HDG)[\s\S]*$/i, '');
   text = cleanVietnameseUnicode(text);
   text = normalizeLogicAndSetSymbols(text);
   text = text.replace(/<br\s*\/?>/gi, ' ').replace(/\s{2,}/g, ' ');
@@ -1738,6 +1811,7 @@ export function cleanOptionText(opt: any): string {
     .replace(/^(?:[-*−\.\s]|\*{1,2})*([A-Da-d])[\.\:\)](?:<\/b>|\*{1,2})?\s*(?:[-*−\.\s]|\*{1,2})*(?:\1[\.\:\)](?:<\/b>|\*{1,2})?\s*)*/, '')
     .replace(/^(?:[-*]\s*)?(?:<b>|\*{1,2})?\s*[A-Da-d][\.\:\)]\s*(?:<\/b>|\*{1,2})?\s*(?!=\s*)/, '')
     .replace(/^\([A-Da-d]\)\s*(?!=\s*)/, '')
+    .replace(/[\-_–—\s*]+$/, '')
     .trim();
 
   // 2. Chuẩn hóa vô cực và các ký hiệu toán
@@ -1749,7 +1823,12 @@ export function cleanOptionText(opt: any): string {
     return fixInlineOptionText(text);
   }
 
-  // 4. Nếu là khối môi trường LaTeX (cases, aligned, array, matrix, v.v.)
+  // 4. Nếu là khối môi trường LaTeX hoặc hệ phương trình/bất phương trình
+  // Tự động nhận diện { bpt1 \ bpt2 } hoặc \left\{ bpt1 \ bpt2
+  text = text.replace(/\\?\{\s*([^{}]+?(?:[<>=]|\\ge|\\le|\\leq|\\geq|\\neq)[^{}]+?(?:\\\\|\\|\n|,)[^{}]+?(?:[<>=]|\\ge|\\le|\\leq|\\geq|\\neq)[^{}]+?)\s*\\?\}/g, (_match, body) => {
+    return `\\begin{cases}\n${normalizeCasesBody(body)}\n\\end{cases}`;
+  });
+
   if (/\\begin\s*\{cases\*?\}/.test(text)) {
     text = text.replace(/\\begin\s*\{cases\*?\}([\s\S]*?)\\end\s*\{cases\*?\}/g, (_m, b) => `\\begin{cases}\n${normalizeCasesBody(b)}\n\\end{cases}`);
   }
@@ -1758,9 +1837,44 @@ export function cleanOptionText(opt: any): string {
     return `$${unwrapped}$`;
   }
 
-  // 5. Kiểm tra nếu là biểu thức toán học (khoảng, đoạn, công thức, biến số, hàm lượng giác, phân số, căn số, phương trình)
+  // 5. Kiểm tra nếu là biểu thức toán học (khoảng, đoạn, công thức, biến số, hàm lượng giác, phân số, căn số, phương trình, bất đẳng thức kép)
   // Bóc $ ngoài cùng nếu có để chuẩn hóa bên trong, sau đó bọc lại $ sạch sẽ
   const unwrapped = text.replace(/^\s*\${1,2}\s*([\s\S]*?)\s*\${1,2}\s*$/, '$1').trim();
+
+  const normIneqOp = (op: string): string => {
+    const o = op.toLowerCase().replace(/^\\/, '');
+    if (o === '<=' || o === 'le' || o === 'leq' || o === 'leqslant') return '\\le';
+    if (o === '>=' || o === 'ge' || o === 'geq' || o === 'geqslant') return '\\ge';
+    if (o === '<' || o === '>') return o;
+    if (o === '!=' || o === 'ne' || o === 'neq') return '\\neq';
+    return op.startsWith('\\') ? op : `\\${op}`;
+  };
+
+  // 5.1 Nhận diện bất đẳng thức kép (BĐT kép) trong lựa chọn phương án: vd: 0 \le x \le 4, -1 < x \le 3, 0 <= x <= 4
+  const ineqOpStr = "(?:<=|>=|<|>|\\\\le|\\\\ge|\\\\leq|\\\\geq|\\\\leqslant|\\\\geqslant|\\ble\\b|\\bge\\b|\\bleq\\b|\\bgeq\\b)";
+  const compoundMatch = unwrapped.match(new RegExp(
+    `^([+-]?(?:\\d+(?:[.,]\\d+)?|[a-zA-Z]|\\\\[a-zA-Z]+(?:\\{[^{}]*\\})*))\\s*(${ineqOpStr})\\s*([^\\\\\\n,;]+?)\\s*(${ineqOpStr})\\s*([+-]?(?:\\d+(?:[.,]\\d+)?|[a-zA-Z]|\\\\[a-zA-Z]+(?:\\{[^{}]*\\})*))$`,
+    "i"
+  ));
+  if (compoundMatch) {
+    const [, left, op1, mid, op2, right] = compoundMatch;
+    return `$${left.trim()} ${normIneqOp(op1)} ${mid.trim()} ${normIneqOp(op2)} ${right.trim()}$`;
+  }
+
+  // 5.2 Nhận diện bất phương trình / phương trình đơn lẻ: x \ge 0, x <= 4, y > 1, 2x - y <= 10
+  const simpleIneqMatch = unwrapped.match(new RegExp(
+    `^([+-]?[a-zA-Z0-9\\+\\-\\s\\*\\/\\(\\)\\{\\}\\^\\_\\\\]+?)\\s*(${ineqOpStr})\\s*([+-]?[a-zA-Z0-9\\+\\-\\s\\*\\/\\(\\)\\{\\}\\^\\_\\\\]+)$`,
+    "i"
+  ));
+  if (simpleIneqMatch) {
+    const [, left, op, right] = simpleIneqMatch;
+    return `$${left.trim()} ${normIneqOp(op)} ${right.trim()}$`;
+  }
+
+  // 5.3 Số thực hoặc số thập phân có dấu phẩy (vd: 12, 16, 17,6, 18,4, -3, 0,5)
+  if (/^[+-]?\d+(?:[.,]\d+)?$/.test(unwrapped)) {
+    return `$${unwrapped}$`;
+  }
   
   // Nhận diện nếu unwrapped là toán học
   const isPureMath = 
@@ -1823,6 +1937,9 @@ export function cleanQuestionStem(content: any, options?: any[], tfStatements?: 
   text = text.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, protectVisual);
 
   text = sanitizeLatexString(text);
+
+  // Chuẩn hóa và chữa lành các hệ phương trình / bất phương trình chứa bất đẳng thức kép (bđt kép)
+  text = text.replace(/\\begin\s*\{cases\*?\}([\s\S]*?)\\end\s*\{cases\*?\}/g, (_m, body) => `\\begin{cases}\n${normalizeCasesBody(body)}\n\\end{cases}`);
   
   // Strip any leaked preamble packages
   text = text.replace(/\\(usetikzlibrary|usepackage)\s*\{[^}]*\}\s*/gi, '');
@@ -1844,25 +1961,54 @@ export function cleanQuestionStem(content: any, options?: any[], tfStatements?: 
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
-  // If the question has separate options array
-  if (options && options.length >= 2) {
-    // 1. Remove HTML grid of options if present
-    text = text.replace(/<div\s+class=["']grid[\s\S]*?<\/div>\s*<\/div>/gi, '');
-    text = text.replace(/<div\s+class=["']grid[\s\S]*?<\/div>/gi, '');
-    
-    // 2. Remove "Câu 1: A. ... B. ... C. ... D. ...", "- **A.** ...", or "A. ... B. ... C. ... D. ..." at the end
-    text = text.replace(/(?:\r?\n|\s)*(?:Câu\s*\d*[:\.]?\s*)?(?:[-*]\s*)?(?:\*{0,2})A[\.:\)]\s+[\s\S]*$/i, '');
-    
-    // 3. Remove trailing "Câu X:" if left
-    text = text.replace(/(?:\r?\n|\s)*Câu\s*\d*[:\.]?\s*$/i, '');
+  // 1. Remove HTML grid of options if present
+  text = text.replace(/<div\s+class=["']grid[\s\S]*?<\/div>\s*<\/div>/gi, '');
+  text = text.replace(/<div\s+class=["']grid[\s\S]*?<\/div>/gi, '');
+
+  // 2. Tách và xóa sạch các phương án A. ... B. ... C. ... D. bị dính liền vào cuối thân câu hỏi
+  // Chỉ xóa khi thực sự có chuỗi phương án trắc nghiệm ở đuôi đề bài (sau dấu hỏi, hai chấm, hoặc dòng riêng)
+  // TUYỆT ĐỐI không xóa nhầm các điểm hình học trong câu dẫn như "tại A.", "điểm B.", "tọa độ A."
+  const geoWordPattern = /(?:tại|điểm|đỉnh|gọi|qua|với|từ|trên|của|cho|và|thuộc|đến|cạnh|đường|mặt\s*phẳng|chiếu\s*lên|tọa\s*độ|tâm|trọng\s*tâm|trực\s*tâm|bán\s*kính|vectơ|vector|tam\s*giác(?:\s+[a-zA-Z\.]+)?|tứ\s*diện(?:\s+[a-zA-Z\.]+)?|hình\s*chóp(?:\s+[a-zA-Z\.]+)?|đoạn\s*thẳng)\s*$/i;
+
+  const aMatches = [...text.matchAll(/(?:(?:\r?\n)+\s*|[.:;?!]\s*|\$|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?A(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/gi)];
+  if (aMatches.length > 0) {
+    for (let i = aMatches.length - 1; i >= 0; i--) {
+      const m = aMatches[i];
+      const aIdx = m.index! + m[0].indexOf('A');
+      const beforeA = text.substring(0, aIdx).trim();
+
+      if (geoWordPattern.test(beforeA)) continue;
+
+      const afterA = text.substring(aIdx);
+      const hasB = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?B(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
+      const hasC = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?C(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
+      const hasD = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?D(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
+
+      if (hasB && (hasC || hasD)) {
+        text = text.substring(0, m.index).trim();
+        break;
+      }
+
+      if (options && options.length >= 2 && options[0]) {
+        const opt0 = String(options[0]).trim().replace(/^\$|\$$/g, '').slice(0, 10);
+        if (opt0 && afterA.includes(opt0)) {
+          text = text.substring(0, m.index).trim();
+          break;
+        }
+      }
+    }
   }
 
   // If the question has separate tfStatements array (True/False question)
   if (tfStatements && tfStatements.length >= 2) {
     // Remove duplicate trailing sub-statements: a) ... b) ... c) ... d) ... from stem
-    text = text.replace(/(?:\r?\n|\s)*(?:[-*]\s*)?(?:\*{0,2})a[\.:\)]\s+[\s\S]*$/i, '');
+    text = text.replace(/(?:\r?\n|\s)*(?:[-*]\s*)?(?:\*{0,2}|<b>)?\(?a[\.:\)](?:\*{0,2}|<\/b>)?\s+[\s\S]*$/i, '');
   }
   
+  // Xóa sạch các dấu gạch nối, gạch ngang sót lại ở đuôi câu hỏi (như "?-", ":-", ".-")
+  text = text.replace(/([?!.:])\s*[-–—_]+\s*$/g, '$1');
+  text = text.replace(/\s*[-–—_]+\s*$/g, '');
+
   let cleaned = sanitizeExamQuestion(text.trim());
 
   // Khôi phục các hình vẽ BBT & đồ thị nguyên vẹn 100%
@@ -1891,6 +2037,26 @@ export const wrapAllNakedMath = (str: string): string => {
   s = s.replace(/(\$\$[\s\S]*?\$\$|\$[^\$\n]+?\$)/g, (match) => {
     protectedTokens.push(match);
     return `___WRAPPED_MATH_TOKEN_${protectedTokens.length - 1}___`;
+  });
+
+  // Tự động nhận diện và bọc các bất đẳng thức kép trần trụi (bđt kép):
+  // vd: 0 \le x \le 4, -1 < x \le 3, 0 <= x <= 4, -2 < x < 5, 0 \le y \le 5
+  const ineqOpPattern = "(?:<=|>=|<|>|\\\\le|\\\\ge|\\\\leq|\\\\geq|\\\\leqslant|\\\\geqslant|\\ble\\b|\\bge\\b|\\bleq\\b|\\bgeq\\b)";
+  const compoundNakedRegex = new RegExp(
+    `(?<![\\$a-zA-Z0-9\\\\\\(\\[\\{])([+-]?(?:\\d+(?:[.,]\\d+)?|[a-zA-Z]|\\\\[a-zA-Z]+(?:\\{[^{}]*\\})*))\\s*(${ineqOpPattern})\\s*([^\\\\\\n,;]+?)\\s*(${ineqOpPattern})\\s*([+-]?(?:\\d+(?:[.,]\\d+)?|[a-zA-Z]|\\\\[a-zA-Z]+(?:\\{[^{}]*\\})*))(?![\\$a-zA-Z0-9\\\\])`,
+    "gi"
+  );
+  s = s.replace(compoundNakedRegex, (_m, a, op1, mid, op2, b) => {
+    const norm = (o: string) => {
+      const lower = o.toLowerCase().replace(/^\\/, '');
+      if (lower === '<=' || lower === 'le' || lower === 'leq' || lower === 'leqslant') return '\\le';
+      if (lower === '>=' || lower === 'ge' || lower === 'geq' || lower === 'geqslant') return '\\ge';
+      if (lower === '<' || lower === '>') return lower;
+      return `\\${lower}`;
+    };
+    const token = `___WRAPPED_MATH_TOKEN_${protectedTokens.length}___`;
+    protectedTokens.push(`$${a.trim()} ${norm(op1)} ${mid.trim()} ${norm(op2)} ${b.trim()}$`);
+    return token;
   });
 
   const mathCmds = [
@@ -2389,52 +2555,48 @@ export function formatMultipleChoiceInMarkdown(content: string): string {
   if (!content) return '';
   let text = String(content);
 
-  // 0. Dọn sạch các chuỗi tiền tố phương án dị dạng hoặc bị lặp do nhiều vòng render (vd: − ∗ ∗ C . ∗ ∗ .−∗∗C.∗∗)
-  text = text.replace(/(?:[-*−\.\s]|\*{1,2})*([A-Da-d])[\.\:\)](?:<\/b>|\*{1,2})?\s*(?:[-*−\.\s]|\*{1,2})*(?:\1[\.\:\)](?:<\/b>|\*{1,2})?\s*)+/g, '- **$1.** ');
+  // 0. Dọn sạch các chuỗi rác `-**`, `** **`, hoặc `-` tích tụ từ trước
+  text = text.replace(/(?:^|\n)\s*[-*]{2,}\s*(?:\n|$)/g, '\n');
+  text = text.replace(/-+\*{2,}/g, '');
+  text = text.replace(/\*{4,}/g, '**');
 
   // 1. TÁCH BIỆT GIỮA CÁC CÂU HỎI (Spacing):
-  // Đảm bảo giữa mỗi câu (từ Câu 1 đến Câu 12, Bài 1...) có khoảng cách rõ ràng (\n\n),
-  // không để câu sau bị dính chữ số vào đuôi của câu trước.
   text = text.replace(/([^\n])\s*(?:\r?\n)?(\*{0,2}(?:Câu|Bài)\s*\d+[:\.]?\*{0,2})/gi, '$1\n\n$2');
 
   // 2. QUY TẮC HIỂN THỊ PHẦN ĐÚNG/SAI (PHẦN II):
-  // - KHÔNG biến đổi phần này thành các lựa chọn trắc nghiệm A, B, C, D.
-  // - Giữ nguyên định dạng văn bản thuần Markdown: khi gặp các ký hiệu ý a), b), c), d),
-  //   chèn 2 dấu ngắt dòng \n\n phía trước để mỗi ý tự động rớt xuống 1 hàng riêng:
-  //   a) [Mệnh đề 1]
-  //   b) [Mệnh đề 2]
-  //   c) [Mệnh đề 3]
-  //   d) [Mệnh đề 4]
-  // Lưu ý: Không khớp nhầm nếu c) nằm trong cụm ngoặc tròn như (c) hoặc công thức toán
-  text = text.replace(/([^\n])\s*(?:\r?\n)?(?<![\(\$a-zA-Z0-9])([a-d]\))\s+(?=[A-ZÀ-Ỹ\$\\"“'‘])/g, '$1\n\n$2 ');
-  text = text.replace(/([^\n])\s*(?:\r?\n)?(?<![\(\$a-zA-Z0-9])([a-d]\.)\s+(?=[A-ZÀ-Ỹ\$\\"“'‘])/g, '$1\n\n$2 ');
+  // - Khi gặp các ký hiệu mệnh đề a), b), c), d) (chữ thường):
+  //   chèn ngắt dòng phía trước để mỗi ý tự động rớt xuống 1 hàng riêng trực quan.
+  // - KHÔNG dùng tiền tố gạch đầu dòng (-) để tránh bị Markdown biên dịch thành đường kẻ ngang (<hr>)
+  // - Dùng \p{L} để tuyệt đối không khớp nhầm đuôi chữ tiếng Việt (như "thực.", "học.", "bậc.")
+  text = text.replace(/(?:^|\n)\s*(?:\*\*)?\(?([a-d])\)(?:\*\*)?\s+/gu, '\n\n**$1)** ');
+  text = text.replace(/([^\n])\s*(?:\r?\n)?(?<![\p{L}\p{N}\$_\*])([a-d]\))[ \t]+/gu, '$1\n\n**$2** ');
 
   // 3. TÁCH DÒNG ĐỀ BÀI VÀ 4 PHƯƠNG ÁN LỰA CHỌN (PHẦN I):
-  // Tuyệt đối KHÔNG để phương án A. dính liền ngay sau câu hỏi.
-  // Đảm bảo chỉ bắt A. B. C. D. in HOA, không trùng với tiêu đề phần "A. Trắc nghiệm..."
-  // và TUYỆT ĐỐI KHÔNG bắt nhầm ký hiệu đồ thị (C), mặt cầu (S), hay biến c trong toán
-  text = text.replace(/([^\n])\s+((?:[\*\-]\s*)?(?:\*{0,2})A[\.\)](?:\*{0,2})\s+(?!Trắc nghiệm|Tự luận|Khẳng định|Mệnh đề)[\s\S]*?(?:[\*\-]\s*)?(?:\*{0,2})B[\.\)](?:\*{0,2})\s+[\s\S]*?(?:[\*\-]\s*)?(?:\*{0,2})(?<!\()C[\.\)](?:\*{0,2})\s+[\s\S]*?(?:[\*\-]\s*)?(?:\*{0,2})(?<!\()D[\.\)](?:\*{0,2})\s+)/g, '$1\n\n$2');
+  const geoWordCheck = /(?:tại|điểm|đỉnh|gọi|qua|với|từ|trên|của|cho|và|thuộc|đến|cạnh|đường|mặt\s*phẳng|chiếu\s*lên|tọa\s*độ|tâm|trọng\s*tâm|trực\s*tâm|bán\s*kính|vectơ|vector|tam\s*giác(?:\s+[a-zA-Z\.]+)?|tứ\s*diện(?:\s+[a-zA-Z\.]+)?|hình\s*chóp(?:\s+[a-zA-Z\.]+)?|đoạn\s*thẳng)\s*$/i;
 
-  // 4. CHUẨN HÓA 4 ĐÁP ÁN (PHẦN I) SANG CÚ PHÁP DANH SÁCH MARKDOWN:
-  // TUYỆT ĐỐI KHÔNG sinh chuỗi HTML <div class="choice-item"> vào text.
-  // Chuẩn hóa thành danh sách Markdown thuần túy:
-  // - **A.** [Phương án A]
-  // - **B.** [Phương án B]
-  // - **C.** [Phương án C]
-  // - **D.** [Phương án D]
-  const choicePattern = /(?:(?:\r?\n)+\s*|^\s*)((?:[\*\-]\s*)?(?:\*{0,2})A[\.\)](?:\*{0,2})\s+(?!Trắc nghiệm|Tự luận|Khẳng định|Mệnh đề)(?:(?!(?:\r?\n)\s*(?:###?\s*|\*\*)?(?:Câu\s*\d+|Bài\s*\d+|\d+\.))[\s\S])*?)(?:(?:\r?\n)+\s*|\s{2,}|\t)(?:[\*\-]\s*)?(?:\*{0,2})B[\.\)](?:\*{0,2})\s+((?:(?!(?:\r?\n)\s*(?:###?\s*|\*\*)?(?:Câu\s*\d+|Bài\s*\d+|\d+\.))[\s\S])*?)(?:(?:\r?\n)+\s*|\s{2,}|\t)(?:[\*\-]\s*)?(?:\*{0,2})(?<!\()C[\.\)](?:\*{0,2})\s+((?:(?!(?:\r?\n)\s*(?:###?\s*|\*\*)?(?:Câu\s*\d+|Bài\s*\d+|\d+\.))[\s\S])*?)(?:(?:\r?\n)+\s*|\s{2,}|\t)(?:[\*\-]\s*)?(?:\*{0,2})(?<!\()D[\.\)](?:\*{0,2})\s+((?:(?!(?:\r?\n)\s*(?:###?\s*|\*\*)?(?:Câu\s*\d+|Bài\s*\d+|\d+\.))[\s\S])*?)(?=(?:\r?\n\s*(?:(?:###?\s*|\*\*)?(?:Câu\s*\d+|Bài\s*\d+|\d+\.)|Lời giải|Hướng dẫn|Đáp án|\*\*Lời giải|\*\*Hướng dẫn|\*\*Đáp án|---)|(?:\r?\n){2,}|$))/g;
+  text = text.replace(/([^\n])\s+(?=(?:[-*]\s*)?(?:\*{0,2})A[\.\:\)](?:\*{0,2})\s+(?!Trắc nghiệm|Tự luận|Khẳng định|Mệnh đề))/gi, (match, p1, offset) => {
+    const before = text.slice(Math.max(0, offset - 25), offset + p1.length);
+    if (geoWordCheck.test(before.trim())) return match;
+    return `${p1}\n\n`;
+  });
+
+  text = text.replace(/([^\n])\s+(?=(?:[-*]\s*)?(?:\*{0,2})[B-D][\.\:\)](?:\*{0,2})\s+)/gi, (match, p1, offset) => {
+    const before = text.slice(Math.max(0, offset - 25), offset + p1.length);
+    if (geoWordCheck.test(before.trim())) return match;
+    return `${p1}\n`;
+  });
+
+  // 4. CHUẨN HÓA TIỀN TỐ PHƯƠNG ÁN Ở ĐẦU DÒNG THÀNH MARKDOWN ĐẸP:
+  text = text.replace(/(?:^|\n)[ \t]*(?:[-*−]\s*)?(?:\*\*)?([A-D])[\.\:\)](?:\*\*)?[ \t]*/g, '\n\n**$1.** ');
+
+  // 5. CHUẨN HÓA 4 ĐÁP ÁN (PHẦN I) SANG CÚ PHÁP MARKDOWN THUẦN TÚY:
+  const choicePattern = /(?:(?:\r?\n)+\s*|^\s*)((?:[-*]\s*)?(?:\*{0,2})A[\.\)](?:\*{0,2})\s+(?!Trắc nghiệm|Tự luận|Khẳng định|Mệnh đề)(?:(?!(?:\r?\n)\s*(?:###?\s*|\*\*)?(?:Câu\s*\d+|Bài\s*\d+|\d+\.))[\s\S])*?)(?:(?:\r?\n)+\s*|\s+|\t)(?:[-*]\s*)?(?:\*{0,2})B[\.\)](?:\*{0,2})\s+((?:(?!(?:\r?\n)\s*(?:###?\s*|\*\*)?(?:Câu\s*\d+|Bài\s*\d+|\d+\.))[\s\S])*?)(?:(?:\r?\n)+\s*|\s+|\t)(?:[-*]\s*)?(?:\*{0,2})(?<!\()C[\.\)](?:\*{0,2})\s+((?:(?!(?:\r?\n)\s*(?:###?\s*|\*\*)?(?:Câu\s*\d+|Bài\s*\d+|\d+\.))[\s\S])*?)(?:(?:\r?\n)+\s*|\s+|\t)(?:[-*]\s*)?(?:\*{0,2})(?<!\()D[\.\)](?:\*{0,2})\s+((?:(?!(?:\r?\n)\s*(?:###?\s*|\*\*)?(?:Câu\s*\d+|Bài\s*\d+|\d+\.))[\s\S])*?)(?=(?:\r?\n\s*(?:(?:###?\s*|\*\*)?(?:Câu\s*\d+|Bài\s*\d+|\d+\.)|Lời giải|Hướng dẫn|Đáp án|\*\*Lời giải|\*\*Hướng dẫn|\*\*Đáp án|---)|(?:\r?\n){2,}|$))/g;
 
   text = text.replace(choicePattern, (match, rawA, rawB, rawC, rawD) => {
-    // Kiểm tra xem đoạn này đã chuẩn định dạng danh sách Markdown chưa
-    const isAlreadyClean = /^\s*-\s*\*\*A\.\*\*/.test(match) && /\n\s*-\s*\*\*B\.\*\*/.test(match) && /\n\s*-\s*\*\*C\.\*\*/.test(match) && /\n\s*-\s*\*\*D\.\*\*/.test(match);
-    if (isAlreadyClean && !/\.[−\-]|\*\*\s*\.\s*[−\-]/.test(match)) {
-      return match;
-    }
-
     const stripOptionPrefix = (str: string) => {
       return str
-        .replace(/^(?:[-*−\.\s]|\*{1,2})*([A-Da-d])[\.\:\)](?:<\/b>|\*{1,2})?\s*(?:[-*−\.\s]|\*{1,2})*(?:\1[\.\:\)](?:<\/b>|\*{1,2})?\s*)*/, '')
-        .replace(/^(?:[-*]\s*)?(?:\*{0,2})[A-Da-d][\.\)](?:\*{0,2})\s*/, '')
+        .replace(/^(?:[-*−\.\s]|\*{1,2})*([A-Da-d])[\.\:\)](?:<\/b>|\*{1,2})?\s*(?:[-*−\.\s]|\*{1,2})*/gi, '')
+        .replace(/^(?:[-*]\s*)?(?:\*{0,2})[A-Da-d][\.\)](?:\*{0,2})\s*/gi, '')
         .trim();
     };
 
@@ -2454,8 +2616,11 @@ export function formatMultipleChoiceInMarkdown(content: string): string {
     optC = cleanOption(optC);
     optD = cleanOption(optD);
 
-    return `\n\n- **A.** ${optA}\n- **B.** ${optB}\n- **C.** ${optC}\n- **D.** ${optD}\n\n`;
+    return `\n\n**A.** ${optA}\n**B.** ${optB}\n**C.** ${optC}\n**D.** ${optD}\n\n`;
   });
+
+  // Xóa các dòng trống thừa
+  text = text.replace(/\n{3,}/g, '\n\n');
 
   return text;
 }

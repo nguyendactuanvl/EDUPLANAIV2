@@ -1914,9 +1914,11 @@ YÊU CẦU PHONG CÁCH: MINDMAP / SƠ ĐỒ NHÁNH
 YÊU CẦU PHONG CÁCH: A4 CHUẨN IN ẤN (Đen trắng / Tiết kiệm mực - Bố cục chính quy)
 - Bố cục trang giấy chuẩn mực cho học sinh in ra làm bài:
   + Phần đầu: Bảng thông tin học sinh (Trường, Lớp, Họ và tên học sinh, Điểm số, Lời phê của giáo viên).
-  + Phần I: TÓM TẮT LÝ THUYẾT (Ngắn gọn, bảng biểu sắc nét, kẻ khung tiết kiệm mực in).
-  + Phần II: CÂU HỎI TRẮC NGHIỆM (Đánh số câu rõ ràng, 4 phương án A, B, C, D phân bố gọn gàng).
-  + Phần III: BÀI TẬP TỰ LUẬN (Có dòng kẻ chấm chấm "......................................................" hoặc khung trống phù hợp để học sinh làm bài trực tiếp trên giấy in).`;
+  + MỤC TIÊU & TÓM TẮT KIẾN THỨC TRỌNG TÂM (Ngắn gọn, bảng biểu sắc nét, kẻ khung tiết kiệm mực in).
+  + PHẦN I: CÂU HỎI TRẮC NGHIỆM NHIỀU PHƯƠNG ÁN LỰA CHỌN (Đánh số câu rõ ràng, 4 phương án A, B, C, D phân bố gọn gàng).
+  + PHẦN II: CÂU HỎI TRẮC NGHIỆM ĐÚNG / SAI (nếu có cấu hình).
+  + PHẦN III: CÂU HỎI TRẮC NGHIỆM TRẢ LỜI NGẮN (nếu có cấu hình).
+  + PHẦN IV: BÀI TẬP TỰ LUẬN (Có dòng kẻ chấm chấm "......................................................" hoặc khung trống phù hợp để học sinh làm bài trực tiếp trên giấy in).`;
       }
 
       let exercisePrompt = `Cấu trúc số lượng câu của các phần trong Phiếu học tập BẮT BUỘC sinh hoàn chỉnh:`;

@@ -35,6 +35,8 @@ import { UploadTeacherExamModal } from "../components/UploadTeacherExamModal";
 import { WordEquationModal } from "../components/WordEquationModal";
 import { SimilarExamsModal } from "../components/SimilarExamsModal";
 import { QuestionEditModal } from "../components/QuestionEditModal";
+import { HeaderConfigModal } from "../components/HeaderConfigModal";
+import { HeaderConfig, getHeaderConfig, saveHeaderConfig } from "../lib/headerConfig";
 import { QuestionVisualizerPanel } from "../components/math-tools/QuestionVisualizerPanel";
 import { GeoGebraDrawer } from "../components/math-tools/GeoGebraDrawer";
 import { ScientificCalculatorModal } from "../components/math-tools/ScientificCalculatorModal";
@@ -51,7 +53,7 @@ import {
 } from '../lib/examMixer';
 import React, { useState, useRef, useEffect } from "react";
 import * as XLSX from 'xlsx';
-import { FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera, TrendingUp, BarChart2, Box, BarChart3, Calculator } from "lucide-react";
+import { School, FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera, TrendingUp, BarChart2, Box, BarChart3, Calculator } from "lucide-react";
 
 interface Question {
   type?: "mc" | "tf" | "sa" | "essay" | "MULTIPLE_CHOICE" | "TRUE_FALSE" | "SHORT_ANSWER" | "ESSAY";
@@ -737,6 +739,15 @@ export function ExamGenerator() {
   const [parameterOption, setParameterOption] = useState<ParameterOption>("auto");
   const [generateMode, setGenerateMode] = useState<"auto" | "from_matrix_file">("auto");
   const [autoDetectStructure, setAutoDetectStructure] = useState(false);
+
+  // Header information (Trường học, Giáo viên, Năm học 2026-2027...)
+  const [headerConfig, setHeaderConfig] = useState<HeaderConfig>(() => getHeaderConfig());
+  const [isHeaderModalOpen, setIsHeaderModalOpen] = useState(false);
+
+  const handleSaveHeaderConfig = (newCfg: HeaderConfig) => {
+    setHeaderConfig(newCfg);
+    saveHeaderConfig(newCfg);
+  };
 
   const handleSchoolLevelChange = (lvl: string) => {
     setSchoolLevel(lvl);
@@ -2370,6 +2381,17 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                     </div>
 
                     <div className="flex flex-wrap gap-2 items-center w-full lg:w-auto justify-end">
+                      {/* Nút tùy chỉnh tiêu đề (Trường, GV, Năm học 2026-2027) */}
+                      <button
+                        type="button"
+                        onClick={() => setIsHeaderModalOpen(true)}
+                        className="px-3 py-2 bg-emerald-50 border border-emerald-300 text-emerald-800 text-sm font-semibold rounded-lg hover:bg-emerald-100 flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                        title="Tùy chỉnh thông tin Trường học, Họ và tên giáo viên, Năm học 2026 - 2027 xuất hiện ở đầu đề thi..."
+                      >
+                        <School className="w-4 h-4 text-emerald-600" />
+                        <span>Tiêu đề (Trường, GV, 2026-2027)</span>
+                      </button>
+
                       <button
                         onClick={() => setShowAddQuestionModal(true)}
                         className="px-3 py-2 bg-white border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 flex items-center gap-1.5 shadow-sm"
@@ -2389,9 +2411,9 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                       <button
                         onClick={handleLoadSampleExam}
                         className="px-3 py-2 bg-white border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 flex items-center gap-1.5 shadow-sm"
-                        title="Nạp đề kiểm tra mẫu chuẩn 2025"
+                        title="Nạp đề kiểm tra mẫu chuẩn năm học 2026-2027"
                       >
-                        <Sparkles className="w-4 h-4 text-amber-500" /> Mẫu 2025
+                        <Sparkles className="w-4 h-4 text-amber-500" /> Mẫu 2026-2027
                       </button>
 
                       <button
@@ -3775,6 +3797,15 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                             }} className="px-3 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-medium rounded hover:bg-emerald-100 flex items-center gap-2">
                               <Smartphone className="w-4 h-4" /> Gửi Zalo
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => setIsHeaderModalOpen(true)}
+                              className="px-3 py-1.5 bg-emerald-50 border border-emerald-300 text-emerald-800 text-sm font-semibold rounded hover:bg-emerald-100 flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                              title="Tùy chỉnh thông tin Trường học, Họ và tên giáo viên, Năm học 2026 - 2027 xuất hiện ở đầu đề thi..."
+                            >
+                              <School className="w-4 h-4 text-emerald-600" />
+                              <span>Tiêu đề (Trường, GV, 2026-2027)</span>
+                            </button>
                             <button onClick={() => handlePrint(`print-exam-${exam.code}`)} className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-sm font-medium rounded hover:bg-slate-50 flex items-center gap-2">
 
                               <Printer className="w-4 h-4" /> In / PDF
@@ -3822,19 +3853,58 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                           </label>
                         </div>
                         <div className="p-6">
+                          {/* Banner tùy chỉnh tiêu đề (Trường, GV, Năm học 2026-2027) */}
+                          <div className="no-print mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-950">
+                            <div className="flex items-center gap-2">
+                              <div className="p-1.5 bg-emerald-600 text-white rounded-lg">
+                                <School className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <span className="font-bold text-slate-800">Tiêu đề đề thi:</span>{" "}
+                                <span>{headerConfig.department || "SỞ GIÁO DỤC VÀ ĐÀO TẠO"}</span> •{" "}
+                                <span className="font-semibold">{headerConfig.schoolName ? `Trường: ${headerConfig.schoolName}` : "Trường: (chưa nhập)"}</span> •{" "}
+                                <span className="font-semibold">{headerConfig.teacherName ? `GV: ${headerConfig.teacherName}` : "GV: (chưa nhập)"}</span> •{" "}
+                                <span className="font-bold text-emerald-800">Năm học {headerConfig.schoolYear || "2026 - 2027"}</span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setIsHeaderModalOpen(true)}
+                              className="px-3 py-1.5 bg-white hover:bg-emerald-100 text-emerald-800 font-bold border border-emerald-300 rounded-lg shadow-2xs transition-colors cursor-pointer flex items-center gap-1"
+                            >
+                              ✏️ Tùy chỉnh thông tin Trường / GV / Năm học
+                            </button>
+                          </div>
+
                           <div id={`print-exam-${exam.code}`} style={{ fontFamily: '"Times New Roman", Times, serif', color: '#000000', lineHeight: 1.35 }}>
                             {/* Standard Vietnamese School Exam Header */}
                             <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none', marginBottom: '8pt', fontFamily: '"Times New Roman", Times, serif' }}>
                               <tbody>
                                 <tr>
-                                  <td style={{ width: '42%', border: 'none', textAlign: 'center', verticalAlign: 'top', padding: '0 4pt' }}>
-                                    <div style={{ fontSize: '11pt', fontWeight: 'bold', textTransform: 'uppercase' }}>SỞ GD&ĐT ...................................</div>
-                                    <div style={{ fontSize: '11pt', fontWeight: 'bold', textTransform: 'uppercase' }}>TRƯỜNG THPT ...........................</div>
-                                    <div style={{ fontSize: '9.5pt', fontStyle: 'italic', marginTop: '2pt' }}>(Đề thi có {Math.max(1, Math.ceil(exam.questions.length / 8))} trang)</div>
+                                  <td style={{ width: '45%', border: 'none', textAlign: 'center', verticalAlign: 'top', padding: '0 4pt' }}>
+                                    <div style={{ fontSize: '10.5pt', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                                      {headerConfig.department || "SỞ GIÁO DỤC VÀ ĐÀO TẠO"}
+                                    </div>
+                                    <div style={{ fontSize: '11pt', fontWeight: 'bold', textTransform: 'uppercase', marginTop: '1pt' }}>
+                                      {headerConfig.schoolName 
+                                        ? (headerConfig.schoolName.trim().toUpperCase().startsWith("TRƯỜNG") ? headerConfig.schoolName.trim().toUpperCase() : `TRƯỜNG ${headerConfig.schoolName.trim().toUpperCase()}`)
+                                        : "TRƯỜNG THPT ..........................."}
+                                    </div>
+                                    <div style={{ fontSize: '10pt', fontWeight: 'bold', marginTop: '1.5pt' }}>
+                                      {headerConfig.teacherName ? `GV: ${headerConfig.teacherName}` : "Giáo viên: ......................................."}
+                                    </div>
+                                    {headerConfig.subjectGroup && (
+                                      <div style={{ fontSize: '9.5pt', color: '#1e293b', fontStyle: 'italic', marginTop: '1pt' }}>
+                                        {headerConfig.subjectGroup}
+                                      </div>
+                                    )}
+                                    <div style={{ fontSize: '9pt', fontStyle: 'italic', marginTop: '2pt' }}>
+                                      (Đề thi có {Math.max(1, Math.ceil(exam.questions.length / 8))} trang)
+                                    </div>
                                   </td>
-                                  <td style={{ width: '58%', border: 'none', textAlign: 'center', verticalAlign: 'top', padding: '0 4pt' }}>
+                                  <td style={{ width: '55%', border: 'none', textAlign: 'center', verticalAlign: 'top', padding: '0 4pt' }}>
                                     <div style={{ fontSize: '11.5pt', fontWeight: 'bold', textTransform: 'uppercase' }}>{examName || 'KIỂM TRA ĐỊNH KỲ'}</div>
-                                    <div style={{ fontSize: '10.5pt', fontWeight: 'bold', marginTop: '1pt' }}>NĂM HỌC 2025 - 2026</div>
+                                    <div style={{ fontSize: '10.5pt', fontWeight: 'bold', marginTop: '1pt' }}>NĂM HỌC {headerConfig.schoolYear || '2026 - 2027'}</div>
                                     <div style={{ fontSize: '11pt' }}>Môn: <b>{subject || 'Toán học'}</b> {grade ? `- Khối ${grade}` : ''}</div>
                                     <div style={{ fontSize: '10pt', fontStyle: 'italic', marginTop: '2pt' }}>Thời gian làm bài: <b>{duration} phút</b> (không kể thời gian phát đề)</div>
                                   </td>
@@ -5500,6 +5570,15 @@ Lời giải: Tiệm cận ngang là $y = 1$ nên ý c sai.`);
       <WordEquationModal
         isOpen={showWordEquationModal}
         onClose={() => setShowWordEquationModal(false)}
+      />
+
+      {/* Header Config Modal (Trường, GV, Năm học 2026-2027) */}
+      <HeaderConfigModal
+        isOpen={isHeaderModalOpen}
+        onClose={() => setIsHeaderModalOpen(false)}
+        config={headerConfig}
+        onSave={handleSaveHeaderConfig}
+        title="Tùy chỉnh tiêu đề đề thi (Trường, GV, Năm học 2026 - 2027...)"
       />
 
       {/* Question Edit / BBT Modal for ExamGenerator */}
