@@ -10,6 +10,20 @@ if (typeof window !== 'undefined') {
 }
 
 /**
+ * Quick inspection to get total number of pages in a PDF
+ */
+export async function getPdfTotalPages(pdfData: ArrayBuffer | Uint8Array): Promise<number> {
+  try {
+    const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+    const pdf = await loadingTask.promise;
+    return pdf.numPages || 1;
+  } catch (err) {
+    console.error('Failed to inspect PDF total pages:', err);
+    return 1;
+  }
+}
+
+/**
  * Render a single page of PDF to image Data URL (PNG)
  */
 export async function renderPdfPageToDataUrl(
@@ -53,20 +67,24 @@ export async function renderPdfPageToDataUrl(
 }
 
 /**
- * Render all pages of a PDF up to maxPages to an array of Data URLs
+ * Render a specific page range of a PDF to an array of PNG Data URLs
  */
-export async function renderAllPdfPages(
+export async function renderPdfPageRange(
   pdfData: ArrayBuffer | Uint8Array,
-  maxPages: number = 5,
-  scale: number = 1.2
-): Promise<string[]> {
+  fromPage: number = 1,
+  toPage: number = 5,
+  scale: number = 1.5
+): Promise<{ pages: string[]; totalPages: number }> {
   try {
     const loadingTask = pdfjsLib.getDocument({ data: pdfData });
     const pdf = await loadingTask.promise;
-    const total = Math.min(pdf.numPages, maxPages);
+    const totalPages = pdf.numPages;
+
+    const start = Math.max(1, Math.min(fromPage, totalPages));
+    const end = Math.max(start, Math.min(toPage, totalPages));
     const pages: string[] = [];
 
-    for (let i = 1; i <= total; i++) {
+    for (let i = start; i <= end; i++) {
       const page = await pdf.getPage(i);
       const viewport = page.getViewport({ scale });
       const canvas = document.createElement('canvas');
@@ -82,9 +100,21 @@ export async function renderAllPdfPages(
       pages.push(canvas.toDataURL('image/png'));
     }
 
-    return pages;
+    return { pages, totalPages };
   } catch (err) {
-    console.error('Failed to render PDF pages:', err);
-    return [];
+    console.error('Failed to render PDF page range:', err);
+    return { pages: [], totalPages: 1 };
   }
+}
+
+/**
+ * Render all pages of a PDF up to maxPages to an array of Data URLs
+ */
+export async function renderAllPdfPages(
+  pdfData: ArrayBuffer | Uint8Array,
+  maxPages: number = 5,
+  scale: number = 1.2
+): Promise<string[]> {
+  const result = await renderPdfPageRange(pdfData, 1, maxPages, scale);
+  return result.pages;
 }

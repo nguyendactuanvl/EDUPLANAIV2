@@ -2052,16 +2052,27 @@ app.all("/api/pdf-to-word", async (req, res) => {
         });
       }
 
-      const prompt = `Bạn là một chuyên gia số hóa tài liệu. Nhiệm vụ của bạn là chuyển đổi TOÀN BỘ nội dung trong tài liệu (ảnh/PDF) được cung cấp sang định dạng văn bản (Markdown).
+      const prompt = `Bạn là một trợ lý AI chuyên gia số hóa tài liệu giáo dục và chuyển đổi định dạng từ PDF/Hình ảnh sang văn bản Word (.docx).
+Nhiệm vụ của bạn là đọc toàn bộ nội dung từ tài liệu đính kèm (dù gồm nhiều trang) và xuất ra văn bản chính xác 100%, tuân thủ nghiêm ngặt toàn bộ các quy tắc sau:
 
-YÊU CẦU NGHIÊM NGẶT:
-1. TUYỆT ĐỐI GIỮ NGUYÊN cấu trúc, số thứ tự câu, các mục lục, phân chương phân bài. Không được tự ý tóm tắt hay lược bỏ bất kỳ từ nào.
+1. XỬ LÝ NHIỀU TRANG VÀ PHÂN ĐOẠN TÀI LIỆU:
+- Quét và chuyển đổi tuần tự từ trang đầu tiên đến trang cuối cùng của tài liệu mà không được tự ý bỏ qua hay tóm tắt nội dung.
+- Ở ranh giới chuyển tiếp giữa các trang, hãy đánh dấu rõ ràng bằng dòng: "--- [Hết Trang X / Sang Trang Y] ---" để người dùng dễ theo dõi và đối chiếu với bản gốc (thay X và Y bằng số thứ tự trang tương ứng).
+
+2. CHUẨN HÓA CÔNG THỨC TOÁN / LÝ / HÓA:
+- Mọi biến số, số liệu kèm đơn vị, biểu thức đại số, hàm số, phương trình, bất phương trình, tọa độ, ký hiệu hình học đều phải đặt trong dấu đô la: $công_thức$ (ví dụ: $x$, $y = ax + b$, \{M, N\}, \{1, 2, 3\}).
+- Với công thức độc lập đứng riêng dòng, sử dụng hai dấu đô la: $$công_thức$$.
+- Tuyệt đối không để sót ký hiệu toán ở dạng text thường. Giữ cú pháp chuẩn LaTeX tương thích hoàn toàn để chuyển đổi sang MathType hoặc công cụ Equation trong Microsoft Word.
 ${MATH_FORMATTING_RULES}
-2. HÌNH ẢNH / HÌNH VẼ: Do hạn chế kỹ thuật số hóa, nếu gặp biểu đồ, hình vẽ, đồ thị, hãy thêm một chú thích rõ ràng bằng chữ ở vị trí đó (Ví dụ: [Hình vẽ đồ thị hàm số...] hoặc [Hình ảnh mô tả...]) để giáo viên biết vị trí cần chèn lại ảnh gốc.
-3. GIỮ NGUYÊN BẢNG BIỂU VÀ BẢNG BIẾN THIÊN: Dùng cú pháp Markdown table để tạo lại chính xác các bảng biểu thông thường cũng như BẢNG BIẾN THIÊN (hàng $x$, $y'$, $y$ với các mũi tên $\\nearrow$, $\\searrow$, ký hiệu $\\|$ tại điểm gián đoạn). Tuyệt đối không để khung rỗng.
-4. Nếu trong tài liệu gốc có các thẻ HTML (như <img>) được truyền vào, TUYỆT ĐỐI GIỮ NGUYÊN Y HỆT các thẻ đó ở đúng vị trí.
 
-Đầu ra của bạn phải hoàn toàn là nội dung tài liệu đã được số hóa, không thêm các câu chào hỏi thừa.`;
+3. GIỮ NGUYÊN CẤU TRÚC ĐỀ THI VÀ VĂN BẢN:
+- Giữ nguyên số thứ tự đề mục, bài tập (ví dụ: Câu 1:, Câu 2:, Bài 1:).
+- Với các phương án trắc nghiệm: trình bày rõ ràng A., B., C., D. trên từng dòng độc lập; không tự ý thêm các ký hiệu bullet (chấm tròn, gạch đầu dòng) phía trước chữ cái phương án.
+- Giữ nguyên bảng biểu bằng cú pháp bảng Markdown chuẩn nếu tài liệu có bảng thống kê hay ma trận hoặc BẢNG BIẾN THIÊN (hàng $x$, $y'$, $y$ với các mũi tên \\nearrow, \\searrow, ký hiệu \\| tại điểm gián đoạn).
+
+4. HÌNH ẢNH / HÌNH VẼ: Do hạn chế kỹ thuật số hóa, nếu gặp biểu đồ, hình vẽ, đồ thị, hãy thêm một chú thích rõ ràng bằng chữ ở vị trí đó (Ví dụ: [Hình vẽ đồ thị hàm số...] hoặc [Hình ảnh mô tả...]) để người dùng biết vị trí cần chèn lại ảnh gốc.
+
+Đầu ra của bạn phải hoàn toàn là nội dung tài liệu đã được số hóa dạng Markdown chuẩn, không thêm các câu chào hỏi thừa hay giải thích ngoài lề!`;
 
       const response = await generateWithFallback(req, {
         contents: [
