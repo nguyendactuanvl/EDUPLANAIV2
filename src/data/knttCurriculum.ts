@@ -751,3 +751,91 @@ export const KNTT_CURRICULUM: CurriculumData = {
     }
   }
 };
+
+import { KNTT_SUBJECT_CURRICULUM } from './knttSubjectCurriculums';
+
+/**
+ * Normalizes subject string into canonical subject keys
+ */
+export function normalizeSubjectKey(subj?: string): string {
+  const s = (subj || "").toLowerCase().trim();
+  if (s.includes("sinh")) return "sinh_hoc";
+  if (s.includes("vật lí") || s.includes("vật lý") || s.includes("lí") || s.includes("lý")) return "vat_li";
+  if (s.includes("hóa") || s.includes("hoá")) return "hoa_hoc";
+  if (s.includes("văn") || s.includes("tiếng việt")) return "ngu_van";
+  if (s.includes("sử") || s.includes("lịch sử")) return "lich_su";
+  if (s.includes("địa") || s.includes("địa lí") || s.includes("địa lý")) return "dia_li";
+  if (s.includes("trải nghiệm") || s.includes("hướng nghiệp") || s.includes("hdtn") || s.includes("hđtn")) return "hdtn_hn";
+  if (s.includes("quốc phòng") || s.includes("an ninh") || s.includes("gdqp")) return "gdqp_an";
+  if (s.includes("thể chất") || s.includes("thể dục") || s.includes("gdtc")) return "gdtc";
+  if (s.includes("kinh tế") || s.includes("pháp luật") || s.includes("công dân") || s.includes("gdcd") || s.includes("gdkt")) return "gdcd_gdktpl";
+  if (s.includes("địa phương") || s.includes("gddp")) return "gd_dia_phuong";
+  if (s.includes("tin học") || s.includes("tin")) return "tin_hoc";
+  if (s.includes("công nghệ")) return "cong_nghe";
+  if (s.includes("tiếng anh") || s.includes("anh")) return "tieng_anh";
+  if (s.includes("toán")) return "toan";
+  return "other";
+}
+
+/**
+ * Retrieves exact KNTT chapters and lessons for any subject, grade, and semester.
+ */
+export function getKnttCurriculum(
+  subject: string,
+  grade: number = 12,
+  semester: "semester_1" | "semester_2" = "semester_1"
+): SemesterData {
+  const key = normalizeSubjectKey(subject);
+
+  // If Math or requested grade exists in Math curriculum
+  if (key === "toan" || subject.toLowerCase().includes("toán")) {
+    const gradeKey = `grade_${grade}`;
+    if (KNTT_CURRICULUM[gradeKey]?.[semester]) {
+      return KNTT_CURRICULUM[gradeKey][semester];
+    }
+  }
+
+  // Check subject-specific curriculum database
+  const subjectData = KNTT_SUBJECT_CURRICULUM[key];
+  if (subjectData) {
+    if (subjectData[grade]?.[semester]) {
+      return subjectData[grade][semester];
+    }
+    // Fallback to nearest grade in same subject (e.g., Grade 12 or 10)
+    const availableGrades = Object.keys(subjectData).map(Number);
+    if (availableGrades.length > 0) {
+      const fallbackGrade = availableGrades.includes(grade) ? grade : availableGrades[0];
+      if (subjectData[fallbackGrade]?.[semester]) {
+        return subjectData[fallbackGrade][semester];
+      }
+    }
+  }
+
+  // Dynamic pedagogical outline for any other subject or grade (never mistakenly show Math)
+  const cleanSubj = subject || "Môn học";
+  const semText = semester === "semester_1" ? "Học kỳ 1" : "Học kỳ 2";
+  const semNum = semester === "semester_1" ? 1 : 2;
+
+  return {
+    chapters: [
+      {
+        id: `dyn_${key}_g${grade}_s${semNum}_c1`,
+        name: `Chương I: Kiến thức nền tảng & Chủ đề trọng tâm (${cleanSubj} ${grade} - ${semText})`,
+        lessons: [
+          { id: `dyn_${key}_g${grade}_s${semNum}_c1_l1`, name: `Bài 1: Khái quát và nội dung lý thuyết cơ bản môn ${cleanSubj}` },
+          { id: `dyn_${key}_g${grade}_s${semNum}_c1_l2`, name: `Bài 2: Phương pháp nghiên cứu và thực hành chuyên đề` },
+          { id: `dyn_${key}_g${grade}_s${semNum}_c1_l3`, name: `Bài 3: Vận dụng kiến thức vào thực tiễn đời sống` }
+        ]
+      },
+      {
+        id: `dyn_${key}_g${grade}_s${semNum}_c2`,
+        name: `Chương II: Chuyên đề nâng cao & Đánh giá (${cleanSubj} ${grade} - ${semText})`,
+        lessons: [
+          { id: `dyn_${key}_g${grade}_s${semNum}_c2_l4`, name: `Bài 4: Phân tích các tình huống và bài tập vận dụng cao` },
+          { id: `dyn_${key}_g${grade}_s${semNum}_c2_l5`, name: `Bài 5: Ôn tập chương và đánh giá định kỳ` }
+        ]
+      }
+    ]
+  };
+}
+

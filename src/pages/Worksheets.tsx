@@ -21,7 +21,7 @@ import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMa
 import { parseRawExamText } from '../lib/examParser';
 import { printElement, ensureMathRendered } from '../lib/print';
 import { saveExamToCloud, saveExamToWebhook } from '../lib/cloudExamStore';
-import { KNTT_CURRICULUM } from "../data/knttCurriculum";
+import { KNTT_CURRICULUM, getKnttCurriculum } from "../data/knttCurriculum";
 
 export type LayoutStyle = 'a4_print' | 'infographic' | 'poster' | 'mindmap';
 
@@ -87,10 +87,9 @@ export function Worksheets() {
   const [includeRealWorld, setIncludeRealWorld] = useState<boolean>(true);
   const [answerMode, setAnswerMode] = useState<'full' | 'summary' | 'none'>('full');
 
-  // Synchronize customLessonName with selected KNTT Lesson
+  // Synchronize customLessonName with selected KNTT Lesson and Subject
   useEffect(() => {
-    const gradeKey = `grade_${selectedGrade}` as "grade_10" | "grade_11" | "grade_12";
-    const semData = KNTT_CURRICULUM[gradeKey]?.[selectedSemester];
+    const semData = getKnttCurriculum(subject, selectedGrade, selectedSemester);
     if (semData && semData.chapters.length > 0) {
       let chapId = selectedChapterId;
       let chapter = semData.chapters.find(c => c.id === chapId);
@@ -112,7 +111,7 @@ export function Worksheets() {
         setCustomLessonName(lesson.name);
       }
     }
-  }, [selectedGrade, selectedSemester, selectedChapterId, selectedLessonId]);
+  }, [subject, selectedGrade, selectedSemester, selectedChapterId, selectedLessonId]);
   
   const [suggestion, setSuggestion] = useState("");
   const [isEditing, setIsEditing] = useState(false);
@@ -979,7 +978,11 @@ export function Worksheets() {
               <select
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 value={subject}
-                onChange={(e) => setSubject(e.target.value)}
+                onChange={(e) => {
+                  setSubject(e.target.value);
+                  setSelectedChapterId("");
+                  setSelectedLessonId("");
+                }}
               >
                 {subjects.map(sub => (
                   <option key={sub} value={sub}>{sub}</option>
@@ -1005,6 +1008,8 @@ export function Worksheets() {
                     onChange={(e) => {
                       const gradeVal = Number(e.target.value);
                       setSelectedGrade(gradeVal);
+                      setSelectedChapterId("");
+                      setSelectedLessonId("");
                     }}
                   >
                     {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(g => (
@@ -1020,7 +1025,11 @@ export function Worksheets() {
                   <select 
                     className="w-full px-3 py-1.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white text-xs font-semibold text-slate-800"
                     value={selectedSemester}
-                    onChange={(e) => setSelectedSemester(e.target.value as any)}
+                    onChange={(e) => {
+                      setSelectedSemester(e.target.value as any);
+                      setSelectedChapterId("");
+                      setSelectedLessonId("");
+                    }}
                   >
                     <option value="semester_1">Học kỳ 1</option>
                     <option value="semester_2">Học kỳ 2</option>
@@ -1041,8 +1050,8 @@ export function Worksheets() {
                   }}
                 >
                   {(() => {
-                    const gradeKey = `grade_${selectedGrade}` as "grade_10" | "grade_11" | "grade_12";
-                    const chapters = KNTT_CURRICULUM[gradeKey]?.[selectedSemester]?.chapters || [];
+                    const semData = getKnttCurriculum(subject, selectedGrade, selectedSemester);
+                    const chapters = semData?.chapters || [];
                     return chapters.map(chap => (
                       <option key={chap.id} value={chap.id}>{chap.name}</option>
                     ));
@@ -1060,8 +1069,8 @@ export function Worksheets() {
                   onChange={(e) => setSelectedLessonId(e.target.value)}
                 >
                   {(() => {
-                    const gradeKey = `grade_${selectedGrade}` as "grade_10" | "grade_11" | "grade_12";
-                    const chapters = KNTT_CURRICULUM[gradeKey]?.[selectedSemester]?.chapters || [];
+                    const semData = getKnttCurriculum(subject, selectedGrade, selectedSemester);
+                    const chapters = semData?.chapters || [];
                     const selectedChapter = chapters.find(c => c.id === selectedChapterId) || chapters[0];
                     const lessons = selectedChapter?.lessons || [];
                     return lessons.map(les => (
