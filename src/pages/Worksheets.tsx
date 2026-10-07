@@ -6,9 +6,10 @@ import React, { useState, useRef, useEffect } from "react";
 import { 
   BookOpen, Download, AlertCircle, Edit3, Eye, Printer, Share2, Copy, CheckCircle2, 
   ExternalLink, Upload, FileText, Palette, LayoutTemplate, GitFork, Sparkles, Zap, Image as ImageIcon, Sliders, Check,
-  TrendingUp, BarChart2, Plus, Box, BarChart3, School, User
+  TrendingUp, BarChart2, Plus, Box, BarChart3, School, User, Wand2
 } from "lucide-react";
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
+import { run1ClickMathFix } from "../components/math-tools/MathFormulaFixer";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { UploadTeacherExamModal } from "../components/UploadTeacherExamModal";
 import { QuestionEditModal } from "../components/QuestionEditModal";
@@ -1437,6 +1438,27 @@ export function Worksheets() {
           <div className="flex flex-wrap items-center gap-2">
             {(suggestion || worksheetQuestions.length > 0) && (
               <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (suggestion) setSuggestion(prev => run1ClickMathFix(prev));
+                    if (worksheetQuestions.length > 0) {
+                      setWorksheetQuestions(prev => prev.map((q: any) => ({
+                        ...q,
+                        content: run1ClickMathFix(q.content),
+                        solution: q.solution ? run1ClickMathFix(q.solution) : q.solution,
+                        explanation: q.explanation ? run1ClickMathFix(q.explanation) : q.explanation,
+                        options: q.options ? q.options.map((opt: string) => run1ClickMathFix(opt)) : q.options
+                      })));
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg transition-all shadow-xs text-xs font-bold cursor-pointer active:scale-95"
+                  title="Tự động sửa lỗi rách dấu $, lỗi dính chữ và lỗi KaTeX trong phiếu học tập"
+                >
+                  <Wand2 className="w-3.5 h-3.5 text-emerald-200 animate-pulse" />
+                  <span>⚡ Sửa lỗi Toán 1-Click</span>
+                </button>
+
                 {worksheetQuestions.length > 0 && (
                   <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs">
                     <button
@@ -1724,9 +1746,28 @@ export function Worksheets() {
             <div className="max-w-4xl mx-auto">
               {(() => {
                 const SOLUTION_DELIMITER_REGEX = /(?:\n\s*---+\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN CHI TIẾT|LỜI GIẢI CHI TIẾT|HƯỚNG DẪN GIẢI|BẢNG ĐÁP ÁN NHANH|BẢNG ĐÁP ÁN)[^\n]*---+\s*\n|\n\s*#{1,3}\s*(?:IV|V|III|Phần\s*(?:4|IV))?\.?\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN CHI TIẾT|LỜI GIẢI CHI TIẾT|HƯỚNG DẪN GIẢI|BẢNG ĐÁP ÁN NHANH|BẢNG ĐÁP ÁN)\b[^\n]*\n)/i;
-                const delimiterMatch = suggestion ? suggestion.match(SOLUTION_DELIMITER_REGEX) : null;
-                const mainDocContent = delimiterMatch && delimiterMatch.index !== undefined ? suggestion.substring(0, delimiterMatch.index).trim() : suggestion;
-                const solutionDocContent = delimiterMatch && delimiterMatch.index !== undefined ? suggestion.substring(delimiterMatch.index).trim() : "";
+                
+                let mainDocContent = suggestion;
+                let solutionDocContent = "";
+
+                // Robust check for AI-embedded HTML <details class="solution-box"> tag
+                const detailsMatch = suggestion ? suggestion.match(/<details(?:\s+class=["\']solution-box["\'])?[^>]*>([\s\S]*?)<\/details>/i) : null;
+                if (detailsMatch) {
+                  const startIndex = suggestion.indexOf(detailsMatch[0]);
+                  mainDocContent = suggestion.substring(0, startIndex).trim();
+                  
+                  // Extract contents and strip <summary>...</summary>
+                  let detailsInner = detailsMatch[1];
+                  detailsInner = detailsInner.replace(/<summary[\s\S]*?<\/summary>/i, "").trim();
+                  solutionDocContent = detailsInner;
+                } else {
+                  // Fallback to standard Markdown delimiter matching
+                  const delimiterMatch = suggestion ? suggestion.match(SOLUTION_DELIMITER_REGEX) : null;
+                  if (delimiterMatch && delimiterMatch.index !== undefined) {
+                    mainDocContent = suggestion.substring(0, delimiterMatch.index).trim();
+                    solutionDocContent = suggestion.substring(delimiterMatch.index).trim();
+                  }
+                }
 
                 if (viewMode === 'questions' && worksheetQuestions.length > 0) {
                   return (
@@ -2201,7 +2242,7 @@ export function Worksheets() {
                             {/* Lời giải chi tiết - Kèm theo khi In và Xuất Word (Bản Giáo viên) */}
                             {includeDetailedSolution && (q.solution || q.explanation) && (
                               <div 
-                                className="only-print"
+                                className="print-only"
                                 style={{ 
                                   backgroundColor: '#f8fafc', 
                                   border: '1px solid #cbd5e1', 
@@ -2527,7 +2568,7 @@ export function Worksheets() {
 
                             {/* Khi In hoặc Xuất Word (Bản dành cho Giáo viên) */}
                             <div 
-                              className="only-print mt-6 pt-4 border-t border-slate-400 not-prose"
+                              className="print-only mt-6 pt-4 border-t border-slate-400 not-prose"
                               style={{ pageBreakBefore: 'always' }}
                             >
                               <div className="font-bold text-slate-900 mb-2 text-base">

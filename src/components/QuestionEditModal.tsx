@@ -4,7 +4,8 @@ import { ScientificCalculatorModal } from './math-tools/ScientificCalculatorModa
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { apiFetch } from '../lib/apiFetch';
 import { QuestionVisualizerPanel } from './math-tools/QuestionVisualizerPanel';
-import { TrendingUp, BarChart2, Box, BarChart3, Calculator, ImagePlus, Link2 } from 'lucide-react';
+import { TrendingUp, BarChart2, Box, BarChart3, Calculator, ImagePlus, Link2, Wand2 } from 'lucide-react';
+import { run1ClickMathFix } from './math-tools/MathFormulaFixer';
 
 export interface QuestionData {
   id?: number;
@@ -888,6 +889,20 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
             * Thay đổi sẽ được cập nhật ngay lập tức vào đề thi và các bản xuất file Word.
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setContent(run1ClickMathFix(content));
+                setSolution(solution ? run1ClickMathFix(solution) : '');
+                setOptions(options.map(opt => run1ClickMathFix(opt)));
+                setTfStatements(tfStatements.map(st => ({ ...st, statement: run1ClickMathFix(st.statement) })));
+              }}
+              className="px-3.5 py-2 text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 rounded-xl shadow-sm transition-all cursor-pointer active:scale-95 flex items-center gap-1.5"
+              title="Tự động sửa lỗi rách dấu $, lỗi dính chữ và lỗi ký hiệu KaTeX trong câu hỏi này"
+            >
+              <Wand2 className="w-3.5 h-3.5 text-emerald-200 animate-pulse" />
+              <span>Sửa lỗi Toán 1-Click</span>
+            </button>
             <button
               type="button"
               onClick={onClose}

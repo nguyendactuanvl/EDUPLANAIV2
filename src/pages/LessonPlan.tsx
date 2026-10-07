@@ -2,11 +2,12 @@ import { apiFetch } from '../lib/apiFetch';
 import { GDPT_2018_SUBJECTS } from '../lib/subjects';
 import { exportHtmlToWord } from '../lib/exportUtils';
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Sparkles, Save, BookOpen, Download, AlertCircle, Upload, Edit3, Eye, Presentation, TrendingUp, BarChart2, X, Box, BarChart3 } from "lucide-react";
+import { Sparkles, Save, BookOpen, Download, AlertCircle, Upload, Edit3, Eye, Presentation, TrendingUp, BarChart2, X, Box, BarChart3, Wand2 } from "lucide-react";
 import { fullPlan } from "../data/mockData";
 import { MarkdownRenderer, fixMath } from "../components/MarkdownRenderer";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { QuestionVisualizerPanel } from "../components/math-tools/QuestionVisualizerPanel";
+import { run1ClickMathFix } from "../components/math-tools/MathFormulaFixer";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -549,6 +550,19 @@ export function LessonPlan() {
             <BarChart3 className="h-4 w-4" />
             <span>+ Thống kê</span>
           </button>
+          {suggestion && (
+            <button 
+              type="button"
+              onClick={() => {
+                setSuggestion(prev => run1ClickMathFix(prev));
+              }}
+              className="px-2.5 py-1 text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-500 hover:to-teal-500 rounded-md shadow-xs flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
+              title="Tự động sửa lỗi rách dấu $, lỗi dính chữ và lỗi KaTeX trong giáo án"
+            >
+              <Wand2 className="h-4 w-4 text-emerald-200 animate-pulse" />
+              <span>⚡ Sửa lỗi Toán 1-Click</span>
+            </button>
+          )}
           {suggestion && (
             <button 
               className={`p-2 rounded-md transition-colors ${isEditing ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:text-blue-600 hover:bg-blue-50'}`}

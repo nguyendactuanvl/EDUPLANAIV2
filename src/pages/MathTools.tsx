@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef } from "react";
 import { 
   Calculator, BarChart3, ArrowUpDown, Plus, Trash2, Copy, Check, FileSpreadsheet, 
   HelpCircle, RefreshCw, Printer, Download, Sparkles, BookOpen, Layers, CheckCircle2, 
-  Info, AlertTriangle, Cpu, TrendingUp, SlidersHorizontal, ChevronRight, Compass
+  Info, AlertTriangle, Cpu, TrendingUp, SlidersHorizontal, ChevronRight, Compass, Wand2, Zap
 } from "lucide-react";
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -15,6 +15,7 @@ import { GeoGebraDrawer } from "../components/math-tools/GeoGebraDrawer";
 import { ScientificCalculatorModal } from "../components/math-tools/ScientificCalculatorModal";
 import { SvgAiIllustrator } from "../components/math-tools/SvgAiIllustrator";
 import { Advanced3DSimulator } from "../components/math-tools/Advanced3DSimulator";
+import { MathFormulaFixer } from "../components/math-tools/MathFormulaFixer";
 
 
 // ==========================================
@@ -103,8 +104,8 @@ export function MathTools() {
   const [showCalculator, setShowCalculator] = useState(false);
   const [showGeoGebra, setShowGeoGebra] = useState(false);
 
-  // Navigation: Sub-system Tab 1: Graphing & Analysis (KSHS) vs Tab 2: 3D Simulation vs Tab 3: SVG Simulation (AI) vs Tab 4: Bảng biến thiên AI vs Tab 5: Statistics
-  const [mainSubsystem, setMainSubsystem] = useState<"graphing" | "sim_3d" | "svg_ai" | "bbt_ai" | "statistics">("graphing");
+  // Navigation: Sub-system Tab 1: Graphing & Analysis (KSHS) vs Tab 2: 3D Simulation vs Tab 3: SVG Simulation (AI) vs Tab 4: Bảng biến thiên AI vs Tab 5: Sửa lỗi Toán (1-Click) vs Tab 6: Statistics
+  const [mainSubsystem, setMainSubsystem] = useState<"graphing" | "sim_3d" | "svg_ai" | "bbt_ai" | "math_fixer" | "statistics">("graphing");
 
   // Main module view: Grade 10 (Ungrouped) or Grade 11-12 (Grouped)
   const [activeModule, setActiveModule] = useState<"grade10" | "grade11_12">("grade10");
@@ -859,6 +860,19 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
             </button>
 
             <button
+              onClick={() => setMainSubsystem("math_fixer")}
+              className={cn(
+                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                mainSubsystem === "math_fixer"
+                  ? "bg-emerald-600 text-white shadow-md font-bold"
+                  : "text-emerald-700 hover:text-emerald-900 hover:bg-emerald-50 font-bold"
+              )}
+            >
+              <Wand2 className="w-4 h-4 text-emerald-400 animate-bounce" />
+              <span>5. ⚡ Sửa lỗi Toán 1-Click</span>
+            </button>
+
+            <button
               onClick={() => setMainSubsystem("statistics")}
               className={cn(
                 "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
@@ -868,7 +882,7 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
               )}
             >
               <BarChart3 className="w-4 h-4 text-emerald-600" />
-              <span>5. Thống kê 10, 11, 12</span>
+              <span>6. Thống kê 10, 11, 12</span>
             </button>
           </div>
         </div>
@@ -887,6 +901,13 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setMainSubsystem("math_fixer")}
+              className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 active:scale-98 text-slate-950 rounded-lg text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer border border-emerald-400/50"
+              title="Mở công thức toán và sửa lỗi 1-Click tự động"
+            >
+              <Wand2 className="w-3.5 h-3.5 text-slate-950 animate-bounce" /> ⚡ Sửa lỗi Toán 1-Click
+            </button>
             <button
               onClick={() => setShowGeoGebra(true)}
               className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer border border-indigo-500/30"
@@ -919,17 +940,24 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
         </div>
       )}
 
-      {/* RENDER PHÂN HỆ 2: VẼ HÌNH MÔ PHỎNG AI THỰC TẾ */}
+      {/* RENDER PHÂN HỆ 3: VẼ HÌNH MÔ PHỎNG AI THỰC TẾ */}
       {mainSubsystem === "svg_ai" && (
         <div className="flex-1 flex flex-col">
           <SvgAiIllustrator />
         </div>
       )}
 
-      {/* RENDER PHÂN HỆ 3: BẢNG BIẾN THIÊN AI CHUẨN SGK */}
+      {/* RENDER PHÂN HỆ 4: BẢNG BIẾN THIÊN AI CHUẨN SGK */}
       {mainSubsystem === "bbt_ai" && (
         <div className="flex-1 flex flex-col">
           <VariationTableGenerator />
+        </div>
+      )}
+
+      {/* RENDER PHÂN HỆ 5: SỬA LỖI CÔNG THỨC TOÁN (1-CLICK) */}
+      {mainSubsystem === "math_fixer" && (
+        <div className="flex-1 flex flex-col p-4 max-w-7xl mx-auto w-full">
+          <MathFormulaFixer />
         </div>
       )}
 

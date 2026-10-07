@@ -7,6 +7,7 @@ import {
   TrendingUp, Compass, Award, Upload, Image as ImageIcon, HelpCircle, FileText
 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
+import { MathSpan } from '../MarkdownRenderer';
 
 // ============================================================================
 // TYPES & PRESET DEFINITIONS
@@ -163,9 +164,13 @@ export const PRESET_MODELS: PresetModel[] = [
       const rad = (thetaDeg * Math.PI) / 180;
       const base = W - 2 * w;
       const val = w * Math.sin(rad) * (base + w * Math.cos(rad));
-      const optX = 60;
-      const optRad = (60 * Math.PI) / 180;
+      
+      // Solve 2w*cos^2(theta) + (W - 2w)*cos(theta) - w = 0
+      const optCos = (-(W - 2 * w) + Math.sqrt((W - 2 * w) * (W - 2 * w) + 8 * w * w)) / (4 * w);
+      const optRad = Math.acos(Math.max(-1, Math.min(1, optCos)));
+      const optX = (optRad * 180) / Math.PI;
       const optVal = w * Math.sin(optRad) * (base + w * Math.cos(optRad));
+      
       return { val, optX, optVal, label: `Diện tích mặt cắt S(θ) = ${val.toFixed(1)} cm²` };
     }
   },
@@ -470,16 +475,15 @@ export const Advanced3DSimulator: React.FC<Advanced3DSimulatorProps> = ({ onInse
 
     // MODEL 1.1: OPEN BOX (CẮT 4 GÓC VÀ GẤP)
     if (activePreset.id === 'box_open') {
-      const baseW = a - 2 * x;
-      const baseH = b - 2 * x;
+      const baseW = Math.max(0.1, a - 2 * x);
+      const baseH = Math.max(0.1, b - 2 * x);
 
-      // Base rectangle
+      // Base
       const baseGeo = new THREE.PlaneGeometry(baseW, baseH);
       const baseMesh = new THREE.Mesh(baseGeo, faceMat);
       baseMesh.rotation.x = -Math.PI / 2;
       group.add(baseMesh);
 
-      // 4 Hinge Flaps (Left, Right, Top, Bottom)
       // Left Flap
       const leftHinge = new THREE.Group();
       leftHinge.position.set(-baseW / 2, 0, 0);
@@ -524,22 +528,282 @@ export const Advanced3DSimulator: React.FC<Advanced3DSimulatorProps> = ({ onInse
       botHinge.rotation.x = foldAngle;
       group.add(botHinge);
 
-    } else if (activePreset.id === 'path_cuboid') {
-      // MODEL 2.1: SHORT PATH ON CUBOID (CON KIẾN BÒ)
+      // Cutout corners (4 red squares) when unfolded
+      if (foldRatio < 95) {
+        const cornerPositions = [
+          [-baseW / 2 - x / 2, -baseH / 2 - x / 2],
+          [baseW / 2 + x / 2, -baseH / 2 - x / 2],
+          [-baseW / 2 - x / 2, baseH / 2 + x / 2],
+          [baseW / 2 + x / 2, baseH / 2 + x / 2]
+        ];
+        cornerPositions.forEach(([cx, cz]) => {
+          const cutGeo = new THREE.PlaneGeometry(x, x);
+          const cutMesh = new THREE.Mesh(cutGeo, cutMat);
+          cutMesh.position.set(cx, 0.01, cz);
+          cutMesh.rotation.x = -Math.PI / 2;
+          group.add(cutMesh);
+        });
+      }
+    }
+    // MODEL 1.2: CLOSED BOX WITH LID (HỘP CÓ NẮP)
+    else if (activePreset.id === 'box_closed') {
+      const baseW = Math.max(0.1, a - 2 * x);
+      const baseD = Math.max(0.1, (b - 3 * x) / 2);
+      const flapH = x;
+
+      // Base
+      const baseGeo = new THREE.PlaneGeometry(baseW, baseD);
+      const baseMesh = new THREE.Mesh(baseGeo, faceMat);
+      baseMesh.rotation.x = -Math.PI / 2;
+      group.add(baseMesh);
+
+      // Front Flap
+      const frontHinge = new THREE.Group();
+      frontHinge.position.set(0, 0, baseD / 2);
+      const frontGeo = new THREE.PlaneGeometry(baseW, flapH);
+      frontGeo.translate(0, -flapH / 2, 0);
+      const frontMesh = new THREE.Mesh(frontGeo, faceMat);
+      frontMesh.rotation.x = -Math.PI / 2;
+      frontHinge.add(frontMesh);
+      frontHinge.rotation.x = foldAngle;
+      group.add(frontHinge);
+
+      // Left Flap
+      const leftHinge = new THREE.Group();
+      leftHinge.position.set(-baseW / 2, 0, 0);
+      const leftGeo = new THREE.PlaneGeometry(flapH, baseD);
+      leftGeo.translate(-flapH / 2, 0, 0);
+      const leftMesh = new THREE.Mesh(leftGeo, faceMat);
+      leftMesh.rotation.x = -Math.PI / 2;
+      leftHinge.add(leftMesh);
+      leftHinge.rotation.z = foldAngle;
+      group.add(leftHinge);
+
+      // Right Flap
+      const rightHinge = new THREE.Group();
+      rightHinge.position.set(baseW / 2, 0, 0);
+      const rightGeo = new THREE.PlaneGeometry(flapH, baseD);
+      rightGeo.translate(flapH / 2, 0, 0);
+      const rightMesh = new THREE.Mesh(rightGeo, faceMat);
+      rightMesh.rotation.x = -Math.PI / 2;
+      rightHinge.add(rightMesh);
+      rightHinge.rotation.z = -foldAngle;
+      group.add(rightHinge);
+
+      // Back Flap + Top Lid Hinge
+      const backHinge = new THREE.Group();
+      backHinge.position.set(0, 0, -baseD / 2);
+      const backGeo = new THREE.PlaneGeometry(baseW, flapH);
+      backGeo.translate(0, flapH / 2, 0);
+      const backMesh = new THREE.Mesh(backGeo, faceMat);
+      backMesh.rotation.x = -Math.PI / 2;
+      backHinge.add(backMesh);
+      backHinge.rotation.x = -foldAngle;
+
+      // Top Lid Flap attached to top of back flap
+      const lidHinge = new THREE.Group();
+      lidHinge.position.set(0, 0, -flapH);
+      const lidGeo = new THREE.PlaneGeometry(baseW, baseD);
+      lidGeo.translate(0, -baseD / 2, 0);
+      const lidMesh = new THREE.Mesh(lidGeo, faceMat);
+      lidMesh.rotation.x = -Math.PI / 2;
+      lidHinge.add(lidMesh);
+      lidHinge.rotation.x = -foldAngle;
+      backHinge.add(lidHinge);
+
+      group.add(backHinge);
+    }
+    // MODEL 1.3: TRIANGULAR PRISM OPEN (LĂNG TRỤ CẮT 3 GÓC)
+    else if (activePreset.id === 'triangular_prism_open') {
+      const side = Math.max(0.1, a - 2 * x * Math.sqrt(3));
+      const hTri = side * (Math.sqrt(3) / 2);
+
+      // Base Equilateral Triangle
+      const triShape = new THREE.Shape();
+      triShape.moveTo(0, hTri * (2 / 3));
+      triShape.lineTo(-side / 2, -hTri * (1 / 3));
+      triShape.lineTo(side / 2, -hTri * (1 / 3));
+      triShape.closePath();
+
+      const baseGeo = new THREE.ShapeGeometry(triShape);
+      const baseMesh = new THREE.Mesh(baseGeo, faceMat);
+      baseMesh.rotation.x = -Math.PI / 2;
+      group.add(baseMesh);
+
+      // 3 Side rectangular flaps
+      const f1Hinge = new THREE.Group();
+      f1Hinge.position.set(0, 0, hTri * (1 / 3));
+      const f1Geo = new THREE.PlaneGeometry(side, x);
+      f1Geo.translate(0, -x / 2, 0);
+      const f1Mesh = new THREE.Mesh(f1Geo, faceMat);
+      f1Mesh.rotation.x = -Math.PI / 2;
+      f1Hinge.add(f1Mesh);
+      f1Hinge.rotation.x = foldAngle;
+      group.add(f1Hinge);
+
+      const f2Hinge = new THREE.Group();
+      f2Hinge.position.set(-side / 4, 0, -hTri * (1 / 6));
+      f2Hinge.rotation.y = Math.PI / 3;
+      const f2Geo = new THREE.PlaneGeometry(side, x);
+      f2Geo.translate(0, -x / 2, 0);
+      const f2Mesh = new THREE.Mesh(f2Geo, faceMat);
+      f2Mesh.rotation.x = -Math.PI / 2;
+      f2Hinge.add(f2Mesh);
+      f2Hinge.rotation.x = foldAngle;
+      group.add(f2Hinge);
+
+      const f3Hinge = new THREE.Group();
+      f3Hinge.position.set(side / 4, 0, -hTri * (1 / 6));
+      f3Hinge.rotation.y = -Math.PI / 3;
+      const f3Geo = new THREE.PlaneGeometry(side, x);
+      f3Geo.translate(0, -x / 2, 0);
+      const f3Mesh = new THREE.Mesh(f3Geo, faceMat);
+      f3Mesh.rotation.x = -Math.PI / 2;
+      f3Hinge.add(f3Mesh);
+      f3Hinge.rotation.x = foldAngle;
+      group.add(f3Hinge);
+    }
+    // MODEL 1.4: CONE CUT SECTOR (CẮT QUẠT TRÒN CUỘN NÓN)
+    else if (activePreset.id === 'cone_cut_sector') {
+      const R = Math.max(0.5, a / 2);
+      const alphaDeg = paramX;
+      const remDeg = 360 - alphaDeg;
+      const remRad = (remDeg * Math.PI) / 180;
+      const coneR = R * (remDeg / 360);
+      const coneH = Math.sqrt(Math.max(0.1, R * R - coneR * coneR));
+
+      if (foldRatio < 20) {
+        const sectorShape = new THREE.Shape();
+        sectorShape.moveTo(0, 0);
+        sectorShape.absarc(0, 0, R, 0, remRad, false);
+        sectorShape.closePath();
+
+        const sectorGeo = new THREE.ShapeGeometry(sectorShape, 32);
+        const sectorMesh = new THREE.Mesh(sectorGeo, faceMat);
+        sectorMesh.rotation.x = -Math.PI / 2;
+        group.add(sectorMesh);
+
+        const cutShape = new THREE.Shape();
+        cutShape.moveTo(0, 0);
+        cutShape.absarc(0, 0, R, remRad, 2 * Math.PI, false);
+        cutShape.closePath();
+        const cutGeo = new THREE.ShapeGeometry(cutShape, 16);
+        const cutMesh = new THREE.Mesh(cutGeo, cutMat);
+        cutMesh.rotation.x = -Math.PI / 2;
+        group.add(cutMesh);
+      } else {
+        const currR = THREE.MathUtils.lerp(R, coneR, foldRatio / 100);
+        const currH = THREE.MathUtils.lerp(0.01, coneH, foldRatio / 100);
+
+        const coneGeo = new THREE.ConeGeometry(currR, currH, 32);
+        const coneMesh = new THREE.Mesh(coneGeo, faceMat);
+        coneMesh.position.set(0, currH / 2, 0);
+        group.add(coneMesh);
+
+        const rimGeo = new THREE.RingGeometry(currR - 0.05, currR + 0.05, 32);
+        const rimMesh = new THREE.Mesh(rimGeo, cutMat);
+        rimMesh.rotation.x = -Math.PI / 2;
+        group.add(rimMesh);
+      }
+    }
+    // MODEL 1.5: WATER TROUGH (LÀM MÁNG NƯỚC / RÃNH DẪN NƯỚC)
+    else if (activePreset.id === 'water_trough') {
+      const W = a;
+      const wSide = paramB > 0 ? paramB / 10 : 3;
+      const baseW = Math.max(0.1, W - 2 * wSide);
+      const troughL = 5;
+      const bendAngle = (paramX * Math.PI) / 180;
+      const currAngle = (foldRatio / 100) * bendAngle;
+
+      const botGeo = new THREE.PlaneGeometry(baseW, troughL);
+      const botMesh = new THREE.Mesh(botGeo, faceMat);
+      botMesh.rotation.x = -Math.PI / 2;
+      group.add(botMesh);
+
+      const leftHinge = new THREE.Group();
+      leftHinge.position.set(-baseW / 2, 0, 0);
+      const leftGeo = new THREE.PlaneGeometry(wSide, troughL);
+      leftGeo.translate(-wSide / 2, 0, 0);
+      const leftMesh = new THREE.Mesh(leftGeo, faceMat);
+      leftMesh.rotation.x = -Math.PI / 2;
+      leftHinge.add(leftMesh);
+      leftHinge.rotation.z = currAngle;
+      group.add(leftHinge);
+
+      const rightHinge = new THREE.Group();
+      rightHinge.position.set(baseW / 2, 0, 0);
+      const rightGeo = new THREE.PlaneGeometry(wSide, troughL);
+      rightGeo.translate(wSide / 2, 0, 0);
+      const rightMesh = new THREE.Mesh(rightGeo, faceMat);
+      rightMesh.rotation.x = -Math.PI / 2;
+      rightHinge.add(rightMesh);
+      rightHinge.rotation.z = -currAngle;
+      group.add(rightHinge);
+
+      const trapShape = new THREE.Shape();
+      const topDX = wSide * Math.cos(currAngle);
+      const topDY = wSide * Math.sin(currAngle);
+
+      trapShape.moveTo(-baseW / 2, 0);
+      trapShape.lineTo(-baseW / 2 - topDX, topDY);
+      trapShape.lineTo(baseW / 2 + topDX, topDY);
+      trapShape.lineTo(baseW / 2, 0);
+      trapShape.closePath();
+
+      const trapGeo = new THREE.ShapeGeometry(trapShape);
+      const waterMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, transparent: true, opacity: 0.6, side: THREE.DoubleSide });
+
+      const cap1 = new THREE.Mesh(trapGeo, waterMat);
+      cap1.position.set(0, 0, troughL / 2);
+      group.add(cap1);
+
+      const cap2 = new THREE.Mesh(trapGeo, waterMat);
+      cap2.position.set(0, 0, -troughL / 2);
+      group.add(cap2);
+    }
+    // MODEL 1.6: CAN CYLINDER (VỎ LON / THÙNG PHUY)
+    else if (activePreset.id === 'can_cylinder') {
+      const R = paramX / 10;
+      const V = paramA / 100;
+      const cylH = Math.max(0.5, V / (Math.PI * R * R));
+
+      if (foldRatio < 20) {
+        const rectW = 2 * Math.PI * R;
+        const rectGeo = new THREE.PlaneGeometry(rectW, cylH);
+        const rectMesh = new THREE.Mesh(rectGeo, faceMat);
+        rectMesh.rotation.x = -Math.PI / 2;
+        group.add(rectMesh);
+
+        const circleGeo = new THREE.CircleGeometry(R, 32);
+        const topCircle = new THREE.Mesh(circleGeo, faceMat);
+        topCircle.position.set(0, 0, -cylH / 2 - R);
+        topCircle.rotation.x = -Math.PI / 2;
+        group.add(topCircle);
+
+        const botCircle = new THREE.Mesh(circleGeo, faceMat);
+        botCircle.position.set(0, 0, cylH / 2 + R);
+        botCircle.rotation.x = -Math.PI / 2;
+        group.add(botCircle);
+      } else {
+        const cylGeo = new THREE.CylinderGeometry(R, R, cylH, 32);
+        const cylMesh = new THREE.Mesh(cylGeo, faceMat);
+        cylMesh.position.set(0, cylH / 2, 0);
+        group.add(cylMesh);
+      }
+    }
+    // MODEL 2.1: SHORT PATH ON CUBOID (CON KIẾN BÒ HỘP)
+    else if (activePreset.id === 'path_cuboid') {
       const boxW = a;
       const boxD = b;
       const boxH = h > 0 ? h : 3;
 
-      // When foldRatio == 100%, it's 3D box; when foldRatio == 0%, it's flattened 2D net!
       const unrollAngle = (1 - foldRatio / 100) * (Math.PI / 2);
 
-      // Front Face
       const frontGeo = new THREE.PlaneGeometry(boxW, boxH);
       const frontMesh = new THREE.Mesh(frontGeo, faceMat);
       frontMesh.position.set(0, boxH / 2, boxD / 2);
       group.add(frontMesh);
 
-      // Right Face (Unrolls outward)
       const rightHinge = new THREE.Group();
       rightHinge.position.set(boxW / 2, 0, boxD / 2);
       const rightGeo = new THREE.PlaneGeometry(boxD, boxH);
@@ -550,14 +814,248 @@ export const Advanced3DSimulator: React.FC<Advanced3DSimulatorProps> = ({ onInse
       rightHinge.rotation.y = unrollAngle;
       group.add(rightHinge);
 
-      // Shortest path line (A -> C')
       const pA = new THREE.Vector3(-boxW / 2, 0, boxD / 2);
       const pC = new THREE.Vector3(boxW / 2 + boxD, boxH, boxD / 2);
       const pathGeo = new THREE.BufferGeometry().setFromPoints([pA, pC]);
       group.add(new THREE.Line(pathGeo, pathMat));
+    }
+    // MODEL 2.2: SHORT PATH ON CYLINDER (CON KIẾN BÒ HÌNH TRỤ)
+    else if (activePreset.id === 'path_cylinder') {
+      const R = paramA / 10;
+      const cylH = paramH > 0 ? paramH / 10 : 4;
 
+      if (foldRatio < 30) {
+        const rectW = 2 * Math.PI * R;
+        const rectGeo = new THREE.PlaneGeometry(rectW, cylH);
+        const rectMesh = new THREE.Mesh(rectGeo, faceMat);
+        rectMesh.position.set(rectW / 2, cylH / 2, 0);
+        group.add(rectMesh);
+
+        const pathGeo = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(0, 0, 0.05),
+          new THREE.Vector3(rectW, cylH, 0.05)
+        ]);
+        group.add(new THREE.Line(pathGeo, pathMat));
+      } else {
+        const cylGeo = new THREE.CylinderGeometry(R, R, cylH, 32);
+        const cylMesh = new THREE.Mesh(cylGeo, faceMat);
+        cylMesh.position.set(0, cylH / 2, 0);
+        group.add(cylMesh);
+
+        const pts: THREE.Vector3[] = [];
+        for (let i = 0; i <= 60; i++) {
+          const t = i / 60;
+          const angle = t * 2 * Math.PI;
+          const px = R * Math.cos(angle);
+          const pz = R * Math.sin(angle);
+          const py = t * cylH;
+          pts.push(new THREE.Vector3(px, py, pz));
+        }
+        const pathGeo = new THREE.BufferGeometry().setFromPoints(pts);
+        group.add(new THREE.Line(pathGeo, pathMat));
+      }
+    }
+    // MODEL 2.3: SHORT PATH ON CONE (CON KIẾN TRÊN HÌNH NÓN)
+    else if (activePreset.id === 'path_cone') {
+      const R = paramA / 10;
+      const coneH = paramH > 0 ? paramH / 10 : 4;
+
+      const coneGeo = new THREE.ConeGeometry(R, coneH, 32);
+      const coneMesh = new THREE.Mesh(coneGeo, faceMat);
+      coneMesh.position.set(0, coneH / 2, 0);
+      group.add(coneMesh);
+
+      const pts: THREE.Vector3[] = [];
+      for (let i = 0; i <= 50; i++) {
+        const t = i / 50;
+        const angle = t * 2 * Math.PI;
+        const currR = R * (1 - t * 0.8);
+        const px = currR * Math.cos(angle);
+        const pz = currR * Math.sin(angle);
+        const py = t * coneH;
+        pts.push(new THREE.Vector3(px, py, pz));
+      }
+      const pathGeo = new THREE.BufferGeometry().setFromPoints(pts);
+      group.add(new THREE.Line(pathGeo, pathMat));
+    }
+    // MODEL 3.1: CUBE NET (TRẢI PHẲNG KHỐI LẬP PHƯƠNG)
+    else if (activePreset.id === 'net_platonic_cube') {
+      const s = a;
+
+      const baseGeo = new THREE.PlaneGeometry(s, s);
+      const baseMesh = new THREE.Mesh(baseGeo, faceMat);
+      baseMesh.rotation.x = -Math.PI / 2;
+      group.add(baseMesh);
+
+      const fHinge = new THREE.Group();
+      fHinge.position.set(0, 0, s / 2);
+      const fGeo = new THREE.PlaneGeometry(s, s);
+      fGeo.translate(0, -s / 2, 0);
+      const fMesh = new THREE.Mesh(fGeo, faceMat);
+      fMesh.rotation.x = -Math.PI / 2;
+      fHinge.add(fMesh);
+      fHinge.rotation.x = foldAngle;
+      group.add(fHinge);
+
+      const bHinge = new THREE.Group();
+      bHinge.position.set(0, 0, -s / 2);
+      const bGeo = new THREE.PlaneGeometry(s, s);
+      bGeo.translate(0, s / 2, 0);
+      const bMesh = new THREE.Mesh(bGeo, faceMat);
+      bMesh.rotation.x = -Math.PI / 2;
+      bHinge.add(bMesh);
+      bHinge.rotation.x = -foldAngle;
+
+      const topHinge = new THREE.Group();
+      topHinge.position.set(0, 0, -s);
+      const topGeo = new THREE.PlaneGeometry(s, s);
+      topGeo.translate(0, -s / 2, 0);
+      const topMesh = new THREE.Mesh(topGeo, faceMat);
+      topMesh.rotation.x = -Math.PI / 2;
+      topHinge.add(topMesh);
+      topHinge.rotation.x = -foldAngle;
+      bHinge.add(topHinge);
+
+      group.add(bHinge);
+
+      const lHinge = new THREE.Group();
+      lHinge.position.set(-s / 2, 0, 0);
+      const lGeo = new THREE.PlaneGeometry(s, s);
+      lGeo.translate(-s / 2, 0, 0);
+      const lMesh = new THREE.Mesh(lGeo, faceMat);
+      lMesh.rotation.x = -Math.PI / 2;
+      lHinge.add(lMesh);
+      lHinge.rotation.z = foldAngle;
+      group.add(lHinge);
+
+      const rHinge = new THREE.Group();
+      rHinge.position.set(s / 2, 0, 0);
+      const rGeo = new THREE.PlaneGeometry(s, s);
+      rGeo.translate(s / 2, 0, 0);
+      const rMesh = new THREE.Mesh(rGeo, faceMat);
+      rMesh.rotation.x = -Math.PI / 2;
+      rHinge.add(rMesh);
+      rHinge.rotation.z = -foldAngle;
+      group.add(rHinge);
+    }
+    // MODEL 3.2: TETRAHEDRON NET (TRẢI PHẲNG TỨ DIỆN ĐỀU)
+    else if (activePreset.id === 'net_platonic_tetrahedron') {
+      const s = a;
+      const hTri = s * (Math.sqrt(3) / 2);
+      const dihedral = Math.acos(1 / 3);
+      const foldTetra = (foldRatio / 100) * dihedral;
+
+      const triShape = new THREE.Shape();
+      triShape.moveTo(0, hTri * (2 / 3));
+      triShape.lineTo(-s / 2, -hTri * (1 / 3));
+      triShape.lineTo(s / 2, -hTri * (1 / 3));
+      triShape.closePath();
+
+      const baseGeo = new THREE.ShapeGeometry(triShape);
+      const baseMesh = new THREE.Mesh(baseGeo, faceMat);
+      baseMesh.rotation.x = -Math.PI / 2;
+      group.add(baseMesh);
+
+      const f1Hinge = new THREE.Group();
+      f1Hinge.position.set(0, 0, hTri * (1 / 3));
+      const f1Shape = new THREE.Shape();
+      f1Shape.moveTo(-s / 2, 0);
+      f1Shape.lineTo(s / 2, 0);
+      f1Shape.lineTo(0, -hTri);
+      f1Shape.closePath();
+      const f1Geo = new THREE.ShapeGeometry(f1Shape);
+      const f1Mesh = new THREE.Mesh(f1Geo, faceMat);
+      f1Mesh.rotation.x = -Math.PI / 2;
+      f1Hinge.add(f1Mesh);
+      f1Hinge.rotation.x = foldTetra;
+      group.add(f1Hinge);
+
+      const f2Hinge = new THREE.Group();
+      f2Hinge.position.set(-s / 4, 0, -hTri * (1 / 6));
+      f2Hinge.rotation.y = Math.PI / 3;
+      const f2Mesh = new THREE.Mesh(f1Geo, faceMat);
+      f2Mesh.rotation.x = -Math.PI / 2;
+      f2Hinge.add(f2Mesh);
+      f2Hinge.rotation.x = foldTetra;
+      group.add(f2Hinge);
+
+      const f3Hinge = new THREE.Group();
+      f3Hinge.position.set(s / 4, 0, -hTri * (1 / 6));
+      f3Hinge.rotation.y = -Math.PI / 3;
+      const f3Mesh = new THREE.Mesh(f1Geo, faceMat);
+      f3Mesh.rotation.x = -Math.PI / 2;
+      f3Hinge.add(f3Mesh);
+      f3Hinge.rotation.x = foldTetra;
+      group.add(f3Hinge);
+    }
+    // MODEL 3.3: OCTAHEDRON NET (TRẢI PHẲNG BÁT DIỆN ĐỀU)
+    else if (activePreset.id === 'net_platonic_octahedron') {
+      const s = a;
+      const octH = s * Math.sqrt(2);
+      const currScale = THREE.MathUtils.lerp(1.2, 1.0, foldRatio / 100);
+
+      const octGeo = new THREE.OctahedronGeometry(s, 0);
+      const octMesh = new THREE.Mesh(octGeo, faceMat);
+      octMesh.position.set(0, octH / 2, 0);
+      octMesh.scale.set(currScale, currScale, currScale);
+      group.add(octMesh);
+    }
+    // MODEL 4.1: DISSECTION 3 PYRAMIDS = 1 CUBE (GHÉP 3 HÌNH CHÓP THÀNH LẬP PHƯƠNG)
+    else if (activePreset.id === 'dissection_3_pyramids') {
+      const s = a;
+      const sep = (paramX / 100) * s * 0.8;
+
+      const pyr1Geo = new THREE.BufferGeometry();
+      const vertices1 = new Float32Array([
+        0, 0, 0,   s, 0, 0,   s, 0, s,
+        0, 0, 0,   s, 0, s,   0, 0, s,
+        0, 0, 0,   s, 0, 0,   s, s, s,
+        s, 0, 0,   s, 0, s,   s, s, s,
+        s, 0, s,   0, 0, s,   s, s, s,
+        0, 0, s,   0, 0, 0,   s, s, s
+      ]);
+      pyr1Geo.setAttribute('position', new THREE.BufferAttribute(vertices1, 3));
+      pyr1Geo.computeVertexNormals();
+
+      const mat1 = new THREE.MeshStandardMaterial({ color: 0x10b981, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+      const mesh1 = new THREE.Mesh(pyr1Geo, mat1);
+      mesh1.position.set(0, -sep, 0);
+      group.add(mesh1);
+
+      const pyr2Geo = new THREE.BufferGeometry();
+      const vertices2 = new Float32Array([
+        0, 0, 0,   s, 0, 0,   s, s, 0,
+        0, 0, 0,   s, s, 0,   0, s, 0,
+        0, 0, 0,   s, 0, 0,   s, s, s,
+        s, 0, 0,   s, s, 0,   s, s, s,
+        s, s, 0,   0, s, 0,   s, s, s,
+        0, s, 0,   0, 0, 0,   s, s, s
+      ]);
+      pyr2Geo.setAttribute('position', new THREE.BufferAttribute(vertices2, 3));
+      pyr2Geo.computeVertexNormals();
+
+      const mat2 = new THREE.MeshStandardMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+      const mesh2 = new THREE.Mesh(pyr2Geo, mat2);
+      mesh2.position.set(0, 0, -sep);
+      group.add(mesh2);
+
+      const pyr3Geo = new THREE.BufferGeometry();
+      const vertices3 = new Float32Array([
+        0, 0, 0,   0, s, 0,   0, s, s,
+        0, 0, 0,   0, s, s,   0, 0, s,
+        0, 0, 0,   0, s, 0,   s, s, s,
+        0, s, 0,   0, s, s,   s, s, s,
+        0, s, s,   0, 0, s,   s, s, s,
+        0, 0, s,   0, 0, 0,   s, s, s
+      ]);
+      pyr3Geo.setAttribute('position', new THREE.BufferAttribute(vertices3, 3));
+      pyr3Geo.computeVertexNormals();
+
+      const mat3 = new THREE.MeshStandardMaterial({ color: 0xf97316, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+      const mesh3 = new THREE.Mesh(pyr3Geo, mat3);
+      mesh3.position.set(-sep, 0, 0);
+      group.add(mesh3);
     } else {
-      // Default Generic Box / Net fallback
       const geo = new THREE.BoxGeometry(a, h > 0 ? h : a, b > 0 ? b : a);
       const mesh = new THREE.Mesh(geo, faceMat);
       mesh.position.set(0, (h > 0 ? h : a) / 2, 0);
@@ -908,14 +1406,14 @@ Hãy trả về duy nhất một chuỗi JSON thuần (không chứa markdown ba
               </span>
             </div>
 
-            <div className="text-xs text-slate-300 font-mono bg-slate-950/80 p-2 rounded-xl border border-slate-800/80 leading-relaxed">
-              ${activePreset.formulaTex}$
+            <div className="text-xs text-slate-300 bg-slate-950/80 p-2.5 rounded-xl border border-slate-800/80 leading-relaxed overflow-x-auto">
+              <MathSpan content={`$${activePreset.formulaTex}$`} />
             </div>
 
             <div className="p-3 bg-emerald-500/10 rounded-xl border border-emerald-500/30 text-center space-y-1">
               <div className="text-xs text-slate-300 font-medium">Kết quả tính toán hiện tại:</div>
               <div className="text-base font-bold text-emerald-300 tracking-wide">
-                {calcResult.label}
+                <MathSpan content={calcResult.label} />
               </div>
             </div>
 

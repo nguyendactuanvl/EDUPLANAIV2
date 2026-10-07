@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import { InteractivePlot } from "./InteractivePlot";
 import { VariationTable, VariationTablePoint, VariationInterval } from "./VariationTable";
 import { MarkdownRenderer, MathSpan } from "../MarkdownRenderer";
 import { formatCubic, formatQuadratic, formatQuartic, formatLinearEquation } from "../../lib/mathFormatters";
 import { FunctionPlotData, Point2D, AsymptoteLine } from "./types";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, Printer, Sparkles } from "lucide-react";
+import { printElement } from "../../lib/print";
 
 export const Grade12Graphing: React.FC = () => {
   const [funcType, setFuncType] = useState<"cubic" | "rational1_1" | "rational2_1" | "quartic" | "parabola">("cubic");
@@ -691,133 +692,236 @@ export const Grade12Graphing: React.FC = () => {
     };
   }, [pA, pB, pC]);
 
-  // Generate full markdown investigation report (Sơ đồ KSHS chuẩn SGK)
-  const fullReportMarkdown = useMemo(() => {
+  const reportCardRef = useRef<HTMLDivElement | null>(null);
+
+  // Markdown sections for the KSHS Report Card
+  const section1Markdown = useMemo(() => {
     if (funcType === "cubic") {
-      const { a, b, c, d, aPrime, bPrime, cPrime, roots, xInflection, yInflection, extremaMarkdown } = cubicAnalysis;
-      const rootsTex = roots.length === 2 
-        ? `$$y' = 0 \\iff \\left[\\begin{aligned} x &= ${Number(roots[0].toFixed(2))} \\\\ x &= ${Number(roots[1].toFixed(2))} \\end{aligned}\\right.$$`
-        : `$$y' = 0 \\text{ vô nghiệm hoặc có nghiệm kép (hàm số không có cực trị)}$$`;
-
-      return `### SƠ ĐỒ KHẢO SÁT HÀM SỐ BẬC BA: $y = ${formatCubic(a, b, c, d)}$
-
-#### 1. Tập xác định:
-$D = \\mathbb{R}$.
-
-#### 2. Sự biến thiên:
-- **Đạo hàm:**
-  $$y' = ${formatQuadratic(aPrime, bPrime, cPrime)}$$
-
-- **Nghiệm đạo hàm & Cực trị:**
-  ${rootsTex}
-
-  ${extremaMarkdown}
-
-- **Giới hạn tại vô cực:**
-  $$\\lim_{x \\to +\\infty} y = ${a > 0 ? "+\\infty" : "-\\infty"}, \\quad \\lim_{x \\to -\\infty} y = ${a > 0 ? "-\\infty" : "+\\infty"}$$
-
-#### 3. Đồ thị:
-- **Tâm đối xứng (Điểm uốn):** $I(${Number(xInflection.toFixed(2))}; ${Number(yInflection.toFixed(2))})$.
-- **Giao điểm với trục tung:** Cho $x = 0 \\implies y = ${d}$, điểm $(0; ${d})$.
-- Đồ thị nhận điểm uốn $I$ làm tâm đối xứng.`;
+      return `**1. Tập xác định:**\n\n$D = \\mathbb{R}$.`;
     } else if (funcType === "rational1_1") {
-      const { a, b, c, d, adMinusBc, xAsymptote, yAsymptote } = rational1Analysis;
-      const denomTex = `(${formatLinearEquation(c, 0, d).replace(/\s*=\s*0$/, '')})^2`;
-      return `### SƠ ĐỒ KHẢO SÁT HÀM SỐ PHÂN THỨC: $y = \\frac{${formatLinearEquation(a, 0, b).replace(/\s*=\s*0$/, '')}}{${formatLinearEquation(c, 0, d).replace(/\s*=\s*0$/, '')}}$
-
-#### 1. Tập xác định:
-$D = \\mathbb{R} \\setminus \\{${Number(xAsymptote.toFixed(2))}\\}$.
-
-#### 2. Sự biến thiên:
-- **Đạo hàm:**
-  $$y' = \\frac{ad - bc}{(${formatLinearEquation(c, 0, d).replace(/\s*=\s*0$/, '')})^2} = \\frac{${adMinusBc}}{(${formatLinearEquation(c, 0, d).replace(/\s*=\s*0$/, '')})^2}$$
-
-  ${adMinusBc > 0 ? `Vì $y' > 0, \\forall x \\ne ${Number(xAsymptote.toFixed(2))}$ nên hàm số đồng biến trên từng khoảng xác định $(-\\infty; ${Number(xAsymptote.toFixed(2))})$ và $(${Number(xAsymptote.toFixed(2))}; +\\infty)$.` : `Vì $y' < 0, \\forall x \\ne ${Number(xAsymptote.toFixed(2))}$ nên hàm số nghịch biến trên từng khoảng xác định $(-\\infty; ${Number(xAsymptote.toFixed(2))})$ và $(${Number(xAsymptote.toFixed(2))}; +\\infty)$.`}
-
-- **Cực trị:** Hàm số không có cực trị.
-
-- **Giới hạn và Tiệm cận:**
-  - $\\lim_{x \\to (${Number(xAsymptote.toFixed(2))})^-} y = ${adMinusBc > 0 ? "+\\infty" : "-\\infty"}$, $\\lim_{x \\to (${Number(xAsymptote.toFixed(2))})^+} y = ${adMinusBc > 0 ? "-\\infty" : "+\\infty"}$ $\\implies x = ${Number(xAsymptote.toFixed(2))}$ là **tiệm cận đứng**.
-  - $\\lim_{x \\to \\pm\\infty} y = \\frac{${a}}{${c}} = ${Number(yAsymptote.toFixed(2))}$ $\\implies y = ${Number(yAsymptote.toFixed(2))}$ là **tiệm cận ngang**.
-
-#### 3. Đồ thị:
-- **Tâm đối xứng:** Đồ thị nhận giao điểm hai đường tiệm cận $I(${Number(xAsymptote.toFixed(2))}; ${Number(yAsymptote.toFixed(2))})$ làm tâm đối xứng.
-- **Giao điểm với các trục tọa độ:**
-  - Với $Oy$: Cho $x = 0 \\implies y = ${d !== 0 ? Number((b / d).toFixed(2)) : "không xác định"}$.
-  - Với $Ox$: Cho $y = 0 \\implies x = ${a !== 0 ? Number((-b / a).toFixed(2)) : "vô nghiệm"}$.`;
+      const { xAsymptote } = rational1Analysis;
+      return `**1. Tập xác định:**\n\n$D = \\mathbb{R} \\setminus \\{${Number(xAsymptote.toFixed(2))}\\}$.`;
     } else if (funcType === "rational2_1") {
-      const { a, b, c, d, e, m, n, r, xAsymptote, yCenter, numA, numB, numC, deltaPrime, roots, extremaMarkdown, isBranchUp } = rational2Analysis;
-      const rootsTex = roots.length === 2
-        ? `$$y' = 0 \\iff \\left[\\begin{aligned} x &= ${Number(roots[0].toFixed(2))} \\\\ x &= ${Number(roots[1].toFixed(2))} \\end{aligned}\\right.$$`
-        : `$$y' = 0 \\text{ vô nghiệm hoặc có nghiệm kép (}\\Delta' \\le 0\\text{)}$$`;
-
-      return `### SƠ ĐỒ KHẢO SÁT HÀM SỐ PHÂN THỨC: $y = \\frac{${formatQuadratic(a, b, c)}}{${formatLinearEquation(d, 0, e).replace(/\s*=\s*0$/, '')}}$
-
-#### 1. Tập xác định:
-$D = \\mathbb{R} \\setminus \\{${Number(xAsymptote.toFixed(2))}\\}$.
-
-#### 2. Dạng phân tích (Chia đa thức):
-Thực hiện phép chia tử số cho mẫu số ta được:
-$$y = (${formatLinearEquation(Number(m.toFixed(2)), 0, Number(n.toFixed(2))).replace(/\s*=\s*0$/, '')}) + \\frac{${Number(r.toFixed(2))}}{${formatLinearEquation(d, 0, e).replace(/\s*=\s*0$/, '')}}$$
-
-#### 3. Sự biến thiên & Cực trị:
-- **Đạo hàm:**
-  $$y' = \\frac{${formatQuadratic(numA, numB, numC)}}{(${formatLinearEquation(d, 0, e).replace(/\s*=\s*0$/, '')})^2}$$
-
-- **Nghiệm đạo hàm & Cực trị:**
-  ${rootsTex}
-
-  ${extremaMarkdown}
-
-- **Đường tiệm cận đứng:**
-  $$\\lim_{x \\to (${Number(xAsymptote.toFixed(2))})^-} y = ${isBranchUp ? "-\\infty" : "+\\infty"}, \\quad \\lim_{x \\to (${Number(xAsymptote.toFixed(2))})^+} y = ${isBranchUp ? "+\\infty" : "-\\infty"} \\implies x = ${Number(xAsymptote.toFixed(2))}$$
-
-- **Đường tiệm cận xiên:**
-  $$\\lim_{x \\to \\pm\\infty} \\left[ y - (${formatLinearEquation(Number(m.toFixed(2)), 0, Number(n.toFixed(2))).replace(/\s*=\s*0$/, '')}) \\right] = 0 \\implies y = ${formatLinearEquation(Number(m.toFixed(2)), 0, Number(n.toFixed(2))).replace(/\s*=\s*0$/, '')}$$
-
-#### 4. Đồ thị:
-- **Tâm đối xứng:** Giao điểm hai đường tiệm cận $I(${Number(xAsymptote.toFixed(2))}; ${Number(yCenter.toFixed(2))})$.
-- **Giao điểm với $Oy$:** ${e !== 0 ? `$(0; ${Number((c / e).toFixed(2))})$` : "Không có giao điểm"}.`;
+      const { xAsymptote } = rational2Analysis;
+      return `**1. Tập xác định:**\n\n$D = \\mathbb{R} \\setminus \\{${Number(xAsymptote.toFixed(2))}\\}$.`;
     } else if (funcType === "quartic") {
-      const { a, b, c, extremaMarkdown } = quarticAnalysis;
-      return `### SƠ ĐỒ KHẢO SÁT HÀM SỐ TRÙNG PHƯƠNG: $y = ${formatQuartic(a, b, c)}$
+      return `**1. Tập xác định:**\n\n$D = \\mathbb{R}$.`;
+    } else {
+      return `**1. Tập xác định:**\n\n$D = \\mathbb{R}$.`;
+    }
+  }, [funcType, rational1Analysis, rational2Analysis]);
 
-#### 1. Tập xác định:
-$D = \\mathbb{R}$.
+  const section2Markdown = useMemo(() => {
+    if (funcType === "cubic") {
+      const { a, b, c, d, aPrime, bPrime, cPrime, roots, extremaMarkdown } = cubicAnalysis;
+      
+      let rootsTex = "";
+      let monotonicityMarkdown = "";
 
-#### 2. Sự biến thiên:
-- **Đạo hàm:**
-  $$y' = ${4 * a}x^3 ${2 * b >= 0 ? "+ " + (2 * b) : "- " + Math.abs(2 * b)}x = 2x(${formatQuadratic(2 * a, 0, b)})$$
+      if (roots.length === 2) {
+        const [x1, x2] = roots;
+        const rx1 = Number(x1.toFixed(2));
+        const rx2 = Number(x2.toFixed(2));
+
+        rootsTex = `$$y' = 0 \\iff \\left[\\begin{aligned} x &= ${rx1} \\\\ x &= ${rx2} \\end{aligned}\\right.$$`;
+
+        if (a > 0) {
+          monotonicityMarkdown = `- **Các khoảng đơn điệu:**\n  - Hàm số **đồng biến** trên các khoảng $(-\\infty; ${rx1})$ và $(${rx2}; +\\infty)$.\n  - Hàm số **nghịch biến** trên khoảng $(${rx1}; ${rx2})$.`;
+        } else {
+          monotonicityMarkdown = `- **Các khoảng đơn điệu:**\n  - Hàm số **đồng biến** trên khoảng $(${rx1}; ${rx2})$.\n  - Hàm số **nghịch biến** trên các khoảng $(-\\infty; ${rx1})$ và $(${rx2}; +\\infty)$.`;
+        }
+      } else {
+        rootsTex = `$$y' = 0 \\quad \\text{(vô nghiệm hoặc nghiệm kép, hàm số không có cực trị)}$$`;
+        if (a > 0) {
+          monotonicityMarkdown = `- **Các khoảng đơn điệu:**\n  - Hàm số **đồng biến** trên toàn bộ $\\mathbb{R}$.`;
+        } else {
+          monotonicityMarkdown = `- **Các khoảng đơn điệu:**\n  - Hàm số **nghịch biến** trên toàn bộ $\\mathbb{R}$.`;
+        }
+      }
+
+      return `**2. Sự biến thiên & Cực trị:**
+
+- **Đạo hàm:** $y' = ${formatQuadratic(aPrime, bPrime, cPrime)}$
+
+- **Nghiệm đạo hàm:**
+
+${rootsTex}
+
+${monotonicityMarkdown}
 
 - **Cực trị:**
   ${extremaMarkdown}
 
 - **Giới hạn tại vô cực:**
-  $$\\lim_{x \\to \\pm\\infty} y = ${a > 0 ? "+\\infty" : "-\\infty"}$$
 
-#### 3. Đồ thị:
-- **Trục đối xứng:** Đồ thị nhận trục tung $Oy$ ($x = 0$) làm trục đối xứng.
-- **Giao điểm với $Oy$:** Điểm $(0; ${c})$.`;
+$$\\lim_{x \\to +\\infty} y = ${a > 0 ? "+\\infty" : "-\\infty"}, \\quad \\lim_{x \\to -\\infty} y = ${a > 0 ? "-\\infty" : "+\\infty"}$$`;
+    } else if (funcType === "rational1_1") {
+      const { a, b, c, d, adMinusBc, xAsymptote, yAsymptote } = rational1Analysis;
+      const rx0 = Number(xAsymptote.toFixed(2));
+      const ry0 = Number(yAsymptote.toFixed(2));
+
+      let monotonicityMarkdown = "";
+      if (adMinusBc > 0) {
+        monotonicityMarkdown = `- **Chiều biến thiên:** Vì $y' > 0, \\forall x \\ne ${rx0}$, nên hàm số **đồng biến** trên từng khoảng xác định $(-\\infty; ${rx0})$ và $(${rx0}; +\\infty)$.`;
+      } else if (adMinusBc < 0) {
+        monotonicityMarkdown = `- **Chiều biến thiên:** Vì $y' < 0, \\forall x \\ne ${rx0}$, nên hàm số **nghịch biến** trên từng khoảng xác định $(-\\infty; ${rx0})$ và $(${rx0}; +\\infty)$.`;
+      } else {
+        monotonicityMarkdown = `- **Chiều biến thiên:** Hàm số là hàm hằng $y = ${ry0}$ trên các khoảng xác định.`;
+      }
+
+      const numStr = formatLinearEquation(a, 0, b).replace(/\s*=\s*0$/, '');
+      const denStr = formatLinearEquation(c, 0, d).replace(/\s*=\s*0$/, '');
+
+      const xStr = rx0 < 0 ? `(${rx0})` : `${rx0}`;
+
+      return `**2. Sự biến thiên & Cực trị:**
+
+- **Đạo hàm:** $y' = \\frac{ad - bc}{(${denStr})^2} = \\frac{${adMinusBc}}{(${denStr})^2}$
+
+${monotonicityMarkdown}
+
+- **Cực trị:** Hàm số không có cực trị.
+
+- **Đường tiệm cận đứng:**
+
+$$\\lim_{x \\to ${xStr}^-} y = ${adMinusBc > 0 ? "+\\infty" : "-\\infty"}, \\quad \\lim_{x \\to ${xStr}^+} y = ${adMinusBc > 0 ? "-\\infty" : "+\\infty"} \\implies x = ${rx0}$$
+
+- **Đường tiệm cận ngang:**
+
+$$\\lim_{x \\to \\pm\\infty} y = \\frac{${a}}{${c}} = ${ry0} \\implies y = ${ry0}$$`;
+    } else if (funcType === "rational2_1") {
+      const { a, b, c, d, e, m, n, r, xAsymptote, numA, numB, numC, roots, extremaMarkdown, isBranchUp } = rational2Analysis;
+      const rx0 = Number(xAsymptote.toFixed(2));
+
+      let rootsTex = "";
+      let monotonicityMarkdown = "";
+
+      if (roots.length === 2) {
+        const [x1, x2] = roots;
+        const rx1 = Number(x1.toFixed(2));
+        const rx2 = Number(x2.toFixed(2));
+
+        rootsTex = `$$y' = 0 \\iff \\left[\\begin{aligned} x &= ${rx1} \\\\ x &= ${rx2} \\end{aligned}\\right.$$`;
+
+        if (a * d > 0) {
+          monotonicityMarkdown = `- **Các khoảng đơn điệu:**\n  - Hàm số **đồng biến** trên các khoảng $(-\\infty; ${rx1})$ và $(${rx2}; +\\infty)$.\n  - Hàm số **nghịch biến** trên các khoảng $(${rx1}; ${rx0})$ và $(${rx0}; ${rx2})$.`;
+        } else {
+          monotonicityMarkdown = `- **Các khoảng đơn điệu:**\n  - Hàm số **đồng biến** trên các khoảng $(${rx1}; ${rx0})$ và $(${rx0}; ${rx2})$.\n  - Hàm số **nghịch biến** trên các khoảng $(-\\infty; ${rx1})$ và $(${rx2}; +\\infty)$.`;
+        }
+      } else {
+        rootsTex = `$$y' = 0 \\quad \\text{(vô nghiệm hoặc nghiệm kép, } \\Delta' \\le 0\\text{)}$$`;
+        if (a * d > 0) {
+          monotonicityMarkdown = `- **Các khoảng đơn điệu:**\n  - Hàm số **đồng biến** trên từng khoảng xác định $(-\\infty; ${rx0})$ và $(${rx0}; +\\infty)$.`;
+        } else {
+          monotonicityMarkdown = `- **Các khoảng đơn điệu:**\n  - Hàm số **nghịch biến** trên từng khoảng xác định $(-\\infty; ${rx0})$ và $(${rx0}; +\\infty)$.`;
+        }
+      }
+
+      const polyQuotient = formatLinearEquation(Number(m.toFixed(2)), 0, Number(n.toFixed(2))).replace(/\s*=\s*0$/, '');
+      const denStr = formatLinearEquation(d, 0, e).replace(/\s*=\s*0$/, '');
+
+      return `**2. Dạng phân tích (Chia đa thức):**
+
+$$y = (${polyQuotient}) + \\frac{${Number(r.toFixed(2))}}{${denStr}}$$
+
+**3. Sự biến thiên & Cực trị:**
+
+- **Đạo hàm:** $y' = \\frac{${formatQuadratic(numA, numB, numC)}}{(${denStr})^2}$
+
+- **Nghiệm đạo hàm:**
+
+${rootsTex}
+
+${monotonicityMarkdown}
+
+- **Cực trị:**
+  ${extremaMarkdown}
+
+- **Đường tiệm cận đứng:**
+
+$$\\lim_{x \\to ${rx0 < 0 ? `(${rx0})` : rx0}^-} y = ${isBranchUp ? "-\\infty" : "+\\infty"}, \\quad \\lim_{x \\to ${rx0 < 0 ? `(${rx0})` : rx0}^+} y = ${isBranchUp ? "+\\infty" : "-\\infty"} \\implies x = ${rx0}$$
+
+- **Đường tiệm cận xiên:**
+
+$$\\lim_{x \\to \\pm\\infty} \\left[ y - (${polyQuotient}) \\right] = 0 \\implies y = ${polyQuotient}$$`;
+    } else if (funcType === "quartic") {
+      const { a, b, c, extremaMarkdown } = quarticAnalysis;
+
+      let monotonicityMarkdown = "";
+      if (a * b < 0) {
+        const x3 = Math.sqrt(-b / (2 * a));
+        const rx1 = Number((-x3).toFixed(2));
+        const rx3 = Number(x3.toFixed(2));
+        if (a > 0) {
+          monotonicityMarkdown = `- **Các khoảng đơn điệu:**\n  - Hàm số **đồng biến** trên các khoảng $(${rx1}; 0)$ và $(${rx3}; +\\infty)$.\n  - Hàm số **nghịch biến** trên các khoảng $(-\\infty; ${rx1})$ và $(0; ${rx3})$.`;
+        } else {
+          monotonicityMarkdown = `- **Các khoảng đơn điệu:**\n  - Hàm số **đồng biến** trên các khoảng $(-\\infty; ${rx1})$ và $(0; ${rx3})$.\n  - Hàm số **nghịch biến** trên các khoảng $(${rx1}; 0)$ và $(${rx3}; +\\infty)$.`;
+        }
+      } else {
+        if (a > 0) {
+          monotonicityMarkdown = `- **Các khoảng đơn điệu:**\n  - Hàm số **đồng biến** trên khoảng $(0; +\\infty)$.\n  - Hàm số **nghịch biến** trên khoảng $(-\\infty; 0)$.`;
+        } else {
+          monotonicityMarkdown = `- **Các khoảng đơn điệu:**\n  - Hàm số **đồng biến** trên khoảng $(-\\infty; 0)$.\n  - Hàm số **nghịch biến** trên khoảng $(0; +\\infty)$.`;
+        }
+      }
+
+      return `**2. Sự biến thiên:**
+
+- **Đạo hàm:** $y' = ${4 * a}x^3 ${2 * b >= 0 ? "+ " + (2 * b) : "- " + Math.abs(2 * b)}x = 2x(${formatQuadratic(2 * a, 0, b)})$
+
+${monotonicityMarkdown}
+
+- **Cực trị:**
+  ${extremaMarkdown}
+
+- **Giới hạn tại vô cực:**
+
+$$\\lim_{x \\to \\pm\\infty} y = ${a > 0 ? "+\\infty" : "-\\infty"}$$`;
     } else {
       const { a, b, c, xVertex, yVertex, isMin } = parabolaAnalysis;
-      return `### SƠ ĐỒ KHẢO SÁT HÀM SỐ BẬC HAI: $y = ${formatQuadratic(a, b, c)}$
+      const rxI = Number(xVertex.toFixed(2));
+      const ryI = Number(yVertex.toFixed(2));
 
-#### 1. Tập xác định:
-$D = \\mathbb{R}$.
+      return `**2. Sự biến thiên:**
 
-#### 2. Sự biến thiên:
-- **Đỉnh parabol:** $I(${Number(xVertex.toFixed(2))}; ${Number(yVertex.toFixed(2))})$.
-- **Trục đối xứng:** Đường thẳng $x = ${Number(xVertex.toFixed(2))}$.
-- **Chiều biến thiên:**
-  ${isMin ? `Hàm số nghịch biến trên khoảng $(-\\infty; ${Number(xVertex.toFixed(2))})$ và đồng biến trên khoảng $(${Number(xVertex.toFixed(2))}; +\\infty)$.` : `Hàm số đồng biến trên khoảng $(-\\infty; ${Number(xVertex.toFixed(2))})$ và nghịch biến trên khoảng $(${Number(xVertex.toFixed(2))}; +\\infty)$.`}
+- **Đỉnh parabol:** $I(${rxI}; ${ryI})$.
+- **Trục đối xứng:** Đường thẳng $x = ${rxI}$.
+- **Chiều biến thiên (Các khoảng đơn điệu):**
+  ${isMin ? `- Hàm số **nghịch biến** trên khoảng $(-\\infty; ${rxI})$ và **đồng biến** trên khoảng $(${rxI}; +\\infty)$.` : `- Hàm số **đồng biến** trên khoảng $(-\\infty; ${rxI})$ và **nghịch biến** trên khoảng $(${rxI}; +\\infty)$.`}
 
-  Giá trị ${isMin ? "nhỏ nhất" : "lớn nhất"} của hàm số là $y = ${Number(yVertex.toFixed(2))}$ tại $x = ${Number(xVertex.toFixed(2))}$.
-
-#### 3. Đồ thị:
-- Parabol có bề lõm quay ${isMin ? "lên trên" : "xuống dưới"}.
-- Giao điểm với $Oy$: Điểm $(0; ${c})$.`;
+- **Giá trị lớn nhất / nhỏ nhất:**
+  Giá trị ${isMin ? "nhỏ nhất" : "lớn nhất"} của hàm số là $y = ${ryI}$ tại $x = ${rxI}$.`;
     }
   }, [funcType, cubicAnalysis, rational1Analysis, rational2Analysis, quarticAnalysis, parabolaAnalysis]);
+
+  const section3Markdown = useMemo(() => {
+    if (funcType === "cubic") {
+      const { d, xInflection, yInflection } = cubicAnalysis;
+      const rxInf = Number(xInflection.toFixed(2));
+      const ryInf = Number(yInflection.toFixed(2));
+      return `**3. Đồ thị:**\n\n- **Tâm đối xứng (Điểm uốn):** $I(${rxInf}; ${ryInf})$.\n- **Giao điểm với trục tung $Oy$:** Cho $x = 0 \\implies y = ${d}$, điểm $(0; ${d})$.\n- Đồ thị nhận điểm uốn $I(${rxInf}; ${ryInf})$ làm tâm đối xứng.`;
+    } else if (funcType === "rational1_1") {
+      const { a, b, c, d, xAsymptote, yAsymptote } = rational1Analysis;
+      const rx0 = Number(xAsymptote.toFixed(2));
+      const ry0 = Number(yAsymptote.toFixed(2));
+      return `**3. Đồ thị:**\n\n- **Tâm đối xứng:** Đồ thị nhận giao điểm hai đường tiệm cận $I(${rx0}; ${ry0})$ làm tâm đối xứng.\n- **Giao điểm với các trục tọa độ:**\n  - Với $Oy$: Cho $x = 0 \\implies y = ${d !== 0 ? Number((b / d).toFixed(2)) : "không xác định"}$.\n  - Với $Ox$: Cho $y = 0 \\implies x = ${a !== 0 ? Number((-b / a).toFixed(2)) : "vô nghiệm"}$.`;
+    } else if (funcType === "rational2_1") {
+      const { c, e, xAsymptote, yCenter } = rational2Analysis;
+      const rx0 = Number(xAsymptote.toFixed(2));
+      const ryCenter = Number(yCenter.toFixed(2));
+      return `**3. Đồ thị:**\n\n- **Tâm đối xứng:** Giao điểm hai đường tiệm cận $I(${rx0}; ${ryCenter})$.\n- **Giao điểm với $Oy$:** ${e !== 0 ? `$(0; ${Number((c / e).toFixed(2))})$` : "Không có giao điểm"}.`;
+    } else if (funcType === "quartic") {
+      const { c } = quarticAnalysis;
+      return `**3. Đồ thị:**\n\n- **Trục đối xứng:** Đồ thị nhận trục tung $Oy$ ($x = 0$) làm trục đối xứng.\n- **Giao điểm với $Oy$:** Điểm $(0; ${c})$.`;
+    } else {
+      const { c, isMin } = parabolaAnalysis;
+      return `**3. Đồ thị:**\n\n- Parabol có bề lõm quay ${isMin ? "hướng lên trên" : "hướng xuống dưới"}.\n- **Giao điểm với $Oy$:** Điểm $(0; ${c})$.`;
+    }
+  }, [funcType, cubicAnalysis, rational1Analysis, rational2Analysis, quarticAnalysis, parabolaAnalysis]);
+
+  const fullReportMarkdown = useMemo(() => {
+    return `${section1Markdown}\n\n${section2Markdown}\n\n${section3Markdown}`;
+  }, [section1Markdown, section2Markdown, section3Markdown]);
 
   // Handle Copy KSHS
   const handleCopyReport = async () => {
@@ -834,10 +938,10 @@ $D = \\mathbb{R}$.
   return (
     <div className="space-y-6">
       {/* Function Type Selector */}
-      <div className="flex flex-wrap items-center bg-slate-100 p-1.5 rounded-2xl w-fit border border-slate-200 text-xs font-semibold gap-1.5 shadow-2xs">
+      <div className="flex flex-wrap items-center bg-slate-100 p-1.5 rounded-2xl w-full border border-slate-200 text-xs font-semibold gap-1.5 shadow-2xs">
         <button
           onClick={() => setFuncType("cubic")}
-          className={`px-3.5 py-2 rounded-xl transition-all ${
+          className={`px-3.5 py-2.5 rounded-xl transition-all cursor-pointer ${
             funcType === "cubic"
               ? "bg-white text-blue-800 font-bold shadow-xs border border-slate-200/60"
               : "text-slate-600 hover:text-slate-900"
@@ -847,513 +951,596 @@ $D = \\mathbb{R}$.
         </button>
         <button
           onClick={() => setFuncType("rational1_1")}
-          className={`px-3.5 py-2 rounded-xl transition-all ${
+          className={`px-3.5 py-2.5 rounded-xl transition-all cursor-pointer ${
             funcType === "rational1_1"
               ? "bg-white text-indigo-800 font-bold shadow-xs border border-slate-200/60"
               : "text-slate-600 hover:text-slate-900"
           }`}
         >
-          <MathSpan content="2. Hàm phân thức: $y = \frac{ax + b}{cx + d}$" />
+          <MathSpan content="2. Phân thức 1/1: $y = \frac{ax + b}{cx + d}$" />
         </button>
         <button
           onClick={() => setFuncType("rational2_1")}
-          className={`px-3.5 py-2 rounded-xl transition-all ${
+          className={`px-3.5 py-2.5 rounded-xl transition-all cursor-pointer ${
             funcType === "rational2_1"
               ? "bg-white text-emerald-800 font-bold shadow-xs border border-slate-200/60"
               : "text-slate-600 hover:text-slate-900"
           }`}
         >
-          <MathSpan content="3. Hàm phân thức: $y = \frac{ax^2 + bx + c}{dx + e}$" />
+          <MathSpan content="3. Phân thức 2/1: $y = \frac{ax^2 + bx + c}{dx + e}$" />
         </button>
         <button
           onClick={() => setFuncType("quartic")}
-          className={`px-3.5 py-2 rounded-xl transition-all ${
+          className={`px-3.5 py-2.5 rounded-xl transition-all cursor-pointer ${
             funcType === "quartic"
               ? "bg-white text-purple-800 font-bold shadow-xs border border-slate-200/60"
               : "text-slate-600 hover:text-slate-900"
           }`}
         >
-          <MathSpan content="4. Hàm trùng phương: $y = ax^4 + bx^2 + c$" />
+          <MathSpan content="4. Trùng phương: $y = ax^4 + bx^2 + c$" />
         </button>
         <button
           onClick={() => setFuncType("parabola")}
-          className={`px-3.5 py-2 rounded-xl transition-all ${
+          className={`px-3.5 py-2.5 rounded-xl transition-all cursor-pointer ${
             funcType === "parabola"
               ? "bg-white text-amber-800 font-bold shadow-xs border border-slate-200/60"
               : "text-slate-600 hover:text-slate-900"
           }`}
         >
-          <MathSpan content="5. Hàm bậc hai: $y = ax^2 + bx + c$" />
+          <MathSpan content="5. Parabol: $y = ax^2 + bx + c$" />
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Controls & Report (Left Column) */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
-            <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-slate-800">
-                  {funcType === "cubic" && <MathSpan content="Khảo sát hàm số bậc ba: $y = ax^3 + bx^2 + cx + d$" />}
-                  {funcType === "rational1_1" && <MathSpan content="Khảo sát hàm phân thức: $y = \frac{ax + b}{cx + d}$" />}
-                  {funcType === "rational2_1" && <MathSpan content="Khảo sát hàm phân thức: $y = \frac{ax^2 + bx + c}{dx + e}$" />}
-                  {funcType === "quartic" && <MathSpan content="Khảo sát hàm trùng phương: $y = ax^4 + bx^2 + c$" />}
-                  {funcType === "parabola" && <MathSpan content="Khảo sát hàm số bậc hai: $y = ax^2 + bx + c$" />}
-                </h3>
-                <p className="text-xs text-slate-500">Chuẩn quy cách SGK GDPT 2018 (Toán THPT)</p>
-              </div>
+      {/* PARAMETER & QUICK PRESETS CONTROL PANEL */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+        <div className="border-b border-slate-100 pb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-bold text-slate-800">
+              {funcType === "cubic" && <MathSpan content="Khảo sát hàm số bậc ba: $y = ax^3 + bx^2 + cx + d$" />}
+              {funcType === "rational1_1" && <MathSpan content="Khảo sát hàm phân thức: $y = \frac{ax + b}{cx + d}$" />}
+              {funcType === "rational2_1" && <MathSpan content="Khảo sát hàm phân thức: $y = \frac{ax^2 + bx + c}{dx + e}$" />}
+              {funcType === "quartic" && <MathSpan content="Khảo sát hàm trùng phương: $y = ax^4 + bx^2 + c$" />}
+              {funcType === "parabola" && <MathSpan content="Khảo sát hàm số bậc hai: $y = ax^2 + bx + c$" />}
+            </h3>
+            <p className="text-xs text-slate-500">Điều chỉnh hệ số hoặc chọn bài toán mẫu SGK GDPT 2018</p>
+          </div>
 
-              {/* Copy full report button */}
-              <button
-                onClick={handleCopyReport}
-                className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                title="Sao chép toàn bộ bài KSHS (Word/Markdown)"
-              >
-                {copiedKSHS ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedKSHS ? "Đã sao chép!" : "Chép lời giải"}</span>
-              </button>
+          <button
+            onClick={handleCopyReport}
+            className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="Sao chép toàn bộ bài KSHS (Word/Markdown)"
+          >
+            {copiedKSHS ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+            <span>{copiedKSHS ? "Đã sao chép Lời giải!" : "Sao chép Lời giải (Markdown)"}</span>
+          </button>
+        </div>
+
+        {/* 1. HÀM BẬC BA */}
+        {funcType === "cubic" && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <MathSpan content="Hệ số $a$" />
+                </label>
+                <input
+                  type="number"
+                  value={c3A}
+                  onChange={e => setC3A(parseFloat(e.target.value) || 1)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <MathSpan content="Hệ số $b$" />
+                </label>
+                <input
+                  type="number"
+                  value={c3B}
+                  onChange={e => setC3B(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <MathSpan content="Hệ số $c$" />
+                </label>
+                <input
+                  type="number"
+                  value={c3C}
+                  onChange={e => setC3C(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <MathSpan content="Hệ số $d$" />
+                </label>
+                <input
+                  type="number"
+                  value={c3D}
+                  onChange={e => setC3D(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-xs"
+                />
+              </div>
             </div>
 
-            {/* 1. HÀM BẬC BA */}
-            {funcType === "cubic" && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-4 gap-2">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      <MathSpan content="Hệ số $a$" />
-                    </label>
-                    <input
-                      type="number"
-                      value={c3A}
-                      onChange={e => setC3A(parseFloat(e.target.value) || 1)}
-                      className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      <MathSpan content="Hệ số $b$" />
-                    </label>
-                    <input
-                      type="number"
-                      value={c3B}
-                      onChange={e => setC3B(parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      <MathSpan content="Hệ số $c$" />
-                    </label>
-                    <input
-                      type="number"
-                      value={c3C}
-                      onChange={e => setC3C(parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      <MathSpan content="Hệ số $d$" />
-                    </label>
-                    <input
-                      type="number"
-                      value={c3D}
-                      onChange={e => setC3D(parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                    />
-                  </div>
-                </div>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <span className="text-xs font-semibold text-slate-500">Mẫu SGK:</span>
+              {[
+                { a: 1, b: -3, c: 0, d: 2, label: "y = x^3 - 3x + 2" },
+                { a: -1, b: 3, c: 0, d: -1, label: "y = -x^3 + 3x - 1" },
+                { a: 1, b: 0, c: -3, d: 0, label: "y = x^3 - 3x" },
+                { a: 1, b: -3, c: 3, d: -1, label: "y = (x - 1)^3" }
+              ].map((p, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => { setC3A(p.a); setC3B(p.b); setC3C(p.c); setC3D(p.d); }}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-700 rounded-lg text-xs cursor-pointer transition-colors"
+                >
+                  <MathSpan content={`$${p.label}$`} />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
-                {/* Quick Presets */}
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    { a: 1, b: -3, c: 0, d: 2, label: "y = x^3 - 3x + 2" },
-                    { a: -1, b: 3, c: 0, d: -1, label: "y = -x^3 + 3x - 1" },
-                    { a: 1, b: 0, c: -3, d: 0, label: "y = x^3 - 3x" }
-                  ].map((p, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => { setC3A(p.a); setC3B(p.b); setC3C(p.c); setC3D(p.d); }}
-                      className="px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-700 rounded text-xs cursor-pointer"
-                    >
-                      <MathSpan content={`$${p.label}$`} />
-                    </button>
-                  ))}
-                </div>
+        {/* 2. HÀM PHÂN THỨC 1/1 */}
+        {funcType === "rational1_1" && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <MathSpan content="Hệ số $a$" />
+                </label>
+                <input
+                  type="number"
+                  value={r1A}
+                  onChange={e => setR1A(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <MathSpan content="Hệ số $b$" />
+                </label>
+                <input
+                  type="number"
+                  value={r1B}
+                  onChange={e => setR1B(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <MathSpan content="Hệ số $c$" />
+                </label>
+                <input
+                  type="number"
+                  value={r1C}
+                  onChange={e => setR1C(parseFloat(e.target.value) || 1)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <MathSpan content="Hệ số $d$" />
+                </label>
+                <input
+                  type="number"
+                  value={r1D}
+                  onChange={e => setR1D(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-xs"
+                />
+              </div>
+            </div>
 
-                {/* Variation Table */}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <span className="text-xs font-semibold text-slate-500">Mẫu SGK:</span>
+              {[
+                { a: 2, b: -1, c: 1, d: 1, label: "y = \\frac{2x - 1}{x + 1}" },
+                { a: 1, b: 2, c: 1, d: -1, label: "y = \\frac{x + 2}{x - 1}" },
+                { a: -1, b: 1, c: 1, d: 1, label: "y = \\frac{-x + 1}{x + 1}" }
+              ].map((p, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => { setR1A(p.a); setR1B(p.b); setR1C(p.c); setR1D(p.d); }}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 rounded-lg text-xs cursor-pointer transition-colors"
+                >
+                  <MathSpan content={`$${p.label}$`} />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 3. HÀM PHÂN THỨC 2/1 */}
+        {funcType === "rational2_1" && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <MathSpan content="$a (x^2)$" />
+                </label>
+                <input
+                  type="number"
+                  value={r2A}
+                  onChange={e => setR2A(parseFloat(e.target.value) || 1)}
+                  className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <MathSpan content="$b (x)$" />
+                </label>
+                <input
+                  type="number"
+                  value={r2B}
+                  onChange={e => setR2B(parseFloat(e.target.value) || 0)}
+                  className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <MathSpan content="$c$" />
+                </label>
+                <input
+                  type="number"
+                  value={r2C}
+                  onChange={e => setR2C(parseFloat(e.target.value) || 0)}
+                  className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <MathSpan content="$d (x)$" />
+                </label>
+                <input
+                  type="number"
+                  value={r2D}
+                  onChange={e => setR2D(parseFloat(e.target.value) || 1)}
+                  className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <MathSpan content="$e$" />
+                </label>
+                <input
+                  type="number"
+                  value={r2E}
+                  onChange={e => setR2E(parseFloat(e.target.value) || 0)}
+                  className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <span className="text-xs font-semibold text-slate-500">Mẫu SGK:</span>
+              {[
+                { a: 1, b: -2, c: 2, d: 1, e: -1, label: "y = \\frac{x^2 - 2x + 2}{x - 1}" },
+                { a: 1, b: 2, c: -2, d: 1, e: 1, label: "y = \\frac{x^2 + 2x - 2}{x + 1}" },
+                { a: -1, b: 2, c: 3, d: 1, e: -1, label: "y = \\frac{-x^2 + 2x + 3}{x - 1}" },
+                { a: 1, b: -1, c: 1, d: 1, e: -1, label: "y = \\frac{x^2 - x + 1}{x - 1}" },
+                { a: 1, b: 0, c: 1, d: 1, e: 0, label: "y = \\frac{x^2 + 1}{x}" }
+              ].map((p, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => { setR2A(p.a); setR2B(p.b); setR2C(p.c); setR2D(p.d); setR2E(p.e); }}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 rounded-lg text-xs cursor-pointer transition-colors"
+                >
+                  <MathSpan content={`$${p.label}$`} />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 4. HÀM TRÙNG PHƯƠNG */}
+        {funcType === "quartic" && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <MathSpan content="$a (x^4)$" />
+                </label>
+                <input
+                  type="number"
+                  value={c4A}
+                  onChange={e => setC4A(parseFloat(e.target.value) || 1)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <MathSpan content="$b (x^2)$" />
+                </label>
+                <input
+                  type="number"
+                  value={c4B}
+                  onChange={e => setC4B(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <MathSpan content="$c$" />
+                </label>
+                <input
+                  type="number"
+                  value={c4C}
+                  onChange={e => setC4C(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <span className="text-xs font-semibold text-slate-500">Mẫu SGK:</span>
+              {[
+                { a: 1, b: -2, c: -1, label: "y = x^4 - 2x^2 - 1" },
+                { a: -1, b: 2, c: 3, label: "y = -x^4 + 2x^2 + 3" },
+                { a: 1, b: 2, c: 1, label: "y = x^4 + 2x^2 + 1" }
+              ].map((p, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => { setC4A(p.a); setC4B(p.b); setC4C(p.c); }}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-purple-50 hover:text-purple-700 text-slate-700 rounded-lg text-xs cursor-pointer transition-colors"
+                >
+                  <MathSpan content={`$${p.label}$`} />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 5. HÀM BẬC HAI (PARABOL) */}
+        {funcType === "parabola" && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <MathSpan content="$a (x^2)$" />
+                </label>
+                <input
+                  type="number"
+                  value={pA}
+                  onChange={e => setPA(parseFloat(e.target.value) || 1)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <MathSpan content="$b (x)$" />
+                </label>
+                <input
+                  type="number"
+                  value={pB}
+                  onChange={e => setPB(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  <MathSpan content="$c$" />
+                </label>
+                <input
+                  type="number"
+                  value={pC}
+                  onChange={e => setPC(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <span className="text-xs font-semibold text-slate-500">Mẫu SGK:</span>
+              {[
+                { a: 1, b: -4, c: 3, label: "y = x^2 - 4x + 3" },
+                { a: -1, b: 2, c: 3, label: "y = -x^2 + 2x + 3" },
+                { a: 2, b: -4, c: 1, label: "y = 2x^2 - 4x + 1" }
+              ].map((p, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => { setPA(p.a); setPB(p.b); setPC(p.c); }}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-amber-50 hover:text-amber-700 text-slate-700 rounded-lg text-xs cursor-pointer transition-colors"
+                >
+                  <MathSpan content={`$${p.label}$`} />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* FULL WIDTH ACADEMIC INVESTIGATION REPORT CARD & INTEGRATED INTERACTIVE WORKSPACE */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-6">
+        {/* Card Header */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-800">
+                SƠ ĐỒ KHẢO SÁT VÀ VẼ ĐỒ THỊ HÀM SỐ (SGK GDPT 2018)
+              </h3>
+              <p className="text-xs text-slate-500">
+                Trình bày đầy đủ các bước khảo sát hàm số, Bảng biến thiên & Đồ thị tương tác trực quan
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCopyReport}
+              className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold border border-emerald-200 rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              {copiedKSHS ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+              <span>{copiedKSHS ? "Đã sao chép!" : "Sao chép Lời giải (Markdown)"}</span>
+            </button>
+            <button
+              onClick={() => {
+                if (reportCardRef.current) {
+                  printElement(reportCardRef.current, "So_Do_Khao_Sat_Ham_So");
+                }
+              }}
+              className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold border border-indigo-200 rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Printer className="w-4 h-4" />
+              <span>In Lời Giải / Giáo án</span>
+            </button>
+          </div>
+        </div>
+
+        {/* PRINTABLE & DISPLAY ACADEMIC REPORT */}
+        <div ref={reportCardRef} className="space-y-6 text-slate-800 leading-relaxed">
+          {/* I. TẬP XÁC ĐỊNH */}
+          <div className="bg-slate-50/70 p-5 rounded-2xl border border-slate-200/80 space-y-2">
+            <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wide flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+              I. Tập xác định
+            </h4>
+            <div className="pl-4">
+              <MarkdownRenderer content={section1Markdown} />
+            </div>
+          </div>
+
+          {/* II. SỰ BIẾN THIÊN & CỰC TRỊ */}
+          <div className="bg-slate-50/70 p-5 rounded-2xl border border-slate-200/80 space-y-4">
+            <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wide flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+              II. Sự biến thiên & Cực trị
+            </h4>
+            
+            <div className="pl-4">
+              <MarkdownRenderer content={section2Markdown} />
+            </div>
+
+            {/* BẢNG BIẾN THIÊN (BBT) LỒNG TRỰC TIẾP TRONG MỤC II - RỘNG RÃI RÕ RÀNG */}
+            <div className="pt-2">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-2">
+                  <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-mono text-[11px]">BBT</span>
+                  Bảng biến thiên đầy đủ:
+                </span>
+              </div>
+              
+              {funcType === "cubic" && (
                 <VariationTable
-                  title="Bảng biến thiên hàm bậc ba (Toán 12)"
+                  title="Bảng biến thiên hàm bậc ba (Toán 12 GDPT 2018)"
                   points={cubicAnalysis.bbtPoints}
                   intervals={cubicAnalysis.bbtIntervals}
                   showDerivative={true}
                 />
-              </div>
-            )}
-
-            {/* 2. HÀM PHÂN THỨC 1/1 */}
-            {funcType === "rational1_1" && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-4 gap-2">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      <MathSpan content="Hệ số $a$" />
-                    </label>
-                    <input
-                      type="number"
-                      value={r1A}
-                      onChange={e => setR1A(parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      <MathSpan content="Hệ số $b$" />
-                    </label>
-                    <input
-                      type="number"
-                      value={r1B}
-                      onChange={e => setR1B(parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      <MathSpan content="Hệ số $c$" />
-                    </label>
-                    <input
-                      type="number"
-                      value={r1C}
-                      onChange={e => setR1C(parseFloat(e.target.value) || 1)}
-                      className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      <MathSpan content="Hệ số $d$" />
-                    </label>
-                    <input
-                      type="number"
-                      value={r1D}
-                      onChange={e => setR1D(parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    { a: 2, b: -1, c: 1, d: 1, label: "y = \\frac{2x - 1}{x + 1}" },
-                    { a: 1, b: 2, c: 1, d: -1, label: "y = \\frac{x + 2}{x - 1}" },
-                    { a: -1, b: 1, c: 1, d: 1, label: "y = \\frac{-x + 1}{x + 1}" }
-                  ].map((p, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => { setR1A(p.a); setR1B(p.b); setR1C(p.c); setR1D(p.d); }}
-                      className="px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-700 rounded text-xs cursor-pointer"
-                    >
-                      <MathSpan content={`$${p.label}$`} />
-                    </button>
-                  ))}
-                </div>
-
+              )}
+              {funcType === "rational1_1" && (
                 <VariationTable
-                  title="Bảng biến thiên hàm phân thức 1/1 (Toán 12)"
+                  title="Bảng biến thiên hàm phân thức 1/1 (Toán 12 GDPT 2018)"
                   points={rational1Analysis.bbtPoints}
                   intervals={rational1Analysis.bbtIntervals}
                   showDerivative={true}
                 />
-              </div>
-            )}
-
-            {/* 3. HÀM PHÂN THỨC 2/1 */}
-            {funcType === "rational2_1" && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-5 gap-1.5">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      <MathSpan content="$a (x^2)$" />
-                    </label>
-                    <input
-                      type="number"
-                      value={r2A}
-                      onChange={e => setR2A(parseFloat(e.target.value) || 1)}
-                      className="w-full px-1.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      <MathSpan content="$b (x)$" />
-                    </label>
-                    <input
-                      type="number"
-                      value={r2B}
-                      onChange={e => setR2B(parseFloat(e.target.value) || 0)}
-                      className="w-full px-1.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      <MathSpan content="$c$" />
-                    </label>
-                    <input
-                      type="number"
-                      value={r2C}
-                      onChange={e => setR2C(parseFloat(e.target.value) || 0)}
-                      className="w-full px-1.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      <MathSpan content="$d (x)$" />
-                    </label>
-                    <input
-                      type="number"
-                      value={r2D}
-                      onChange={e => setR2D(parseFloat(e.target.value) || 1)}
-                      className="w-full px-1.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      <MathSpan content="$e$" />
-                    </label>
-                    <input
-                      type="number"
-                      value={r2E}
-                      onChange={e => setR2E(parseFloat(e.target.value) || 0)}
-                      className="w-full px-1.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                    />
-                  </div>
-                </div>
-
-                {/* Quick Presets chuẩn SGK Toán 12 Mới */}
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    { a: 1, b: -2, c: 2, d: 1, e: -1, label: "y = \\frac{x^2 - 2x + 2}{x - 1}" },
-                    { a: 1, b: 2, c: -2, d: 1, e: 1, label: "y = \\frac{x^2 + 2x - 2}{x + 1}" },
-                    { a: -1, b: 2, c: 3, d: 1, e: -1, label: "y = \\frac{-x^2 + 2x + 3}{x - 1}" },
-                    { a: 1, b: -1, c: 1, d: 1, e: -1, label: "y = \\frac{x^2 - x + 1}{x - 1}" },
-                    { a: 1, b: 0, c: 1, d: 1, e: 0, label: "y = \\frac{x^2 + 1}{x}" }
-                  ].map((p, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => { setR2A(p.a); setR2B(p.b); setR2C(p.c); setR2D(p.d); setR2E(p.e); }}
-                      className="px-2 py-1 bg-slate-100 hover:bg-emerald-50 text-slate-700 rounded text-xs cursor-pointer transition-colors"
-                    >
-                      <MathSpan content={`$${p.label}$`} />
-                    </button>
-                  ))}
-                </div>
-
+              )}
+              {funcType === "rational2_1" && (
                 <VariationTable
                   title="Bảng biến thiên hàm phân thức 2/1 (Toán 12 GDPT 2018)"
                   points={rational2Analysis.bbtPoints}
                   intervals={rational2Analysis.bbtIntervals}
                   showDerivative={true}
                 />
-              </div>
-            )}
-
-            {/* 4. HÀM TRÙNG PHƯƠNG */}
-            {funcType === "quartic" && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      <MathSpan content="$a (x^4)$" />
-                    </label>
-                    <input
-                      type="number"
-                      value={c4A}
-                      onChange={e => setC4A(parseFloat(e.target.value) || 1)}
-                      className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      <MathSpan content="$b (x^2)$" />
-                    </label>
-                    <input
-                      type="number"
-                      value={c4B}
-                      onChange={e => setC4B(parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      <MathSpan content="$c$" />
-                    </label>
-                    <input
-                      type="number"
-                      value={c4C}
-                      onChange={e => setC4C(parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    { a: 1, b: -2, c: -1, label: "y = x^4 - 2x^2 - 1" },
-                    { a: -1, b: 2, c: 3, label: "y = -x^4 + 2x^2 + 3" },
-                    { a: 1, b: 2, c: 1, label: "y = x^4 + 2x^2 + 1" }
-                  ].map((p, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => { setC4A(p.a); setC4B(p.b); setC4C(p.c); }}
-                      className="px-2 py-1 bg-slate-100 hover:bg-purple-50 text-slate-700 rounded text-xs cursor-pointer"
-                    >
-                      <MathSpan content={`$${p.label}$`} />
-                    </button>
-                  ))}
-                </div>
-
+              )}
+              {funcType === "quartic" && (
                 <VariationTable
-                  title="Bảng biến thiên hàm trùng phương (Toán 12)"
+                  title="Bảng biến thiên hàm trùng phương (Toán 12 GDPT 2018)"
                   points={quarticAnalysis.bbtPoints}
                   intervals={quarticAnalysis.bbtIntervals}
                   showDerivative={true}
                 />
-              </div>
-            )}
-
-            {/* 5. HÀM BẬC HAI (PARABOL) */}
-            {funcType === "parabola" && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      <MathSpan content="$a (x^2)$" />
-                    </label>
-                    <input
-                      type="number"
-                      value={pA}
-                      onChange={e => setPA(parseFloat(e.target.value) || 1)}
-                      className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      <MathSpan content="$b (x)$" />
-                    </label>
-                    <input
-                      type="number"
-                      value={pB}
-                      onChange={e => setPB(parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      <MathSpan content="$c$" />
-                    </label>
-                    <input
-                      type="number"
-                      value={pC}
-                      onChange={e => setPC(parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    { a: 1, b: -4, c: 3, label: "y = x^2 - 4x + 3" },
-                    { a: -1, b: 2, c: 3, label: "y = -x^2 + 2x + 3" },
-                    { a: 2, b: -4, c: 1, label: "y = 2x^2 - 4x + 1" }
-                  ].map((p, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => { setPA(p.a); setPB(p.b); setPC(p.c); }}
-                      className="px-2 py-1 bg-slate-100 hover:bg-amber-50 text-slate-700 rounded text-xs cursor-pointer"
-                    >
-                      <MathSpan content={`$${p.label}$`} />
-                    </button>
-                  ))}
-                </div>
-
+              )}
+              {funcType === "parabola" && (
                 <VariationTable
                   title="Bảng biến thiên Parabol (Toán THPT)"
                   points={parabolaAnalysis.bbtPoints}
                   intervals={parabolaAnalysis.bbtIntervals}
                   showDerivative={true}
                 />
-              </div>
-            )}
-
-            {/* Markdown Report Render */}
-            <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200 max-h-72 overflow-y-auto">
-              <MarkdownRenderer content={fullReportMarkdown} />
+              )}
             </div>
           </div>
-        </div>
 
-        {/* Graph View (Right Column) */}
-        <div className="lg:col-span-7">
-          {funcType === "cubic" && (
-            <InteractivePlot
-              title={`Đồ thị hàm bậc ba: y = ${c3A}x³ ${c3B >= 0 ? "+ " + c3B : "- " + Math.abs(c3B)}x² ${c3C >= 0 ? "+ " + c3C : "- " + Math.abs(c3C)}x ${c3D >= 0 ? "+ " + c3D : "- " + Math.abs(c3D)}`}
-              subtitle="Tâm đối xứng (điểm uốn) và các điểm cực đại / cực tiểu"
-              functions={[cubicAnalysis.fnPlot]}
-              points={cubicAnalysis.points}
-              defaultXRange={[-5, 5]}
-              defaultYRange={[-6, 6]}
-              height={480}
-            />
-          )}
+          {/* III. ĐỒ THỊ HÀM SỐ & ĐIỂM ĐẶC BIỆT */}
+          <div className="bg-slate-50/70 p-5 rounded-2xl border border-slate-200/80 space-y-4">
+            <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wide flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-purple-500"></span>
+              III. Đồ thị hàm số & Mô phỏng tương tác
+            </h4>
 
-          {funcType === "rational1_1" && (
-            <InteractivePlot
-              title={`Đồ thị hàm số: y = (${r1A}x ${r1B >= 0 ? "+ " + r1B : "- " + Math.abs(r1B)}) / (${r1C}x ${r1D >= 0 ? "+ " + r1D : "- " + Math.abs(r1D)})`}
-              subtitle="Tiệm cận đứng (đỏ), tiệm cận ngang (xanh) và tâm đối xứng I"
-              functions={[rational1Analysis.fnPlot]}
-              points={rational1Analysis.points}
-              asymptotes={rational1Analysis.asymptotes}
-              defaultXRange={[-7, 7]}
-              defaultYRange={[-6, 6]}
-              height={480}
-            />
-          )}
+            <div className="pl-4">
+              <MarkdownRenderer content={section3Markdown} />
+            </div>
 
-          {funcType === "rational2_1" && (
-            <InteractivePlot
-              title={`Đồ thị hàm số: y = (${r2A}x² ${r2B >= 0 ? "+ " + r2B : "- " + Math.abs(r2B)}x ${r2C >= 0 ? "+ " + r2C : "- " + Math.abs(r2C)}) / (${r2D}x ${r2E >= 0 ? "+ " + r2E : "- " + Math.abs(r2E)})`}
-              subtitle="Tiệm cận đứng, tiệm cận xiên và tâm đối xứng I"
-              functions={[rational2Analysis.fnPlot]}
-              points={rational2Analysis.points}
-              asymptotes={rational2Analysis.asymptotes}
-              defaultXRange={[-7, 7]}
-              defaultYRange={[-7, 7]}
-              height={480}
-            />
-          )}
-
-          {funcType === "quartic" && (
-            <InteractivePlot
-              title={`Đồ thị hàm trùng phương: y = ${c4A}x⁴ ${c4B >= 0 ? "+ " + c4B : "- " + Math.abs(c4B)}x² ${c4C >= 0 ? "+ " + c4C : "- " + Math.abs(c4C)}`}
-              subtitle="Trục đối xứng Oy và các điểm cực trị"
-              functions={[quarticAnalysis.fnPlot]}
-              points={quarticAnalysis.points}
-              defaultXRange={[-5, 5]}
-              defaultYRange={[-6, 6]}
-              height={480}
-            />
-          )}
-
-          {funcType === "parabola" && (
-            <InteractivePlot
-              title={`Đồ thị Parabol: y = ${pA}x² ${pB >= 0 ? "+ " + pB : "- " + Math.abs(pB)}x ${pC >= 0 ? "+ " + pC : "- " + Math.abs(pC)}`}
-              subtitle="Đỉnh I, trục đối xứng và các giao điểm tọa độ"
-              functions={[parabolaAnalysis.fnPlot]}
-              points={parabolaAnalysis.points}
-              asymptotes={parabolaAnalysis.asymptotes}
-              defaultXRange={[-6, 6]}
-              defaultYRange={[-6, 6]}
-              height={480}
-            />
-          )}
+            {/* KHUNG ĐỒ THỊ MÔ PHỎNG TƯƠNG TÁC (INTERACTIVE PLOT) LỒNG TRỰC TIẾP TRONG MỤC III - KÍCH THƯỚC TO RỘNG (580px) */}
+            <div className="pt-2">
+              {funcType === "cubic" && (
+                <InteractivePlot
+                  title={`Đồ thị hàm bậc ba: y = ${c3A}x³ ${c3B >= 0 ? "+ " + c3B : "- " + Math.abs(c3B)}x² ${c3C >= 0 ? "+ " + c3C : "- " + Math.abs(c3C)}x ${c3D >= 0 ? "+ " + c3D : "- " + Math.abs(c3D)}`}
+                  subtitle="Tâm đối xứng (điểm uốn) và các điểm cực đại / cực tiểu"
+                  functions={[cubicAnalysis.fnPlot]}
+                  points={cubicAnalysis.points}
+                  defaultXRange={[-5, 5]}
+                  defaultYRange={[-6, 6]}
+                  height={580}
+                />
+              )}
+              {funcType === "rational1_1" && (
+                <InteractivePlot
+                  title={`Đồ thị hàm số: y = (${r1A}x ${r1B >= 0 ? "+ " + r1B : "- " + Math.abs(r1B)}) / (${r1C}x ${r1D >= 0 ? "+ " + r1D : "- " + Math.abs(r1D)})`}
+                  subtitle="Tiệm cận đứng (đỏ), tiệm cận ngang (xanh) và tâm đối xứng I"
+                  functions={[rational1Analysis.fnPlot]}
+                  points={rational1Analysis.points}
+                  asymptotes={rational1Analysis.asymptotes}
+                  defaultXRange={[-7, 7]}
+                  defaultYRange={[-6, 6]}
+                  height={580}
+                />
+              )}
+              {funcType === "rational2_1" && (
+                <InteractivePlot
+                  title={`Đồ thị hàm số: y = (${r2A}x² ${r2B >= 0 ? "+ " + r2B : "- " + Math.abs(r2B)}x ${r2C >= 0 ? "+ " + r2C : "- " + Math.abs(r2C)}) / (${r2D}x ${r2E >= 0 ? "+ " + r2E : "- " + Math.abs(r2E)})`}
+                  subtitle="Tiệm cận đứng, tiệm cận xiên và tâm đối xứng I"
+                  functions={[rational2Analysis.fnPlot]}
+                  points={rational2Analysis.points}
+                  asymptotes={rational2Analysis.asymptotes}
+                  defaultXRange={[-7, 7]}
+                  defaultYRange={[-7, 7]}
+                  height={580}
+                />
+              )}
+              {funcType === "quartic" && (
+                <InteractivePlot
+                  title={`Đồ thị hàm trùng phương: y = ${c4A}x⁴ ${c4B >= 0 ? "+ " + c4B : "- " + Math.abs(c4B)}x² ${c4C >= 0 ? "+ " + c4C : "- " + Math.abs(c4C)}`}
+                  subtitle="Trục đối xứng Oy và các điểm cực trị"
+                  functions={[quarticAnalysis.fnPlot]}
+                  points={quarticAnalysis.points}
+                  defaultXRange={[-5, 5]}
+                  defaultYRange={[-6, 6]}
+                  height={580}
+                />
+              )}
+              {funcType === "parabola" && (
+                <InteractivePlot
+                  title={`Đồ thị Parabol: y = ${pA}x² ${pB >= 0 ? "+ " + pB : "- " + Math.abs(pB)}x ${pC >= 0 ? "+ " + pC : "- " + Math.abs(pC)}`}
+                  subtitle="Đỉnh I, trục đối xứng và các giao điểm tọa độ"
+                  functions={[parabolaAnalysis.fnPlot]}
+                  points={parabolaAnalysis.points}
+                  asymptotes={parabolaAnalysis.asymptotes}
+                  defaultXRange={[-6, 6]}
+                  defaultYRange={[-6, 6]}
+                  height={580}
+                />
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

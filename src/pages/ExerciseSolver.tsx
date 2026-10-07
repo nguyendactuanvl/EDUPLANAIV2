@@ -5,7 +5,7 @@ import {
   Copy, Save, Upload, X, Sparkles, Loader2, Download, Presentation, 
   ChevronLeft, ChevronRight, Maximize2, FileText, BookmarkPlus, Camera, 
   Image as ImageIcon, Send, ArrowLeft, Crop, CheckCircle2, ImagePlus, 
-  Clipboard, Eye, EyeOff, RefreshCw, Trash2, Scissors, Calculator 
+  Clipboard, Eye, EyeOff, RefreshCw, Trash2, Scissors, Calculator, Wand2
 } from 'lucide-react';
 
 import { MarkdownRenderer, fixMath } from "../components/MarkdownRenderer";
@@ -13,6 +13,7 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { ImageCropperModal } from "../components/ImageCropperModal";
 import { GeoGebraDrawer } from "../components/math-tools/GeoGebraDrawer";
 import { ScientificCalculatorModal } from "../components/math-tools/ScientificCalculatorModal";
+import { run1ClickMathFix } from "../components/math-tools/MathFormulaFixer";
 
 import { renderAllPdfPages } from "../lib/pdfUtils";
 import remarkGfm from 'remark-gfm';
@@ -830,6 +831,17 @@ export function ExerciseSolver() {
                     {showInBothQuestionAndAnswer ? 'Hiện ở cả Đề & Đáp án' : 'Chỉ hiện ở Đề bài'}
                   </button>
                 )}
+
+                <button 
+                  onClick={() => {
+                    setSolution(prev => run1ClickMathFix(prev));
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-500 hover:to-teal-500 transition-all rounded-lg shadow-xs text-xs font-bold cursor-pointer active:scale-95"
+                  title="Tự động sửa lỗi rách dấu $, lỗi dính chữ và lỗi ký hiệu KaTeX trong lời giải"
+                >
+                  <Wand2 className="w-3.5 h-3.5 text-emerald-200 animate-pulse" />
+                  <span>⚡ Sửa lỗi Toán 1-Click</span>
+                </button>
 
                 <button 
                   onClick={handleSave}

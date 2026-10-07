@@ -3,11 +3,12 @@ import { exportHtmlToWord } from '../lib/exportUtils';
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Upload, X, FileText, Loader2, Download, AlertCircle, 
-  Clipboard, CheckCircle2, Clock, Layers, Sliders, Sparkles, Zap,
+  Clipboard, CheckCircle2, Clock, Layers, Sliders, Sparkles, Zap, Wand2,
   Image as ImageIcon, Scissors, PlusCircle
 } from 'lucide-react';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { parseApiResponse, normalizeOcrChoicesAndFormatting } from '../lib/utils';
+import { run1ClickMathFix } from '../components/math-tools/MathFormulaFixer';
 import { getPdfTotalPages, renderPdfPageRange, renderPdfPageToDataUrl } from '../lib/pdfUtils';
 import { ImageCropperModal } from '../components/ImageCropperModal';
 import mammoth from 'mammoth';
@@ -697,6 +698,16 @@ export function PdfToWord() {
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
+              <button 
+                onClick={() => {
+                  setResultText(prev => run1ClickMathFix(prev));
+                }}
+                className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg transition-all shadow-sm font-bold text-xs cursor-pointer active:scale-95"
+                title="Tự động phát hiện và làm sạch 100% lỗi OCR công thức Toán"
+              >
+                <Wand2 className="w-4 h-4 text-emerald-200 animate-pulse" />
+                <span>⚡ Sửa lỗi Toán OCR 1-Click</span>
+              </button>
               <button 
                 onClick={() => setResultText('')}
                 className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-xs font-bold"

@@ -1007,6 +1007,162 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
                         }
                         return null;
                       })()}
+
+                      {/* Phiếu tô trắc nghiệm 4 cột chuẩn Bộ GD&ĐT */}
+                      {!isSubmitted && (
+                        <div className="pt-2 border-t border-slate-200 mt-2">
+                          <p className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1">
+                            <span>📱</span> Tô nhanh trực tuyến (Phiếu trắc nghiệm chuẩn Bộ 100%):
+                          </p>
+                          {(() => {
+                            const ans = answers[idx] || "";
+                            const cols = ["", "", "", ""];
+                            const ansChars = ans.trim().replace(".", ",").split("");
+                            for (let i = 0; i < Math.min(4, ansChars.length); i++) {
+                              cols[i] = ansChars[i];
+                            }
+
+                            const updateCol = (colIdx: number, val: string) => {
+                              const newCols = [...cols];
+                              
+                              // Automatically enforce only one active comma (either in Column 2 or Column 3)
+                              if (colIdx === 1 && val === ",") {
+                                if (newCols[2] === ",") newCols[2] = "";
+                              }
+                              if (colIdx === 2 && val === ",") {
+                                if (newCols[1] === ",") newCols[1] = "";
+                              }
+
+                              if (newCols[colIdx] === val) {
+                                newCols[colIdx] = "";
+                              } else {
+                                newCols[colIdx] = val;
+                              }
+                              
+                              const joined = newCols.join("").trim();
+                              // Convert all commas to period decimal points
+                              const newAns = joined.replace(/,/g, ".");
+                              setAnswers({ ...answers, [idx]: newAns });
+                            };
+
+                            return (
+                              <div className="grid grid-cols-4 gap-2 bg-white p-3 rounded-xl border border-slate-200 max-w-[280px]">
+                                {/* Row of visual box labels */}
+                                {cols.map((char, colIdx) => (
+                                  <div key={colIdx} className="bg-slate-50 border border-slate-350 rounded h-8 flex items-center justify-center font-black text-sm text-slate-800 font-mono shadow-3xs">
+                                    {char}
+                                  </div>
+                                ))}
+
+                                {/* Column 1 bubbles (- and 0-9) */}
+                                <div className="flex flex-col items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateCol(0, "-")}
+                                    className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
+                                      cols[0] === "-"
+                                        ? "bg-slate-900 border-slate-900 text-white shadow-xs"
+                                        : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
+                                    }`}
+                                  >
+                                    -
+                                  </button>
+                                  {Array.from({ length: 10 }, (_, i) => String(i)).map((num) => (
+                                    <button
+                                      key={num}
+                                      type="button"
+                                      onClick={() => updateCol(0, num)}
+                                      className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
+                                        cols[0] === num
+                                          ? "bg-slate-900 border-slate-900 text-white shadow-xs"
+                                          : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
+                                      }`}
+                                    >
+                                      {num}
+                                    </button>
+                                  ))}
+                                </div>
+
+                                {/* Column 2 bubbles (, and 0-9) */}
+                                <div className="flex flex-col items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateCol(1, ",")}
+                                    className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
+                                      cols[1] === ","
+                                        ? "bg-slate-900 border-slate-900 text-white shadow-xs"
+                                        : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
+                                    }`}
+                                  >
+                                    ,
+                                  </button>
+                                  {Array.from({ length: 10 }, (_, i) => String(i)).map((num) => (
+                                    <button
+                                      key={num}
+                                      type="button"
+                                      onClick={() => updateCol(1, num)}
+                                      className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
+                                        cols[1] === num
+                                          ? "bg-slate-900 border-slate-900 text-white shadow-xs"
+                                          : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
+                                      }`}
+                                    >
+                                      {num}
+                                    </button>
+                                  ))}
+                                </div>
+
+                                {/* Column 3 bubbles (, and 0-9) */}
+                                <div className="flex flex-col items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateCol(2, ",")}
+                                    className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
+                                      cols[2] === ","
+                                        ? "bg-slate-900 border-slate-900 text-white shadow-xs"
+                                        : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
+                                    }`}
+                                  >
+                                    ,
+                                  </button>
+                                  {Array.from({ length: 10 }, (_, i) => String(i)).map((num) => (
+                                    <button
+                                      key={num}
+                                      type="button"
+                                      onClick={() => updateCol(2, num)}
+                                      className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
+                                        cols[2] === num
+                                          ? "bg-slate-900 border-slate-900 text-white shadow-xs"
+                                          : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
+                                      }`}
+                                    >
+                                      {num}
+                                    </button>
+                                  ))}
+                                </div>
+
+                                {/* Column 4 bubbles (0-9 only) */}
+                                <div className="flex flex-col items-center gap-1 pt-6.5">
+                                  {Array.from({ length: 10 }, (_, i) => String(i)).map((num) => (
+                                    <button
+                                      key={num}
+                                      type="button"
+                                      onClick={() => updateCol(3, num)}
+                                      className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
+                                        cols[3] === num
+                                          ? "bg-slate-900 border-slate-900 text-white shadow-xs"
+                                          : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
+                                      }`}
+                                    >
+                                      {num}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
                     </div>
 
                     {isSubmitted && (

@@ -28,7 +28,7 @@ import {
   ParameterOption
 } from '../lib/examConfig';
 import { OnlineExamConfigModal } from "../components/OnlineExamConfigModal";
-import { SAMPLE_MATH_QUESTIONS, SAMPLE_MATH_EXAM_NAME, SAMPLE_MATH_DURATION } from '../data/sampleMathExam';
+import { SAMPLE_MATH_QUESTIONS, SAMPLE_MATH_QUESTIONS_10, SAMPLE_MATH_QUESTIONS_11, SAMPLE_MATH_EXAM_NAME, SAMPLE_MATH_DURATION } from '../data/sampleMathExam';
 import { parseRawExamText, formatAiQuestionsToParsed } from '../lib/examParser';
 import { attachCroppedFiguresToQuestions } from '../lib/cropUtils';
 import { UploadTeacherExamModal } from "../components/UploadTeacherExamModal";
@@ -51,9 +51,10 @@ import {
   getQuestionAnswerString,
   MixerQuestion
 } from '../lib/examMixer';
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import * as XLSX from 'xlsx';
-import { School, FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera, TrendingUp, BarChart2, Box, BarChart3, Calculator } from "lucide-react";
+import { School, FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera, TrendingUp, BarChart2, Box, BarChart3, Calculator, Wand2 } from "lucide-react";
+import { run1ClickMathFix } from "../components/math-tools/MathFormulaFixer";
 
 interface Question {
   type?: "mc" | "tf" | "sa" | "essay" | "MULTIPLE_CHOICE" | "TRUE_FALSE" | "SHORT_ANSWER" | "ESSAY";
@@ -147,6 +148,72 @@ export function ExamGenerator() {
   const [examResults, setExamResults] = useState<any[]>([]);
   const [resultsLoading, setResultsLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [resultsSubTab, setResultsSubTab] = useState<"list" | "question_stats">("list");
+  const [selectedStatsExamId, setSelectedStatsExamId] = useState<string>("");
+
+  // 1. Lấy danh sách các mã đề thi độc nhất để điền vào dropdown lọc thống kê
+  const uniqueExamIds = useMemo(() => {
+    const ids = new Set<string>();
+    examResults.forEach(r => {
+      const id = String(r?.examId || r?.examName || '').trim();
+      if (id) ids.add(id);
+    });
+    return Array.from(ids);
+  }, [examResults]);
+
+  // 2. Tính toán thống kê chi tiết theo từng câu hỏi (Chuẩn AZOTA)
+  const questionDetailedStats = useMemo(() => {
+    const filteredResults = selectedStatsExamId
+      ? examResults.filter(r => String(r?.examId || r?.examName || '').trim() === selectedStatsExamId)
+      : examResults;
+
+    const statsMap: Record<number, {
+      questionNumber: number;
+      questionContent: string;
+      type: string;
+      total: number;
+      correct: number;
+      incorrect: number;
+      unanswered: number;
+    }> = {};
+
+    filteredResults.forEach(res => {
+      const detailed = getDetailedAnswersFromResult(res);
+      detailed.forEach(qAns => {
+        const qNum = qAns.questionNumber || qAns.questionIndex;
+        if (!qNum) return;
+
+        if (!statsMap[qNum]) {
+          statsMap[qNum] = {
+            questionNumber: qNum,
+            questionContent: qAns.questionContent || qAns.questionText || '',
+            type: qAns.type || 'mc',
+            total: 0,
+            correct: 0,
+            incorrect: 0,
+            unanswered: 0
+          };
+        }
+
+        const stat = statsMap[qNum];
+        stat.total += 1;
+        if (qAns.type === 'essay') {
+          if (qAns.hasAnswered) stat.correct += 1;
+          else stat.unanswered += 1;
+        } else {
+          if (qAns.isCorrect) {
+            stat.correct += 1;
+          } else if (qAns.hasAnswered) {
+            stat.incorrect += 1;
+          } else {
+            stat.unanswered += 1;
+          }
+        }
+      });
+    });
+
+    return Object.values(statsMap).sort((a, b) => a.questionNumber - b.questionNumber);
+  }, [examResults, selectedStatsExamId]);
 
   // Review & Grading state
   const [selectedResultForReview, setSelectedResultForReview] = useState<any | null>(null);
@@ -240,7 +307,7 @@ export function ExamGenerator() {
   };
 
   // Helper để lấy danh sách chi tiết từng câu từ kết quả nộp bài
-  const getDetailedAnswersFromResult = (result: any): any[] => {
+  function getDetailedAnswersFromResult(result: any): any[] {
     if (!result) return [];
 
     // Tìm nguồn dữ liệu chi tiết từng câu (từ detailedAnswers, details, detailed_answers, hoặc chiTiet)
@@ -734,6 +801,7 @@ export function ExamGenerator() {
   const [duration, setDuration] = useState(45);
   const [examType, setExamType] = useState<string>("Đề kiểm tra giữa kỳ 1");
   const [isOnlineConfigModalOpen, setIsOnlineConfigModalOpen] = useState(false);
+  const [selectedStatsPin, setSelectedStatsPin] = useState<string>("");
   const [qCounts, setQCounts] = useState({ mc: 12, tf: 4, sa: 6, essay: 0 });
   const [schoolLevel, setSchoolLevel] = useState<string>("THPT");
   const [parameterOption, setParameterOption] = useState<ParameterOption>("auto");
@@ -969,7 +1037,7 @@ const [examName, setExamName] = useState("");
   const [questions, setQuestions] = useState<Question[]>([]);
   const [showAllSolutions, setShowAllSolutions] = useState(false);
   const [expandedSolutionIds, setExpandedSolutionIds] = useState<Record<number, boolean>>({});
-  const [includeDetailedSolution, setIncludeDetailedSolution] = useState(true);
+  const [solutionDisplayMode, setSolutionDisplayMode] = useState<"none" | "under_question" | "appendix">("appendix");
   const [showWordEquationModal, setShowWordEquationModal] = useState(false);
 
   const toggleSolution = (qId: number) => {
@@ -985,15 +1053,125 @@ const [examName, setExamName] = useState("");
     setExpandedSolutionIds({});
   };
 
+  const sanitizeTopicOrSubtopic = (val: string, content: string = ""): string => {
+    if (!val) return "Chủ đề trọng tâm";
+    let cleaned = val.trim();
+    
+    // Remove starting prefix like "Phần I:", "Phần II:", "Phần III:", "Phần IV:", "Phần 1:", etc.
+    cleaned = cleaned.replace(/^(?:Phần\s*(?:[IVX1-4]+|\d+)\s*[:\-\.]\s*)/gi, "");
+    
+    const lower = cleaned.toLowerCase();
+    
+    // If it contains non-math structural terms or section names, let's deduce a professional math topic from the question content!
+    if (
+      lower.includes("đúng sai") || 
+      lower.includes("trắc nghiệm") || 
+      lower.includes("trả lời ngắn") || 
+      lower.includes("tự luận") ||
+      lower.includes("phương án") ||
+      lower.includes("phần i") ||
+      lower.includes("phần ii") ||
+      lower.includes("phần iii") ||
+      lower.includes("phần iv") ||
+      lower === "chung" ||
+      lower === "chủ đề trọng tâm" ||
+      lower === "nội dung kiến thức" ||
+      lower.length < 3
+    ) {
+      // Deduce from content!
+      const text = content.toLowerCase();
+      if (text.includes("tiệm cận") || text.includes("đường tiệm cận")) {
+        return "Đường tiệm cận của đồ thị hàm số";
+      }
+      if (text.includes("đồng biến") || text.includes("nghịch biến") || text.includes("khoảng đơn điệu") || text.includes("đơn điệu")) {
+        return "Tính đơn điệu của hàm số";
+      }
+      if (text.includes("cực đại") || text.includes("cực tiểu") || text.includes("cực trị") || text.includes("điểm cực trị")) {
+        return "Cực trị của hàm số";
+      }
+      if (text.includes("giá trị lớn nhất") || text.includes("giá trị nhỏ nhất") || text.includes("gtln") || text.includes("gtnn")) {
+        return "Giá trị lớn nhất và nhỏ nhất của hàm số";
+      }
+      if (text.includes("khảo sát") || text.includes("vẽ đồ thị") || text.includes("nhận dạng đồ thị")) {
+        return "Khảo sát và vẽ đồ thị hàm số";
+      }
+      if (text.includes("đạo hàm") || text.includes("vi phân")) {
+        return "Đạo hàm và ứng dụng";
+      }
+      if (text.includes("hàm số") || text.includes("biến thiên")) {
+        return "Khảo sát sự biến thiên của hàm số";
+      }
+      if (text.includes("mũ") || text.includes("lũy thừa")) {
+        return "Hàm số mũ và lũy thừa";
+      }
+      if (text.includes("logarith") || text.includes("logarit") || text.includes("log")) {
+        return "Hàm số lôgarit và phương trình logarit";
+      }
+      if (text.includes("tích phân") || text.includes("nguyên hàm")) {
+        return "Nguyên hàm và tích phân";
+      }
+      if (text.includes("tọa độ") || text.includes("oxyz") || text.includes("mặt cầu") || text.includes("mặt phẳng") || text.includes("đường thẳng trong không gian")) {
+        return "Phương pháp tọa độ trong không gian (Oxyz)";
+      }
+      if (text.includes("lượng giác") || text.includes("sin") || text.includes("cos") || text.includes("tan") || text.includes("cot")) {
+        return "Lượng giác và phương trình lượng giác";
+      }
+      if (text.includes("dãy số") || text.includes("cấp số cộng") || text.includes("cấp số nhân")) {
+        return "Dãy số. Cấp số cộng và cấp số nhân";
+      }
+      if (text.includes("xác suất") || text.includes("phương sai") || text.includes("độ lệch chuẩn") || text.includes("khoảng biến thiên") || text.includes("tứ phân vị")) {
+        return "Xác suất và Thống kê";
+      }
+      if (text.includes("tổ hợp") || text.includes("chỉnh hợp") || text.includes("hoán vị") || text.includes("nhị thức")) {
+        return "Tổ hợp và nhị thức Newton";
+      }
+      if (text.includes("mệnh đề") || text.includes("tập hợp")) {
+        return "Mệnh đề và tập hợp";
+      }
+      if (text.includes("vectơ") || text.includes("vector") || text.includes("tích vô hướng")) {
+        return "Vectơ và các phép toán";
+      }
+      if (text.includes("hình chóp") || text.includes("hình lăng trụ") || text.includes("thể tích") || text.includes("hình hộp") || text.includes("nón") || text.includes("trụ") || text.includes("cầu")) {
+        return "Hình học không gian và thể tích";
+      }
+      if (text.includes("conic") || text.includes("elip") || text.includes("hyperbol") || text.includes("parabol")) {
+        return "Phương pháp tọa độ phẳng và các đường Conic";
+      }
+      return "Chủ đề Toán học tổng hợp";
+    }
+    
+    return cleaned;
+  };
+
   const [matrixStructure, setMatrixStructure] = useState<{topic: string, subtopics: string[]}[]>([]);
   const [draggedTopicIdx, setDraggedTopicIdx] = useState<number | null>(null);
   const [draggedSubtopic, setDraggedSubtopic] = useState<{tIdx: number, sIdx: number} | null>(null);
 
   useEffect(() => {
+     if (questions.length === 0) return;
+
+     // On-the-fly clean up topics and subtopics inside the questions list to purge non-math terminology
+     let changed = false;
+     const cleanedQuestions = questions.map(q => {
+       const cleanT = sanitizeTopicOrSubtopic(q.topic || "", q.content || "");
+       const cleanSub = sanitizeTopicOrSubtopic(q.subtopic || "", q.content || "");
+       const finalSub = cleanSub === cleanT ? "Ứng dụng và bài tập liên quan" : cleanSub;
+       if (q.topic !== cleanT || q.subtopic !== finalSub) {
+         changed = true;
+         return { ...q, topic: cleanT, subtopic: finalSub };
+       }
+       return q;
+     });
+     
+     if (changed) {
+       setQuestions(cleanedQuestions);
+       return;
+     }
+
      const structure: {topic: string, subtopics: string[]}[] = [];
-     const topics = Array.from(new Set(questions.map(q => q.topic || 'Chung')));
+     const topics = Array.from(new Set(questions.map(q => q.topic || 'Chủ đề trọng tâm')));
      for (const t of topics) {
-         const subs = Array.from(new Set(questions.filter(q => (q.topic || 'Chung') === t).map(q => q.subtopic || 'Chung')));
+         const subs = Array.from(new Set(questions.filter(q => (q.topic || 'Chủ đề trọng tâm') === t).map(q => q.subtopic || 'Nội dung kiến thức')));
          structure.push({ topic: t, subtopics: subs });
      }
      setMatrixStructure(structure);
@@ -1184,8 +1362,17 @@ const [examName, setExamName] = useState("");
 
   const handleLoadSampleExam = () => {
     setError(null);
-    setQuestions(SAMPLE_MATH_QUESTIONS as Question[]);
-    setExamName(SAMPLE_MATH_EXAM_NAME);
+    let sampleQuestions = SAMPLE_MATH_QUESTIONS as Question[];
+    let examTitleName = SAMPLE_MATH_EXAM_NAME;
+    if (grade.toString().includes("10")) {
+      sampleQuestions = SAMPLE_MATH_QUESTIONS_10 as Question[];
+      examTitleName = "ĐỀ KIỂM TRA ĐỊNH KỲ TOÁN HỌC LỚP 10 - KHUNG CHUẨN 2025";
+    } else if (grade.toString().includes("11")) {
+      sampleQuestions = SAMPLE_MATH_QUESTIONS_11 as Question[];
+      examTitleName = "ĐỀ KIỂM TRA ĐỊNH KỲ TOÁN HỌC LỚP 11 - KHUNG CHUẨN 2025";
+    }
+    setQuestions(sampleQuestions);
+    setExamName(examTitleName);
     setDuration(SAMPLE_MATH_DURATION);
     setActiveTab("exam");
   };
@@ -2753,6 +2940,241 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                     </div>
                   )}
 
+                  {/* BẢN ĐẶC TẢ ĐỀ KIỂM TRA */}
+                  {outputConfig.spec && (
+                    <div className="border border-slate-200 rounded-lg p-6 space-y-6 bg-white overflow-x-auto printable-spec mt-6" id="spec-container">
+                      <div className="flex justify-between items-center mb-4 no-print">
+                        <div className="flex-1 text-center">
+                          <h2 className="text-xl font-bold">BẢN ĐẶC TẢ ĐỀ KIỂM TRA</h2>
+                          <p className="text-sm text-slate-500 font-normal no-print italic mt-1">Bản mô tả chi tiết yêu cầu cần đạt và cấu trúc câu hỏi theo chuẩn Bộ GD&ĐT 2025</p>
+                        </div>
+                        <div className="flex gap-2">
+                            <button onClick={() => {
+                                const wrap = document.getElementById('spec-table-wrap');
+                                if (!wrap) return;
+                                exportHtmlToWord(wrap, 'Ban_Dac_Ta_De_Kiem_Tra.doc');
+                            }} className="px-3 py-1.5 bg-blue-50 text-blue-600 font-medium rounded hover:bg-blue-100 flex items-center gap-2 text-sm border border-blue-200 no-print">
+                              Xuất Word
+                            </button>
+                            <button onClick={() => window.print()} className="px-3 py-1.5 bg-slate-50 text-slate-600 font-medium rounded hover:bg-slate-200 flex items-center gap-2 text-sm border border-slate-300 no-print">
+                              <Printer className="w-4 h-4" /> In PDF
+                            </button>
+                        </div>
+                      </div>
+                      <div id="spec-table-wrap">
+                          <table className="w-full border-collapse border border-black text-[13px] min-w-[1000px] font-serif text-black" style={{fontFamily: '"Times New Roman", Times, serif'}}>
+                            <thead>
+                              <tr className="bg-slate-50 text-center font-bold">
+                                <th className="border border-black p-2 w-12" rowSpan={2}>TT</th>
+                                <th className="border border-black p-2 w-48" rowSpan={2}>Chủ đề/Chương</th>
+                                <th className="border border-black p-2 w-48" rowSpan={2}>Nội dung/Đơn vị kiến thức</th>
+                                <th className="border border-black p-2" rowSpan={2}>Mức độ đánh giá / Yêu cầu cần đạt</th>
+                                <th className="border border-black p-2" colSpan={4}>Số câu hỏi theo các mức độ nhận thức</th>
+                                <th className="border border-black p-2 w-40" rowSpan={2}>Câu hỏi tương ứng</th>
+                              </tr>
+                              <tr className="bg-slate-50 text-center font-bold">
+                                <th className="border border-black p-2 w-16">Biết</th>
+                                <th className="border border-black p-2 w-16">Hiểu</th>
+                                <th className="border border-black p-2 w-16">VD</th>
+                                <th className="border border-black p-2 w-16">VDC</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(() => {
+                                 const getSpecificationText = (subtopic: string, level: string): string => {
+                                   const s = (subtopic || '').toLowerCase();
+                                   const l = (level || '').toLowerCase();
+                                   
+                                   if (s.includes('đơn điệu') || s.includes('đồng biến') || s.includes('nghịch biến')) {
+                                     if (l === 'nb') return "Nhận biết tính đơn điệu (đồng biến, nghịch biến) của hàm số dựa trên đồ thị hoặc bảng biến thiên cho trước.";
+                                     if (l === 'th') return "Xác định các khoảng đơn điệu của một hàm số cho trước bằng cách xét dấu đạo hàm f'(x) hoặc lập bảng biến thiên.";
+                                     if (l === 'vd') return "Vận dụng tính đơn điệu để giải quyết các bài toán chứa tham số thực m hoặc các bài toán liên hệ thực tế.";
+                                     return "Vận dụng cao tìm tham số để các hàm liên kết, hàm hợp, hàm ẩn đồng biến hoặc nghịch biến trên khoảng xác định.";
+                                   }
+                                   if (s.includes('cực trị') || s.includes('cực đại') || s.includes('cực tiểu')) {
+                                     if (l === 'nb') return "Nhận biết điểm cực đại, điểm cực tiểu, cực trị của hàm số hoặc đồ thị hàm số từ bảng biến thiên hoặc đồ thị.";
+                                     if (l === 'th') return "Tìm cực trị của hàm số cho trước bằng quy tắc I hoặc quy tắc II đạo hàm.";
+                                     if (l === 'vd') return "Tìm tham số m để hàm số đạt cực đại, cực tiểu tại điểm hoặc có số lượng cực trị thỏa mãn điều kiện.";
+                                     return "Vận dụng cao giải quyết các bài toán cực trị liên quan đến hàm hợp, hàm ẩn, bất đẳng thức phức tạp.";
+                                   }
+                                   if (s.includes('tiệm cận')) {
+                                     if (l === 'nb') return "Nhận biết đường tiệm cận đứng, tiệm cận ngang của đồ thị hàm số từ bảng biến thiên hoặc đồ thị.";
+                                     if (l === 'th') return "Tìm các đường tiệm cận đứng, tiệm cận ngang của đồ thị hàm số phân thức cụ thể bằng giới hạn.";
+                                     if (l === 'vd') return "Tìm tham số m để đồ thị hàm số có số lượng đường tiệm cận đứng, tiệm cận ngang thỏa mãn điều kiện cho trước.";
+                                     return "Vận dụng cao giải quyết các bài toán về tiệm cận của đồ thị hàm số chứa căn thức, hàm ẩn phức tạp.";
+                                   }
+                                   if (s.includes('lớn nhất') || s.includes('nhỏ nhất') || s.includes('gtln') || s.includes('gtnn')) {
+                                     if (l === 'nb') return "Nhận biết GTLN, GTNN của hàm số trên một đoạn từ bảng biến thiên hoặc đồ thị cho trước.";
+                                     if (l === 'th') return "Tìm GTLN và GTNN của hàm số trên một đoạn hoặc khoảng xác định bằng đạo hàm.";
+                                     if (l === 'vd') return "Vận dụng giá trị lớn nhất, giá trị nhỏ nhất của hàm số để giải quyết các bài toán tối ưu thực tiễn đời sống.";
+                                     return "Vận dụng cao tìm GTLN, GTNN của biểu thức nhiều biến số, hàm hợp, hàm ẩn chứa tham số thực m.";
+                                   }
+                                   if (s.includes('đồ thị') || s.includes('khảo sát')) {
+                                     if (l === 'nb') return "Nhận dạng đồ thị các hàm số bậc ba, bậc bốn trùng phương, phân thức bậc nhất/bậc nhất.";
+                                     if (l === 'th') return "Xác định các hệ số của hàm số, tọa độ giao điểm, số nghiệm của phương trình từ đồ thị.";
+                                     if (l === 'vd') return "Vận dụng đồ thị để biện luận số nghiệm của phương trình chứa tham số m.";
+                                     return "Vận dụng cao đồ thị hàm số để giải các bài toán tương giao phức tạp, liên kết thực tế.";
+                                   }
+                                   if (s.includes('tọa độ') || s.includes('vectơ') || s.includes('vector')) {
+                                     if (l === 'nb') return "Nhận biết tọa độ vectơ, tọa độ điểm, các phép toán cộng, trừ vectơ, nhân vectơ với số trong không gian.";
+                                     if (l === 'th') return "Tính tích vô hướng, tích có hướng, độ dài vectơ, góc giữa hai vectơ, chứng minh đồng phẳng.";
+                                     if (l === 'vd') return "Vận dụng tọa độ vectơ để giải quyết bài toán mô phỏng vật lý, địa chất, đường bay thực tế.";
+                                     return "Vận dụng cao phương pháp tọa độ để giải bài toán hình học không gian, tìm cực trị khoảng cách.";
+                                   }
+                                   if (s.includes('mặt phẳng')) {
+                                     if (l === 'nb') return "Nhận biết vectơ pháp tuyến của mặt phẳng, phương trình tổng quát mặt phẳng cơ bản.";
+                                     if (l === 'th') return "Viết phương trình mặt phẳng đi qua các điểm, song song hoặc vuông góc với mặt phẳng khác.";
+                                     if (l === 'vd') return "Vận dụng tính khoảng cách từ điểm đến mặt phẳng, vị trí tương đối giữa các mặt phẳng.";
+                                     return "Vận dụng cao viết phương trình mặt phẳng thỏa mãn điều kiện tối ưu (khoảng cách cực đại, cực tiểu).";
+                                   }
+                                   if (s.includes('đường thẳng')) {
+                                     if (l === 'nb') return "Nhận biết vectơ chỉ phương, phương trình tham số, phương trình chính tắc của đường thẳng.";
+                                     if (l === 'th') return "Viết phương trình đường thẳng đi qua điểm, song song, vuông góc hoặc cắt đường thẳng khác.";
+                                     if (l === 'vd') return "Xác định vị trí tương đối giữa hai đường thẳng, tính góc và khoảng cách giữa hai đường thẳng.";
+                                     return "Vận dụng cao viết phương trình đường thẳng liên quan đến các yếu tố cực trị hình học, tương giao mặt cầu.";
+                                   }
+                                   if (s.includes('mặt cầu')) {
+                                     if (l === 'nb') return "Nhận biết phương trình chính chính tắc, xác định tâm và bán kính mặt cầu cho trước.";
+                                     if (l === 'th') return "Viết phương trình mặt cầu đi qua điểm, tiếp xúc với mặt phẳng hoặc có tâm thỏa mãn điều kiện.";
+                                     if (l === 'vd') return "Xác định vị trí tương đối giữa mặt cầu và mặt phẳng, mặt cầu và đường thẳng.";
+                                     return "Vận dụng cao bài toán tiếp xúc, tương giao cực trị liên quan đến mặt cầu, đường thẳng và mặt phẳng.";
+                                   }
+                                   if (s.includes('lượng giác')) {
+                                     if (l === 'nb') return "Nhận biết góc lượng giác, giá trị lượng giác của góc lượng giác, công thức lượng giác cơ bản.";
+                                     if (l === 'th') return "Giải phương trình lượng giác cơ bản, áp dụng công thức biến đổi lượng giác để rút gọn biểu thức.";
+                                     if (l === 'vd') return "Vận dụng phương trình lượng giác giải quyết các bài toán chu kỳ, dao động điều hòa thực tế.";
+                                     return "Vận dụng cao phương trình lượng giác chứa tham số, tìm nghiệm trong khoảng, cực trị lượng giác.";
+                                   }
+                                   if (s.includes('mũ') || s.includes('logarit') || s.includes('lôgarit')) {
+                                     if (l === 'nb') return "Nhận biết lũy thừa, logarit, tính chất mũ và logarit cơ bản.";
+                                     if (l === 'th') return "Giải phương trình mũ, phương trình logarit cơ bản bằng biến đổi biến số hoặc đưa về cùng cơ số.";
+                                     if (l === 'vd') return "Vận dụng hàm số mũ và logarit giải quyết bài toán tăng trưởng dân số, lãi suất ngân hàng, độ phóng xạ.";
+                                     return "Vận dụng cao phương trình, bất phương trình mũ/logarit chứa tham số thực m, hệ phương trình phức tạp.";
+                                   }
+                                   if (s.includes('tích phân') || s.includes('nguyên hàm')) {
+                                     if (l === 'nb') return "Nhận biết khái niệm nguyên hàm, tính chất nguyên hàm, tích phân và bảng nguyên hàm cơ bản.";
+                                     if (l === 'th') return "Tính nguyên hàm, tích phân bằng phương pháp đổi biến số, từng phần hoặc áp dụng tính chất định nghĩa.";
+                                     if (l === 'vd') return "Vận dụng tích phân để tính diện tích hình phẳng, thể tích vật thể tròn xoay và bài toán chuyển động.";
+                                     return "Vận dụng cao nguyên hàm, tích phân liên quan đến hàm ẩn, bài toán tối ưu kinh tế phức tạp.";
+                                   }
+                                   if (s.includes('xác suất') || s.includes('tổ hợp') || s.includes('nhị thức')) {
+                                     if (l === 'nb') return "Nhận biết hoán vị, chỉnh hợp, tổ hợp, quy tắc cộng, quy tắc nhân cơ bản.";
+                                     if (l === 'th') return "Tính xác suất của biến cố trong các trò chơi hoặc hoạt động chọn mẫu đơn giản.";
+                                     if (l === 'vd') return "Vận dụng công thức nhị thức Newton, xác suất có điều kiện, sơ đồ hình cây giải quyết bài toán mẫu.";
+                                     return "Vận dụng cao các bài toán xác suất thực tế phức tạp, phân phối nhị thức, trò chơi chiến thuật.";
+                                   }
+                                   
+                                   // Fallback
+                                   const lvlName = l === 'nb' ? 'Nhận biết' : l === 'th' ? 'Thông hiểu' : l === 'vd' ? 'Vận dụng' : 'Vận dụng cao';
+                                   return `${lvlName}: Hiểu và vận dụng các kiến thức, kỹ năng giải toán về đơn vị kiến thức "${subtopic}".`;
+                                 };
+
+                                 return matrixStructure.map((topicObj, tIdx) => {
+                                    const topic = topicObj.topic;
+                                    const topicQs = questions.filter(q => (q.topic || 'Chủ đề trọng tâm') === topic);
+                                    
+                                    // Precalculate total rows for this topic
+                                    let topicRowSpan = 0;
+                                    const subtopicsData = topicObj.subtopics.map(sub => {
+                                      const subQs = topicQs.filter(q => (q.subtopic || 'Nội dung kiến thức') === sub);
+                                      const levels = ['nb', 'th', 'vd', 'vdc'].filter(lvl => {
+                                        return subQs.some(q => {
+                                          const l = (q.level || '').toLowerCase();
+                                          if (lvl === 'nb') return l.includes('biết');
+                                          if (lvl === 'th') return l.includes('hiểu');
+                                          if (lvl === 'vdc') return l.includes('cao');
+                                          if (lvl === 'vd') return l.includes('dụng') && !l.includes('cao');
+                                          return false;
+                                        });
+                                      });
+                                      const finalLevels = levels.length > 0 ? levels : ['nb']; // fallback
+                                      topicRowSpan += finalLevels.length;
+                                      return { sub, subQs, finalLevels };
+                                    });
+
+                                    return (
+                                      <React.Fragment key={`spec-t-${tIdx}`}>
+                                        {subtopicsData.map((subData, sIdx) => {
+                                          const { sub, subQs, finalLevels } = subData;
+                                          return finalLevels.map((lvl, lIdx) => {
+                                            const isFirstRowOfTopic = sIdx === 0 && lIdx === 0;
+                                            const isFirstRowOfSubtopic = lIdx === 0;
+                                            
+                                            // Get level specific count
+                                            const getLevelCount = (lvlStr: string) => {
+                                              return subQs.filter(q => {
+                                                const l = (q.level || '').toLowerCase();
+                                                if (lvlStr === 'nb') return l.includes('biết');
+                                                if (lvlStr === 'th') return l.includes('hiểu');
+                                                if (lvlStr === 'vdc') return l.includes('cao');
+                                                if (lvlStr === 'vd') return l.includes('dụng') && !l.includes('cao');
+                                                return false;
+                                              }).length;
+                                            };
+
+                                            const countNB = lvl === 'nb' ? getLevelCount('nb') : 0;
+                                            const countTH = lvl === 'th' ? getLevelCount('th') : 0;
+                                            const countVD = lvl === 'vd' ? getLevelCount('vd') : 0;
+                                            const countVDC = lvl === 'vdc' ? getLevelCount('vdc') : 0;
+
+                                            // Get question list
+                                            const matchingQs = subQs.filter(q => {
+                                              const l = (q.level || '').toLowerCase();
+                                              if (lvl === 'nb') return l.includes('biết');
+                                              if (lvl === 'th') return l.includes('hiểu');
+                                              if (lvl === 'vdc') return l.includes('cao');
+                                              if (lvl === 'vd') return l.includes('dụng') && !l.includes('cao');
+                                              return false;
+                                            });
+
+                                            const qLabels = matchingQs.map(q => {
+                                              const qNum = questions.indexOf(q) + 1;
+                                              return `Câu ${qNum}`;
+                                            }).join(', ');
+
+                                            const specDesc = getSpecificationText(sub, lvl);
+
+                                            return (
+                                              <tr key={`spec-sub-${tIdx}-${sIdx}-${lvl}`}>
+                                                {isFirstRowOfTopic && (
+                                                  <td className="border border-black p-2 text-center align-middle font-bold" rowSpan={topicRowSpan}>
+                                                    {tIdx + 1}
+                                                  </td>
+                                                )}
+                                                {isFirstRowOfTopic && (
+                                                  <td className="border border-black p-2 font-bold align-middle" rowSpan={topicRowSpan}>
+                                                    {topic}
+                                                  </td>
+                                                )}
+                                                {isFirstRowOfSubtopic && (
+                                                  <td className="border border-black p-2 align-middle font-medium" rowSpan={finalLevels.length}>
+                                                    {sub}
+                                                  </td>
+                                                )}
+                                                <td className="border border-black p-2">
+                                                  {specDesc}
+                                                </td>
+                                                <td className="border border-black p-2 text-center font-semibold">{countNB || ''}</td>
+                                                <td className="border border-black p-2 text-center font-semibold">{countTH || ''}</td>
+                                                <td className="border border-black p-2 text-center font-semibold">{countVD || ''}</td>
+                                                <td className="border border-black p-2 text-center font-semibold">{countVDC || ''}</td>
+                                                <td className="border border-black p-2 text-center text-xs font-mono text-indigo-700">
+                                                  {qLabels || ''}
+                                                </td>
+                                              </tr>
+                                            );
+                                          });
+                                        })}
+                                      </React.Fragment>
+                                    );
+                                 });
+                              })()}
+                            </tbody>
+                          </table>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="border border-slate-200 rounded-lg p-6 space-y-6 bg-white" id="original-exam">
 
                     <div className="flex flex-wrap items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
@@ -2816,6 +3238,27 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                                 <span>Thống kê</span>
                               </button>
                             </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setQuestions(prev => prev.map((q: any) => ({
+                                  ...q,
+                                  content: run1ClickMathFix(q.content),
+                                  solution: q.solution ? run1ClickMathFix(q.solution) : q.solution,
+                                  explanation: q.explanation ? run1ClickMathFix(q.explanation) : q.explanation,
+                                  options: q.options ? q.options.map((opt: string) => run1ClickMathFix(opt)) : q.options,
+                                  tfStatements: q.tfStatements ? q.tfStatements.map((tf: any) => ({
+                                    ...tf,
+                                    statement: run1ClickMathFix(tf.statement)
+                                  })) : q.tfStatements
+                                })));
+                              }}
+                              className="px-3 py-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border border-emerald-500 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer active:scale-95"
+                              title="Tự động phát hiện và làm sạch 100% công thức Toán trong toàn bộ câu hỏi và đáp án đề thi"
+                            >
+                              <Wand2 className="w-3.5 h-3.5 text-emerald-200 animate-pulse" />
+                              <span>⚡ Sửa lỗi Toán 1-Click</span>
+                            </button>
                             <button
                               type="button"
                               onClick={handleAutoGenerateAllBbtAndGraphs}
@@ -3822,7 +4265,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                           </div>
                         </div>
 
-                        {/* Tùy chọn In & Xuất file: Kèm lời giải (Bản GV) vs Không kèm lời giải (Bản HS) */}
+                        {/* Tùy chọn In & Xuất file: Kèm lời giải dưới câu vs Ở cuối đề vs Không kèm lời giải */}
                         <div className="bg-slate-50 px-6 py-2.5 border-b border-slate-200 flex flex-wrap items-center gap-4 text-xs">
                           <span className="font-bold text-slate-700 flex items-center gap-1">
                             📄 Chế độ In & Xuất file:
@@ -3831,24 +4274,36 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                             <input
                               type="radio"
                               name={`sol-mode-${exam.code}`}
-                              checked={includeDetailedSolution}
-                              onChange={() => setIncludeDetailedSolution(true)}
-                              className="w-4 h-4 text-emerald-600 focus:ring-emerald-500"
+                              checked={solutionDisplayMode === "none"}
+                              onChange={() => setSolutionDisplayMode("none")}
+                              className="w-4 h-4 text-slate-600 focus:ring-slate-500 cursor-pointer"
                             />
-                            <span className="font-bold text-emerald-800">
-                              Kèm theo lời giải chi tiết (Bản dành cho Giáo viên)
+                            <span className="font-medium text-slate-600">
+                              Không kèm lời giải chi tiết (Bản dành cho Học sinh)
                             </span>
                           </label>
                           <label className="flex items-center gap-1.5 cursor-pointer">
                             <input
                               type="radio"
                               name={`sol-mode-${exam.code}`}
-                              checked={!includeDetailedSolution}
-                              onChange={() => setIncludeDetailedSolution(false)}
-                              className="w-4 h-4 text-slate-600 focus:ring-slate-500"
+                              checked={solutionDisplayMode === "under_question"}
+                              onChange={() => setSolutionDisplayMode("under_question")}
+                              className="w-4 h-4 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                             />
-                            <span className="font-medium text-slate-600">
-                              Không kèm lời giải chi tiết (Bản dành cho Học sinh)
+                            <span className="font-bold text-emerald-800">
+                              Lời giải dưới mỗi câu (Bản GV - Rút gọn)
+                            </span>
+                          </label>
+                          <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="radio"
+                              name={`sol-mode-${exam.code}`}
+                              checked={solutionDisplayMode === "appendix"}
+                              onChange={() => setSolutionDisplayMode("appendix")}
+                              className="w-4 h-4 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                            />
+                            <span className="font-bold text-emerald-800">
+                              Toàn bộ lời giải ở cuối đề (Bản GV - Chuẩn khảo thí)
                             </span>
                           </label>
                         </div>
@@ -4066,8 +4521,9 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                                 </div>
 
                                 {/* Lời giải chi tiết - Kèm theo khi In và Xuất Word (Bản Giáo viên) */}
-                                {includeDetailedSolution && (q.solution || q.explanation) && (
+                                {solutionDisplayMode === "under_question" && outputConfig.detailedSolution && (q.solution || q.explanation) && (
                                   <div 
+                                    className="print-only"
                                     style={{ 
                                       backgroundColor: '#f8fafc', 
                                       border: '1px solid #cbd5e1', 
@@ -4098,65 +4554,69 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                             <div style={{ textAlign: 'center', fontStyle: 'italic', fontSize: '10pt', marginBottom: '20pt' }}>
                               (Cán bộ coi thi không giải thích gì thêm. Thí sinh không được sử dụng tài liệu)
                             </div>
-                            <div style={{ pageBreakBefore: 'always' }}></div>
                             
                             {/* Answer Key Grid */}
-                            <div className="answers-title text-center font-bold text-base uppercase mt-8 mb-4" style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '13pt', textTransform: 'uppercase', marginBottom: '10pt' }}>
-                              BẢNG ĐÁP ÁN (Mã đề {exam.code})
-                            </div>
-                            <table className="w-full border-collapse border border-black mt-2 text-center text-sm" style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid black', textAlign: 'center', fontSize: '11pt', fontFamily: '"Times New Roman", Times, serif' }}>
-                              <tbody>
-                                {Array.from({ length: Math.ceil(exam.questions.length / 10) }).map((_, rowIndex) => {
-                                  const slice = exam.questions.slice(rowIndex * 10, rowIndex * 10 + 10);
-                                  return (
-                                    <React.Fragment key={rowIndex}>
-                                      {/* Header Row: Câu 1, Câu 2, ... */}
-                                      <tr style={{ backgroundColor: '#f1f5f9', fontWeight: 'bold' }}>
-                                        {slice.map((_, colIndex) => {
-                                          const qNum = rowIndex * 10 + colIndex + 1;
-                                          return (
-                                            <td key={'h-' + colIndex} style={{ border: '1px solid black', padding: '4pt 2pt', width: '10%' }}>
-                                              Câu {qNum}
-                                            </td>
-                                          );
-                                        })}
-                                        {Array.from({ length: 10 - slice.length }).map((_, emptyIdx) => (
-                                          <td key={'eh-' + emptyIdx} style={{ border: '1px solid black', padding: '4pt 2pt', width: '10%' }}></td>
-                                        ))}
-                                      </tr>
-                                      {/* Answer Row: A, B, C, ... */}
-                                      <tr>
-                                        {slice.map((q, colIndex) => {
-                                          let ans = "";
-                                          if (q.type === 'mc' || (q as any).section === 1) {
-                                            ans = String.fromCharCode(65 + (q.correctOptionIndex || 0));
-                                          } else if ((q.type === 'tf' || (q as any).section === 2) && q.tfStatements) {
-                                            ans = q.tfStatements.map(s => s.correct ? 'Đ' : 'S').join('');
-                                          } else if (q.type === 'sa' || (q as any).section === 3) {
-                                            ans = (q.correctAnswer || '').replace(/<[^>]*>?/gm, '').trim();
-                                          } else {
-                                            ans = "TL";
-                                          }
-                                          return (
-                                            <td key={'a-' + colIndex} style={{ border: '1px solid black', padding: '5pt 2pt', fontWeight: 'bold' }}>
-                                              {q.type !== 'mc' && q.type !== 'tf' ? (
-                                                <MarkdownRenderer className="markdown-body inline-block" content={fixMath(ans)} />
-                                              ) : ans}
-                                            </td>
-                                          );
-                                        })}
-                                        {Array.from({ length: 10 - slice.length }).map((_, emptyIdx) => (
-                                          <td key={'ea-' + emptyIdx} style={{ border: '1px solid black', padding: '5pt 2pt' }}></td>
-                                        ))}
-                                      </tr>
-                                    </React.Fragment>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
+                            {outputConfig.answers && (
+                              <>
+                                <div style={{ pageBreakBefore: 'always' }}></div>
+                                <div className="answers-title text-center font-bold text-base uppercase mt-8 mb-4" style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '13pt', textTransform: 'uppercase', marginBottom: '10pt' }}>
+                                  BẢNG ĐÁP ÁN (Mã đề {exam.code})
+                                </div>
+                                <table className="w-full border-collapse border border-black mt-2 text-center text-sm" style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid black', textAlign: 'center', fontSize: '11pt', fontFamily: '"Times New Roman", Times, serif' }}>
+                                  <tbody>
+                                    {Array.from({ length: Math.ceil(exam.questions.length / 10) }).map((_, rowIndex) => {
+                                      const slice = exam.questions.slice(rowIndex * 10, rowIndex * 10 + 10);
+                                      return (
+                                        <React.Fragment key={rowIndex}>
+                                          {/* Header Row: Câu 1, Câu 2, ... */}
+                                          <tr style={{ backgroundColor: '#f1f5f9', fontWeight: 'bold' }}>
+                                            {slice.map((_, colIndex) => {
+                                              const qNum = rowIndex * 10 + colIndex + 1;
+                                              return (
+                                                <td key={'h-' + colIndex} style={{ border: '1px solid black', padding: '4pt 2pt', width: '10%' }}>
+                                                  Câu {qNum}
+                                                </td>
+                                              );
+                                            })}
+                                            {Array.from({ length: 10 - slice.length }).map((_, emptyIdx) => (
+                                              <td key={'eh-' + emptyIdx} style={{ border: '1px solid black', padding: '4pt 2pt', width: '10%' }}></td>
+                                            ))}
+                                          </tr>
+                                          {/* Answer Row: A, B, C, ... */}
+                                          <tr>
+                                            {slice.map((q, colIndex) => {
+                                              let ans = "";
+                                              if (q.type === 'mc' || (q as any).section === 1) {
+                                                ans = String.fromCharCode(65 + (q.correctOptionIndex || 0));
+                                              } else if ((q.type === 'tf' || (q as any).section === 2) && q.tfStatements) {
+                                                ans = q.tfStatements.map(s => s.correct ? 'Đ' : 'S').join('');
+                                              } else if (q.type === 'sa' || (q as any).section === 3) {
+                                                ans = (q.correctAnswer || '').replace(/<[^>]*>?/gm, '').trim();
+                                              } else {
+                                                ans = "TL";
+                                              }
+                                              return (
+                                                <td key={'a-' + colIndex} style={{ border: '1px solid black', padding: '5pt 2pt', fontWeight: 'bold' }}>
+                                                  {q.type !== 'mc' && q.type !== 'tf' ? (
+                                                    <MarkdownRenderer className="markdown-body inline-block" content={fixMath(ans)} />
+                                                  ) : ans}
+                                                </td>
+                                              );
+                                            })}
+                                            {Array.from({ length: 10 - slice.length }).map((_, emptyIdx) => (
+                                              <td key={'ea-' + emptyIdx} style={{ border: '1px solid black', padding: '5pt 2pt' }}></td>
+                                            ))}
+                                          </tr>
+                                        </React.Fragment>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </>
+                            )}
 
                             {/* Hướng dẫn giải chi tiết đầy đủ ở cuối đề cho Bản Giáo viên */}
-                            {includeDetailedSolution && (
+                            {solutionDisplayMode === "appendix" && outputConfig.detailedSolution && (
                               <div style={{ pageBreakBefore: 'always', marginTop: '20pt' }}>
                                 <div className="answers-title text-center font-bold text-base uppercase mt-8 mb-4" style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '13pt', textTransform: 'uppercase', marginBottom: '12pt' }}>
                                   HƯỚNG DẪN GIẢI CHI TIẾT (Mã đề {exam.code})
@@ -4200,6 +4660,207 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
         
         {activeTab === "results" && (
           <div className="space-y-6">
+            {/* GIẢI PHÁP TỐI ƯU CHO QUẢN LÝ LỚP HỌC & THỐNG KÊ */}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-5 text-sm text-slate-800 space-y-3 shadow-2xs">
+              <div className="flex items-center gap-2 text-indigo-800 font-bold text-base">
+                <Award className="w-5 h-5 text-indigo-600" />
+                <span>💡 ĐỀ XUẤT GIẢI PHÁP TỐI ƯU QUẢN LÝ PHÒNG THI & TK ĐĂNG NHẬP</span>
+              </div>
+              <p className="leading-relaxed font-medium">
+                Để thầy/cô quản lý lớp học và theo dõi thống kê chi tiết kết quả học sinh tối ưu nhất, chúng tôi đề xuất phương án:
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                <div className="bg-white p-4 rounded-lg border border-slate-200 space-y-2">
+                  <p className="font-bold text-indigo-700 flex items-center gap-1.5">
+                    <span>🏫</span> 1. Nên tạo Phòng thi / Lớp học riêng
+                  </p>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Hệ thống tự động gom nhóm học sinh nộp chung một đề thi theo Mã PIN. Thầy/cô chỉ cần lọc theo mã PIN ở biểu đồ bên dưới để xem bảng phân tích đúng sai từng câu của cả lớp, giúp nhận biết phần kiến thức học sinh còn yếu để bổ trợ.
+                  </p>
+                </div>
+                <div className="bg-white p-4 rounded-lg border border-slate-200 space-y-2">
+                  <p className="font-bold text-emerald-700 flex items-center gap-1.5">
+                    <span>🔑</span> 2. Đăng nhập Google là giải pháp tối ưu nhất
+                  </p>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    <strong>Với Giáo viên:</strong> Đăng nhập bằng Google giúp thầy/cô lưu trữ phòng thi vĩnh viễn trên Cloud và xuất bảng điểm trực tiếp sang Google Sheets.<br/>
+                    <strong>Với Học sinh:</strong> Chỉ cần truy cập bằng link hoặc mã PIN (không cần tạo tài khoản mật khẩu để tránh rắc rối) là có thể thi ngay.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* SECTION: THỐNG KÊ CHI TIẾT THEO PHÒNG THI ONLINE */}
+            {(() => {
+              // Extract all unique exam PINs/IDs
+              const uniqueExamIds = Array.from(new Set(examResults.map((r: any) => r.examId).filter(Boolean)));
+              if (uniqueExamIds.length === 0) return null;
+
+              const currentPin = selectedStatsPin || uniqueExamIds[0];
+              const pinResults = examResults.filter((r: any) => r.examId === currentPin);
+
+              if (pinResults.length === 0) return null;
+
+              // Calculate statistics
+              const totalStudents = pinResults.length;
+              const scores = pinResults.map((r: any) => Number(r.score || 0));
+              const avgScore = scores.reduce((sum, s) => sum + s, 0) / totalStudents;
+              const maxScore = Math.max(...scores);
+              const minScore = Math.min(...scores);
+
+              const excelScores = scores.filter(s => s >= 8.0).length;
+              const goodScores = scores.filter(s => s >= 6.5 && s < 8.0).length;
+              const averageScores = scores.filter(s => s >= 5.0 && s < 6.5).length;
+              const weakScores = scores.filter(s => s < 5.0).length;
+
+              // Calculate item-by-item correctness
+              const itemAnalysis: Record<number, { correct: number, wrong: number, blank: number, content: string, type: string }> = {};
+
+              pinResults.forEach((res: any) => {
+                let detailedList: any[] = [];
+                if (typeof res.detailedAnswers === 'string') {
+                  try { detailedList = JSON.parse(res.detailedAnswers); } catch(e){}
+                } else if (Array.isArray(res.detailedAnswers)) {
+                  detailedList = res.detailedAnswers;
+                } else if (typeof res.details === 'string') {
+                  try { detailedList = JSON.parse(res.details); } catch(e){}
+                } else if (Array.isArray(res.details)) {
+                  detailedList = res.details;
+                }
+
+                detailedList.forEach((item: any, qIdx: number) => {
+                  const qNum = item.questionNumber || item.questionIndex || (qIdx + 1);
+                  if (!itemAnalysis[qNum]) {
+                    itemAnalysis[qNum] = { correct: 0, wrong: 0, blank: 0, content: item.questionContent || item.questionText || '', type: item.type || '' };
+                  }
+                  if (item.type === 'essay') {
+                    if (item.hasAnswered) itemAnalysis[qNum].correct++;
+                    else itemAnalysis[qNum].blank++;
+                  } else {
+                    if (item.isCorrect) {
+                      itemAnalysis[qNum].correct++;
+                    } else if (!item.hasAnswered) {
+                      itemAnalysis[qNum].blank++;
+                    } else {
+                      itemAnalysis[qNum].wrong++;
+                    }
+                  }
+                });
+              });
+
+              const sortedQuestionsKeys = Object.keys(itemAnalysis).map(Number).sort((a, b) => a - b);
+
+              return (
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-6 shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 pb-4 gap-3">
+                    <div>
+                      <h4 className="font-bold text-slate-800 text-base flex items-center gap-2">
+                        <BarChart3 className="w-5 h-5 text-indigo-600" />
+                        Phân Tích & Thống Kê Điểm Số Theo Phòng Thi (Mã PIN)
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Chọn một Mã phòng thi trực tuyến bên dưới để phân tích chi tiết đúng/sai của từng câu hỏi
+                      </p>
+                    </div>
+                    <div>
+                      <select
+                        value={currentPin}
+                        onChange={(e) => setSelectedStatsPin(e.target.value)}
+                        className="px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white font-bold text-indigo-950 focus:ring-2 focus:ring-indigo-500 outline-none shadow-3xs cursor-pointer"
+                      >
+                        {uniqueExamIds.map((pin: string) => (
+                          <option key={pin} value={pin}>
+                            📍 Phòng thi / Mã PIN: {pin}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Cards stats */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 text-center space-y-1">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">Tổng số bài thi</span>
+                      <p className="text-3xl font-black text-slate-800">{totalStudents}</p>
+                      <span className="text-[10px] text-slate-500">học sinh nộp thành công</span>
+                    </div>
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 text-center space-y-1">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">Điểm trung bình</span>
+                      <p className="text-3xl font-black text-indigo-600">{avgScore.toFixed(2)}</p>
+                      <span className="text-[10px] text-slate-500">trung bình cả lớp</span>
+                    </div>
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 text-center space-y-1">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">Điểm cao nhất</span>
+                      <p className="text-3xl font-black text-emerald-600">{maxScore.toFixed(1)}</p>
+                      <span className="text-[10px] text-slate-500">điểm thủ khoa phòng thi</span>
+                    </div>
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 text-center space-y-1">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">Phân bổ học lực</span>
+                      <div className="flex justify-center gap-1.5 pt-1.5">
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-sm border border-emerald-200" title="Giỏi (>=8.0)">G: {excelScores}</span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded-sm border border-blue-200" title="Khá (6.5-7.9)">K: {goodScores}</span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded-sm border border-amber-200" title="Trung bình (5.0-6.4)">TB: {averageScores}</span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 bg-red-50 text-red-700 rounded-sm border border-red-200" title="Yếu (<5.0)">Y: {weakScores}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Item-by-item analysis table */}
+                  <div className="bg-slate-50 rounded-xl border border-slate-200 p-4.5 space-y-3.5">
+                    <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block flex items-center gap-1.5">
+                      📊 Chi tiết kết quả làm bài của học sinh theo từng câu hỏi:
+                    </span>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {sortedQuestionsKeys.map((qNum) => {
+                        const analysis = itemAnalysis[qNum];
+                        const correctCount = analysis.correct;
+                        const wrongCount = analysis.wrong;
+                        const blankCount = analysis.blank;
+                        const total = correctCount + wrongCount + blankCount;
+                        const correctPercent = total > 0 ? Math.round((correctCount / total) * 100) : 0;
+                        const wrongPercent = total > 0 ? Math.round((wrongCount / total) * 100) : 0;
+                        const blankPercent = total > 0 ? Math.round((blankCount / total) * 100) : 0;
+
+                        const isEssay = analysis.type === 'essay';
+
+                        return (
+                          <div key={qNum} className="p-3 bg-white border border-slate-150 rounded-xl hover:shadow-2xs transition-all space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1">
+                                <span className="font-bold text-sm text-slate-800">Câu số {qNum}:</span>
+                                {analysis.content && (
+                                  <p className="text-xs text-slate-400 line-clamp-1 italic mt-0.5">
+                                    {analysis.content.replace(/<[^>]*>?/gm, '').substring(0, 100)}...
+                                  </p>
+                                )}
+                              </div>
+                              <span className={`text-xs font-black px-2 py-0.5 rounded-full shrink-0 ${correctPercent >= 80 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : correctPercent >= 50 ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                                {isEssay ? `Đã nộp: ${correctPercent}%` : `Đúng: ${correctPercent}%`}
+                              </span>
+                            </div>
+
+                            {/* Progress bar */}
+                            <div className="space-y-1">
+                              <div className="h-2.5 w-full bg-slate-100 rounded-full overflow-hidden flex">
+                                <div style={{ width: `${correctPercent}%` }} className="h-full bg-emerald-500" title={`Đúng: ${correctPercent}%`} />
+                                <div style={{ width: `${wrongPercent}%` }} className="h-full bg-red-400" title={`Sai: ${wrongPercent}%`} />
+                                <div style={{ width: `${blankPercent}%` }} className="h-full bg-slate-350" title={`Chưa trả lời: ${blankPercent}%`} />
+                              </div>
+                              <div className="flex items-center justify-between text-[10px] text-slate-500 font-bold px-0.5">
+                                <span className="text-emerald-700">✓ Đúng: {correctCount} em</span>
+                                <span className="text-red-600">✗ Sai: {wrongCount} em</span>
+                                <span className="text-slate-500">○ Chưa làm: {blankCount} em</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm gap-3">
               <div>
                 <h3 className="font-bold text-lg text-slate-800">Thống Kê Kết Quả Làm Bài (Online)</h3>

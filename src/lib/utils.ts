@@ -923,8 +923,8 @@ export const cleanVietnameseUnicode = (str: string): string => {
     .replace(/\bchọnm\b/gi, 'chọn $m$')
     .replace(/(\b(?:sin|cos|tan|cot)[a-z0-9]*)eq0/gi, '$1 \\neq 0')
     .replace(/(\b(?:sin|cos|tan|cot)[a-z0-9]*)eq1/gi, '$1 \\neq 1')
-    .replace(/(\b[a-zA-Z])eq(\d+)/gi, '$1 \\neq $2')
-    .replace(/(\b[a-zA-Z])eq(?=\\frac|\d)/gi, '$1 \\neq ');
+    .replace(/(?<![\\a-zA-Z])([xymtabckuvwz])eq(\d+)/gi, '$1 \\neq $2')
+    .replace(/(?<![\\a-zA-Z])([xymtabckuvwz])eq(?=\\frac|\d)/gi, '$1 \\neq ');
 
   // 4. Xử lý thiếu gạch đầu mệnh đề phủ định (\overline{P}, \overline{Q}, ...)
   res = res
@@ -996,6 +996,15 @@ export const polishMathText = (content: string): string => {
 
   // 5. Định dạng dòng "Đáp số: ........" cho đồng đều và đẹp mắt
   text = text.replace(/(?:\*?Đáp số:\*?\s*)[\.]{3,}/gi, '*Đáp số:* ................................................................');
+
+  // 6. Phục hồi triệt để bất kỳ sự rò rỉ nào của \infty, \pm\infty, \ne
+  text = text
+    .replace(/\\in\s*fty\b/g, '\\infty')
+    .replace(/pm\s*\\in\s*fty\b/g, '\\pm\\infty')
+    .replace(/\\pm\s*\\in\s*fty\b/g, '\\pm\\infty')
+    .replace(/\bpm\s*\\infty\b/g, '\\pm\\infty')
+    .replace(/(?<!\\)\binfty\b/g, '\\infty')
+    .replace(/(?<![\\a-zA-Z])([xymtabckuvwz])\s+e\s+(-?\d+)/g, '$1 \\ne $2');
 
   return text;
 };
@@ -1087,8 +1096,7 @@ export const normalizeLogicAndSetSymbols = (text: string): string => {
   s = s.replace(/([A-Z0-9\)])\s*\\(subset|supset|subseteq|supseteq)([A-Z0-9\(])/g, '$1 \\$2 $3');
 
   // 5. Phục hồi ký hiệu thuộc (\in, \notin) và tập hợp số:
-  s = s.replace(/([a-zA-Z0-9])in(mathbb[A-Z]|[A-Z])/g, '$1 \\in \\$2');
-  s = s.replace(/([a-zA-Z0-9])\\in(mathbb[A-Z]|[A-Z])/g, '$1 \\in \\$2');
+  s = s.replace(/([a-zA-Z0-9])\s*\\in\s*(mathbb[A-Z]|[A-Z])/g, '$1 \\in \\$2');
   s = s.replace(/\\mathbb([A-Z])/g, '\\mathbb{$1}');
   s = s.replace(/(?<!\\)\bnotin\b/g, '\\notin');
 
@@ -1372,8 +1380,9 @@ export const sanitizeExamQuestion = (rawContent: string): string => {
     if (inner.includes('\uE000') || inner.includes('___MATH_BLOCK_') || inner.includes('___ENV_BLOCK_')) {
       return match;
     }
-    // Nếu khối $$ lỡ bao trùm cả câu tiếng Việt dài mà không có \text
-    if (hasVietnameseWords(inner)) {
+    // Nếu khối $$ lỡ bao trùm cả câu tiếng Việt dài mà KHÔNG chứa lệnh LaTeX toán
+    const isLatexFormula = /\\(?:frac|lim|begin|end|text|iff|implies|infty|pm|le|ge|leq|geq|cap|cup|setminus|sqrt|sin|cos|tan|cot|log|ln)|[=+\-*\/^_\<\>]/.test(inner);
+    if (!isLatexFormula && hasVietnameseWords(inner)) {
       return inner;
     }
     mathTokens.push(match);
@@ -1385,8 +1394,9 @@ export const sanitizeExamQuestion = (rawContent: string): string => {
     if (inner.includes('\uE000') || inner.includes('___MATH_BLOCK_') || inner.includes('___ENV_BLOCK_')) {
       return match;
     }
-    // Nếu khối $ lỡ bọc nhầm cả câu tiếng Việt (ví dụ: "$Cho hai tập hợp A = [1; 4]$")
-    if (hasVietnameseWords(inner)) {
+    // Nếu khối $ lỡ bọc nhầm cả câu tiếng Việt không có toán tử
+    const isLatexFormula = /\\(?:frac|lim|begin|end|text|iff|implies|infty|pm|le|ge|leq|geq|cap|cup|setminus|sqrt|sin|cos|tan|cot|log|ln)|[=+\-*\/^_\<\>]/.test(inner);
+    if (!isLatexFormula && hasVietnameseWords(inner)) {
       return inner;
     }
     mathTokens.push(match);

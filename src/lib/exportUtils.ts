@@ -1487,6 +1487,12 @@ export async function exportHtmlToWord(
     const clone = element.cloneNode(true) as HTMLElement;
     clone.querySelectorAll('.no-print, button, input, select, textarea').forEach(el => el.remove());
 
+    // Ensure all print-only elements are visible during export
+    clone.querySelectorAll('.print-only, .only-print').forEach(el => {
+      (el as HTMLElement).style.display = 'block';
+      el.classList.remove('print-only', 'only-print');
+    });
+
     // 0. Pre-process naked math environments in DOM text nodes before word translation
     const walkAndPreprocessTextNodes = (node: Node) => {
       if (node.nodeType === Node.TEXT_NODE) {

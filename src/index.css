@@ -259,3 +259,11 @@ body, html, #root, .font-serif, .markdown-body, .prose, .choice-label {
 .choice-text .katex {
   vertical-align: baseline;
 }
+
+/* Custom utility for printing and exports - hide on screen preview but visible when printed or exported */
+@media screen {
+  .print-only {
+    display: none !important;
+  }
+}
+

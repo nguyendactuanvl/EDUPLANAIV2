@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { 
   FileText, Clock, FileCheck, CheckCircle2, XCircle, ChevronLeft, ChevronRight, Download,
   HelpCircle, Settings, Send, Code, Play, RefreshCw, Upload, Copy, Info, Check, AlertCircle, AlertTriangle, Loader2, Sparkles,
-  User, Users, BarChart, Search, Trash2, FileSpreadsheet
+  User, Users, BarChart, Search, Trash2, FileSpreadsheet, ShieldCheck, KeyRound, Zap, CheckCircle
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { 
@@ -67,7 +67,39 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
   // Student Info (Form)
   const [studentName, setStudentName] = useState("");
   const [studentClass, setStudentClass] = useState("");
+  const [studentEmail, setStudentEmail] = useState("");
+  const [studentCodeInput, setStudentCodeInput] = useState("");
+  const [codeVerifiedStudent, setCodeVerifiedStudent] = useState<{ code: string; name: string } | null>(null);
+  const [studentLoginError, setStudentLoginError] = useState("");
+  const [showRosterSuggestions, setShowRosterSuggestions] = useState(false);
   const [hasStartedExam, setHasStartedExam] = useState(false);
+
+  // Login Options (Phương án A, B, C)
+  const [loginMethod, setLoginMethod] = useState<"A" | "B" | "C">("C");
+  const [classRosterText, setClassRosterText] = useState("");
+  const [loadedExamData, setLoadedExamData] = useState<any>(null);
+
+  // Helper function to parse student roster
+  const parseRoster = (text: string): { code: string; name: string }[] => {
+    if (!text || !text.trim()) return [];
+    return text
+      .split("\n")
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .map((line, index) => {
+        const match = line.match(/^([a-zA-Z0-9_\-]+)\s*[\-:\s]\s*(.+)$/);
+        if (match) {
+          return {
+            code: match[1].trim().toUpperCase(),
+            name: match[2].trim()
+          };
+        }
+        return {
+          code: `HS${(index + 1).toString().padStart(2, '0')}`,
+          name: line
+        };
+      });
+  };
 
   // Answer Keys Configuration (Teacher)
   const [part1Keys, setPart1Keys] = useState<Part1Key[]>(() => 
@@ -111,6 +143,7 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
   const [isLoadingResults, setIsLoadingResults] = useState(false);
   const [activeStudentDetails, setActiveStudentDetails] = useState<any | null>(null);
   const [resultsSearchQuery, setResultsSearchQuery] = useState("");
+  const [resultsViewTab, setResultsViewTab] = useState<"table" | "analytics">("table");
 
   // Listen to Google Auth changes
   useEffect(() => {
@@ -309,9 +342,12 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
         throw new Error("Không tìm thấy mã phòng thi. Vui lòng kiểm tra lại mã hoặc đường link chia sẻ từ Giáo viên.");
       }
       const data = await res.json();
+      setLoadedExamData(data);
       setExamTitle(data.examTitle || "Đề thi PDF");
       setDuration(data.duration || 90);
       setScriptUrl(data.scriptUrl || "");
+      if (data.loginMethod) setLoginMethod(data.loginMethod);
+      if (data.classRosterText) setClassRosterText(data.classRosterText);
       
       if (Array.isArray(data.part1Keys)) setPart1Keys(data.part1Keys);
       if (Array.isArray(data.part2Keys)) setPart2Keys(data.part2Keys);
@@ -429,7 +465,10 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
         part2Keys,
         part3Keys,
         pdfBase64: base64Clean,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        loginMethod,
+        classRosterText: classRosterText.trim(),
+        allowedStudents: parseRoster(classRosterText)
       };
 
       const res = await fetch("/api/exams/share", {
@@ -1193,6 +1232,154 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
                   </div>
                 </div>
 
+                {/* Box 1.5: Student Login Authentication Configuration (Phương án A, B, C) */}
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                      Phương thức đăng nhập của học sinh
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+                      Tùy chọn 3 phương án
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {/* Option A */}
+                    <div 
+                      onClick={() => setLoginMethod("A")}
+                      className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                        loginMethod === "A"
+                          ? "border-indigo-600 bg-indigo-50/40 shadow-xs ring-2 ring-indigo-500/20"
+                          : "border-slate-200 hover:border-slate-300 bg-slate-50/50"
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-extrabold text-xs text-slate-800 flex items-center gap-1">
+                            <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                            Phương án A
+                          </span>
+                          {loginMethod === "A" && <CheckCircle className="w-4 h-4 text-indigo-600" />}
+                        </div>
+                        <p className="font-bold text-xs text-indigo-950 mb-1">Đăng nhập tài khoản Google</p>
+                        <p className="text-[11px] text-slate-500 leading-snug">
+                          Học sinh bắt buộc đăng nhập bằng tài khoản Google để vào thi.
+                        </p>
+                      </div>
+                      <div className="mt-2.5 pt-2 border-t border-slate-200/60 text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
+                        <span>🛡️ Bảo mật cao, chống giả mạo tên</span>
+                      </div>
+                    </div>
+
+                    {/* Option B */}
+                    <div 
+                      onClick={() => setLoginMethod("B")}
+                      className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                        loginMethod === "B"
+                          ? "border-indigo-600 bg-indigo-50/40 shadow-xs ring-2 ring-indigo-500/20"
+                          : "border-slate-200 hover:border-slate-300 bg-slate-50/50"
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-extrabold text-xs text-slate-800 flex items-center gap-1">
+                            <KeyRound className="w-3.5 h-3.5 text-amber-600" />
+                            Phương án B
+                          </span>
+                          {loginMethod === "B" && <CheckCircle className="w-4 h-4 text-indigo-600" />}
+                        </div>
+                        <p className="font-bold text-xs text-amber-950 mb-1">Cấp mã định danh theo danh sách</p>
+                        <p className="text-[11px] text-slate-500 leading-snug">
+                          Giáo viên cấp mã học sinh (HS01, HS02...). Học sinh nhập đúng mã để vào thi.
+                        </p>
+                      </div>
+                      <div className="mt-2.5 pt-2 border-t border-slate-200/60 text-[10px] text-amber-700 font-semibold flex items-center gap-1">
+                        <span>📋 Quản lý chặt theo sĩ số lớp</span>
+                      </div>
+                    </div>
+
+                    {/* Option C */}
+                    <div 
+                      onClick={() => setLoginMethod("C")}
+                      className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                        loginMethod === "C"
+                          ? "border-emerald-600 bg-emerald-50/40 shadow-xs ring-2 ring-emerald-500/20"
+                          : "border-slate-200 hover:border-slate-300 bg-slate-50/50"
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-extrabold text-xs text-emerald-800 flex items-center gap-1">
+                            <Zap className="w-3.5 h-3.5 text-emerald-600" />
+                            Phương án C (Tối ưu)
+                          </span>
+                          {loginMethod === "C" ? <CheckCircle className="w-4 h-4 text-emerald-600" /> : (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                              Khuyên dùng
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-bold text-xs text-emerald-950 mb-1">Vào thi nhanh theo Phòng thi</p>
+                        <p className="text-[11px] text-slate-500 leading-snug">
+                          Học sinh chỉ cần nhập Họ tên và Lớp là vào thi ngay không cần tài khoản MXH.
+                        </p>
+                      </div>
+                      <div className="mt-2.5 pt-2 border-t border-slate-200/60 text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
+                        <span>⚡ Vào thi tức thì, tự động đối chiếu</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Class Roster Input for Plan B and Plan C */}
+                  {(loginMethod === "B" || loginMethod === "C") && (
+                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide">
+                          Danh sách học sinh lớp {loginMethod === "B" ? "(Bắt buộc để cấp mã)" : "(Tùy chọn để tự động gợi ý & đối chiếu tên)"}
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setClassRosterText(`HS01 - Nguyễn Văn An
+HS02 - Trần Thị Bình
+HS03 - Lê Văn Cường
+HS04 - Phạm Thị Dung
+HS05 - Hoàng Văn Em`);
+                            }}
+                            className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer underline"
+                          >
+                            + Nạp mẫu 5 học sinh
+                          </button>
+                          {classRosterText && (
+                            <button
+                              type="button"
+                              onClick={() => setClassRosterText("")}
+                              className="text-[10px] text-rose-500 hover:text-rose-700 font-semibold cursor-pointer underline"
+                            >
+                              Xóa
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <textarea
+                        rows={3}
+                        value={classRosterText}
+                        onChange={(e) => setClassRosterText(e.target.value)}
+                        placeholder={`Ví dụ định dạng:\nHS01 - Nguyễn Văn An\nHS02 - Trần Thị Bình\nHS03 - Lê Văn Cường\n(Hoặc dán trực tiếp danh sách tên học sinh từ Excel)`}
+                        className="w-full bg-white border border-slate-200 focus:border-indigo-500 rounded-xl p-2.5 text-xs text-slate-700 focus:outline-none font-mono"
+                      />
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        {loginMethod === "B" 
+                          ? "📌 Học sinh sẽ dùng Mã định danh (cột đầu tiên) để xác thực và nhận diện đúng tên trong danh sách."
+                          : "💡 Khi học sinh gõ tên, hệ thống sẽ tự động gợi ý tên từ danh sách này giúp tránh gõ sai chính tả và nhảy đúng vào Google Sheets."}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
                 {/* Box 2: Google Apps Script Web App Integration */}
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-2">
@@ -1786,81 +1973,254 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
                         <p className="text-[10px] text-slate-400 mt-1">Đường dẫn làm bài: {window.location.origin}{window.location.pathname}?view=exam_pdf&data={selectedRoomForResults}</p>
                       </div>
                     ) : (
-                      <div className="space-y-3">
-                        
-                        {/* Search and Filters */}
-                        <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-1.5 max-w-sm">
-                          <Search className="w-4 h-4 text-slate-400 shrink-0" />
-                          <input
-                            type="text"
-                            value={resultsSearchQuery}
-                            onChange={(e) => setResultsSearchQuery(e.target.value)}
-                            placeholder="Tìm học sinh theo tên hoặc lớp..."
-                            className="bg-transparent text-xs text-slate-700 focus:outline-none w-full font-medium"
-                          />
+                      <div className="space-y-4">
+                        {/* Tab Switching Buttons */}
+                        <div className="flex border-b border-slate-200 no-print">
+                          <button
+                            type="button"
+                            onClick={() => setResultsViewTab("table")}
+                            className={`px-4 py-2 text-xs font-bold transition-all border-b-2 cursor-pointer ${
+                              resultsViewTab === "table"
+                                ? "border-indigo-600 text-indigo-600 font-extrabold"
+                                : "border-transparent text-slate-500 hover:text-slate-700"
+                            }`}
+                          >
+                            📋 Danh sách học sinh nộp bài
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setResultsViewTab("analytics")}
+                            className={`px-4 py-2 text-xs font-bold transition-all border-b-2 cursor-pointer ${
+                              resultsViewTab === "analytics"
+                                ? "border-indigo-600 text-indigo-600 font-extrabold"
+                                : "border-transparent text-slate-500 hover:text-slate-700"
+                            }`}
+                          >
+                            📊 Thống kê câu hỏi chi tiết
+                          </button>
                         </div>
 
-                        {/* Responsive Table */}
-                        <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                          <div className="overflow-x-auto">
-                            <table className="w-full border-collapse text-left text-xs">
-                              <thead>
-                                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold">
-                                  <th className="py-2.5 px-3 w-12 text-center">STT</th>
-                                  <th className="py-2.5 px-3">Họ và tên</th>
-                                  <th className="py-2.5 px-3 w-20 text-center">Lớp</th>
-                                  <th className="py-2.5 px-3 text-center">Thời gian nộp</th>
-                                  <th className="py-2.5 px-3 w-24 text-center">Tổng điểm</th>
-                                  <th className="py-2.5 px-3 text-center hidden md:table-cell">Điểm các phần</th>
-                                  <th className="py-2.5 px-3 w-28 text-center">Hành động</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
-                                {selectedRoomResultsData.submissions
-                                  .filter((sub: any) => {
-                                    const q = resultsSearchQuery.trim().toLowerCase();
-                                    if (!q) return true;
-                                    return (
-                                      (sub.studentName || "").toLowerCase().includes(q) ||
-                                      (sub.studentClass || "").toLowerCase().includes(q)
-                                    );
-                                  })
-                                  .map((sub: any, idx: number) => (
-                                    <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
-                                      <td className="py-2.5 px-3 text-center font-bold text-slate-400">{idx + 1}</td>
-                                      <td className="py-2.5 px-3 font-bold text-slate-800">{sub.studentName}</td>
-                                      <td className="py-2.5 px-3 text-center font-bold">{sub.studentClass}</td>
-                                      <td className="py-2.5 px-3 text-center text-[10px] text-slate-400">{sub.submitTime}</td>
-                                      <td className="py-2.5 px-3 text-center text-sm font-black font-mono text-emerald-600">
-                                        {sub.totalScore.toFixed(2)}đ
-                                      </td>
-                                      <td className="py-2.5 px-3 text-center text-[10px] text-slate-500 hidden md:table-cell leading-tight">
-                                        P.I: <span className="font-bold text-blue-600">{sub.scorePart1}đ</span> • 
-                                        P.II: <span className="font-bold text-emerald-600">{sub.scorePart2}đ</span> • 
-                                        P.III: <span className="font-bold text-indigo-600">{sub.scorePart3}đ</span>
-                                      </td>
-                                      <td className="py-2.5 px-3 text-center">
-                                        <div className="flex items-center justify-center gap-1.5">
-                                          <button
-                                            onClick={() => setActiveStudentDetails({ ...sub, index: idx })}
-                                            className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-md text-[10px] font-bold cursor-pointer transition-colors"
-                                          >
-                                            Chi tiết
-                                          </button>
-                                          <button
-                                            onClick={() => handleDeleteSubmission(idx)}
-                                            className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-md text-[10px] font-bold cursor-pointer transition-colors"
-                                          >
-                                            Xóa
-                                          </button>
-                                        </div>
-                                      </td>
+                        {resultsViewTab === "table" ? (
+                          <div className="space-y-3">
+                            {/* Search and Filters */}
+                            <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-1.5 max-w-sm">
+                              <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                              <input
+                                type="text"
+                                value={resultsSearchQuery}
+                                onChange={(e) => setResultsSearchQuery(e.target.value)}
+                                placeholder="Tìm học sinh theo tên hoặc lớp..."
+                                className="bg-transparent text-xs text-slate-700 focus:outline-none w-full font-medium"
+                              />
+                            </div>
+
+                            {/* Responsive Table */}
+                            <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                              <div className="overflow-x-auto">
+                                <table className="w-full border-collapse text-left text-xs">
+                                  <thead>
+                                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold">
+                                      <th className="py-2.5 px-3 w-12 text-center">STT</th>
+                                      <th className="py-2.5 px-3">Họ và tên</th>
+                                      <th className="py-2.5 px-3 w-20 text-center">Lớp</th>
+                                      <th className="py-2.5 px-3 text-center">Thời gian nộp</th>
+                                      <th className="py-2.5 px-3 w-24 text-center">Tổng điểm</th>
+                                      <th className="py-2.5 px-3 text-center hidden md:table-cell">Điểm các phần</th>
+                                      <th className="py-2.5 px-3 w-28 text-center">Hành động</th>
                                     </tr>
-                                  ))}
-                              </tbody>
-                            </table>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
+                                    {selectedRoomResultsData.submissions
+                                      .filter((sub: any) => {
+                                        const q = resultsSearchQuery.trim().toLowerCase();
+                                        if (!q) return true;
+                                        return (
+                                          (sub.studentName || "").toLowerCase().includes(q) ||
+                                          (sub.studentClass || "").toLowerCase().includes(q)
+                                        );
+                                      })
+                                      .map((sub: any, idx: number) => (
+                                        <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                                          <td className="py-2.5 px-3 text-center font-bold text-slate-400">{idx + 1}</td>
+                                          <td className="py-2.5 px-3 font-bold text-slate-800">{sub.studentName}</td>
+                                          <td className="py-2.5 px-3 text-center font-bold">{sub.studentClass}</td>
+                                          <td className="py-2.5 px-3 text-center text-[10px] text-slate-400">{sub.submitTime}</td>
+                                          <td className="py-2.5 px-3 text-center text-sm font-black font-mono text-emerald-600">
+                                            {sub.totalScore.toFixed(2)}đ
+                                          </td>
+                                          <td className="py-2.5 px-3 text-center text-[10px] text-slate-500 hidden md:table-cell leading-tight">
+                                            P.I: <span className="font-bold text-blue-600">{sub.scorePart1}đ</span> • 
+                                            P.II: <span className="font-bold text-emerald-600">{sub.scorePart2}đ</span> • 
+                                            P.III: <span className="font-bold text-indigo-600">{sub.scorePart3}đ</span>
+                                          </td>
+                                          <td className="py-2.5 px-3 text-center">
+                                            <div className="flex items-center justify-center gap-1.5">
+                                              <button
+                                                onClick={() => setActiveStudentDetails({ ...sub, index: idx })}
+                                                className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-md text-[10px] font-bold cursor-pointer transition-colors"
+                                              >
+                                                Chi tiết
+                                              </button>
+                                              <button
+                                                onClick={() => handleDeleteSubmission(idx)}
+                                                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-md text-[10px] font-bold cursor-pointer transition-colors"
+                                              >
+                                                Xóa
+                                              </button>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          /* ANALYTICS TAB CONTENT */
+                          <div className="space-y-6 pt-2 font-sans">
+                            <div className="p-4 bg-indigo-50/50 border border-indigo-100 rounded-xl text-xs text-indigo-900 leading-relaxed">
+                              💡 <strong>Phân tích tỷ lệ đúng/sai chi tiết:</strong> Thầy cô có thể quan sát biểu đồ phần trăm trả lời đúng của học sinh để nắm bắt mức độ khó dễ của từng câu hỏi và lỗ hổng kiến thức của cả lớp.
+                            </div>
+
+                            {/* PART I ANALYTICS */}
+                            <div className="space-y-3.5">
+                              <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider border-l-4 border-blue-600 pl-2">
+                                PHẦN I: Trắc nghiệm nhiều lựa chọn (12 câu)
+                              </h4>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {part1Keys.map((key) => {
+                                  const qNum = key.question;
+                                  const correctAns = key.correct;
+                                  const subs = selectedRoomResultsData?.submissions || [];
+                                  const totalCount = subs.length;
+                                  let correctCount = 0;
+                                  subs.forEach((sub: any) => {
+                                    if (sub.details?.part1?.[qNum]?.isCorrect) {
+                                      correctCount++;
+                                    }
+                                  });
+                                  const correctPct = totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : 0;
+                                  const difficultyColor = correctPct > 75 ? "bg-emerald-500" : correctPct > 40 ? "bg-amber-500" : "bg-rose-500";
+                                  const difficultyLabel = correctPct > 75 ? "Dễ" : correctPct > 40 ? "Trung bình" : "Khó";
+                                  const difficultyTextClass = correctPct > 75 ? "text-emerald-700 bg-emerald-50" : correctPct > 40 ? "text-amber-700 bg-amber-50" : "text-rose-700 bg-rose-50";
+
+                                  return (
+                                    <div key={`p1-stat-${qNum}`} className="p-3 bg-white border border-slate-200 rounded-xl shadow-3xs space-y-2">
+                                      <div className="flex items-center justify-between">
+                                        <span className="font-extrabold text-xs text-slate-700">Câu {qNum} <span className="font-medium text-slate-400 font-mono">(Đáp án: {correctAns})</span></span>
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${difficultyTextClass}`}>
+                                          {difficultyLabel} ({correctPct}%)
+                                        </span>
+                                      </div>
+                                      <div className="space-y-1">
+                                        <div className="flex justify-between text-[11px] text-slate-500 font-medium">
+                                          <span>Đúng: <strong>{correctCount}/{totalCount}</strong></span>
+                                          <span>Sai: <strong>{totalCount - correctCount}/{totalCount}</strong></span>
+                                        </div>
+                                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                                          <div className={`h-full ${difficultyColor}`} style={{ width: `${correctPct}%` }}></div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* PART II ANALYTICS */}
+                            <div className="space-y-3.5">
+                              <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider border-l-4 border-emerald-600 pl-2">
+                                PHẦN II: Trắc nghiệm Đúng - Sai (4 câu, mỗi câu 4 ý a, b, c, d)
+                              </h4>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {part2Keys.map((key) => {
+                                  const qNum = key.question;
+                                  const subs = selectedRoomResultsData?.submissions || [];
+                                  const totalCount = subs.length;
+
+                                  return (
+                                    <div key={`p2-stat-${qNum}`} className="p-4 bg-white border border-slate-200 rounded-2xl shadow-3xs space-y-3">
+                                      <span className="font-extrabold text-sm text-slate-800">Câu {qNum}</span>
+                                      <div className="space-y-2.5">
+                                        {["a", "b", "c", "d"].map((letter) => {
+                                          const correctVal = key.statements[letter as "a" | "b" | "c" | "d"];
+                                          const correctValText = correctVal === true ? "Đ" : correctVal === false ? "S" : "?";
+                                          let correctCount = 0;
+                                          subs.forEach((sub: any) => {
+                                            const subAns = sub.details?.part2?.[qNum]?.subDetails?.[letter];
+                                            if (subAns?.isCorrect) {
+                                              correctCount++;
+                                            }
+                                          });
+                                          const correctPct = totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : 0;
+                                          const barColor = correctPct > 75 ? "bg-emerald-500" : correctPct > 40 ? "bg-amber-500" : "bg-rose-500";
+
+                                          return (
+                                            <div key={`p2-stat-${qNum}-${letter}`} className="text-xs space-y-1">
+                                              <div className="flex justify-between items-center text-slate-700 font-medium">
+                                                <span>Ý <strong>{letter})</strong> <span className="text-[10px] text-slate-400 font-mono">(Chuẩn: {correctValText})</span></span>
+                                                <span className="font-bold text-slate-600 text-[11px]">{correctCount}/{totalCount} đúng ({correctPct}%)</span>
+                                              </div>
+                                              <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                                                <div className={`h-full ${barColor}`} style={{ width: `${correctPct}%` }}></div>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* PART III ANALYTICS */}
+                            <div className="space-y-3.5">
+                              <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider border-l-4 border-indigo-600 pl-2">
+                                PHẦN III: Trắc nghiệm trả lời ngắn (6 câu)
+                              </h4>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {part3Keys.map((key) => {
+                                  const qNum = key.question;
+                                  const correctAns = String(key.correct || "");
+                                  const subs = selectedRoomResultsData?.submissions || [];
+                                  const totalCount = subs.length;
+                                  let correctCount = 0;
+                                  subs.forEach((sub: any) => {
+                                    if (sub.details?.part3?.[qNum]?.isCorrect) {
+                                      correctCount++;
+                                    }
+                                  });
+                                  const correctPct = totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : 0;
+                                  const difficultyColor = correctPct > 75 ? "bg-emerald-500" : correctPct > 40 ? "bg-amber-500" : "bg-rose-500";
+                                  const difficultyLabel = correctPct > 75 ? "Dễ" : correctPct > 40 ? "Trung bình" : "Khó";
+                                  const difficultyTextClass = correctPct > 75 ? "text-emerald-700 bg-emerald-50" : correctPct > 40 ? "text-amber-700 bg-amber-50" : "text-rose-700 bg-rose-50";
+
+                                  return (
+                                    <div key={`p3-stat-${qNum}`} className="p-3 bg-white border border-slate-200 rounded-xl shadow-3xs space-y-2">
+                                      <div className="flex items-center justify-between">
+                                        <span className="font-extrabold text-xs text-slate-700">Câu {qNum} <span className="font-medium text-slate-400 font-mono">(Đáp án: {correctAns})</span></span>
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${difficultyTextClass}`}>
+                                          {difficultyLabel} ({correctPct}%)
+                                        </span>
+                                      </div>
+                                      <div className="space-y-1">
+                                        <div className="flex justify-between text-[11px] text-slate-500 font-medium">
+                                          <span>Đúng: <strong>{correctCount}/{totalCount}</strong></span>
+                                          <span>Sai: <strong>{totalCount - correctCount}/{totalCount}</strong></span>
+                                        </div>
+                                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                                          <div className={`h-full ${difficultyColor}`} style={{ width: `${correctPct}%` }}></div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </>
@@ -1875,59 +2235,279 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
       {/* B. EXAM TAKING SCREEN (DÀNH CHO HỌC SINH) */}
       {screen === "exam" && (
         !hasStartedExam ? (
-          /* MÀN HÌNH ĐĂNG NHẬP PHÒNG THI DÀNH CHO HỌC SINH */
+          /* MÀN HÌNH ĐĂNG NHẬP PHÒNG THI DÀNH CHO HỌC SINH TÙY CHỈNH THEO PHƯƠNG ÁN A, B, C */
           <div className="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-md text-center max-w-lg mx-auto relative overflow-hidden my-12 font-sans w-full">
-            <div className="absolute top-0 left-0 w-full h-1.5 bg-indigo-600"></div>
+            <div className={`absolute top-0 left-0 w-full h-1.5 ${
+              (loadedExamData?.loginMethod || loginMethod) === "A" ? "bg-blue-600" :
+              (loadedExamData?.loginMethod || loginMethod) === "B" ? "bg-amber-500" : "bg-emerald-600"
+            }`}></div>
             
-            <div className="w-14 h-14 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-4">
-              <FileText className="w-7 h-7 text-indigo-600" />
+            <div className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 ${
+              (loadedExamData?.loginMethod || loginMethod) === "A" ? "bg-blue-50 text-blue-600" :
+              (loadedExamData?.loginMethod || loginMethod) === "B" ? "bg-amber-50 text-amber-600" : "bg-emerald-50 text-emerald-600"
+            }`}>
+              {(loadedExamData?.loginMethod || loginMethod) === "A" ? <ShieldCheck className="w-7 h-7" /> :
+               (loadedExamData?.loginMethod || loginMethod) === "B" ? <KeyRound className="w-7 h-7" /> : <Zap className="w-7 h-7" />}
             </div>
 
-            <h2 className="text-xl font-bold text-slate-800 mb-1">Phòng thi trực tuyến PDF</h2>
-            <p className="text-xs text-slate-500 mb-6 leading-relaxed">
-              Vui lòng điền đúng Họ tên và Lớp của bạn để bắt đầu phòng thi chính thức.
+            <div className="inline-block px-3 py-1 rounded-full text-xs font-bold mb-2 bg-slate-100 text-slate-700">
+              {(loadedExamData?.loginMethod || loginMethod) === "A" && "🛡️ Phương án A: Yêu cầu đăng nhập Google"}
+              {(loadedExamData?.loginMethod || loginMethod) === "B" && "🔑 Phương án B: Cấp mã định danh theo danh sách"}
+              {(loadedExamData?.loginMethod || loginMethod) === "C" && "⚡ Phương án C: Đăng nhập nhanh theo Phòng thi"}
+            </div>
+
+            <h2 className="text-xl font-bold text-slate-800 mb-1">{examTitle}</h2>
+            <p className="text-xs text-slate-500 mb-5 leading-relaxed">
+              {(loadedExamData?.loginMethod || loginMethod) === "A" && "Phòng thi yêu cầu học sinh đăng nhập tài khoản Google để chống giả mạo danh tính."}
+              {(loadedExamData?.loginMethod || loginMethod) === "B" && "Vui lòng nhập đúng Mã định danh do Giáo viên cấp để xác thực thông tin."}
+              {(loadedExamData?.loginMethod || loginMethod) === "C" && "Nhập Họ tên và Lớp của bạn để bắt đầu làm bài thi trực tuyến ngay."}
             </p>
 
             <div className="bg-slate-50 rounded-xl p-4 border border-slate-150 text-left space-y-2 mb-6">
               <p className="text-xs text-slate-700">📌 <strong>Đề thi:</strong> {examTitle}</p>
               <p className="text-xs text-slate-700">⏱️ <strong>Thời gian:</strong> {duration} phút (Đồng hồ đếm ngược tự động)</p>
-              <p className="text-xs text-slate-700">📋 <strong>Hình thức:</strong> Điền phiếu trắc nghiệm trực tuyến 3 Phần</p>
+              <p className="text-xs text-slate-700">📋 <strong>Hình thức:</strong> Điền phiếu trắc nghiệm trực tuyến 3 Phần (Chuẩn GDPT 2025)</p>
             </div>
 
-            <div className="space-y-4 mb-6">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5 text-left uppercase tracking-wider">
-                  Họ và tên Học sinh
-                </label>
-                <input 
-                  type="text"
-                  value={studentName}
-                  onChange={(e) => setStudentName(e.target.value)}
-                  placeholder="Ví dụ: Nguyễn Văn A"
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:bg-white focus:ring-1 focus:ring-indigo-500 rounded-xl px-3.5 py-2.5 text-xs text-slate-700 focus:outline-none font-medium"
-                />
+            {studentLoginError && (
+              <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs text-left flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{studentLoginError}</span>
               </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5 text-left uppercase tracking-wider">
-                  Lớp học
-                </label>
-                <input 
-                  type="text"
-                  value={studentClass}
-                  onChange={(e) => setStudentClass(e.target.value)}
-                  placeholder="Ví dụ: 12A1"
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:bg-white focus:ring-1 focus:ring-indigo-500 rounded-xl px-3.5 py-2.5 text-xs text-slate-700 focus:outline-none font-medium"
-                />
+            )}
+
+            {/* CASE 1: PHƯƠNG ÁN A (BẮT BUỘC ĐĂNG NHẬP GOOGLE) */}
+            {(loadedExamData?.loginMethod || loginMethod) === "A" && (
+              <div className="space-y-4 mb-6 text-left">
+                {!googleUser ? (
+                  <div className="p-5 bg-blue-50/60 border border-blue-200 rounded-2xl text-center space-y-3">
+                    <p className="text-xs text-blue-900 font-semibold leading-relaxed">
+                      Để đảm bảo tính trung thực và bảo mật cao, thầy cô yêu cầu học sinh đăng nhập tài khoản Google trước khi mở đề.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const res = await googleSignIn();
+                          if (res) {
+                            setGoogleUser(res.user);
+                            setGoogleToken(res.accessToken);
+                            setStudentName(res.user.displayName || "");
+                            setStudentEmail(res.user.email || "");
+                            setStudentLoginError("");
+                          }
+                        } catch (err: any) {
+                          setStudentLoginError("Không thể đăng nhập Google: " + err.message);
+                        }
+                      }}
+                      className="w-full py-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs transition-all"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                      </svg>
+                      Đăng nhập bằng tài khoản Google để vào thi
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-3.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 bg-emerald-600 text-white rounded-full flex items-center justify-center font-bold text-xs">
+                          {googleUser.displayName ? googleUser.displayName.charAt(0).toUpperCase() : "U"}
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-slate-800">{googleUser.displayName}</p>
+                          <p className="text-[10px] text-slate-500">{googleUser.email}</p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-200 text-emerald-900 rounded-full">
+                        ✓ Đã xác thực
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">
+                        Lớp học của bạn
+                      </label>
+                      <input 
+                        type="text"
+                        value={studentClass}
+                        onChange={(e) => setStudentClass(e.target.value)}
+                        placeholder="Ví dụ: 12A1"
+                        className="w-full bg-white border border-slate-200 focus:border-indigo-500 rounded-xl px-3.5 py-2.5 text-xs text-slate-700 focus:outline-none font-medium"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
+            )}
+
+            {/* CASE 2: PHƯƠNG ÁN B (CẤP MÃ ĐỊNH DANH THEO DANH SÁCH LỚP) */}
+            {(loadedExamData?.loginMethod || loginMethod) === "B" && (
+              <div className="space-y-4 mb-6 text-left">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider">
+                    Nhập Mã định danh học sinh của bạn (Do GV cấp)
+                  </label>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text"
+                      value={studentCodeInput}
+                      onChange={(e) => {
+                        setStudentCodeInput(e.target.value.toUpperCase());
+                        setCodeVerifiedStudent(null);
+                        setStudentLoginError("");
+                      }}
+                      placeholder="Ví dụ: HS01, HS02..."
+                      className="w-full bg-slate-50 border border-slate-200 focus:border-amber-500 focus:bg-white rounded-xl px-3.5 py-2.5 text-xs text-slate-700 font-mono font-bold focus:outline-none uppercase"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const code = studentCodeInput.trim().toUpperCase();
+                        if (!code) {
+                          setStudentLoginError("Vui lòng nhập mã định danh của bạn!");
+                          return;
+                        }
+                        const roster: { code: string; name: string }[] = loadedExamData?.allowedStudents || parseRoster(classRosterText);
+                        const found = roster.find(s => s.code === code);
+                        if (found) {
+                          setCodeVerifiedStudent(found);
+                          setStudentName(found.name);
+                          setStudentLoginError("");
+                        } else {
+                          setStudentLoginError(`Không tìm thấy mã định danh "${code}" trong danh sách lớp. Vui lòng kiểm tra lại với Giáo viên.`);
+                        }
+                      }}
+                      className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs shrink-0 cursor-pointer transition-colors"
+                    >
+                      Xác thực mã
+                    </button>
+                  </div>
+                </div>
+
+                {codeVerifiedStudent && (
+                  <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2">
+                    <p className="text-xs text-emerald-800 font-bold flex items-center gap-1.5">
+                      <CheckCircle className="w-4 h-4 text-emerald-600" />
+                      Xác thực thành công: <strong>{codeVerifiedStudent.name}</strong> (Mã: {codeVerifiedStudent.code})
+                    </p>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">
+                        Lớp học
+                      </label>
+                      <input 
+                        type="text"
+                        value={studentClass}
+                        onChange={(e) => setStudentClass(e.target.value)}
+                        placeholder="Ví dụ: 12A1"
+                        className="w-full bg-white border border-slate-200 focus:border-emerald-500 rounded-xl px-3.5 py-2 text-xs text-slate-700 focus:outline-none font-medium"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* CASE 3: PHƯƠNG ÁN C (ĐĂNG NHẬP NHANH THEO PHÒNG THI + GỢI Ý & ĐỐI CHIẾU TỰ ĐỘNG) */}
+            {(loadedExamData?.loginMethod || loginMethod) === "C" && (
+              <div className="space-y-4 mb-6 text-left relative">
+                <div className="relative">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      Họ và tên Học sinh
+                    </label>
+                    {(loadedExamData?.allowedStudents?.length > 0 || parseRoster(classRosterText).length > 0) && (
+                      <span className="text-[10px] text-emerald-600 font-bold">
+                        ⚡ Có hỗ trợ gợi ý tên từ danh sách lớp
+                      </span>
+                    )}
+                  </div>
+                  <input 
+                    type="text"
+                    value={studentName}
+                    onFocus={() => setShowRosterSuggestions(true)}
+                    onChange={(e) => {
+                      setStudentName(e.target.value);
+                      setShowRosterSuggestions(true);
+                    }}
+                    placeholder="Ví dụ: Nguyễn Văn A"
+                    className="w-full bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white focus:ring-1 focus:ring-emerald-500 rounded-xl px-3.5 py-2.5 text-xs text-slate-700 focus:outline-none font-medium"
+                  />
+
+                  {/* Autocomplete / Suggested Names from Class Roster */}
+                  {showRosterSuggestions && (loadedExamData?.allowedStudents?.length > 0 || parseRoster(classRosterText).length > 0) && (
+                    <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto p-1.5 divide-y divide-slate-100">
+                      <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        Gợi ý từ danh sách lớp (Bấm để chọn nhanh):
+                      </div>
+                      {(loadedExamData?.allowedStudents || parseRoster(classRosterText))
+                        .filter((s: any) => !studentName.trim() || s.name.toLowerCase().includes(studentName.toLowerCase()) || s.code.toLowerCase().includes(studentName.toLowerCase()))
+                        .slice(0, 8)
+                        .map((s: any, idx: number) => (
+                          <div
+                            key={idx}
+                            onClick={() => {
+                              setStudentName(s.name);
+                              setShowRosterSuggestions(false);
+                            }}
+                            className="px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-900 rounded-lg cursor-pointer flex items-center justify-between transition-colors"
+                          >
+                            <span>{s.name}</span>
+                            <span className="text-[10px] font-mono text-slate-400">{s.code}</span>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider">
+                    Lớp học
+                  </label>
+                  <input 
+                    type="text"
+                    value={studentClass}
+                    onChange={(e) => setStudentClass(e.target.value)}
+                    placeholder="Ví dụ: 12A1"
+                    className="w-full bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white focus:ring-1 focus:ring-emerald-500 rounded-xl px-3.5 py-2.5 text-xs text-slate-700 focus:outline-none font-medium"
+                  />
+                </div>
+              </div>
+            )}
 
             <button
               type="button"
               onClick={() => {
-                if (!studentName.trim() || !studentClass.trim()) {
-                  alert("Vui lòng điền đầy đủ Họ tên và Lớp học trước khi làm bài!");
-                  return;
+                const currentMethod = loadedExamData?.loginMethod || loginMethod;
+                if (currentMethod === "A") {
+                  if (!googleUser) {
+                    alert("Vui lòng đăng nhập tài khoản Google trước khi bắt đầu làm bài!");
+                    return;
+                  }
+                  if (!studentClass.trim()) {
+                    alert("Vui lòng nhập lớp học của bạn!");
+                    return;
+                  }
+                } else if (currentMethod === "B") {
+                  if (!codeVerifiedStudent) {
+                    alert("Vui lòng nhập và xác thực mã định danh học sinh của bạn trước!");
+                    return;
+                  }
+                  if (!studentClass.trim()) {
+                    alert("Vui lòng nhập lớp học của bạn!");
+                    return;
+                  }
+                } else {
+                  if (!studentName.trim() || !studentClass.trim()) {
+                    alert("Vui lòng điền đầy đủ Họ tên và Lớp học trước khi làm bài!");
+                    return;
+                  }
                 }
+
                 setStudentPart1({});
                 setStudentPart2(() => {
                   const init: Record<number, any> = {};
@@ -1941,7 +2521,10 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
                 setTimeSpent(0);
                 setHasStartedExam(true);
               }}
-              className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs uppercase transition-colors cursor-pointer tracking-wider"
+              className={`w-full py-3 text-white font-bold rounded-xl text-xs uppercase transition-colors cursor-pointer tracking-wider shadow-sm ${
+                (loadedExamData?.loginMethod || loginMethod) === "A" ? "bg-blue-600 hover:bg-blue-700" :
+                (loadedExamData?.loginMethod || loginMethod) === "B" ? "bg-amber-600 hover:bg-amber-700" : "bg-emerald-600 hover:bg-emerald-700"
+              }`}
             >
               🚀 Bắt đầu tính giờ & Làm bài thi
             </button>
@@ -2128,13 +2711,25 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
                       // Update input from column bubbles
                       const updateCol = (colIdx: number, val: string) => {
                         const newCols = [...cols];
+                        
+                        // Automatically enforce only one active comma (either in Column 2 or Column 3)
+                        if (colIdx === 1 && val === ",") {
+                          if (newCols[2] === ",") newCols[2] = "";
+                        }
+                        if (colIdx === 2 && val === ",") {
+                          if (newCols[1] === ",") newCols[1] = "";
+                        }
+
                         // Toggle off if clicking the same value
                         if (newCols[colIdx] === val) {
                           newCols[colIdx] = "";
                         } else {
                           newCols[colIdx] = val;
                         }
-                        const newAns = newCols.join("").trim().replace(",", ".");
+                        
+                        const joined = newCols.join("").trim();
+                        // Convert all commas to period decimal points
+                        const newAns = joined.replace(/,/g, ".");
                         setStudentPart3({ ...studentPart3, [item.question]: newAns });
                       };
 
@@ -2218,8 +2813,19 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
                               ))}
                             </div>
 
-                            {/* Column 3 bubbles (0-9 only) */}
-                            <div className="flex flex-col items-center gap-1 pt-6.5">
+                            {/* Column 3 bubbles (, and 0-9) */}
+                            <div className="flex flex-col items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => updateCol(2, ",")}
+                                className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
+                                  cols[2] === ","
+                                    ? "bg-slate-900 border-slate-900 text-white shadow-xs"
+                                    : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
+                                }`}
+                              >
+                                ,
+                              </button>
                               {Array.from({ length: 10 }, (_, i) => String(i)).map((num) => (
                                 <button
                                   key={num}

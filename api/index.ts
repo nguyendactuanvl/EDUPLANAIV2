@@ -972,6 +972,13 @@ HƯỚNG DẪN BẮT BUỘC BÁM SÁT 100% MA TRẬN & BẢN ĐẶC TẢ ĐÍNH 
 
     const promptText = `Bạn là một chuyên gia khảo thí và giáo viên giỏi bộ môn ${subject}.
 Nhiệm vụ của bạn là biên soạn một Đề kiểm tra chuẩn chất lượng cao cho học sinh Lớp ${grade}, môn ${subject}, Thời gian làm bài: ${duration} phút.
+
+CHÚ Ý RÀNG BUỘC CHƯƠNG TRÌNH KHỐI LỚP (BẮT BUỘC):
+Bạn phải CHỈ sử dụng các đơn vị kiến thức và chủ đề thuộc đúng chương trình học của Lớp ${grade} (theo chương trình GDPT 2018). TUYỆT ĐỐI KHÔNG được sử dụng bất kỳ câu hỏi, công thức, hay kiến thức thuộc các khối lớp khác. Cụ thể:
+- Nếu học sinh Lớp 10: Chỉ sử dụng các chủ đề Lớp 10 như Mệnh đề, Tập hợp, Hàm số bậc hai, Tam thức bậc hai, Bất phương trình bậc hai, Vectơ phẳng, Tọa độ vectơ phẳng, Hệ thức lượng trong tam giác, Tổ hợp, Xác suất cơ bản. TUYỆT ĐỐI CẤM dùng các chủ đề Lớp 11 hay Lớp 12 như giới hạn, đạo hàm, tích phân, hình học không gian 3D, mũ, logarit, số phức, tọa độ Oxyz.
+- Nếu học sinh Lớp 11: Chỉ sử dụng các chủ đề Lớp 11 như Góc lượng giác, Công thức lượng giác, Hàm số lượng giác, Phương trình lượng giác, Dãy số, Cấp số cộng, Cấp số nhân, Giới hạn, Liên tục, Đạo hàm, Quan hệ song song và vuông góc trong không gian (3D cơ bản), Hàm số mũ, logarit, Hình chóp, Lăng trụ. TUYỆT ĐỐI CẤM dùng tích phân, số phức, hệ tọa độ Oxyz của Lớp 12.
+- Nếu học sinh Lớp 12: Sử dụng các chủ đề Lớp 12 như Khảo sát hàm số (Cực trị, đơn điệu, tiệm cận, vẽ đồ thị bao gồm hàm phân thức bậc 2 trên bậc 1), Vectơ và Hệ tọa độ Oxyz trong không gian, Nguyên hàm, Tích phân, Ứng dụng tích phân, Số phức, Xác suất có điều kiện.
+
 Hình thức/Kỳ thi: ${examType}.
 ${selectedTopics.length > 0 ? `Các chủ đề/bài học trọng tâm: ${selectedTopics.join(', ')}.` : ''}
 ${matrix ? `Yêu cầu ma trận/đặc tả: ${matrix}` : ''}
@@ -1155,11 +1162,160 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
 
     const topicName = selectedTopics[0] || (matrix ? matrix.split('\n')[0].substring(0, 50) : 'Hàm số và Đại số');
 
-    // 1. Bù đắp câu hỏi Trắc nghiệm nhiều lựa chọn (mc) nếu AI trả về thiếu
-    const currentMcList = parsedData.questions.filter((q: any) => q.type === 'mc');
-    if (mcCount > 0 && currentMcList.length < mcCount) {
-      const missingMc = mcCount - currentMcList.length;
-      const mcFallbacks = [
+    const normalizedGrade = String(grade).trim();
+    const isGrade10 = normalizedGrade.includes("10");
+    const isGrade11 = normalizedGrade.includes("11");
+
+    // Grade-sensitive fallbacks (Grade 10, 11, 12) to avoid Grade 12 leak in Grade 10/11 exams
+    let mcFallbacks = [];
+    let tfFallbacks = [];
+    let saFallbacks = [];
+
+    if (isGrade10) {
+      mcFallbacks = [
+        {
+          content: "Cho hai tập hợp $A = \\{1; 2; 3; 4\\}$ và $B = \\{3; 4; 5; 6\\}$. Tập hợp $A \\cap B$ là:",
+          options: ["$\\{3; 4\\}$", "$\\{1; 2; 3; 4; 5; 6\\}$", "$\\{1; 2\\}$", "$\\{5; 6\\}$"],
+          ans: 0,
+          sol: "Giao của hai tập hợp $A$ và $B$ gồm các phần tử vừa thuộc $A$ vừa thuộc $B$. Do đó $A \\cap B = \\{3; 4\\}$."
+        },
+        {
+          content: "Trong mặt phẳng tọa độ $Oxy$, tọa độ trung điểm $I$ của đoạn thẳng $AB$ với $A(1; 3)$ và $B(3; -1)$ là:",
+          options: ["$I(2; 1)$", "$I(4; 2)$", "$I(2; 2)$", "$I(1; -2)$"],
+          ans: 0,
+          sol: "Tọa độ trung điểm $I$ là: $x_I = \\frac{x_A + x_B}{2} = \\frac{1 + 3}{2} = 2$ và $y_I = \\frac{y_A + y_B}{2} = \\frac{3 + (-1)}{2} = 1$. Vậy $I(2; 1)$."
+        },
+        {
+          content: "Hàm số nào dưới đây là hàm số bậc hai?",
+          options: ["$y = x^2 - 3x + 2$", "$y = 2x - 1$", "$y = x^3 - x^2 + 1$", "$y = \\frac{1}{x^2}$"],
+          ans: 0,
+          sol: "Hàm số bậc hai có dạng tổng quát là $y = ax^2 + bx + c$ với $a \\neq 0$. Do đó $y = x^2 - 3x + 2$ là hàm số bậc hai."
+        },
+        {
+          content: "Cho tam giác $ABC$ có $AB = 6$, $AC = 8$ và góc $A = 60^\\circ$. Diện tích tam giác $ABC$ bằng:",
+          options: ["$12\\sqrt{3}$", "$24\\sqrt{3}$", "$24$", "$12$"],
+          ans: 0,
+          sol: "Diện tích tam giác $ABC$ là: $S = \\frac{1}{2} b c \\sin A = \\frac{1}{2} \\cdot 8 \\cdot 6 \\cdot \\sin 60^\\circ = 24 \\cdot \\frac{\\sqrt{3}}{2} = 12\\sqrt{3}$."
+        },
+        {
+          content: "Trong các khẳng định sau, khẳng định nào đúng về vectơ?",
+          options: ["Hai vectơ cùng hướng thì luôn cùng độ dài", "Hai vectơ ngược hướng thì luôn cùng độ dài", "Hai vectơ bằng nhau thì cùng hướng và cùng độ dài", "Hai vectơ cùng phương thì luôn cùng hướng"],
+          ans: 2,
+          sol: "Theo định nghĩa, hai vectơ bằng nhau nếu chúng có cùng hướng và cùng độ dài."
+        },
+        {
+          content: "Tập nghiệm của bất phương trình $x^2 - 4x + 3 < 0$ là:",
+          options: ["$(1; 3)$", "$(-\\infty; 1) \\cup (3; +\\infty)$", "$[1; 3]$", "$(-\\infty; 1]$"],
+          ans: 0,
+          sol: "Tam thức bậc hai $x^2 - 4x + 3 = 0$ có hai nghiệm là $1$ và $3$. Hệ số $a = 1 > 0$, do đó tam thức mang dấu âm trong khoảng giữa hai nghiệm. Vậy tập nghiệm là $(1; 3)$."
+        }
+      ];
+
+      tfFallbacks = [
+        {
+          topic: "Hàm số và Đồ thị bậc hai",
+          subtopic: "Tính chất parabol bậc hai",
+          content: "Cho hàm số bậc hai $y = f(x) = x^2 - 4x + 3$ có đồ thị là parabol $(P)$. Xét tính đúng/sai của các khẳng định sau:",
+          statements: [
+            { statement: "Tọa độ đỉnh của parabol $(P)$ là $I(2; -1)$.", correct: true },
+            { statement: "Hàm số nghịch biến trên khoảng $(2; +\\infty)$.", correct: false },
+            { statement: "Trục đối xứng của parabol $(P)$ là đường thẳng $x = 2$.", correct: true },
+            { statement: "Đồ thị $(P)$ cắt trục hoành tại hai điểm phân biệt $A(1; 0)$ và $B(3; 0)$.", correct: true }
+          ],
+          sol: "Ta có $a = 1, b = -4, c = 3$.\na) Đỉnh $I$ có hoành độ $x_I = -\\frac{b}{2a} = 2$, tung độ $y_I = f(2) = -1 \\Rightarrow I(2; -1)$ (Đúng).\nb) Vì $a = 1 > 0$, hàm số đồng biến trên $(2; +\\infty)$ và nghịch biến trên $(-\\infty; 2)$ (Sai).\nc) Trục đối xứng là $x = -\\frac{b}{2a} = 2$ (Đúng).\nd) Cho $y = 0 \\Leftrightarrow x^2 - 4x + 3 = 0 \\Leftrightarrow x = 1$ hoặc $x = 3$ (Đúng)."
+        },
+        {
+          topic: "Phương trình đường thẳng",
+          subtopic: "Vectơ pháp tuyến và chỉ phương",
+          content: "Trong mặt phẳng tọa độ $Oxy$, cho đường thẳng $\\Delta: 3x - 4y + 1 = 0$ và điểm $A(1; 1)$.",
+          statements: [
+            { statement: "Vectơ pháp tuyến của đường thẳng $\\Delta$ là $\\vec{n} = (3; -4)$.", correct: true },
+            { statement: "Đường thẳng $\\Delta$ đi qua điểm $A(1; 1)$.", correct: true },
+            { statement: "Vectơ chỉ phương của $\\Delta$ là $\\vec{u} = (4; 3)$.", correct: true },
+            { statement: "Khoảng cách từ điểm $A(1; 1)$ đến đường thẳng $\\Delta$ bằng $0$.", correct: true }
+          ],
+          sol: "a) Đúng vì hệ số của $x, y$ là $3$ và $-4$.\nb) Thay $A(1;1)$ vào pt: $3(1) - 4(1) + 1 = 0$ (Đúng, $\\Delta$ đi qua $A$).\nc) $\\vec{n} = (3; -4) \\Rightarrow \\vec{u} = (4; 3)$ vì $\\vec{u} \\cdot \\vec{n} = 12 - 12 = 0$ (Đúng).\nd) Vì $A \\in \\Delta$ nên khoảng cách bằng 0. (Đúng)."
+        }
+      ];
+
+      saFallbacks = [
+        {
+          topic: "Mệnh đề và Tập hợp",
+          subtopic: "Phép toán tập hợp số",
+          content: "Cho hai tập hợp $A = [-2; 3]$ và $B = (1; 5)$. Biết tập hợp $A \\cap B = (a; b]$. Tính giá trị của biểu thức $T = a + b$.",
+          ans: "4",
+          sol: "Ta có $A = [-2; 3]$ và $B = (1; 5)$. Giao của chúng là $A \\cap B = (1; 3]$. So sánh với $(a; b] \\Rightarrow a = 1$ và $b = 3$. Tính $T = a + b = 1 + 3 = 4$."
+        },
+        {
+          topic: "Phương trình đường thẳng",
+          subtopic: "Khoảng cách từ điểm đến đường thẳng",
+          content: "Trong mặt phẳng tọa độ $Oxy$, cho đường thẳng $\\Delta: 3x - 4y + 5 = 0$. Tính khoảng cách từ điểm $M(2; -1)$ đến đường thẳng $\\Delta$.",
+          ans: "3",
+          sol: "Áp dụng công thức khoảng cách từ điểm đến đường thẳng:\n$d(M, \\Delta) = \\frac{|3 \\cdot 2 - 4 \\cdot (-1) + 5|}{\\sqrt{3^2 + (-4)^2}} = \\frac{|6 + 4 + 5|}{\\sqrt{25}} = \\frac{15}{5} = 3$."
+        }
+      ];
+    } else if (isGrade11) {
+      mcFallbacks = [
+        {
+          content: "Nghiệm của phương trình $\\cos x = 1$ là:",
+          options: ["$x = k2\\pi, k \\in \\mathbb{Z}$", "$x = \\pi + k2\\pi, k \\in \\mathbb{Z}$", "$x = \\frac{\\pi}{2} + k\\pi, k \\in \\mathbb{Z}$", "$x = k\\pi, k \\in \\mathbb{Z}$"],
+          ans: 0,
+          sol: "Theo phương trình lượng giác cơ bản, $\\cos x = 1 \\Leftrightarrow x = k2\\pi, k \\in \\mathbb{Z}$."
+        },
+        {
+          content: "Cho cấp số cộng $(u_n)$ có $u_1 = 3$ và công sai $d = 2$. Giá trị của $u_5$ bằng:",
+          options: ["$11$", "$13$", "$9$", "$15$"],
+          ans: 0,
+          sol: "Công thức số hạng tổng quát của cấp số cộng: $u_n = u_1 + (n - 1)d \\Rightarrow u_5 = 3 + (5 - 1) \\cdot 2 = 11$."
+        },
+        {
+          content: "Giới hạn $\\lim_{x \\to 2} (x^2 - 3x + 5)$ bằng:",
+          options: ["$3$", "$5$", "$2$", "$1$"],
+          ans: 0,
+          sol: "Vì hàm số liên tục tại $x = 2$, ta trực tiếp thay số: $\\lim_{x \\to 2} (x^2 - 3x + 5) = 2^2 - 3 \\cdot 2 + 5 = 3$."
+        },
+        {
+          content: "Trong các giới hạn dãy số sau, giới hạn nào bằng $0$?",
+          options: ["$\\lim \\left(\\frac{2}{3}\\right)^n$", "$\\lim (1.5)^n$", "$\\lim \\frac{n+1}{n}$", "$\\lim n^2$"],
+          ans: 0,
+          sol: "Vì $|q| = |\\frac{2}{3}| < 1$ nên theo giới hạn cơ bản, $\\lim \\left(\\frac{2}{3}\\right)^n = 0$."
+        }
+      ];
+
+      tfFallbacks = [
+        {
+          topic: "Dãy số, Cấp số cộng, Cấp số nhân",
+          subtopic: "Tính chất cấp số nhân",
+          content: "Cho cấp số nhân $(u_n)$ có số hạng đầu $u_1 = 2$ và công bội $q = -3$. Xét tính đúng/sai của các khẳng định sau:",
+          statements: [
+            { statement: "Số hạng thứ hai $u_2 = -6$.", correct: true },
+            { statement: "Công thức số hạng tổng quát là $u_n = 2 \\cdot (-3)^{n-1}$.", correct: true },
+            { statement: "Tổng 3 số hạng đầu tiên của cấp số nhân bằng $-16$.", correct: false },
+            { statement: "Dãy số $(u_n)$ là một dãy số tăng.", correct: false }
+          ],
+          sol: "Ta có $u_1 = 2, q = -3$.\na) $u_2 = u_1 \\cdot q = 2 \\cdot (-3) = -6$ (Đúng).\nb) $u_n = u_1 \\cdot q^{n-1} = 2 \\cdot (-3)^{n-1}$ (Đúng).\nc) $S_3 = u_1 + u_2 + u_3 = 2 - 6 + 18 = 14 \\neq -16$ (Sai).\nd) Dãy số đan dấu không tăng cũng không giảm (Sai)."
+        }
+      ];
+
+      saFallbacks = [
+        {
+          topic: "Hàm số lượng giác",
+          subtopic: "Giá trị lớn nhất và nhỏ nhất",
+          content: "Tìm giá trị lớn nhất của hàm số $y = 3\\sin x - 4\\cos x + 1$.",
+          ans: "6",
+          sol: "Áp dụng bất đẳng thức Bunhiacôpxki: $(3\\sin x - 4\\cos x)^2 \\le (3^2 + (-4)^2)(\\sin^2 x + \\cos^2 x) = 25 \\Rightarrow -5 \\le 3\\sin x - 4\\cos x \\le 5$.\nDo đó giá trị lớn nhất là $\\max y = 5 + 1 = 6$."
+        },
+        {
+          topic: "Đạo hàm",
+          subtopic: "Đạo hàm tại một điểm",
+          content: "Tính đạo hàm của hàm số $y = x^3 - 2x$ tại điểm $x_0 = 2$.",
+          ans: "10",
+          sol: "Ta có đạo hàm $y\' = 3x^2 - 2$.\nTại $x_0 = 2$: $y\'(2) = 3 \\cdot 2^2 - 2 = 12 - 2 = 10$."
+        }
+      ];
+    } else {
+      // Default to Grade 12 (original fallbacks)
+      mcFallbacks = [
         {
           content: "Cho hàm số $y = f(x)$ có bảng biến thiên trên $\\mathbb{R}$ với điểm cực đại $x = 1$, giá trị cực đại $y = 3$. Điểm cực đại của đồ thị hàm số là:",
           options: ["$(1; 3)$", "$(3; 1)$", "$x = 1$", "$y = 3$"],
@@ -1183,56 +1339,46 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
           options: ["$11$", "$2$", "$3$", "$15$"],
           ans: 0,
           sol: "Ta có $f'(x) = 4x^3 - 4x = 0 \\Leftrightarrow x = 0$ hoặc $x = 1$ (trên $[0; 2]$). $f(0) = 3$, $f(1) = 2$, $f(2) = 11$. Vậy $\\max_{[0; 2]} f(x) = 11$."
-        },
-        {
-          content: "Cho khối chóp $S.ABC$ có diện tích đáy $B = 6a^2$ và chiều cao $h = 3a$. Thể tích của khối chóp đã cho bằng:",
-          options: ["$6a^3$", "$18a^3$", "$2a^3$", "$9a^3$"],
-          ans: 0,
-          sol: "Thể tích khối chóp là $V = \\frac{1}{3}Bh = \\frac{1}{3} \\cdot 6a^2 \\cdot 3a = 6a^3$."
-        },
-        {
-          content: "Trong không gian $Oxyz$, cho mặt cầu $(S): (x - 1)^2 + (y + 2)^2 + (z - 3)^2 = 16$. Bán kính của mặt cầu là:",
-          options: ["$R = 4$", "$R = 16$", "$R = 2$", "$R = 8$"],
-          ans: 0,
-          sol: "Phương trình mặt cầu có dạng $(x - a)^2 + (y - b)^2 + (z - c)^2 = R^2 \\Rightarrow R = \\sqrt{16} = 4$."
-        },
-        {
-          content: "Hàm số nào dưới đây nghịch biến trên toàn bộ tập số thực $\\mathbb{R}$?",
-          options: ["$y = -x^3 + 2x^2 - 5x + 1$", "$y = -x^4 + 2x^2$", "$y = \\frac{x - 1}{x + 2}$", "$y = x^3 - 3x$"],
-          ans: 0,
-          sol: "Xét $y = -x^3 + 2x^2 - 5x + 1$ có $y' = -3x^2 + 4x - 5$. Biệt thức $\\Delta' = 4 - 15 = -11 < 0$ và $a = -3 < 0$, nên $y' < 0,\\ \\forall x \\in \\mathbb{R}$. Vậy hàm số nghịch biến trên $\\mathbb{R}$."
-        },
-        {
-          content: "Trong không gian $Oxyz$, tọa độ vectơ $\\vec{u} = 2\\vec{i} - 3\\vec{j} + \\vec{k}$ là:",
-          options: ["$(2; -3; 1)$", "$(2; 3; 1)$", "$(-2; 3; -1)$", "$(2; -3; 0)$"],
-          ans: 0,
-          sol: "Theo định nghĩa tọa độ vectơ, $\\vec{u} = 2\\vec{i} - 3\\vec{j} + 1\\vec{k} \\Rightarrow \\vec{u} = (2; -3; 1)$."
-        },
-        {
-          content: "Đồ thị hàm số $y = \\frac{x^2 - 3x + 2}{x - 1}$ có bao nhiêu đường tiệm cận đứng?",
-          options: ["$0$", "$1$", "$2$", "$3$"],
-          ans: 0,
-          sol: "Ta có $y = \\frac{(x - 1)(x - 2)}{x - 1} = x - 2$ với $x \\ne 1$. $\\lim_{x \\to 1} y = -1 \\ne \\pm\\infty$, do đó đồ thị hàm số không có tiệm cận đứng."
-        },
-        {
-          content: "Tập xác định của hàm số $y = (x - 2)^{\\sqrt{3}}$ là:",
-          options: ["$(2; +\\infty)$", "$[2; +\\infty)$", "$\\mathbb{R} \\setminus \\{2\\}$", "$\\mathbb{R}$"],
-          ans: 0,
-          sol: "Vì số mũ $\\alpha = \\sqrt{3}$ là số không nguyên nên điều kiện xác định là cơ số $x - 2 > 0 \\Leftrightarrow x > 2$."
-        },
-        {
-          content: "Cho khối lăng trụ tam giác đều có tất cả các cạnh bằng $2a$. Thể tích khối lăng trụ đó bằng:",
-          options: ["$2\\sqrt{3}a^3$", "$\\sqrt{3}a^3$", "$4\\sqrt{3}a^3$", "$\\frac{2\\sqrt{3}}{3}a^3$"],
-          ans: 0,
-          sol: "Đáy là tam giác đều cạnh $2a$ có diện tích $B = \\frac{(2a)^2\\sqrt{3}}{4} = \\sqrt{3}a^2$. Chiều cao $h = 2a$. Thể tích $V = Bh = 2\\sqrt{3}a^3$."
-        },
-        {
-          content: "Biết $\\int_0^2 f(x)\\,dx = 3$ và $\\int_0^2 g(x)\\,dx = 4$. Khi đó $\\int_0^2 [2f(x) - g(x)]\\,dx$ bằng:",
-          options: ["$2$", "$10$", "$5$", "$-1$"],
-          ans: 0,
-          sol: "Ta có $\\int_0^2 [2f(x) - g(x)]\\,dx = 2(3) - 4 = 6 - 4 = 2$."
         }
       ];
+
+      tfFallbacks = [
+        {
+          topic: "Hàm số và Đồ thị",
+          subtopic: "Khảo sát hàm bậc ba",
+          content: "Cho hàm số $y = f(x) = x^3 - 3x + 2$. Xét tính đúng/sai của các mệnh đề sau:",
+          statements: [
+            { statement: "Hàm số đồng biến trên các khoảng $(-\\infty; -1)$ và $(1; +\\infty)$.", correct: true },
+            { statement: "Giá trị cực tiểu của hàm số bằng $4$.", correct: false },
+            { statement: "Đồ thị hàm số cắt trục hoành tại đúng 2 điểm phân biệt.", correct: true },
+            { statement: "Tiếp tuyến của đồ thị tại điểm có hoành độ $x = 0$ có hệ số góc bằng $-3$.", correct: true }
+          ],
+          sol: "Ta có $y' = 3x^2 - 3 = 0 \\Leftrightarrow x = \\pm 1$.\na) Đúng vì $y' > 0$ khi $x \\in (-\\infty; -1) \\cup (1; +\\infty)$.\nb) Sai vì $y_{CT} = y(1) = 0$.\nc) Đúng vì $x^3 - 3x + 2 = (x - 1)^2(x + 2) = 0 \\Leftrightarrow x = 1$ hoặc $x = -2$.\nd) Đúng vì $y'(0) = -3$."
+        }
+      ];
+
+      saFallbacks = [
+        {
+          topic: "Hàm số và Đồ thị",
+          subtopic: "Số điểm cực trị",
+          content: "Cho hàm số $y = f(x)$ liên tục trên $\\mathbb{R}$ có đạo hàm $f'(x) = (x - 1)(x + 2)^2(x - 3)$. Hàm số $y = f(x)$ có bao nhiêu điểm cực trị?",
+          ans: "2",
+          sol: "Ta có $f'(x) = 0 \\Leftrightarrow x = 1$ hoặc $x = -2$ hoặc $x = 3$.\nVì $(x + 2)^2 \\ge 0$ với mọi $x$, nên $f'(x)$ chỉ đổi dấu khi qua $x = 1$ và $x = 3$.\nVậy hàm số có đúng $2$ điểm cực trị."
+        },
+        {
+          topic: "Hàm số và Đồ thị",
+          subtopic: "Giá trị lớn nhất và nhỏ nhất",
+          content: "Cho hàm số $y = \\frac{2x - 1}{x + 1}$. Tìm giá trị lớn nhất của hàm số trên đoạn $[0; 3]$.",
+          ans: "1.25",
+          sol: "Hàm số xác định trên $[0; 3]$.\nTa có $y' = \\frac{2(1) - (-1)(1)}{(x + 1)^2} = \\frac{3}{(x + 1)^2} > 0,\\ \\forall x \\in [0; 3]$.\nDo đó hàm số đồng biến trên $[0; 3]$.\nGiá trị lớn nhất là $y(3) = \\frac{2(3) - 1}{3 + 1} = \\frac{5}{4} = 1.25$."
+        }
+      ];
+    }
+
+    // 1. Bù đắp câu hỏi Trắc nghiệm nhiều lựa chọn (mc) nếu AI trả về thiếu
+    const currentMcList = parsedData.questions.filter((q: any) => q.type === 'mc');
+    if (mcCount > 0 && currentMcList.length < mcCount) {
+      const missingMc = mcCount - currentMcList.length;
 
       for (let k = 0; k < missingMc; k++) {
         const item = mcFallbacks[k % mcFallbacks.length];
@@ -1241,7 +1387,7 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
           type: 'mc',
           level: k < 4 ? 'Nhận biết' : 'Thông hiểu',
           topic: topicName,
-          subtopic: 'Khảo sát hàm số và Giải tích',
+          subtopic: 'Khảo sát hàm số và Đại số',
           content: item.content,
           options: item.options,
           correctOptionIndex: item.ans,
@@ -1255,48 +1401,6 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
     const currentTfList = parsedData.questions.filter((q: any) => q.type === 'tf');
     if (tfCount > 0 && currentTfList.length < tfCount) {
       const missingTf = tfCount - currentTfList.length;
-      const tfFallbacks = [
-        {
-          content: "Cho hàm số $y = f(x) = x^3 - 3x + 2$. Xét tính đúng/sai của các mệnh đề sau:",
-          statements: [
-            { statement: "Hàm số đồng biến trên các khoảng $(-\\infty; -1)$ và $(1; +\\infty)$.", correct: true },
-            { statement: "Giá trị cực tiểu của hàm số bằng $4$.", correct: false },
-            { statement: "Đồ thị hàm số cắt trục hoành tại đúng 2 điểm phân biệt.", correct: true },
-            { statement: "Tiếp tuyến của đồ thị tại điểm có hoành độ $x = 0$ có hệ số góc bằng $-3$.", correct: true }
-          ],
-          sol: "Ta có $y' = 3x^2 - 3 = 0 \\Leftrightarrow x = \\pm 1$.\na) Đúng vì $y' > 0$ khi $x \\in (-\\infty; -1) \\cup (1; +\\infty)$.\nb) Sai vì $y_{CT} = y(1) = 0$.\nc) Đúng vì $x^3 - 3x + 2 = (x - 1)^2(x + 2) = 0 \\Leftrightarrow x = 1$ hoặc $x = -2$.\nd) Đúng vì $y'(0) = -3$."
-        },
-        {
-          content: "Một chất điểm chuyển động theo phương trình $s(t) = -t^3 + 6t^2 + 2t$ (trong đó $t$ tính bằng giây, $s$ tính bằng mét).",
-          statements: [
-            { statement: "Vận tốc tức thời của chất điểm tại thời điểm $t$ là $v(t) = -3t^2 + 12t + 2$.", correct: true },
-            { statement: "Tại thời điểm $t = 1\\text{ s}$, gia tốc của chất điểm là $a = 6\\text{ m/s}^2$.", correct: true },
-            { statement: "Vận tốc của chất điểm đạt giá trị lớn nhất bằng $14\\text{ m/s}$.", correct: true },
-            { statement: "Chất điểm dừng lại tại thời điểm $t = 2\\text{ s}$.", correct: false }
-          ],
-          sol: "a) $v(t) = s'(t) = -3t^2 + 12t + 2$ (Đúng).\nb) $a(t) = v'(t) = -6t + 12 \\Rightarrow a(1) = 6\\text{ m/s}^2$ (Đúng).\nc) $v(t) = -3(t - 2)^2 + 14 \\le 14\\text{ m/s}$ tại $t = 2\\text{ s}$ (Đúng).\nd) $v(2) = 14 > 0$ nên chất điểm không dừng lại (Sai)."
-        },
-        {
-          content: "Cho hình chóp $S.ABCD$ có đáy $ABCD$ là hình vuông cạnh $a$, cạnh bên $SA \\perp (ABCD)$ và $SA = a\\sqrt{2}$.",
-          statements: [
-            { statement: "Đường thẳng $BC$ vuông góc với mặt phẳng $(SAB)$.", correct: true },
-            { statement: "Thể tích của khối chóp $S.ABCD$ bằng $\\frac{a^3\\sqrt{2}}{3}$.", correct: true },
-            { statement: "Góc giữa đường thẳng $SC$ và mặt phẳng đáy $(ABCD)$ bằng $60^\\circ$.", correct: false },
-            { statement: "Khoảng cách từ điểm $A$ đến mặt phẳng $(SCD)$ bằng $\\frac{a\\sqrt{6}}{3}$.", correct: true }
-          ],
-          sol: "a) $BC \\perp AB$ và $BC \\perp SA \\Rightarrow BC \\perp (SAB)$ (Đúng).\nb) $V = \\frac{1}{3} S_{ABCD} \\cdot SA = \\frac{1}{3} a^2 \\cdot a\\sqrt{2} = \\frac{a^3\\sqrt{2}}{3}$ (Đúng).\nc) $\\tan(SC, (ABCD)) = \\frac{SA}{AC} = \\frac{a\\sqrt{2}}{a\\sqrt{2}} = 1 \\Rightarrow 45^\\circ$ (Sai).\nd) Kẻ $AH \\perp SD \\Rightarrow AH = \\frac{SA \\cdot AD}{\\sqrt{SA^2 + AD^2}} = \\frac{a\\sqrt{6}}{3}$ (Đúng)."
-        },
-        {
-          content: "Cho hàm số $y = \\frac{2x - 1}{x + 1}$ có đồ thị $(C)$.",
-          statements: [
-            { statement: "Đồ thị $(C)$ có tiệm cận đứng $x = -1$ và tiệm cận ngang $y = 2$.", correct: true },
-            { statement: "Hàm số đồng biến trên từng khoảng xác định $(-\\infty; -1)$ và $(-1; +\\infty)$.", correct: true },
-            { statement: "Giao điểm của hai đường tiệm cận là tâm đối xứng của đồ thị $(C)$.", correct: true },
-            { statement: "Tiếp tuyến của $(C)$ tại điểm có hoành độ $x = 0$ có phương trình $y = 3x - 1$.", correct: true }
-          ],
-          sol: "Ta có $y' = \\frac{3}{(x + 1)^2} > 0,\\ \\forall x \\ne -1$.\nTất cả các khẳng định a, b, c, d đều đúng."
-        }
-      ];
 
       for (let j = 0; j < missingTf; j++) {
         const item = tfFallbacks[j % tfFallbacks.length];
@@ -1304,11 +1408,11 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
           id: parsedData.questions.length + 1,
           type: 'tf',
           level: j < 2 ? 'Thông hiểu' : 'Vận dụng',
-          topic: topicName,
-          subtopic: 'Phần II: Đúng/Sai',
+          topic: (item as any).topic || topicName,
+          subtopic: (item as any).subtopic || 'Chủ đề trọng tâm',
           isRealWorld: j === 1,
           content: item.content,
-          tfStatements: item.statements,
+          tfStatements: item.tfStatements,
           solution: item.sol,
           explanation: item.sol
         });
@@ -1319,38 +1423,6 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
     const currentSaList = parsedData.questions.filter((q: any) => q.type === 'sa');
     if (saCount > 0 && currentSaList.length < saCount) {
       const missingSa = saCount - currentSaList.length;
-      const saFallbacks = [
-        {
-          content: `Cho hàm số $y = f(x)$ liên tục trên $\\mathbb{R}$ có đạo hàm $f'(x) = (x - 1)(x + 2)^2(x - 3)$. Hàm số $y = f(x)$ có bao nhiêu điểm cực trị?`,
-          ans: "2",
-          sol: `Ta có $f'(x) = 0 \\Leftrightarrow x = 1$ hoặc $x = -2$ hoặc $x = 3$.\nVì $(x + 2)^2 \\ge 0$ với mọi $x$, nên $f'(x)$ chỉ đổi dấu khi qua $x = 1$ và $x = 3$.\nVậy hàm số có đúng $2$ điểm cực trị.`
-        },
-        {
-          content: `Cho hàm số $y = \\frac{2x - 1}{x + 1}$. Tìm giá trị lớn nhất của hàm số trên đoạn $[0; 3]$.`,
-          ans: "1.25",
-          sol: `Hàm số xác định trên $[0; 3]$.\nTa có $y' = \\frac{2(1) - (-1)(1)}{(x + 1)^2} = \\frac{3}{(x + 1)^2} > 0,\\ \\forall x \\in [0; 3]$.\nDo đó hàm số đồng biến trên $[0; 3]$.\nGiá trị lớn nhất là $y(3) = \\frac{2(3) - 1}{3 + 1} = \\frac{5}{4} = 1.25$.`
-        },
-        {
-          content: `Một công ty sản xuất muốn thiết kế một chiếc hộp kim loại dạng hình hộp chữ nhật không nắp có thể tích $V = 500\\text{ cm}^3$ và đáy là hình vuông cạnh $x\\text{ cm}$. Chiều cao $h$ (cm) của chiếc hộp bằng bao nhiêu để tiết kiệm vật liệu nhất?`,
-          ans: "5",
-          sol: `Thể tích $V = x^2 h = 500 \\Rightarrow h = \\frac{500}{x^2}$.\nDiện tích kim loại cần dùng: $S(x) = x^2 + 4xh = x^2 + \\frac{2000}{x}$.\nĐạo hàm $S'(x) = 2x - \\frac{2000}{x^2} = 0 \\Leftrightarrow 2x^3 = 2000 \\Leftrightarrow x = 10$.\nKhi $x = 10\\text{ cm}$, chiều cao $h = \\frac{500}{10^2} = 5\\text{ cm}$.`
-        },
-        {
-          content: `Biết đồ thị hàm số $y = x^3 - 3x^2 + 2$ có hai điểm cực trị $A$ và $B$. Tính độ dài đoạn thẳng $AB$ (kết quả làm tròn đến chữ số thập phân thứ hai).`,
-          ans: "4.47",
-          sol: `Ta có $y' = 3x^2 - 6x = 0 \\Leftrightarrow x = 0$ hoặc $x = 2$.\nVới $x = 0 \\Rightarrow y = 2 \\Rightarrow A(0; 2)$.\nVới $x = 2 \\Rightarrow y = -2 \\Rightarrow B(2; -2)$.\nĐộ dài $AB = \\sqrt{(2 - 0)^2 + (-2 - 2)^2} = \\sqrt{4 + 16} = \\sqrt{20} \\approx 4.47$.`
-        },
-        {
-          content: `Cho hàm số $y = f(x)$ liên tục trên $\\mathbb{R}$ có bảng biến thiên với giá trị cực đại $y_{CĐ} = 3$ và giá trị cực tiểu $y_{CT} = 1$. Phương trình $2f(x) - 5 = 0$ có bao nhiêu nghiệm thực?`,
-          ans: "3",
-          sol: `Phương trình $2f(x) - 5 = 0 \\Leftrightarrow f(x) = \\frac{5}{2} = 2.5$.\nVì $y_{CT} = 1 < 2.5 < y_{CĐ} = 3$, nên đường thẳng $y = 2.5$ cắt đồ thị hàm số tại đúng $3$ điểm phân biệt.\nVậy phương trình có đúng $3$ nghiệm thực.`
-        },
-        {
-          content: `Tìm số tiệm cận đứng của đồ thị hàm số $y = \\frac{x - 1}{x^2 - 3x + 2}$.`,
-          ans: "1",
-          sol: `Ta có $y = \\frac{x - 1}{(x - 1)(x - 2)} = \\frac{1}{x - 2}$ (với $x \\ne 1$).\n$\\lim_{x \\to 1} y = -1$, do đó $x = 1$ không phải tiệm cận đứng.\n$\\lim_{x \\to 2^+} y = +\\infty$, do đó $x = 2$ là tiệm cận đứng duy nhất.\nVậy đồ thị có đúng $1$ tiệm cận đứng.`
-        }
-      ];
 
       for (let m = 0; m < missingSa; m++) {
         const item = saFallbacks[m % saFallbacks.length];
@@ -1358,8 +1430,8 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
           id: parsedData.questions.length + 1,
           type: 'sa',
           level: m < 2 ? 'Thông hiểu' : 'Vận dụng',
-          topic: topicName,
-          subtopic: 'Phần III: Trắc nghiệm trả lời ngắn',
+          topic: (item as any).topic || topicName,
+          subtopic: (item as any).subtopic || 'Chủ đề trọng tâm',
           isRealWorld: m === 2,
           content: item.content,
           correctAnswer: item.ans,
