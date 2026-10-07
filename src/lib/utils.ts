@@ -1404,10 +1404,30 @@ export const sanitizeExamQuestion = (rawContent: string): string => {
   });
 
   // BƯỚC 3: XỬ LÝ VĂN BẢN NGOÀI KHỐI MATH (BẢO ĐẢM KHÔNG ẢNH HƯỞNG CÔNG THỨC TOÁN ĐÃ CÓ)
-  // Sửa lỗi dư dấu $ xung quanh các giá trị phần trăm (%)
-  content = content.replace(/\$([0-9]+%)\$?/g, '$1').replace(/([0-9]+%)\$/g, '$1');
+  // 3.0 Xử lý các chỉ số dưới dạng text (y_{CĐ} -> y_{CĐ}, bỏ dấu gạch dưới nếu không cần thiết trong text)
+  content = content
+    .replace(/y_\{CĐ\}/g, '$y_{CĐ}$')
+    .replace(/y_\{CT\}/g, '$y_{CT}$')
+    .replace(/y_\{cđ\}/g, '$y_{CĐ}$')
+    .replace(/y_\{ct\}/g, '$y_{CT}$');
+
+  // 3.1 Dọn dẹp rác markdown thừa (dấu * dính liền đáp án)
+  content = content
+    .replace(/\.\*\*\s*([A-D])\.\*\*/g, '$1.')
+    .replace(/\.\*\*\s*([A-D])\.\*\*/g, '$1.')
+    .replace(/\.\*\*\s*([A-D])\s*\*\*/g, '$1.')
+    .replace(/\.\*"([A-D])"\./g, '$1.')
+    .replace(/"\*\*"([A-D])"\*\*"/g, '$1.')
+    .replace(/(\*\*\s*|\.\*\*|\*\*\.)([A-D])(\.\*|\*)/g, '$2.')
+    .replace(/(\n|\r|^)\s*([A-D])\s*\./g, '$1$2. ');
+
+  // 3.2 Sửa lỗi dư dấu $ xung quanh các giá trị phần trăm (%, VD: $30%, 45%$)
+  content = content
+    .replace(/\$([0-9]+\s*%)\$?/g, '$1')
+    .replace(/([0-9]+\s*%)\$/g, '$1')
+    .replace(/\bundefined\b/gi, ''); // Thêm dòng này để xóa sạch 'undefined'
   
-  // Sửa lỗi dính chữ tiếng Việt thông dụng
+  // 3.3 Sửa lỗi dính chữ tiếng Việt thông dụng
   content = content
     .replace(/Chohaitậphợp\s*([A-Za-z])/gi, 'Cho hai tập hợp $1')
     .replace(/Chohaitậphợp/gi, 'Cho hai tập hợp ')
@@ -1674,7 +1694,15 @@ export const fixInlineOptionText = (text: string): string => {
   if (!text) return '';
   let res = text;
 
-  // Giữ lại nhãn phương án nếu có (vd: A., B., C., D. hoặc **A.**, - A.)
+  // 0. Dọn dẹp rác markdown thừa trước khi xử lý
+  res = res
+    .replace(/\.\*\*\s*([A-D])\.\*\*/g, '$1.')
+    .replace(/\.\*\*\s*([A-D])\s*\*\*/g, '$1.')
+    .replace(/\.\*"([A-D])"\./g, '$1.')
+    .replace(/"\*\*"([A-D])"\*\*"/g, '$1.')
+    .replace(/(\*\*\s*|\.\*\*|\*\*\.)([A-D])(\.\*|\*)/g, '$2.');
+
+  // Giữ lại nhãn phương án nếu có
   let prefix = '';
   const prefixMatch = res.match(/^(\s*(?:[-*]\s*)?(?:\*{0,2})[A-Da-d][\.\:\)](?:\*{0,2})\s*)/);
   if (prefixMatch) {
@@ -1682,14 +1710,14 @@ export const fixInlineOptionText = (text: string): string => {
     res = res.slice(prefix.length);
   }
 
-  // Bảo vệ tạm thời các khối \text{...} để không bị bóc tách nhầm các từ hoặc, và, hay bên trong \text{}
+  // Bảo vệ tạm thời các khối \text{...}
   const textTokens: string[] = [];
   res = res.replace(/\\text\{[^{}]*\}/g, (match) => {
     textTokens.push(match);
     return `___TEXT_TOKEN_${textTokens.length - 1}___`;
   });
 
-  // Bước 1: Tách rời các từ nối tiếng Việt bị dính liền với số/ký tự (vd: 3hoặcm -> 3 hoặc m, avàa -> a và a)
+  // Bước 1: Tách rời các từ nối tiếng Việt bị dính liền với số/ký tự
   res = res
     .replace(/([0-9a-zA-Z\$\\])(?<!\s)(hoặc|hay)(?=[a-zA-Z0-9\$\\])/gi, '$1 $2 ')
     .replace(/([0-9a-zA-Z\$\\])(?<!\s)và(?!(?:o|i|ng|c|t)\b)(?=[a-zA-Z0-9\$\\])/gi, '$1 và ')
@@ -1698,15 +1726,14 @@ export const fixInlineOptionText = (text: string): string => {
     .replace(/(?<=[a-zA-Z0-9\$\\])(hoặc|hay)/gi, ' $1')
     .replace(/(?<=[a-zA-Z0-9\$\\])và(?!(?:o|i|ng|c|t)\b)/gi, ' và');
 
-  // Bước 2: Sửa lỗi đóng/mở $$ bị rách giữa biểu thức (vd: \ge 3$$ hoặc $$m \le -1)
+  // Bước 2: Sửa lỗi đóng/mở $$ bị rách
   res = res
     .replace(/\$\$\s*(hoặc|và|hay)\s*\$\$/gi, ' $1 ')
     .replace(/\$\$\s*(hoặc|và|hay)\s*/gi, '$ $1 ')
     .replace(/\s*(hoặc|và|hay)\s*\$\$/gi, ' $1 $')
     .replace(/\$\s*(hoặc|và|hay)\s*\$/gi, ' $1 ');
 
-  // Bước 3: Nếu một phương án chứa công thức nhưng thiếu cặp dấu $ ở đầu/cuối:
-  // Ví dụ: `m \ge 3 hoặc m+2 \le 1` -> `$m \ge 3$ hoặc $m+2 \le 1$`
+  // Bước 3: Đảm bảo công thức toán được bọc $
   const parts = res.split(/\s+(hoặc|và|hay)\s+/gi);
   if (parts.length > 1) {
     res = parts.map(part => {
@@ -1714,19 +1741,13 @@ export const fixInlineOptionText = (text: string): string => {
       if (['hoặc', 'và', 'hay'].includes(trimmed.toLowerCase())) {
         return trimmed;
       }
-      // Nếu vế có chứa ký hiệu toán (\ge, \le, <, >, +, -, =, v.v.) mà chưa bọc đủ dấu $
-      if (/[\\<>=+\-\^_\/]/.test(trimmed) || /\b\d+[a-zA-Z]\b/.test(trimmed)) {
-        if (/^[“"”]|:\s*[“"”]/.test(trimmed)) {
-          return trimmed;
-        }
-        const cleanPart = trimmed.replace(/\$/g, '').trim();
-        return `$${cleanPart}$`;
-      }
-      return trimmed;
+      const cleanPart = trimmed.replace(/\$/g, '').trim();
+      if (cleanPart === '') return '';
+      return `$${cleanPart}$`;
     }).join(' ');
   } else {
-    // Nếu không có từ nối nhưng có lệnh LaTeX trần trụi thiếu $ (vd: b \le a)
-    if (/[\\<>=]/.test(res) && !res.includes('$')) {
+    // Nếu không có từ nối nhưng có lệnh LaTeX hoặc toán tử trần thiếu $
+    if (/[\\<>=+\-\^_\/]/.test(res) && !res.includes('$')) {
       res = `$${res}$`;
     }
   }
@@ -1734,8 +1755,9 @@ export const fixInlineOptionText = (text: string): string => {
   // Khôi phục lại các khối \text{...}
   res = res.replace(/___TEXT_TOKEN_(\d+)___/g, (_m, idx) => textTokens[Number(idx)] || '');
 
-  // Dọn dẹp khoảng trắng và dấu $ thừa
-  return (prefix + res.replace(/\${3,}/g, '$$')).trim();
+  // Dọn dẹp khoảng trắng, dấu $ thừa và rác còn sót lại
+  res = res.replace(/\${3,}/g, '$$').replace(/\$\s+\$/g, '');
+  return (prefix + res).trim();
 };
 
 /**

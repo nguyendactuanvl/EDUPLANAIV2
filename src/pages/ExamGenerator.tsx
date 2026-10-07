@@ -242,19 +242,25 @@ export function ExamGenerator() {
     exportTNMakerExcelFile(shuffledExams as any[], examName);
   };
 
-  const handlePrintBubbleSheet = () => {
+  const handlePrintBubbleSheet = (numQuestions: number = 40) => {
     const windowPrint = window.open('', '', 'width=900,height=650');
     if (!windowPrint) return;
+
+    // Tính toán số cột: 40 câu -> 4 cột, 50 câu -> 5 cột, v.v.
+    const numCols = Math.ceil(numQuestions / 10);
     let gridHtml = '';
-    for (let col = 0; col < 4; col++) {
+    
+    for (let col = 0; col < numCols; col++) {
       gridHtml += '<div style="flex: 1; min-width: 150px;">';
       for (let row = 1; row <= 10; row++) {
         const num = col * 10 + row;
+        if (num > numQuestions) break; // Dừng nếu vượt quá số câu
+        
         gridHtml += `
-          <div style="display: flex; align-items: center; margin-bottom: 15px;">
-            <span style="width: 35px; font-weight: bold; font-size: 14px;">${num.toString().padStart(2, '0')}.</span>
+          <div style="display: flex; align-items: center; margin-bottom: 12px;">
+            <span style="width: 35px; font-weight: bold; font-size: 13px;">${num.toString().padStart(numQuestions >= 100 ? 3 : 2, '0')}.</span>
             ${['A', 'B', 'C', 'D'].map(letter => `
-              <div style="width: 26px; height: 26px; border-radius: 50%; border: 1px solid #000; display: flex; align-items: center; justify-content: center; margin: 0 4px; font-size: 12px; font-weight: bold;">
+              <div style="width: 24px; height: 24px; border-radius: 50%; border: 1px solid #000; display: flex; align-items: center; justify-content: center; margin: 0 3px; font-size: 11px; font-weight: bold;">
                 ${letter}
               </div>
             `).join('')}
@@ -267,32 +273,31 @@ export function ExamGenerator() {
     windowPrint.document.write(`
       <html>
         <head>
-          <title>Phiếu Tô Trắc Nghiệm</title>
+          <title>Phiếu Tô Trắc Nghiệm ${numQuestions} Câu</title>
           <style>
             body { font-family: "Times New Roman", Times, serif; padding: 20px; }
-            .header { text-align: center; margin-bottom: 30px; }
-            .title { font-size: 24px; font-weight: bold; margin-bottom: 5px; }
-            .info-grid { display: flex; justify-content: space-between; margin-bottom: 40px; border: 1px solid #000; padding: 15px; border-radius: 8px; }
+            .header { text-align: center; margin-bottom: 20px; }
+            .title { font-size: 20px; font-weight: bold; margin-bottom: 5px; }
+            .info-grid { display: flex; justify-content: space-between; margin-bottom: 20px; border: 1px solid #000; padding: 10px; border-radius: 8px; }
             .info-col { flex: 1; }
-            .info-line { border-bottom: 1px dotted #000; display: inline-block; min-width: 200px; margin-left: 5px; }
+            .info-line { border-bottom: 1px dotted #000; display: inline-block; min-width: 150px; margin-left: 5px; }
           </style>
         </head>
         <body>
           <div class="header">
-            <div class="title">PHIẾU TRẢ LỜI TRẮC NGHIỆM</div>
-            <div>Dành cho bài thi trắc nghiệm (Tối đa 40 câu)</div>
+            <div class="title">PHIẾU TRẢ LỜI TRẮC NGHIỆM (${numQuestions} câu)</div>
           </div>
           <div class="info-grid">
             <div class="info-col">
-              <p style="margin: 10px 0;"><strong>Họ và tên:</strong> <span class="info-line" style="min-width: 250px;"></span></p>
-              <p style="margin: 10px 0;"><strong>Lớp:</strong> <span class="info-line"></span></p>
+              <p style="margin: 5px 0;"><strong>Họ và tên:</strong> <span class="info-line"></span></p>
+              <p style="margin: 5px 0;"><strong>Lớp:</strong> <span class="info-line"></span></p>
             </div>
             <div class="info-col">
-              <p style="margin: 10px 0;"><strong>Môn thi:</strong> <span class="info-line"></span></p>
-              <p style="margin: 10px 0;"><strong>Mã đề:</strong> <span class="info-line" style="min-width: 100px;"></span></p>
+              <p style="margin: 5px 0;"><strong>Môn thi:</strong> <span class="info-line"></span></p>
+              <p style="margin: 5px 0;"><strong>Mã đề:</strong> <span class="info-line"></span></p>
             </div>
           </div>
-          <div style="display: flex; gap: 20px; justify-content: space-between;">
+          <div style="display: flex; gap: 15px; flex-wrap: wrap;">
             ${gridHtml}
           </div>
         </body>
@@ -5827,9 +5832,9 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
             <div className="p-6 space-y-4">
               <div>
                  <p className="font-semibold text-slate-700 mb-2">1. Mẫu hệ thống (In trực tiếp - Trắc nghiệm 4 đáp án)</p>
-                 <button onClick={handlePrintBubbleSheet} className="w-full text-left px-4 py-3 border border-slate-200 rounded-lg hover:bg-emerald-50 hover:border-emerald-200 flex items-center justify-between group transition-colors">
+                 <button onClick={() => handlePrintBubbleSheet(totalQuestionsCalc)} className="w-full text-left px-4 py-3 border border-slate-200 rounded-lg hover:bg-emerald-50 hover:border-emerald-200 flex items-center justify-between group transition-colors">
                    <div>
-                     <p className="font-medium text-slate-800 group-hover:text-emerald-700">Phiếu tô 40 câu cơ bản</p>
+                                           <p className="font-medium text-slate-800 group-hover:text-emerald-700">Phiếu tô {totalQuestionsCalc} câu cơ bản</p>
                      <p className="text-sm text-slate-500">In siêu tốc trực tiếp từ trình duyệt</p>
                    </div>
                    <Printer className="w-5 h-5 text-slate-400 group-hover:text-emerald-600" />

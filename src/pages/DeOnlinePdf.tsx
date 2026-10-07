@@ -55,6 +55,9 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
   // Configuration State
   const [examTitle, setExamTitle] = useState("Đề thi thử Tốt nghiệp THPT môn Toán");
   const [duration, setDuration] = useState(90); // minutes
+  const [configMode, setConfigMode] = useState<"standard" | "free">("standard");
+  const [numMcq, setNumMcq] = useState(12);
+
   const [scriptUrl, setScriptUrl] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -63,6 +66,12 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
   const [isCopied, setIsCopied] = useState(false);
   const [testStatus, setTestStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [isTestingConn, setIsTestingConn] = useState(false);
+
+  // Cập nhật số câu khi thay đổi
+  const handleNumMcqChange = (count: number) => {
+    setNumMcq(count);
+    setPart1Keys(Array.from({ length: count }, (_, i) => ({ question: i + 1, correct: "" })));
+  };
 
   // Student Info (Form)
   const [studentName, setStudentName] = useState("");
@@ -102,6 +111,10 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
   };
 
   // Answer Keys Configuration (Teacher)
+  const [numPart1, setNumPart1] = useState(12);
+  const [numPart2, setNumPart2] = useState(4);
+  const [numPart3, setNumPart3] = useState(6);
+
   const [part1Keys, setPart1Keys] = useState<Part1Key[]>(() => 
     Array.from({ length: 12 }, (_, i) => ({ question: i + 1, correct: "" }))
   );
@@ -117,16 +130,20 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
     Array.from({ length: 6 }, (_, i) => ({ question: i + 1, correct: "" }))
   );
 
-  // Student Selected Answers
-  const [studentPart1, setStudentPart1] = useState<Record<number, "A" | "B" | "C" | "D">>({});
-  const [studentPart2, setStudentPart2] = useState<Record<number, { a: boolean | null; b: boolean | null; c: boolean | null; d: boolean | null }>>(() => {
-    const init: Record<number, any> = {};
-    for (let i = 1; i <= 4; i++) {
-      init[i] = { a: null, b: null, c: null, d: null };
-    }
-    return init;
-  });
-  const [studentPart3, setStudentPart3] = useState<Record<number, string>>({});
+  useEffect(() => {
+    setPart1Keys(Array.from({ length: numPart1 }, (_, i) => ({ question: i + 1, correct: "" })));
+  }, [numPart1]);
+
+  useEffect(() => {
+    setPart2Keys(Array.from({ length: numPart2 }, (_, i) => ({ 
+      question: i + 1, 
+      statements: { a: null, b: null, c: null, d: null } 
+    })));
+  }, [numPart2]);
+
+  useEffect(() => {
+    setPart3Keys(Array.from({ length: numPart3 }, (_, i) => ({ question: i + 1, correct: "" })));
+  }, [numPart3]);
 
   // AI Extraction State
   const [isExtractingAnswers, setIsExtractingAnswers] = useState(false);
@@ -1584,8 +1601,13 @@ HS05 - Hoàng Văn Em`);
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
                 <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                   <FileCheck className="w-4 h-4 text-emerald-600" />
-                  Thiết lập Barem Đáp án Chuẩn (Bộ GD&ĐT 2025)
+                  Thiết lập Barem Đáp án (Tùy chỉnh số câu)
                 </span>
+                <div className="flex gap-2">
+                  <input type="number" value={numPart1} onChange={e => setNumPart1(Number(e.target.value))} className="w-12 text-center text-xs border rounded p-1" placeholder="P1"/>
+                  <input type="number" value={numPart2} onChange={e => setNumPart2(Number(e.target.value))} className="w-12 text-center text-xs border rounded p-1" placeholder="P2"/>
+                  <input type="number" value={numPart3} onChange={e => setNumPart3(Number(e.target.value))} className="w-12 text-center text-xs border rounded p-1" placeholder="P3"/>
+                </div>
                 <button 
                   onClick={handleLoadSampleBarem}
                   className="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold rounded-lg text-xs cursor-pointer transition-colors"
@@ -1596,11 +1618,23 @@ HS05 - Hoàng Văn Em`);
 
               <div className="space-y-6 max-h-[650px] overflow-y-auto pr-1">
                 
-                {/* Part I settings */}
+                {/* Part I settings with flexible mode */}
                 <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <button onClick={() => { setConfigMode("standard"); handleNumMcqChange(12); }} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${configMode === "standard" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>Chuẩn Bộ (12)</button>
+                    <button onClick={() => setConfigMode("free")} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${configMode === "free" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>Tự do</button>
+                  </div>
+
+                  {configMode === "free" && (
+                    <div className="flex items-center gap-2">
+                      <input type="number" value={numMcq} onChange={(e) => handleNumMcqChange(parseInt(e.target.value) || 0)} className="border p-1.5 rounded w-20 text-xs" />
+                      <div className="flex gap-1">{[20, 30, 40, 50].map(n => <button key={n} onClick={() => handleNumMcqChange(n)} className="px-2 py-1 bg-slate-200 rounded text-[10px] font-bold">{n}</button>)}</div>
+                    </div>
+                  )}
+
                   <div className="p-2.5 bg-blue-50 text-blue-900 rounded-xl text-xs font-bold flex items-center justify-between">
-                    <span>PHẦN I: Trắc nghiệm khách quan 4 lựa chọn (12 câu - Mỗi câu 0.25 điểm)</span>
-                    <span className="bg-blue-100 px-2 py-0.5 rounded text-[10px]">Tối đa 3.0đ</span>
+                    <span>PHẦN I: Trắc nghiệm khách quan ({((part1Keys.length * 0.25) / numMcq).toFixed(2)}đ/câu)</span>
+                    <span className="bg-blue-100 px-2 py-0.5 rounded text-[10px]">{numMcq} câu</span>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {part1Keys.map((item, idx) => (

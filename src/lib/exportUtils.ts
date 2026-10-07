@@ -1454,8 +1454,9 @@ export async function exportHtmlToWord(
   mathFormat: 'omml' | 'mathml' | 'latex' | 'image' | boolean = 'omml'
 ) {
   let resolvedMathFormat: 'omml' | 'latex' | 'image' = 'omml';
-  if (mathFormat === true || mathFormat === 'latex') resolvedMathFormat = 'latex';
-  else if (mathFormat === 'image') resolvedMathFormat = 'image';
+  // LaTeX mode disabled for Word export.
+  if (mathFormat === 'image') resolvedMathFormat = 'image';
+  else resolvedMathFormat = 'omml';
 
   let loadingOverlay = document.getElementById('word-export-loading');
   if (!loadingOverlay) {
