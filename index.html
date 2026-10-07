@@ -72,14 +72,24 @@
           processEscapes: true,
           processEnvironments: true
         },
-        asciimath: {
-          delimiters: [['`', '`']]
-        },
         svg: {
           fontCache: 'global'
         },
         options: {
-          skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre']
+          skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+          renderActions: {
+            addLatexAttribute: [150, function(doc) {
+              if (doc && doc.math) {
+                for (var i = 0; i < doc.math.length; i++) {
+                  var m = doc.math[i];
+                  if (m && m.typesetRoot) {
+                    m.typesetRoot.setAttribute('data-latex', m.math || '');
+                    m.typesetRoot.setAttribute('data-block', m.display ? '1' : '0');
+                  }
+                }
+              }
+            }, '']
+          }
         }
       };
     </script>

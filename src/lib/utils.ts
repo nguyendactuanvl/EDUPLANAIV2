@@ -903,7 +903,6 @@ export const cleanVietnameseUnicode = (str: string): string => {
     .replace(/ố[´'’^]/g, 'ố')
     // Chỉ loại bỏ dấu thanh gãy rụng trên nguyên âm tiếng Việt, TUYỆT ĐỐI KHÔNG xóa dấu đạo hàm y', f'(x), y'', ...
     .replace(/([aAeEiIoOuU\u00C0-\u1EF9])[\s]*[`´^](?=[a-zA-Z\u00C0-\u1EF9\s]|$)/g, '$1')
-    .replace(/`([A-ZÀ-Ỹa-zà-ỹ])/g, '$1')
     .replace(/´([A-ZÀ-Ỹa-zà-ỹ])/g, '$1');
 
   // Chuẩn hóa lần cuối về NFC
@@ -1944,7 +1943,7 @@ export const fixInlineOptionText = (text: string): string => {
  */
 export function formatMathContent(raw?: string | null): string {
   if (!raw && raw !== '') return '';
-  let str = normalizeMathLatex(String(raw));
+  let str = normalizeMathLatex(normalizeMathText(String(raw)));
 
   // Tự động sửa dứt điểm các lỗi gãy / mất dấu backslash hoặc thừa dấu gạch chéo cho cases
   str = str.replace(/\\*begin\s*\{?cases\*?\}?/gi, '\\begin{cases}');

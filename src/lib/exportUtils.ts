@@ -46,6 +46,7 @@ import {
 } from './utils';
 import { convertBbtTableToSvg } from './bbtRenderer';
 import { getTikzSvg } from '../components/TikzRenderer';
+import { normalizeMathText } from './globalMath';
 
 interface RunStyle {
   bold?: boolean;
@@ -151,6 +152,37 @@ function latexToOmmlComponent(rawTex: string, isBlock: boolean = false): any {
     font: 'Cambria Math',
     size: 24,
   });
+}
+
+/**
+ * Converts a raw MathML XML string directly into a Word OMML Equation component.
+ */
+function mathmlToOmmlComponent(mathmlHtml: string): ParagraphChild | null {
+  try {
+    const match = mathmlHtml.match(/<math[\s\S]*?<\/math>/i);
+    if (!match) return null;
+    const convertFn = typeof mml2omml === 'function' ? mml2omml : ((mml2omml as any)?.mml2omml || (mml2omml as any)?.default || mml2omml);
+    let omml = convertFn(match[0]);
+    if (omml && omml.includes('m:oMath')) {
+      omml = omml.replace(
+        /(?:<m:r[^>]*>[\s\S]*?<m:t[^>]*>\s*\{\s*<\/m:t>[\s\S]*?<\/m:r>\s*)(<(?:m:eqArr|m:m)[\s\S]*?<\/(?:m:eqArr|m:m)>)/g,
+        '<m:d><m:dPr><m:begChr m:val="{"/><m:endChr m:val=""/><m:grow m:val="1"/></m:dPr><m:e>$1</m:e></m:d>'
+      );
+      omml = omml.replace(
+        /(?:<m:r[^>]*>[\s\S]*?<m:t[^>]*>\s*\[\s*<\/m:t>[\s\S]*?<\/m:r>\s*)(<(?:m:eqArr|m:m)[\s\S]*?<\/(?:m:eqArr|m:m)>)/g,
+        '<m:d><m:dPr><m:begChr m:val="["/><m:endChr m:val=""/><m:grow m:val="1"/></m:dPr><m:e>$1</m:e></m:d>'
+      );
+      omml = omml.replace(/(<m:dPr><m:begChr m:val="[\{\[]"[\s\S]*?<m:mcJc m:val=")center(")/g, '$1left$2');
+      omml = omml.replace(/<m:dPr>((?:(?!<m:grow)[\s\S])*?)<\/m:dPr>/g, '<m:dPr><m:grow m:val="1"/>$1</m:dPr>');
+
+      const comp = ImportedXmlComponent.fromXmlString(omml);
+      const root = comp && (comp as any).root && (comp as any).root[0] ? (comp as any).root[0] : comp;
+      return root;
+    }
+  } catch (e) {
+    console.warn('mathmlToOmmlComponent error:', e);
+  }
+  return null;
 }
 
 /**
@@ -583,6 +615,7 @@ function parseTextWithMath(
   // Clean \dotfill in raw text
   let safeText = text.replace(/\\dotfill\b/g, '. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .');
   safeText = stripInternalTags(safeText);
+  safeText = normalizeMathText(safeText);
 
   const tokens = tokenizeTextAndMath(safeText);
   return tokensToRuns(tokens, style, options);
@@ -615,16 +648,19 @@ function parseInlineContent(
 
     if (isMathJaxNode || isKaTeXNode || isOmmlNode || hasMathAttr) {
       let tex = el.getAttribute('data-latex') || el.getAttribute('data-tex') || '';
+      let mathml = el.getAttribute('data-mathml') || '';
       if (!tex) {
         const ann = el.querySelector("annotation[encoding='application/x-tex']") || el.querySelector("annotation") || el.querySelector("script[type*='math/tex']");
         tex = ann ? ann.textContent || '' : '';
       }
-      if (!tex && isMathJaxNode) {
-        const mml = el.querySelector("mjx-assistive-mml") || el;
-        tex = mml ? mml.textContent || '' : '';
+      if (!mathml) {
+        const m = el.querySelector('math');
+        if (m) mathml = new XMLSerializer().serializeToString(m);
       }
 
-      tex = decodeURIComponent(tex).trim();
+      if (tex) tex = decodeURIComponent(tex).trim();
+      if (mathml) mathml = decodeURIComponent(mathml).trim();
+
       const isBlock = el.classList.contains('katex-display') || el.getAttribute('display') === 'true' || el.getAttribute('data-block') === '1' || (tagName === 'MJX-CONTAINER' && el.getAttribute('display') === 'true');
 
       if (tex) {
@@ -637,6 +673,11 @@ function parseInlineContent(
           });
         }
         return [latexToOmmlComponent(tex, isBlock)];
+      }
+
+      if (mathml) {
+        const comp = mathmlToOmmlComponent(mathml);
+        if (comp) return [comp];
       }
     }
 
@@ -1539,6 +1580,48 @@ export async function exportHtmlToWord(
     };
     walkAndPreprocessTextNodes(clone);
 
+    // 0.2. PRE-PROCESS ALL MATH ELEMENTS (MathJax & KaTeX) IN CLONE INTO LIGHTWEIGHT OMML TOKENS
+    // This MUST run before any SVG rasterization so that MathJax SVGs are NEVER converted into PNG diagrams or stripped!
+    const mathContainers = Array.from(
+      clone.querySelectorAll('mjx-container, .MathJax, .MathJax_SVG, .mjx-chtml, .katex, .katex-display, .math-inline, [data-latex]')
+    );
+
+    for (const mc of mathContainers) {
+      if (!mc.parentNode) continue;
+
+      let latex = mc.getAttribute('data-latex') || mc.getAttribute('data-tex') || '';
+      if (!latex) {
+        const ann = mc.querySelector("annotation[encoding='application/x-tex']") || mc.querySelector("annotation");
+        if (ann?.textContent) latex = ann.textContent;
+      }
+
+      // Check for MathML inside MathJax assistive-mml or direct <math>
+      let mathMlStr = '';
+      const mathEl = mc.querySelector('math') || (mc.tagName === 'MATH' ? mc : null);
+      if (mathEl) {
+        if (!latex) {
+          const subAnn = mathEl.querySelector('annotation');
+          if (subAnn?.textContent) latex = subAnn.textContent;
+        }
+        mathMlStr = new XMLSerializer().serializeToString(mathEl);
+      }
+
+      const isBlock =
+        mc.classList.contains('katex-display') ||
+        mc.getAttribute('display') === 'true' ||
+        mc.getAttribute('data-block') === '1' ||
+        (mc.tagName === 'MJX-CONTAINER' && mc.getAttribute('display') === 'true');
+
+      if (latex || mathMlStr) {
+        const token = document.createElement('span');
+        token.className = 'omml-math-node';
+        if (latex) token.setAttribute('data-latex', encodeURIComponent(latex.trim()));
+        if (mathMlStr) token.setAttribute('data-mathml', encodeURIComponent(mathMlStr.trim()));
+        token.setAttribute('data-block', isBlock ? '1' : '0');
+        mc.parentNode.replaceChild(token, mc);
+      }
+    }
+
     // 1. Pre-process custom SVG and TikZ wrapper elements in clone into high-res PNG images
     const svgWrappers = Array.from(clone.querySelectorAll('svg-wrapper, .svg-wrapper'));
     for (const wrap of svgWrappers) {
@@ -1623,7 +1706,7 @@ export async function exportHtmlToWord(
 
     // 1.1 Convert any remaining standalone SVGs (excluding KaTeX glyphs) in clone into high-res PNGs
     const clonedSvgs = Array.from(clone.querySelectorAll('svg')).filter((svg) => {
-      return !svg.closest('.katex, .katex-html, .katex-mathml, math');
+      return !svg.closest('.katex, .katex-html, .katex-mathml, math, mjx-container, .MathJax, .MathJax_SVG, .omml-math-node, [data-latex]');
     }) as SVGSVGElement[];
 
     for (const clonedSvg of clonedSvgs) {

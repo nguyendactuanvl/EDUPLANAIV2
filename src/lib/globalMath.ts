@@ -10,15 +10,15 @@ export function convertBacktickMathToDollars(text: string): string {
   if (!text) return '';
   let t = String(text);
 
-  // 1. Handle backtick-wrapped proposition statements with quoted equations, e.g.:
-  // `P`: "\forall x \in \mathbb{R}, x^2 + 1 > 0"
-  t = t.replace(/`([^`\n]+?)`?\s*:\s*"([^"\n]+)"/g, (_match, prop, expr) => {
+  // 1. Handle backtick-wrapped proposition statements with quoted equations (straight or curly quotes), e.g.:
+  // `P`: "\forall x \in \mathbb{R}, x^2 + 1 > 0" or `\overline{P}`: “\exists x \in \mathbb{R}, ...”
+  t = t.replace(/`([^`\n]+?)`?\s*:\s*[“"”]([^"”\n]+)[“"”]/g, (_match, prop, expr) => {
     const cleanProp = prop.replace(/^\$+|\$+$/g, '').trim();
     const cleanExpr = expr.replace(/^\$+|\$+$/g, '').trim();
     return `$${cleanProp}$: "$${cleanExpr}$"`;
   });
 
-  t = t.replace(/`([^`\n]+?):\s*"([^"\n]+)"`/g, (_match, prop, expr) => {
+  t = t.replace(/`([^`\n]+?):\s*[“"”]([^"”\n]+)[“"”]`?/g, (_match, prop, expr) => {
     const cleanProp = prop.replace(/^\$+|\$+$/g, '').trim();
     const cleanExpr = expr.replace(/^\$+|\$+$/g, '').trim();
     return `$${cleanProp}$: "$${cleanExpr}$"`;
@@ -36,7 +36,7 @@ export function convertBacktickMathToDollars(text: string): string {
       return match;
     }
     let clean = inner.trim();
-    clean = clean.replace(/^"([^"\n]+)"$/, '$1');
+    clean = clean.replace(/^[“"”]([^"”\n]+)[“"”]$/, '$1');
     clean = clean.replace(/^\$+|\$+$/g, '').trim();
     if (!clean) return match;
 
@@ -62,10 +62,46 @@ export function normalizeMathText(text: any): string {
 
   let t = text.normalize("NFC");
 
-  // 1. Convert backticks to dollars
+  // 0. Chuẩn hóa các dấu ngoặc kép bị escape \" bên trong hoặc xung quanh công thức
+  t = t.replace(/\\"/g, '"');
+
+  // 1. Chuyển đổi toàn bộ dấu huyền backtick sang $...$
   t = convertBacktickMathToDollars(t);
 
-  // 2. Khôi phục các ký tự thoát bị rách hoặc nuốt gạch chéo ngược
+  // 2. Chuẩn hóa mệnh đề logic có nhãn (P, Q, \overline{P}, \overline{Q}) và công thức có/không có dấu ngoặc kép:
+  // Dạng 1: toàn bộ nằm trong $...$: $\overline{P}: "..."$ hoặc $P: "..."$
+  t = t.replace(/(?<!\$)\$\s*((?:\\overline\{[A-Za-z]\}|\\bar\{[A-Za-z]\}|[A-Za-z]))\s*:\s*(?:[“"”])([\s\S]*?)(?:[”"“])\s*\$(?!\$)/g, (_m, prop, body) => {
+    const cleanProp = prop.replace(/\\bar\{/, '\\overline{');
+    const cleanBody = body.trim().replace(/^\$+|\$+$/g, '').trim();
+    return `$${cleanProp}$: "$${cleanBody}$"`;
+  });
+  t = t.replace(/(?<!\$)\$\s*((?:\\overline\{[A-Za-z]\}|\\bar\{[A-Za-z]\}|[A-Za-z]))\s*:\s*(\\(?:forall|exists)[\s\S]*?)\s*\$(?!\$)/g, (_m, prop, body) => {
+    const cleanProp = prop.replace(/\\bar\{/, '\\overline{');
+    const cleanBody = body.trim().replace(/^\$+|\$+$/g, '').trim();
+    return `$${cleanProp}$: $${cleanBody}$`;
+  });
+
+  // Dạng 2: ngoài math: P: "..." hoặc \overline{P}: "..."
+  t = t.replace(/(^|[\s\n])(?<!\$)(?:\\(?:overline|bar)\{([A-Za-z])\}|([A-Za-z]))\s*:\s*(?:[“"”])([\s\S]*?)(?:[”"“])/g, (_m, pre, p1, p2, body) => {
+    const prop = p1 ? `\\overline{${p1}}` : p2;
+    const cleanBody = body.trim().replace(/^\$+|\$+$/g, '').trim();
+    return `${pre}$${prop}$: "$${cleanBody}$"`;
+  });
+
+  // Dạng 3: ngoài math: P: \forall ... hoặc \overline{P}: \exists ...
+  t = t.replace(/(^|[\s\n])(?<!\$)(?:\\(?:overline|bar)\{([A-Za-z])\}|([A-Za-z]))\s*:\s*(\\(?:forall|exists)[\s\S]*?)(?=[,\.\n;]|\s+[a-zà-ỹ]|\s*$)/g, (_m, pre, p1, p2, body) => {
+    const prop = p1 ? `\\overline{${p1}}` : p2;
+    const cleanBody = body.trim().replace(/^\$+|\$+$/g, '').trim();
+    return `${pre}$${prop}$: $${cleanBody}$`;
+  });
+
+  // Dạng 4: Ngoặc kép bọc công thức \forall hoặc \exists: "\forall x \in \mathbb{R}, ..."
+  t = t.replace(/(?<!\$)(?:[“"”])\s*(\\(?:forall|exists)[\s\S]*?)\s*(?:[”"“])(?!\$)/g, (_m, body) => {
+    const cleanBody = body.trim().replace(/^\$+|\$+$/g, '').trim();
+    return `"$${cleanBody}$"`;
+  });
+
+  // 3. Khôi phục các ký tự thoát bị rách hoặc nuốt gạch chéo ngược
   t = t.replace(/(?<=^|[\s$])([a-z])eq(?=0|\d|\s|\$)/gi, ' \\neq ');
   t = t.replace(/(?<!\\)\bneq\b/g, '\\neq');
   t = t.replace(/(?<!\\)\blim\b/g, '\\lim');
@@ -80,7 +116,6 @@ export function normalizeMathText(text: any): string {
   t = t.replace(/(?<!\\)\bexists\b/g, '\\exists');
   t = t.replace(/(?<!\\)\boverline\b/g, '\\overline');
   t = t.replace(/(?<!\\)\bRightarrow\b/g, '\\Rightarrow');
-  t = t.replace(/(?<!\\)\bLeftrightarrow\b/g, '\\Leftrightarrow');
   t = t.replace(/(?<!\\)\bLeftrightarrow\b/g, '\\Leftrightarrow');
   t = t.replace(/(?<!\\)\bvdots\b/g, '\\vdots');
   t = t.replace(/(?<!\\)\bcirc\b/g, '\\circ');
