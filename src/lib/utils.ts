@@ -1404,6 +1404,9 @@ export const sanitizeExamQuestion = (rawContent: string): string => {
   });
 
   // BƯỚC 3: XỬ LÝ VĂN BẢN NGOÀI KHỐI MATH (BẢO ĐẢM KHÔNG ẢNH HƯỞNG CÔNG THỨC TOÁN ĐÃ CÓ)
+  // Sửa lỗi dư dấu $ xung quanh các giá trị phần trăm (%)
+  content = content.replace(/\$([0-9]+%)\$?/g, '$1').replace(/([0-9]+%)\$/g, '$1');
+  
   // Sửa lỗi dính chữ tiếng Việt thông dụng
   content = content
     .replace(/Chohaitậphợp\s*([A-Za-z])/gi, 'Cho hai tập hợp $1')
