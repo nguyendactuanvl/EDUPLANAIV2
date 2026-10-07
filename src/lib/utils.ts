@@ -935,6 +935,62 @@ export const cleanVietnameseUnicode = (str: string): string => {
   return res;
 };
 
+export function fixSequencesAndFractions(text: string): string {
+  if (!text) return '';
+  
+  // Split by '$' to only replace OUTSIDE of existing math blocks
+  const parts = text.split('$');
+  for (let i = 0; i < parts.length; i += 2) {
+    let p = parts[i];
+    if (!p) continue;
+    
+    // 1. Standalone sequence terms list: "u1, u2, u3" -> "$u_1, u_2, u_3$", "u1, u2, ..., un" -> "$u_1, u_2, ..., u_n$"
+    p = p.replace(/\b([uv])(\d+)\s*,\s*([uv])(\d+)\s*,\s*([uv])(\d+)\b/g, '$$$1_$2, $3_$4, $5_$6$$');
+    p = p.replace(/\b([uv])(\d+)\s*,\s*([uv])(\d+)\s*,\s*\.\.\.\s*,\s*([uv])(n)\b/g, '$$$1_$2, $3_$4, ..., $5_$6$$');
+
+    // 2. Parentheses sequence notation: "(un)" -> "$(u_n)$", "(vn)" -> "$(v_n)$"
+    p = p.replace(/\(([uv])(n)\)/g, '$$($1_$2)$$');
+
+    // 3. Standalone sequence terms equations: "u1 = 2", "un = 2n + 1", "u_n = u_{n-1} + 3"
+    p = p.replace(/\b([uv])(\d+)\s*=\s*([+-]?\d+(?:\/\d+)?)\b/g, '$$$1_$2 = $3$$');
+    p = p.replace(/\b([uv])(n)\s*=\s*([+-]?\d+(?:\/\d+)?)\b/g, '$$$1_$2 = $3$$');
+    p = p.replace(/\b([uv])(\d+)\s*=\s*(\\frac\{[^{}]*\}\s*\{[^{}]*\})/g, '$$$1_$2 = $3$$');
+    p = p.replace(/\b([uv])(n)\s*=\s*(\\frac\{[^{}]*\}\s*\{[^{}]*\})/g, '$$$1_$2 = $3$$');
+
+    // 4. Standalone parameters d (công sai) and q (công bội): e.g. "d = 5/3", "d = -3", "q = \frac{1}{2}"
+    p = p.replace(/\b([dq])\s*=\s*([+-]?\d+(?:\/\d+)?)\b/g, '$$$1 = $2$$');
+    p = p.replace(/\b([dq])\s*=\s*(\\frac\{[^{}]*\}\s*\{[^{}]*\})/g, '$$$1 = $2$$');
+
+    // 5. Raw LaTeX fractions with variables (allow spaces between braces like \\frac{a} {b}): "d=\frac{5}{3}", "u_n=\frac{n}{n+1}"
+    p = p.replace(/\b([a-zA-Z0-9_{}\(\)\+\-\*\/']+[ \t]*=[ \t]*\\frac\{[^{}]*\}\s*\{[^{}]*\})/g, '$$$1$$');
+    
+    // 5.5 Match equations or declarations containing LaTeX symbols: e.g. "D = \mathbb{R} \setminus {1}"
+    p = p.replace(/(?<![\$\w])([a-zA-Z0-9_']+\s*=\s*(?:\\[a-zA-Z]+(?:\{[^{}]*\}|\s)*)+)/g, '$$$1$$');
+
+    // 6. Naked fractions: "\frac{5}{3}" (ensure no preceding backslash to avoid matching double-escapes, allow spaces between braces)
+    p = p.replace(/(?<![\$\\\w])(\\frac\{[^{}]*\}\s*\{[^{}]*\})/g, '$$$1$$');
+
+    // 6.5 Naked limit expressions: e.g. "\lim_{x \to +\infty}" -> "$\lim_{x \to +\infty}$"
+    p = p.replace(/(?<![\$\\\w])(\\lim_\{[^{}]*\}\s*[a-zA-Z0-9\(\)\s=+\-*\/_']*(?:\\[a-zA-Z]+)?)/g, '$$$1$$');
+
+    // 7. General standalone subscript sequence variables: "u1" -> "$u_1$", "un" -> "$u_n$"
+    p = p.replace(/\b([uv])(\d+)\b/g, '$$$1_$2$$');
+    p = p.replace(/\b([uv])(n)\b/g, '$$$1_$2$$');
+    
+    // 8. General sequence terms with subscript notation like u_n, u_{n+1}
+    p = p.replace(/\b([uv])_\{([a-zA-Z0-9\+\-]+)\}\b/g, '$$$1_{$2}$$');
+    p = p.replace(/\b([uv])_([a-zA-Z0-9])\b/g, '$$$1_$2$$');
+    p = p.replace(/\b([uv])\(([a-zA-Z0-9\+\-]+)\)\b/g, '$$$1_{$2}$$');
+
+    // 9. Raw interval and coordinate notations outside math: e.g. "(-\infty; 1)", "(1; +\infty)"
+    p = p.replace(/(?<![\$\w])([\[\(]\s*[+-]?\\?(?:infty|[0-9a-zA-Z\pi\theta]+)\s*[;,]\s*[+-]?\\?(?:infty|[0-9a-zA-Z\pi\theta]+)\s*[\]\)])/g, '$$$1$$');
+
+    parts[i] = p;
+  }
+  
+  return parts.join('$');
+}
+
 /**
  * Chuẩn hóa văn bản & công thức toán trước khi render:
  * 1. Sửa lỗi chính tả văn bản thông dụng (ví dụ: "và o các khoảng trống" -> "vào các khoảng trống")
@@ -945,7 +1001,7 @@ export const cleanVietnameseUnicode = (str: string): string => {
  */
 export const polishMathText = (content: string): string => {
   if (!content) return '';
-  let text = cleanVietnameseUnicode(content);
+  let text = fixSequencesAndFractions(content);
 
   // 1. Sửa lỗi chính tả văn bản thông dụng
   text = text.replace(/và\s+o\s+các\s+khoảng\s+trống/gi, 'vào các khoảng trống');
@@ -1335,12 +1391,107 @@ export const normalizeSetNotation = (text: string): string => {
   return result;
 };
 
+export function balanceDollarSigns(text: string): string {
+  if (!text) return '';
+  let s = text;
+  
+  // Count single dollar signs (not including $$)
+  const count = (s.match(/(?<!\$)\$(?!\$)/g) || []).length;
+  if (count % 2 !== 0) {
+    // There is an odd number of $ signs, let's locate the likely orphan dollar sign
+    const positions: number[] = [];
+    for (let i = 0; i < s.length; i++) {
+      if (s[i] === '$') {
+        if (s[i+1] === '$') {
+          i++; // skip double $$
+        } else {
+          positions.push(i);
+        }
+      }
+    }
+    
+    if (positions.length > 0) {
+      // Find the position most likely to be an orphan
+      let orphanIndex = -1;
+      let minScore = Infinity;
+      
+      for (let idx = 0; idx < positions.length; idx++) {
+        const pos = positions[idx];
+        let score = 100;
+        
+        // If it is at the very end or very start of the string
+        if (pos === 0 || pos === s.length - 1) {
+          score -= 50;
+        }
+        
+        // If it is adjacent to option markers or boundaries
+        const after = s.slice(pos + 1, pos + 10);
+        const before = s.slice(Math.max(0, pos - 10), pos);
+        if (/^\s*[A-D][\.\:\)]/.test(after) || /[\.\:\)]\s*$/.test(before)) {
+          score -= 40;
+        }
+        
+        // If adjacent to punctuation
+        if (pos > 0 && /[\.,;\?\s]/.test(s[pos - 1])) score -= 15;
+        if (pos < s.length - 1 && /[\.,;\?\s]/.test(s[pos + 1])) score -= 15;
+        
+        if (score < minScore) {
+          minScore = score;
+          orphanIndex = pos;
+        }
+      }
+      
+      if (orphanIndex !== -1) {
+        s = s.substring(0, orphanIndex) + s.substring(orphanIndex + 1);
+      }
+    }
+  }
+  
+  // Clean empty or redundant math blocks
+  s = s.replace(/\$\s*\$/g, '');
+  return s;
+}
+
+export function autoScanAndFixMath(text: string): string {
+  if (!text) return '';
+  let s = text;
+  
+  // 1. Balance dollar signs
+  s = balanceDollarSigns(s);
+  
+  // 2. Fix KaTeX-crashing unescaped % inside math blocks
+  s = s.replace(/\$([^\$\n]*?)\$/g, (match, inner) => {
+    if (inner.includes('%') && !inner.includes('\\%')) {
+      return `$${inner.replace(/%/g, '\\%')}$`;
+    }
+    return match;
+  });
+  
+  // 3. Fix double subscripts y_cđ_1 -> y_{\text{CĐ}_1}
+  s = s.replace(/y_\{?(?:CĐ|cđ)\}?_(\d+)/g, 'y_{\\text{CĐ}_$1}');
+  s = s.replace(/y_\{?(?:CT|ct)\}?_(\d+)/g, 'y_{\\text{CT}_$1}');
+  
+  // 4. Ensure y_{CĐ} and y_{CT} are beautifully upright roman
+  s = s.replace(/y_\{?(?:CĐ|cđ)\}?/g, 'y_{\\text{CĐ}}')
+       .replace(/y_\{?(?:CT|ct)\}?/g, 'y_{\\text{CT}}');
+       
+  // 5. Clean up duplicate options if they somehow slipped in
+  s = s.replace(/\b([A-D])\.\s+\1\.\b/g, '$1.');
+  
+  return s;
+}
+
 /**
  * XỬ LÝ TỔNG QUÁT & TRIỆT ĐỂ 100% LỖI DÍNH CHỮ TIẾNG VIỆT IN NGHIÊNG VÀ LỘ LỆNH LATEX TRÊN TRANG LÀM BÀI ONLINE
+
  * Tokenizer & Sanitizer bảo vệ tiếng Việt cho đề thi toán
  */
 export const sanitizeExamQuestion = (rawContent: string): string => {
   if (!rawContent) return '';
+  // Chuẩn hóa y_{CĐ}, y_{CT} thành dạng LaTeX đẹp \text{CĐ}, \text{CT} trên toàn bộ văn bản trước khi bọc
+  rawContent = String(rawContent)
+    .replace(/y_\{?(?:CĐ|cđ)\}?/g, 'y_{\\text{CĐ}}')
+    .replace(/y_\{?(?:CT|ct)\}?/g, 'y_{\\text{CT}}');
   let content = rescueCodeAndNestedText(sanitizeLatexString(rawContent.trim()));
   content = normalizePropositionQuotes(content);
   content = normalizeSetNotation(content);
@@ -1405,11 +1556,14 @@ export const sanitizeExamQuestion = (rawContent: string): string => {
 
   // BƯỚC 3: XỬ LÝ VĂN BẢN NGOÀI KHỐI MATH (BẢO ĐẢM KHÔNG ẢNH HƯỞNG CÔNG THỨC TOÁN ĐÃ CÓ)
   // 3.0 Xử lý các chỉ số dưới dạng text (y_{CĐ} -> y_{CĐ}, bỏ dấu gạch dưới nếu không cần thiết trong text)
+  // Sửa lỗi chỉ số y_{CĐ} và y_{CT} hiển thị xấu bằng cách chuyển thành LaTeX chuẩn y_{\text{CĐ}} và y_{\text{CT}}
   content = content
-    .replace(/y_\{CĐ\}/g, '$y_{CĐ}$')
-    .replace(/y_\{CT\}/g, '$y_{CT}$')
-    .replace(/y_\{cđ\}/g, '$y_{CĐ}$')
-    .replace(/y_\{ct\}/g, '$y_{CT}$');
+    .replace(/y_\\text\{CĐ\}/g, '$y_{\\text{CĐ}}$')
+    .replace(/y_\\text\{CT\}/g, '$y_{\\text{CT}}$')
+    .replace(/y_\{CĐ\}/g, '$y_{\\text{CĐ}}$')
+    .replace(/y_\{CT\}/g, '$y_{\\text{CT}}$')
+    .replace(/y_\{cđ\}/g, '$y_{\\text{CĐ}}$')
+    .replace(/y_\{ct\}/g, '$y_{\\text{CT}}$');
 
   // 3.1 Dọn dẹp rác markdown thừa (dấu * dính liền đáp án)
   content = content
@@ -1529,6 +1683,17 @@ export const sanitizeExamQuestion = (rawContent: string): string => {
   content = content
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  // Khắc phục triệt để các dấu $ dư thừa hoặc mồ côi
+  content = balanceDollarSigns(content);
+
+  // Triệt tiêu hoàn toàn rò rỉ của chữ "undefined" hoặc "null" lẻ loi trong tài liệu ở mọi vị trí (kể cả trong các khối toán)
+  content = content
+    .replace(/(?<![a-zA-Z0-9_\$\\])(?:undefined|null)(?![a-zA-Z0-9_\$])/gi, '')
+    .replace(/=\s*(?:undefined|null)/gi, '=')
+    .replace(/(?:undefined|null)\s*=\s*/gi, '')
+    .replace(/\s{2,}/g, ' ')
     .trim();
 
   return content;
@@ -1834,111 +1999,25 @@ export function wrapLatex(text: string): string {
 }
 
 export function cleanOptionText(opt: any): string {
-  if (!opt && opt !== 0) return '';
-  let text = sanitizeLatexString(String(opt).trim());
+  if (opt === undefined || opt === null) return '';
+  let text = String(opt).trim();
   
-  // 0. Triệt tiêu undefined rò rỉ, dọn dẹp unicode và cắt bỏ các tiêu đề phần bị dính vào đuôi phương án D
+  // 0. Triệt tiêu undefined rò rỉ
   text = text.replace(/(?:=\s*)?undefined(?![a-zA-Z0-9_\$])/gi, '').replace(/\bundefined\b/gi, '');
-  text = text.replace(/(?:\r?\n|\s)*(?:###?\s*|\*\*)?(?:PHẦN\s*(?:[I|V|X\d]+|\d+)|B\.\s*TỰ\s*LUẬN|BÀI\s*TẬP\s*TỰ\s*LUẬN|Lời\s*giải|HDG)[\s\S]*$/i, '');
-  text = cleanVietnameseUnicode(text);
-  text = normalizeLogicAndSetSymbols(text);
-  text = text.replace(/<br\s*\/?>/gi, ' ').replace(/\s{2,}/g, ' ');
+  
+  // Dọn dẹp thẻ HTML nếu có
+  text = text.replace(/<\/?[^>]+(>|$)/g, "");
 
-  // 1. Remove leading option prefixes like "A.", "A)", "A:", "a.", "a)", "**A.**", "<b>A.</b>", "- A.", "- **A.**"
-  // Triệt tiêu hoàn toàn nguy cơ lặp lại nhãn phương án hoặc dị dạng
-  // BẢO VỆ tên tập hợp: KHÔNG bóc nhầm chữ A của tập hợp như A = {1; 2} hoặc A = [-1; 3]
+  // 1. Loại bỏ nhãn phương án ở đầu (A., B., C., D., a., b., c., d., - A., **A.**, etc.)
   text = text
-    .replace(/^(?:[-*−\.\s]|\*{1,2})*([A-Da-d])[\.\:\)](?:<\/b>|\*{1,2})?\s*(?:[-*−\.\s]|\*{1,2})*(?:\1[\.\:\)](?:<\/b>|\*{1,2})?\s*)*/, '')
-    .replace(/^(?:[-*]\s*)?(?:<b>|\*{1,2})?\s*[A-Da-d][\.\:\)]\s*(?:<\/b>|\*{1,2})?\s*(?!=\s*)/, '')
-    .replace(/^\([A-Da-d]\)\s*(?!=\s*)/, '')
-    .replace(/[\-_–—\s*]+$/, '')
+    .replace(/^[\s\-*•]*([A-Da-d])[\.\:\)\s]+/, '')
+    .replace(/^\s*\**([A-Da-d])[\.\:\)]\**\s*/, '')
     .trim();
 
-  // 2. Chuẩn hóa vô cực và các ký hiệu toán
-  text = normalizeInfinity(text);
+  // 2. Loại bỏ hoàn toàn dấu sao (*) hoặc gạch dưới (_) đánh dấu phương án đúng ở đầu hoặc cuối phương án
+  text = text.replace(/^[\s\*_]+/, '').replace(/[\s\*_]+$/, '').trim();
 
-  // 3. Nếu có liên từ tiếng Việt (hoặc, và, hay), xử lý tách liên từ
-  const hasConjunction = /\b(hoặc|và|hay)\b/i.test(text);
-  if (hasConjunction) {
-    return fixInlineOptionText(text);
-  }
-
-  // 4. Nếu là khối môi trường LaTeX hoặc hệ phương trình/bất phương trình
-  // Tự động nhận diện { bpt1 \ bpt2 } hoặc \left\{ bpt1 \ bpt2
-  text = text.replace(/\\?\{\s*([^{}]+?(?:[<>=]|\\ge|\\le|\\leq|\\geq|\\neq)[^{}]+?(?:\\\\|\\|\n|,)[^{}]+?(?:[<>=]|\\ge|\\le|\\leq|\\geq|\\neq)[^{}]+?)\s*\\?\}/g, (_match, body) => {
-    return `\\begin{cases}\n${normalizeCasesBody(body)}\n\\end{cases}`;
-  });
-
-  if (/\\begin\s*\{cases\*?\}/.test(text)) {
-    text = text.replace(/\\begin\s*\{cases\*?\}([\s\S]*?)\\end\s*\{cases\*?\}/g, (_m, b) => `\\begin{cases}\n${normalizeCasesBody(b)}\n\\end{cases}`);
-  }
-  if (/\\begin\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}/.test(text) || /\\left\s*\[/.test(text)) {
-    const unwrapped = text.replace(/^\s*\${1,4}\s*([\s\S]*?)\s*\${1,4}\s*$/, '$1').trim();
-    return `$${unwrapped}$`;
-  }
-
-  // 5. Kiểm tra nếu là biểu thức toán học (khoảng, đoạn, công thức, biến số, hàm lượng giác, phân số, căn số, phương trình, bất đẳng thức kép)
-  // Bóc $ ngoài cùng nếu có để chuẩn hóa bên trong, sau đó bọc lại $ sạch sẽ
-  const unwrapped = text.replace(/^\s*\${1,2}\s*([\s\S]*?)\s*\${1,2}\s*$/, '$1').trim();
-
-  const normIneqOp = (op: string): string => {
-    const o = op.toLowerCase().replace(/^\\/, '');
-    if (o === '<=' || o === 'le' || o === 'leq' || o === 'leqslant') return '\\le';
-    if (o === '>=' || o === 'ge' || o === 'geq' || o === 'geqslant') return '\\ge';
-    if (o === '<' || o === '>') return o;
-    if (o === '!=' || o === 'ne' || o === 'neq') return '\\neq';
-    return op.startsWith('\\') ? op : `\\${op}`;
-  };
-
-  // 5.1 Nhận diện bất đẳng thức kép (BĐT kép) trong lựa chọn phương án: vd: 0 \le x \le 4, -1 < x \le 3, 0 <= x <= 4
-  const ineqOpStr = "(?:<=|>=|<|>|\\\\le|\\\\ge|\\\\leq|\\\\geq|\\\\leqslant|\\\\geqslant|\\ble\\b|\\bge\\b|\\bleq\\b|\\bgeq\\b)";
-  const compoundMatch = unwrapped.match(new RegExp(
-    `^([+-]?(?:\\d+(?:[.,]\\d+)?|[a-zA-Z]|\\\\[a-zA-Z]+(?:\\{[^{}]*\\})*))\\s*(${ineqOpStr})\\s*([^\\\\\\n,;]+?)\\s*(${ineqOpStr})\\s*([+-]?(?:\\d+(?:[.,]\\d+)?|[a-zA-Z]|\\\\[a-zA-Z]+(?:\\{[^{}]*\\})*))$`,
-    "i"
-  ));
-  if (compoundMatch) {
-    const [, left, op1, mid, op2, right] = compoundMatch;
-    return `$${left.trim()} ${normIneqOp(op1)} ${mid.trim()} ${normIneqOp(op2)} ${right.trim()}$`;
-  }
-
-  // 5.2 Nhận diện bất phương trình / phương trình đơn lẻ: x \ge 0, x <= 4, y > 1, 2x - y <= 10
-  const simpleIneqMatch = unwrapped.match(new RegExp(
-    `^([+-]?[a-zA-Z0-9\\+\\-\\s\\*\\/\\(\\)\\{\\}\\^\\_\\\\]+?)\\s*(${ineqOpStr})\\s*([+-]?[a-zA-Z0-9\\+\\-\\s\\*\\/\\(\\)\\{\\}\\^\\_\\\\]+)$`,
-    "i"
-  ));
-  if (simpleIneqMatch) {
-    const [, left, op, right] = simpleIneqMatch;
-    return `$${left.trim()} ${normIneqOp(op)} ${right.trim()}$`;
-  }
-
-  // 5.3 Số thực hoặc số thập phân có dấu phẩy (vd: 12, 16, 17,6, 18,4, -3, 0,5)
-  if (/^[+-]?\d+(?:[.,]\d+)?$/.test(unwrapped)) {
-    return `$${unwrapped}$`;
-  }
-  
-  // Nhận diện nếu unwrapped là toán học
-  const isPureMath = 
-    /^[\[\(]\s*[^;,]+?[;,]\s*[^;,]+?[\]\)]$/.test(unwrapped) || // Khoảng đoạn (-1; 1), [0; 2pi]
-    /^\\?\{[^}]+\\?\}$/.test(unwrapped) || // Tập hợp {1; 2}
-    /^[A-Za-z]\s*=\s*/.test(unwrapped) || // y = cosx, x = 1, A = ...
-    /\b(?:sin|cos|tan|cot|lim|log|ln|frac|sqrt|pi|infty|mathbb|setminus|cap|cup|in|notin|subset|ge|le|geq|leq|ne|neq|pm|times|cdot)\b/i.test(unwrapped) ||
-    /^[0-9\+\-\*\/=\^\_\.\,\;\:\s\(\)\[\]\{\}\<\>\le\ge\ne\pm\pi\\]+$/.test(unwrapped) || // Chỉ toàn ký tự toán và số
-    /^[a-zA-Z]$/.test(unwrapped); // Biến đơn lẻ như x, y, m, a, b
-
-  if (isPureMath) {
-    // Sửa các hàm lượng giác viết thường thiếu \ (sinx -> \sin x, cosx -> \cos x, tanx -> \tan x, cotx -> \cot x)
-    let sanitizedMath = unwrapped
-      .replace(/(?<!\\)\b(sin|cos|tan|cot)\s*([a-zA-Z0-9])/gi, '\\$1 $2')
-      .replace(/(?<!\\)\b(sin|cos|tan|cot)\b/gi, '\\$1')
-      .replace(/(?<!\\)\b(frac|sqrt|pm|le|ge|ne)\b/gi, '\\$1');
-    return `$${sanitizedMath}$`;
-  }
-
-  // 6. Nếu là văn bản thường có chứa công thức xen kẽ (ví dụ: "Hàm số đồng biến trên $R$")
-  text = sanitizeMathBeforeRender(text);
-  text = fixInlineOptionText(text);
-
-  return sanitizeExamQuestion(text);
+  return text;
 }
 
 export function getPublicAppUrl(): string {

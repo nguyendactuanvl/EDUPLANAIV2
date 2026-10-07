@@ -354,13 +354,14 @@ export const MarkdownRenderer = ({
     return () => window.removeEventListener('open-fullscreen-image', handleOpenFullscreen);
   }, []);
 
-  // 0. Bảo vệ các khối code (```...```) và inline code (`...`) để các bộ tiền xử lý toán học không làm hỏng cú pháp lập trình
-  const codeTokens: string[] = [];
-  let processedContent = unflattenMarkdownTables(content || '');
+  // Let's rewrite the text preparation block of MarkdownRenderer in a pristine, robust way.
+  let processedContent = content || '';
 
-  // 0.01 Chuyển đổi trực tiếp các BẢNG BIẾN THIÊN (BBT) Markdown table sang <svg-wrapper> NGAY TỪ ĐẦU
-  // Để các hàm xử lý công thức toán học sau đó (polishMathText, fixMath, sanitizeExamQuestion...)
-  // KHÔNG BAO GIỜ làm hỏng cấu trúc bảng, không làm mất dấu y' hay gãy mũi tên \searrow, \nearrow!
+  // Clean leaked undefined/null strings
+  processedContent = processedContent.replace(/(?<![a-zA-Z0-9_\$])(?:undefined|null)(?![a-zA-Z0-9_\$])/g, () => '');
+
+  // 1. Chuyển đổi trực tiếp các BẢNG BIẾN THIÊN (BBT) Markdown table sang <svg-wrapper>
+  processedContent = unflattenMarkdownTables(processedContent);
   processedContent = processedContent.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
     try {
       const svg = convertBbtTableToSvg(match);
@@ -372,91 +373,21 @@ export const MarkdownRenderer = ({
     return match;
   });
 
-  processedContent = processedContent.replace(/(```[a-zA-Z0-9_\-]*\s*[\s\S]*?```|`[^`\n]+`)/g, (match) => {
-    // Nếu là khối TikZ thì giữ nguyên để TikZ renderer biên dịch đồ thị
-    if (/```(?:tikz|latex)\b/i.test(match) || /\\begin\s*\{tikzpicture\}/i.test(match)) {
-      return match;
+  // 2. Chuyển đổi các khối tikz code block
+  processedContent = processedContent.replace(/```tikz\s*([\s\S]*?)```/gi, (_, inner) => {
+    let cleaned = inner.replace(/\\(usetikzlibrary|usepackage)\s*\{[^}]*\}\s*/gi, '').trim();
+    if (!cleaned.includes('\\begin{tikzpicture}')) {
+       return `\\begin{tikzpicture}\n${cleaned}\n\\end{tikzpicture}`;
     }
-    const cleanedCode = rescueCodeAndNestedText(match);
-    codeTokens.push(cleanedCode);
-    return `___CODE_BLOCK_TOKEN_${codeTokens.length - 1}___`;
+    return cleaned;
   });
 
-  processedContent = rescueCodeAndNestedText(sanitizeLatexString(processedContent));
-  processedContent = normalizePropositionQuotes(processedContent);
-  processedContent = sanitizeExamQuestion(processedContent);
-  processedContent = normalizeLogicAndSetSymbols(processedContent);
-  processedContent = polishMathText(processedContent);
-  processedContent = sanitizeMathBeforeRender(processedContent);
-  processedContent = normalizeMathLatex(processedContent);
-  processedContent = normalizeLogicAndSetSymbols(processedContent);
-
-  // Chuẩn hóa phương án trắc nghiệm: bóc tách chữ tiếng Việt và sửa rách dấu $$
-  if (/^\s*(?:[-*]\s*)?(?:\*{0,2})[A-Da-d][\.\:\)]/i.test(processedContent.trim())) {
-    processedContent = fixInlineOptionText(processedContent);
-  }
-  processedContent = processedContent.replace(/(^|\n)(\s*(?:[-*]\s*)?(?:\*{0,2})[A-Da-d][\.\:\)](?:\*{0,2})\s*)([^\n]+)/g, (_m, lineStart, label, optText) => {
-    return `${lineStart}${label}${fixInlineOptionText(optText)}`;
-  });
-
-  processedContent = normalizeSetNotation(processedContent);
-  processedContent = formatMathContent(processedContent);
-  processedContent = fixMath(processedContent);
-  processedContent = normalizeMathLatex(processedContent);
-  processedContent = normalizeSetNotation(processedContent);
-  processedContent = rescueCodeAndNestedText(processedContent);
-
-  // Khôi phục các khối code đã bảo vệ
-  processedContent = processedContent.replace(/___CODE_BLOCK_TOKEN_(\d+)___/g, (_m, idx) => codeTokens[Number(idx)] ?? '');
-  processedContent = rescueCodeAndNestedText(processedContent);
-
-  // 0. Unescape escaped dollar signs so KaTeX/remark-math parses them as math delimiters
+  // 3. Chuẩn hóa phân định công thức LaTeX \(...\) thành $...$ và \[...\] thành $$...$$
+  // Bảo toàn 100% các ký tự gạch chéo ngược (\) bằng cách sử dụng các hàm phản hồi () => ...
+  processedContent = processedContent.replace(/\\\(([\s\S]*?)\\\)/g, (_, formula) => `$${formula}$`);
+  processedContent = processedContent.replace(/\\\[([\s\S]*?)\\\]/g, (_, formula) => `\n\n$$${formula}$$\n\n`);
+  // Bỏ các bộ tiền xử lý và regex thủ công chồng chéo, sử dụng bộ render chuẩn.
   processedContent = processedContent.replace(/\\(\$)/g, '$1');
-
-  // Convert standard LaTeX \( ... \) to $ ... $
-  processedContent = processedContent.replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$');
-  // Inside parentheses or explanation sentences, \[ ... \] must be converted to $ ... $ (Inline Math)
-  processedContent = processedContent.replace(/\(([^()\n]*?)\\\[([\s\S]*?)\\\]([^()\n]*?)\)/g, (m, b, f, a) => {
-    return `(${b}$${f.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim()}$${a})`;
-  });
-  // Also convert any $$ ... $$ inside parentheses to $ ... $ (Inline Math)
-  processedContent = processedContent.replace(/\(([^()\n]*?)\$\$([\s\S]*?)\$\$([^()\n]*?)\)/g, (m, b, f, a) => {
-    return `(${b}$${f.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim()}$${a})`;
-  });
-  // Convert remaining standalone \[ ... \] to $$ ... $$
-  processedContent = processedContent.replace(/\\\[([\s\S]*?)\\\]/g, '$$$$$1$$$$');
-
-  // Auto-wrap naked \begin{cases}...\end{cases} or math environments if not wrapped in $ or $$
-  // Also normalize line breaks inside cases so equations don't merge (e.g. \ x - y -> \\ x - y)
-  processedContent = formatMathContent(processedContent);
-
-  // Normalize spaces inside inline $ ... $ so remark-math recognizes them (e.g. "$ 1 $" -> "$1$", "$ x = 2 $" -> "$x = 2$")
-  // Strip any newlines \n and excess spaces inside $ ... $, and pull trailing punctuation OUT of the inline math block ($0.$ -> $0$.)
-  processedContent = processedContent.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)(?<!\$)\$(?!\$)/g, (match, formula) => {
-    if (formula.includes('$$')) return match;
-    let trimmed = formula.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
-    if (!trimmed) return match;
-
-    // Normalize pseudo not-equal symbols inside math block
-    trimmed = trimmed.replace(/=\/=/g, ' \\neq ')
-                     .replace(/!\s*=\s*/g, ' \\neq ')
-                     .replace(/(?<!\/)\/\s*=\s*/g, ' \\neq ')
-                     .replace(/\s*\\neq\s*/g, ' \\neq ');
-
-    let trailingPunct = "";
-    const punctMatch = trimmed.match(/([.,;:!?]+)$/);
-    if (punctMatch && !/[\\\}]/.test(punctMatch[1])) {
-      trailingPunct = punctMatch[1];
-      trimmed = trimmed.slice(0, -trailingPunct.length).trim();
-    }
-    return `$${trimmed}$${trailingPunct}`;
-  });
-
-  // Dọn dẹp dấu $ thừa/rách (ví dụ: $$$ -> $, $$$$ -> $$)
-  processedContent = processedContent.replace(/\${3,}/g, (m) => m.length % 2 === 1 ? '$' : '$$');
-
-  // Cứu các câu hỏi tiếng Việt bị dính vào môi trường toán
-  processedContent = rescueVietnameseFromMath(processedContent);
 
   // Chuẩn hóa khối display math $$...$$: nếu có nhiều dòng, đảm bảo dấu mở $$ và đóng $$ luôn ở dòng riêng biệt
   // Điều này ngăn remark-math bị lỗi "Expected EOF got \end{cases}" và nuốt luôn câu văn tiếng Việt phía sau
@@ -471,61 +402,10 @@ export const MarkdownRenderer = ({
   // Xóa dấu chấm mồ côi ngay sau khối $$...$$ trước khi bắt đầu câu mới tiếng Việt
   processedContent = processedContent.replace(/(\$\$[\s\S]*?\$\$)\s*\.\s*(?=[A-ZÀ-Ỹ])/g, '$1\n\n');
 
-  // 0.05 Tự động nhận diện và chuyển đổi mọi BẢNG BIẾN THIÊN dạng Markdown table sang SVG chuẩn SGK
-  processedContent = unflattenMarkdownTables(processedContent);
-  processedContent = processedContent.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
-    try {
-      const svg = convertBbtTableToSvg(match);
-      if (svg) {
-        const base64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : Buffer.from(encodeURIComponent(svg)).toString('base64');
-        return `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n`;
-      }
-    } catch (e) {}
-    return match;
-  });
+  // Đã xử lý tất cả các phần tử BBT, TikZ, và hình vẽ tại phần trên của MarkdownRenderer.
+  // Không cần xử lý lại để tránh trùng lặp.
 
-  // 0.1 Unwrap any existing code blocks around SVG
-  processedContent = processedContent.replace(/```[a-z]*\s*(<svg[\s\S]*?<\/svg>)\s*```/gi, '$1');
-  
-  // Wrap SVGs in a container to prevent Markdown from messing them up and to style them
-  processedContent = processedContent.replace(/(<svg[\s\S]*?<\/svg>)/gi, (match) => {
-    try {
-      const base64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(match)) : Buffer.from(encodeURIComponent(match)).toString('base64');
-      return `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n`;
-    } catch (e) {
-      return match;
-    }
-  });
-  
-  // 1. Remove stray preamble packages that might be generated (e.g. \usetikzlibrary{...})
-  processedContent = processedContent.replace(/\\(usetikzlibrary|usepackage)\s*\{[^}]*\}\s*/gi, '');
-
-  // 1.1 Unwrap any existing code blocks around TikZ to normalize
-  processedContent = processedContent.replace(/```[a-z]*\s*([\s\S]*?\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\})\s*```/gi, (match, inner) => {
-    return inner.replace(/\\(usetikzlibrary|usepackage)\s*\{[^}]*\}\s*/gi, '');
-  });
-  
-  // 1.5 Wrap loose tikz code blocks that don't have begin/end environment
-  processedContent = processedContent.replace(/```tikz\s*([\s\S]*?)```/gi, (match, inner) => {
-    let cleaned = inner.replace(/\\(usetikzlibrary|usepackage)\s*\{[^}]*\}\s*/gi, '').trim();
-    if (!cleaned.includes('\\begin{tikzpicture}')) {
-       return `\\begin{tikzpicture}\n${cleaned}\n\\end{tikzpicture}`;
-    }
-    return cleaned;
-  });
-  
-  // 1.55 Handle \dotfill: replace with clean academic dotted line
-  processedContent = processedContent.replace(/\\dotfill\b/g, '. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .');
-
-  // 1.5 Clean up any previously injected HTML choice containers to standard Markdown list
-  processedContent = processedContent.replace(/<div\s+class=["']question-choices[^"']*["']>([\s\S]*?)<\/div>/gi, '$1');
-  processedContent = processedContent.replace(/<div\s+class=["']choice-item[^"']*["']>([\s\S]*?)<\/div>/gi, (m, inner) => {
-    const labelMatch = inner.match(/<span\s+class=["']choice-label[^"']*["']>([\s\S]*?)<\/span>/i);
-    const textMatch = inner.match(/<span\s+class=["']choice-text[^"']*["']>([\s\S]*?)<\/span>/i);
-    const label = labelMatch ? labelMatch[1].replace(/<[^>]+>/g, '').trim() : '';
-    const text = textMatch ? textMatch[1].replace(/<[^>]+>/g, '').trim() : inner.replace(/<[^>]+>/g, '').trim();
-    return `\n- **${label}** ${fixInlineOptionText(text)}\n`;
-  });
+  // Các khối HTML choices đã được dọn dẹp sạch sẽ ở Bước 6.
 
   // 2. Base64 encode TikZ blocks to prevent Markdown/KaTeX interference
   // If instant SVG can be generated (e.g. tkz-tab variation tables, function plots, geometry),

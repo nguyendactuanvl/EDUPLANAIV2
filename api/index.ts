@@ -2521,7 +2521,102 @@ LƯU Ý QUAN TRỌNG VỀ JSON: Đảm bảo tất cả các dấu gạch chéo 
   });
 });
 
-app.all("/api/exams/share", (req, res) => {
+const KV_STORE_ID = 'jaku8xjm';
+const CHUNK_SIZE = 800; // immanuel.co limit is 1024, so 800 is extremely safe and fast
+
+function strToHex(str: string): string {
+  let hex = '';
+  for (let i = 0; i < str.length; i++) {
+    hex += str.charCodeAt(i).toString(16).padStart(4, '0');
+  }
+  return hex;
+}
+
+function hexToStr(hex: string): string {
+  let str = '';
+  for (let i = 0; i < hex.length; i += 4) {
+    str += String.fromCharCode(parseInt(hex.substring(i, i + 4), 16));
+  }
+  return str;
+}
+
+async function saveToCloudKV(cleanId: string, data: any): Promise<boolean> {
+  try {
+    const jsonStr = JSON.stringify(data);
+    const compressed = LZString.compressToUTF16(jsonStr);
+    const hex = strToHex(compressed);
+    const count = Math.ceil(hex.length / CHUNK_SIZE);
+
+    // Save count
+    await fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${cleanId}_C/${count}`, {
+      method: 'POST'
+    });
+
+    // Save all chunks in parallel
+    const chunkPromises: Promise<any>[] = [];
+    for (let i = 0; i < count; i++) {
+      const chunk = hex.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+      chunkPromises.push(
+        fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${cleanId}_${i}/${chunk}`, {
+          method: 'POST'
+        })
+      );
+    }
+    await Promise.all(chunkPromises);
+    return true;
+  } catch (err) {
+    console.error('saveToCloudKV error:', err);
+    return false;
+  }
+}
+
+async function loadFromCloudKV(cleanId: string): Promise<any> {
+  // 1. Try Distributed Cloud KV with hex chunking
+  try {
+    const countRes = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}_C`);
+    if (countRes.ok) {
+      const countVal = await countRes.json();
+      const readCount = parseInt(countVal, 10);
+      if (readCount && readCount > 0 && readCount < 5000) {
+        const chunkPromises: Promise<any>[] = [];
+        for (let i = 0; i < readCount; i++) {
+          chunkPromises.push(
+            fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}_${i}`).then(r => r.json())
+          );
+        }
+        const chunks = await Promise.all(chunkPromises);
+        const hexReconstructed = chunks.join('');
+        if (hexReconstructed) {
+          const restoredUtf16 = hexToStr(hexReconstructed);
+          const decompressed = LZString.decompressFromUTF16(restoredUtf16);
+          if (decompressed) {
+            return JSON.parse(decompressed);
+          }
+        }
+      }
+    }
+  } catch (kvErr) {
+    console.warn('Cloud KV chunked fetch error:', kvErr);
+  }
+
+  // 2. Try legacy single-key Cloud KV
+  try {
+    const legacyRes = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}`);
+    if (legacyRes.ok) {
+      const val = await legacyRes.json();
+      if (val && typeof val === 'string') {
+        const decomp = LZString.decompressFromEncodedURIComponent(val);
+        if (decomp) {
+          return JSON.parse(decomp);
+        }
+      }
+    }
+  } catch (e) {}
+
+  return null;
+}
+
+app.all("/api/exams/share", async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
@@ -2536,17 +2631,31 @@ app.all("/api/exams/share", (req, res) => {
     }
     const examId = req.body?.customId ? String(req.body.customId).trim() : code;
 
-    sharedExamsStore.set(examId, req.body);
-    sharedExamsStore.set(examId.toLowerCase(), req.body);
-    sharedExamsStore.set(examId.toUpperCase(), req.body);
+    const body = req.body || {};
+    const pdfBase64 = body.pdfBase64 || "";
+
+    const metadata = { ...body };
+    delete metadata.pdfBase64;
+
+    sharedExamsStore.set(examId, metadata);
+    sharedExamsStore.set(examId.toLowerCase(), metadata);
+    sharedExamsStore.set(examId.toUpperCase(), metadata);
+
+    if (pdfBase64) {
+      sharedExamsStore.set(`${examId}_PDF`, { pdfBase64 });
+      sharedExamsStore.set(`${examId.toUpperCase()}_PDF`, { pdfBase64 });
+      sharedExamsStore.set(`${examId.toLowerCase()}_PDF`, { pdfBase64 });
+    }
 
     saveExamsToDisk();
 
-    // Asynchronously push to persistent cloud KV store so Vercel lambdas & other devices can always find it
-    try {
-      const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(req.body));
-      fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/jaku8xjm/${encodeURIComponent(examId.toUpperCase())}/${encodeURIComponent(compressed)}`, { method: 'POST' }).catch(() => {});
-    } catch (kvErr) {}
+    // Persist metadata to cloud KV (extremely small, fast!)
+    await saveToCloudKV(examId.toUpperCase(), metadata);
+
+    // Persist PDF only if provided and non-empty (done once)
+    if (pdfBase64) {
+      await saveToCloudKV(`${examId.toUpperCase()}_PDF`, { pdfBase64 });
+    }
 
     res.json({ examId });
   } catch (error) {
@@ -2555,44 +2664,65 @@ app.all("/api/exams/share", (req, res) => {
 });
 
 app.get("/api/exams/:id", async (req, res) => {
-  const rawId = (req.params.id || '').trim();
-  let data = sharedExamsStore.get(rawId) 
-    || sharedExamsStore.get(rawId.toLowerCase()) 
-    || sharedExamsStore.get(rawId.toUpperCase());
+  const rawId = (req.params.id || '').trim().toUpperCase();
+  const forceFresh = req.query.fresh === 'true';
 
-  if (!data) {
+  let metadata = null;
+  if (forceFresh) {
+    metadata = await loadFromCloudKV(rawId);
+    if (metadata) {
+      sharedExamsStore.set(rawId, metadata);
+      sharedExamsStore.set(rawId.toUpperCase(), metadata);
+      saveExamsToDisk();
+    }
+  }
+
+  if (!metadata) {
+    metadata = sharedExamsStore.get(rawId) 
+      || sharedExamsStore.get(rawId.toLowerCase()) 
+      || sharedExamsStore.get(rawId.toUpperCase());
+  }
+
+  if (!metadata) {
     loadExamsFromDisk();
-    data = sharedExamsStore.get(rawId) 
+    metadata = sharedExamsStore.get(rawId) 
       || sharedExamsStore.get(rawId.toLowerCase()) 
       || sharedExamsStore.get(rawId.toUpperCase());
   }
 
   // If not found in local memory/disk (e.g. fresh Vercel serverless cold-start), fetch from persistent cloud KV
-  if (!data) {
-    try {
-      const kvRes = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/jaku8xjm/${encodeURIComponent(rawId.toUpperCase())}`, {
-        signal: AbortSignal.timeout(5000)
-      });
-      if (kvRes.ok) {
-        const val = await kvRes.json();
-        if (val && typeof val === 'string') {
-          const decompressed = LZString.decompressFromEncodedURIComponent(val);
-          if (decompressed) {
-            data = JSON.parse(decompressed);
-            sharedExamsStore.set(rawId, data);
-            sharedExamsStore.set(rawId.toUpperCase(), data);
-            saveExamsToDisk();
-          }
-        }
-      }
-    } catch (kvFetchErr) {
-      console.warn("Cloud KV fetch fallback error:", kvFetchErr);
+  if (!metadata) {
+    metadata = await loadFromCloudKV(rawId);
+    if (metadata) {
+      sharedExamsStore.set(rawId, metadata);
+      sharedExamsStore.set(rawId.toUpperCase(), metadata);
+      saveExamsToDisk();
     }
   }
 
-  if (data) {
-    res.setHeader('Cache-Control', 'public, max-age=60');
-    res.json(data);
+  if (metadata) {
+    // Also retrieve PDF base64
+    let pdfData = sharedExamsStore.get(`${rawId}_PDF`)
+      || sharedExamsStore.get(`${rawId.toLowerCase()}_PDF`)
+      || sharedExamsStore.get(`${rawId.toUpperCase()}_PDF`);
+
+    if (!pdfData) {
+      pdfData = await loadFromCloudKV(`${rawId}_PDF`);
+      if (pdfData) {
+        sharedExamsStore.set(`${rawId}_PDF`, pdfData);
+        sharedExamsStore.set(`${rawId.toUpperCase()}_PDF`, pdfData);
+        saveExamsToDisk();
+      }
+    }
+
+    const merged = {
+      ...metadata,
+      pdfBase64: pdfData?.pdfBase64 || ""
+    };
+
+    // Ensure we do not cache the response on the client or proxies so the teacher gets fresh submissions immediately
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.json(merged);
   } else {
     res.status(404).json({ error: "Không tìm thấy đề thi. Mã đề có thể không chính xác hoặc đã hết hạn." });
   }
@@ -2613,46 +2743,34 @@ app.post("/api/exams/:id/submit", async (req, res) => {
     return res.status(400).json({ error: "Thông tin bài làm học sinh không hợp lệ." });
   }
 
-  let data = sharedExamsStore.get(rawId) 
+  let metadata = sharedExamsStore.get(rawId) 
     || sharedExamsStore.get(rawId.toLowerCase()) 
     || sharedExamsStore.get(rawId.toUpperCase());
 
-  if (!data) {
+  if (!metadata) {
     loadExamsFromDisk();
-    data = sharedExamsStore.get(rawId) 
+    metadata = sharedExamsStore.get(rawId) 
       || sharedExamsStore.get(rawId.toLowerCase()) 
       || sharedExamsStore.get(rawId.toUpperCase());
   }
 
   // If still not found, pull from persistent cloud KV
-  if (!data) {
-    try {
-      const kvRes = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/jaku8xjm/${encodeURIComponent(rawId.toUpperCase())}`, {
-        signal: AbortSignal.timeout(5000)
-      });
-      if (kvRes.ok) {
-        const val = await kvRes.json();
-        if (val && typeof val === 'string') {
-          const decompressed = LZString.decompressFromEncodedURIComponent(val);
-          if (decompressed) {
-            data = JSON.parse(decompressed);
-          }
-        }
-      }
-    } catch (kvFetchErr) {
-      console.warn("Lỗi fetch cloud KV khi nộp bài:", kvFetchErr);
-    }
+  if (!metadata) {
+    metadata = await loadFromCloudKV(rawId);
   }
 
-  if (!data) {
+  if (!metadata) {
     return res.status(404).json({ error: "Không tìm thấy phòng thi tương ứng trên hệ thống." });
   }
 
+  // Ensure we strip pdfBase64 if it somehow leaked into metadata
+  delete metadata.pdfBase64;
+
   // Initialize submissions array
-  data.submissions = data.submissions || [];
+  metadata.submissions = metadata.submissions || [];
 
   // Prevent immediate duplicate submissions (e.g. accidental double clicks within 3 minutes)
-  const isDuplicate = data.submissions.some((s: any) => 
+  const isDuplicate = metadata.submissions.some((s: any) => 
     s.studentName === submission.studentName && 
     s.studentClass === submission.studentClass &&
     Math.abs(new Date(s.timestamp || Date.now()).getTime() - new Date().getTime()) < 3 * 60 * 1000
@@ -2660,25 +2778,18 @@ app.post("/api/exams/:id/submit", async (req, res) => {
 
   if (!isDuplicate) {
     submission.timestamp = new Date().toISOString();
-    data.submissions.push(submission);
+    metadata.submissions.push(submission);
     
     // Save to memory
-    sharedExamsStore.set(rawId, data);
-    sharedExamsStore.set(rawId.toUpperCase(), data);
-    sharedExamsStore.set(rawId.toLowerCase(), data);
+    sharedExamsStore.set(rawId, metadata);
+    sharedExamsStore.set(rawId.toUpperCase(), metadata);
+    sharedExamsStore.set(rawId.toLowerCase(), metadata);
     
     // Save to disk cache
     saveExamsToDisk();
 
-    // Async upload back to cloud KV
-    try {
-      const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(data));
-      fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/jaku8xjm/${encodeURIComponent(rawId.toUpperCase())}/${encodeURIComponent(compressed)}`, { 
-        method: 'POST' 
-      }).catch(() => {});
-    } catch (kvUpdateErr) {
-      console.warn("Lỗi đồng bộ nộp bài lên Cloud KV:", kvUpdateErr);
-    }
+    // Await upload back to cloud KV safely (essential for serverless environments!)
+    await saveToCloudKV(rawId, metadata);
   }
 
   res.json({ success: true, message: "Đã ghi nhận kết quả làm bài của học sinh!" });

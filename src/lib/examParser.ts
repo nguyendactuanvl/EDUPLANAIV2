@@ -453,6 +453,17 @@ export async function parseExamWithAI(params: {
 export function preprocessExamText(text: string): string {
   let s = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
+  // Protect math blocks first to avoid touching formulas like $A$, $B$, $A \cap B$
+  const mathTokens: string[] = [];
+  s = s.replace(/\$\$([\s\S]*?)\$\$/g, (match) => {
+    mathTokens.push(match);
+    return `___MATH_BLOCK_${mathTokens.length - 1}___`;
+  });
+  s = s.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)(?<!\$)\$(?!\$)/g, (match) => {
+    mathTokens.push(match);
+    return `___MATH_BLOCK_${mathTokens.length - 1}___`;
+  });
+
   // Pre-normalize: ensure section headers have preceding newlines
   s = s.replace(/(?:^|[^\n])\s*(PHẦN\s*(?:[I|V|X\d]+|\d+)[:\.\-\s][^\n]*)/gi, '\n\n$1\n');
   s = s.replace(/(?:^|[^\n])\s*(B\.?\s*TỰ\s*LUẬN[^\n]*|BÀI\s*TẬP\s*TỰ\s*LUẬN[^\n]*)/gi, '\n\n$1\n');
@@ -462,6 +473,13 @@ export function preprocessExamText(text: string): string {
 
   // Từ ngữ chỉ điểm/hình học/giới từ không được coi là phương án trắc nghiệm
   const geoWordPattern = /(?:tại|điểm|đỉnh|gọi|qua|với|từ|trên|của|cho|và|thuộc|đến|cạnh|đường|mặt\s*phẳng|chiếu\s*lên|tọa\s*độ|tâm|trọng\s*tâm|trực\s*tâm|bán\s*kính|vectơ|vector|tam\s*giác(?:\s+[a-zA-Z\.]+)?|tứ\s*diện(?:\s+[a-zA-Z\.]+)?|hình\s*chóp(?:\s+[a-zA-Z\.]+)?|đoạn\s*thẳng)$/i;
+
+  // Chuẩn hóa triệt để nhãn phương án dị dạng có nhiều dấu chấm, dấu sao, dấu nháy kép, khoảng trắng giữa các dấu sao (vd: "."**B"."**, * * B. * *, .**C"."**, .**B.**, "A.", "**B.**")
+  s = s.replace(/[^a-zA-Z0-9\s]?\s*["'\u201C\u201D\u2018\u2019\.\*\s\(]*\b([A-D])\b["'\u201C\u201D\u2018\u2019\.\*\s\)\:]+\s*["'\u201C\u201D\u2018\u2019\.\*\s]*/g, (match, letter, offset) => {
+    const before = s.slice(Math.max(0, offset - 25), offset);
+    if (geoWordPattern.test(before.trim())) return match;
+    return `\n${letter}. `;
+  });
 
   // Tách các phương án B, C, D bị dính liền vào số/chữ/ký hiệu trước đó (vd: 12B. 16, 17,6D. 18,4)
   s = s.replace(/([0-9\$\)\}\],.:;?!])\s*(?=(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?[B-D][\.:\)])/g, (match, p1, offset) => {
@@ -479,6 +497,9 @@ export function preprocessExamText(text: string): string {
 
   // Tách các mệnh đề a), b), c), d) (chữ thường) của câu hỏi Đúng/Sai ra từng dòng riêng biệt
   s = s.replace(/([^\n])\s*(?=(?:^|\s)(?:[-*]\s*)?(?:\(?\s*[a-d]\s*[\)\.]))\s*/g, '$1\n');
+
+  // Restore math blocks
+  s = s.replace(/___MATH_BLOCK_(\d+)___/g, (_m, idx) => mathTokens[Number(idx)] || "");
 
   return s;
 }

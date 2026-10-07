@@ -67,14 +67,14 @@ body, html, #root, .font-serif, .markdown-body, .prose, .choice-label {
 }
 
 /* Fix for KaTeX fractions overlapping in Tailwind typography and prevent delimiter/equation line breaks */
-.katex {
-  line-height: normal !important;
+.katex, .katex * {
+  box-sizing: content-box !important;
+  line-height: 1.2 !important;
   text-rendering: auto;
   background: transparent !important;
-  white-space: nowrap !important;
 }
-.katex * {
-  line-height: normal !important;
+.katex {
+  white-space: nowrap !important;
 }
 
 .katex .katex-html {

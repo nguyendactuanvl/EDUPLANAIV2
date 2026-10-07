@@ -5,6 +5,7 @@ import {
   User, Users, BarChart, Search, Trash2, FileSpreadsheet, ShieldCheck, KeyRound, Zap, CheckCircle
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import mammoth from "mammoth";
 import { 
   googleSignIn, 
   googleSignOut, 
@@ -34,6 +35,23 @@ interface Part3Key {
   question: number;
   correct: string;
 }
+
+const loadPdfJS = async () => {
+  if ((window as any).pdfjsLib) {
+    return (window as any).pdfjsLib;
+  }
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
+    script.onload = () => {
+      const pdfjsLib = (window as any).pdfjsLib;
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+      resolve(pdfjsLib);
+    };
+    script.onerror = () => reject(new Error("Không thể tải thư viện hiển thị PDF."));
+    document.head.appendChild(script);
+  });
+};
 
 interface DeOnlinePdfProps {
   studentModeData?: string;
@@ -66,6 +84,110 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
   const [isCopied, setIsCopied] = useState(false);
   const [testStatus, setTestStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [isTestingConn, setIsTestingConn] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const cleanAndFormatRosterList = (lines: string[]): string => {
+    return lines
+      .map(line => {
+        let cleaned = line.trim()
+          .replace(/^["'\s\-\.,;\*]+/g, '')
+          .replace(/["'\s\-\.,;\*]+$/g, '')
+          .trim();
+        return cleaned;
+      })
+      .filter(line => {
+        if (!line) return false;
+        const lower = line.toLowerCase();
+        if (lower === 'stt' || lower.includes('danh sách học sinh') || lower === 'họ và tên' || lower === 'họ tên' || lower === 'mã hs' || lower === 'mã số') return false;
+        return true;
+      })
+      .map((line, index) => {
+        const pattern1 = line.match(/^([a-zA-Z0-9_\-]+)\s*[\-:\s\.]\s*(.+)$/);
+        if (pattern1) {
+          return `${pattern1[1].trim().toUpperCase()} - ${pattern1[2].trim()}`;
+        }
+        const defaultCode = `HS${(index + 1).toString().padStart(2, '0')}`;
+        return `${defaultCode} - ${line}`;
+      })
+      .join('\n');
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+        
+        const rosterLines: string[] = [];
+        json.forEach(row => {
+          if (!row || row.length === 0) return;
+          const cleanCells = row.map(cell => String(cell || '').trim()).filter(Boolean);
+          if (cleanCells.length === 0) return;
+          
+          const rowStr = cleanCells.join(' ');
+          const lowerRow = rowStr.toLowerCase();
+          if (lowerRow.includes('danh sách') || lowerRow.includes('họ và tên') || lowerRow === 'stt họ tên') return;
+
+          if (cleanCells.length === 1) {
+            rosterLines.push(cleanCells[0]);
+          } else if (cleanCells.length >= 2) {
+            const nonNumericCells = cleanCells.filter(c => !/^\d+$/.test(c));
+            if (nonNumericCells.length === 1) {
+              rosterLines.push(nonNumericCells[0]);
+            } else if (nonNumericCells.length >= 2) {
+              const codeCell = nonNumericCells.find(c => c.length <= 10 && /^[a-zA-Z0-9_\-]+$/.test(c));
+              const nameCell = nonNumericCells.find(c => c !== codeCell);
+              if (codeCell && nameCell) {
+                rosterLines.push(`${codeCell} - ${nameCell}`);
+              } else {
+                rosterLines.push(nonNumericCells.join(' - '));
+              }
+            } else {
+              rosterLines.push(cleanCells.join(' - '));
+            }
+          }
+        });
+        
+        const roster = cleanAndFormatRosterList(rosterLines);
+        setClassRosterText(roster);
+      } else if (file.name.endsWith('.docx')) {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        const lines = result.value.split('\n').map(l => l.trim()).filter(Boolean);
+        const roster = cleanAndFormatRosterList(lines);
+        setClassRosterText(roster);
+      } else if (file.name.endsWith('.pdf')) {
+        const pdfjs = await loadPdfJS();
+        const arrayBuffer = await file.arrayBuffer();
+        const uint8Array = new Uint8Array(arrayBuffer);
+        const pdfDoc = await pdfjs.getDocument({ data: uint8Array }).promise;
+        const lines: string[] = [];
+        for (let i = 1; i <= pdfDoc.numPages; i++) {
+          const page = await pdfDoc.getPage(i);
+          const textContent = await page.getTextContent();
+          const pageLines = textContent.items.map((item: any) => item.str.trim()).filter(Boolean);
+          lines.push(...pageLines);
+        }
+        const roster = cleanAndFormatRosterList(lines);
+        setClassRosterText(roster);
+      } else {
+        const text = await file.text();
+        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+        const roster = cleanAndFormatRosterList(lines);
+        setClassRosterText(roster);
+      }
+    } catch (error) {
+      console.error("Error parsing roster file:", error);
+      alert("Không thể đọc file này. Vui lòng kiểm tra định dạng và thử lại.");
+    }
+  };
 
   // Cập nhật số câu khi thay đổi
   const handleNumMcqChange = (count: number) => {
@@ -130,6 +252,10 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
     Array.from({ length: 6 }, (_, i) => ({ question: i + 1, correct: "" }))
   );
 
+  const [studentPart1, setStudentPart1] = useState<Record<number, string>>({});
+  const [studentPart2, setStudentPart2] = useState<Record<number, any>>({});
+  const [studentPart3, setStudentPart3] = useState<Record<number, string>>({});
+
   useEffect(() => {
     setPart1Keys(Array.from({ length: numPart1 }, (_, i) => ({ question: i + 1, correct: "" })));
   }, [numPart1]);
@@ -155,6 +281,7 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
 
   // Teacher Exams History & Submission Results State
   const [examsHistory, setExamsHistory] = useState<any[]>([]);
+  const [teacherSyncCode, setTeacherSyncCode] = useState<string>("");
   const [selectedRoomForResults, setSelectedRoomForResults] = useState<string | null>(null);
   const [selectedRoomResultsData, setSelectedRoomResultsData] = useState<any | null>(null);
   const [isLoadingResults, setIsLoadingResults] = useState(false);
@@ -240,6 +367,7 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
       });
       setExamsHistory(updatedHistory);
       localStorage.setItem("eduplan_teacher_exams_history", JSON.stringify(updatedHistory));
+      syncHistoryToCloud(updatedHistory);
 
       alert("🚀 Đã khởi tạo và liên kết Google Sheet thành công! Bảng điểm đã được đồng bộ hóa.");
     } catch (err: any) {
@@ -341,7 +469,74 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
     } catch (e) {
       console.warn("Lỗi tải lịch sử phòng thi từ localStorage:", e);
     }
+
+    // Load or generate Teacher Sync Code securely
+    let code = localStorage.getItem("eduplan_teacher_sync_code");
+    if (!code) {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let rand = '';
+      for (let i = 0; i < 8; i++) {
+        rand += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      code = `GV-${rand}`;
+      localStorage.setItem("eduplan_teacher_sync_code", code);
+    }
+    setTeacherSyncCode(code);
   }, []);
+
+  const syncHistoryToCloud = async (historyList: any[]) => {
+    let code = localStorage.getItem("eduplan_teacher_sync_code") || teacherSyncCode;
+    if (!code) return;
+    try {
+      await fetch("/api/exams/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rooms: historyList, customId: code.toUpperCase() })
+      });
+    } catch (e) {
+      console.warn("Lỗi đồng bộ danh sách phòng lên đám mây:", e);
+    }
+  };
+
+  const handleSyncRoomsHistory = async (syncCodeToUse?: string) => {
+    const targetCode = (syncCodeToUse || teacherSyncCode || "").trim().toUpperCase();
+    if (!targetCode) {
+      alert("Vui lòng nhập Mã đồng bộ Giáo viên!");
+      return;
+    }
+    
+    setIsLoadingResults(true);
+    try {
+      const res = await fetch(`/api/exams/${targetCode}`);
+      if (!res.ok) {
+        throw new Error("Không tìm thấy dữ liệu đồng bộ cho mã này.");
+      }
+      const data = await res.json();
+      if (data && Array.isArray(data.rooms)) {
+        // Merge with local history (avoid duplicates)
+        const localRaw = localStorage.getItem("eduplan_teacher_exams_history") || "[]";
+        const local = JSON.parse(localRaw);
+        const merged = [...data.rooms];
+        local.forEach((locRoom: any) => {
+          if (!merged.some(m => m.code === locRoom.code)) {
+            merged.push(locRoom);
+          }
+        });
+        
+        localStorage.setItem("eduplan_teacher_exams_history", JSON.stringify(merged));
+        setExamsHistory(merged);
+        setTeacherSyncCode(targetCode);
+        localStorage.setItem("eduplan_teacher_sync_code", targetCode);
+        alert(`🎉 Đồng bộ lịch sử thành công! Đã khôi phục và hợp nhất ${data.rooms.length} phòng thi.`);
+      } else {
+        alert("Không có dữ liệu phòng thi hợp lệ trong mã đồng bộ này.");
+      }
+    } catch (err: any) {
+      alert("Lỗi đồng bộ lịch sử: " + err.message);
+    } finally {
+      setIsLoadingResults(false);
+    }
+  };
 
   // Fetch shared room details if studentModeData is passed
   useEffect(() => {
@@ -525,6 +720,7 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
 
         localStorage.setItem("eduplan_teacher_exams_history", JSON.stringify(savedHistory));
         setExamsHistory(savedHistory);
+        syncHistoryToCloud(savedHistory);
       } catch (histErr) {
         console.warn("Lỗi lưu lịch sử phòng thi:", histErr);
       }
@@ -541,7 +737,7 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
     setSelectedRoomForResults(code);
     setSelectedRoomResultsData(null);
     try {
-      const res = await fetch(`/api/exams/${code.toUpperCase()}`);
+      const res = await fetch(`/api/exams/${code.toUpperCase()}?fresh=true`);
       if (!res.ok) {
         throw new Error("Không thể tải thông tin phòng thi này.");
       }
@@ -560,6 +756,7 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
       const updated = examsHistory.filter(r => r.code !== code);
       setExamsHistory(updated);
       localStorage.setItem("eduplan_teacher_exams_history", JSON.stringify(updated));
+      syncHistoryToCloud(updated);
       if (selectedRoomForResults === code) {
         setSelectedRoomForResults(null);
         setSelectedRoomResultsData(null);
@@ -1378,6 +1575,20 @@ HS05 - Hoàng Văn Em`);
                               Xóa
                             </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="text-[10px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer underline flex items-center gap-1"
+                          >
+                            <Upload className="w-3 h-3" /> Tải lên danh sách
+                          </button>
+                          <input
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={handleFileUpload}
+                            accept=".xlsx,.xls,.docx,.doc,.pdf,.txt,.csv"
+                            className="hidden"
+                          />
                         </div>
                       </div>
 
@@ -1770,10 +1981,39 @@ HS05 - Hoàng Văn Em`);
             
             {/* Box 1: Saved Exams Store / History of shared rooms */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
-              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                <FileText className="w-4 h-4 text-rose-500" />
-                Quản lý Lưu trữ Đề thi / Phòng thi đã tạo ({examsHistory.length})
-              </span>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-3">
+                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-rose-500" />
+                  Quản lý Lưu trữ Đề thi / Phòng thi đã tạo ({examsHistory.length})
+                </span>
+                
+                {/* Teacher Sync Code UI segment */}
+                <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 p-2 rounded-xl text-xs">
+                  <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">☁️ Mã đồng bộ đám mây:</span>
+                  <strong className="font-mono text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded font-black text-xs">{teacherSyncCode}</strong>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(teacherSyncCode);
+                      alert("Đã copy Mã đồng bộ: " + teacherSyncCode);
+                    }}
+                    className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer"
+                  >
+                    Sao chép
+                  </button>
+                  <span className="text-slate-300">|</span>
+                  <button
+                    onClick={() => {
+                      const input = prompt("Nhập mã đồng bộ Giáo viên (ví dụ: GV-XXXXXX) để khôi phục danh sách phòng thi của bạn từ đám mây:", teacherSyncCode);
+                      if (input && input.trim()) {
+                        handleSyncRoomsHistory(input.trim());
+                      }
+                    }}
+                    className="text-[10px] text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer"
+                  >
+                    Nhập mã khác / Đồng bộ
+                  </button>
+                </div>
+              </div>
 
               {examsHistory.length === 0 ? (
                 <div className="p-8 border border-dashed border-slate-200 rounded-xl text-center text-slate-400">

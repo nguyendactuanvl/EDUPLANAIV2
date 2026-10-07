@@ -19,6 +19,9 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
   
   const [isStarted, setIsStarted] = useState(false);
   const [studentInfo, setStudentInfo] = useState({ name: '', class: '' });
+  const [studentCode, setStudentCode] = useState('');
+  const [rosterSearch, setRosterSearch] = useState('');
+  const [showRosterSuggestions, setShowRosterSuggestions] = useState(false);
   
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<number, any>>({});
@@ -588,67 +591,192 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
             </div>
           )}
           
-          <div className="space-y-4 mb-6 text-left">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Họ và tên học sinh</label>
-              <input 
-                type="text" 
-                value={studentInfo.name} 
-                onChange={e => setStudentInfo({...studentInfo, name: e.target.value})} 
-                className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" 
-                placeholder="Ví dụ: Nguyễn Văn A" 
-                disabled={isBeforeStart || isAfterEnd}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Lớp</label>
-              <input 
-                type="text" 
-                value={studentInfo.class} 
-                onChange={e => setStudentInfo({...studentInfo, class: e.target.value})} 
-                className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" 
-                placeholder="Ví dụ: 12A1" 
-                disabled={isBeforeStart || isAfterEnd}
-              />
-            </div>
-          </div>
-          
-          <button 
-            disabled={!studentInfo.name.trim() || !studentInfo.class.trim() || isBeforeStart || isAfterEnd}
-            onClick={() => {
-              const currentNow = Date.now();
-              if (startTimeStr && currentNow < new Date(startTimeStr).getTime()) {
-                alert(`Phòng thi chưa đến giờ mở đề! Giờ mở đề: ${new Date(startTimeStr).toLocaleString('vi-VN')}`);
-                return;
-              }
-              if (endTimeStr && currentNow > new Date(endTimeStr).getTime()) {
-                alert(`Đã hết thời hạn làm bài thi! Phòng thi đã đóng lúc ${new Date(endTimeStr).toLocaleString('vi-VN')}`);
-                return;
-              }
+          {(() => {
+            const rawAllowedStudents = examData?.allowedStudents || examData?.examData?.allowedStudents || [];
+            const loginMethod = examData?.loginMethod || examData?.examData?.loginMethod || "C";
 
-              setIsStarted(true);
-              const mins = parseInt(String(examDuration), 10);
-              if (!isUnlimited && !isNaN(mins) && mins > 0) {
-                let totalSecs = mins * 60;
-                if (endTimeStr) {
-                  const secsUntilEnd = Math.floor((new Date(endTimeStr).getTime() - currentNow) / 1000);
-                  if (secsUntilEnd > 0 && secsUntilEnd < totalSecs) {
-                    totalSecs = secsUntilEnd;
+            return (
+              <>
+                {loginMethod === "B" ? (
+                  /* Login Method B: Code verification */
+                  <div className="space-y-4 mb-6 text-left">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
+                        Mã học sinh / Mã định danh của bạn
+                      </label>
+                      <input 
+                        type="text" 
+                        value={studentCode} 
+                        onChange={e => {
+                          const code = e.target.value.trim().toUpperCase();
+                          setStudentCode(code);
+                          const matched = rawAllowedStudents.find((s: any) => String(s.code).toUpperCase() === code);
+                          if (matched) {
+                            setStudentInfo({ name: matched.name, class: studentInfo.class || matched.class || '12A' });
+                          } else {
+                            setStudentInfo({ name: '', class: studentInfo.class });
+                          }
+                        }} 
+                        className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 font-mono text-center text-lg font-black tracking-widest uppercase outline-none" 
+                        placeholder="Ví dụ: HS01" 
+                        disabled={isBeforeStart || isAfterEnd}
+                      />
+                      {studentCode && (
+                        <div className="mt-2 text-xs text-center">
+                          {studentInfo.name ? (
+                            <p className="text-emerald-600 font-bold flex items-center justify-center gap-1">
+                              <span>✅</span> Mã hợp lệ! Xin chào: <strong>{studentInfo.name}</strong>
+                            </p>
+                          ) : (
+                            <p className="text-rose-500 font-semibold flex items-center justify-center gap-1">
+                              <span>❌</span> Mã định danh không tồn tại hoặc không chính xác!
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">Lớp học</label>
+                      <input 
+                        type="text" 
+                        value={studentInfo.class} 
+                        onChange={e => setStudentInfo({...studentInfo, class: e.target.value})} 
+                        className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-semibold" 
+                        placeholder="Ví dụ: 12A1" 
+                        disabled={isBeforeStart || isAfterEnd}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  /* Login Method C / default with suggestions */
+                  <div className="space-y-4 mb-6 text-left">
+                    <div className="relative">
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">Họ và tên học sinh</label>
+                      <input 
+                        type="text" 
+                        value={studentInfo.name} 
+                        onFocus={() => setShowRosterSuggestions(true)}
+                        onChange={e => {
+                          setStudentInfo({...studentInfo, name: e.target.value});
+                          setRosterSearch(e.target.value);
+                          setShowRosterSuggestions(true);
+                        }} 
+                        className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-semibold text-slate-800" 
+                        placeholder="Nhập tên hoặc chọn nhanh bên dưới..." 
+                        disabled={isBeforeStart || isAfterEnd}
+                      />
+                      
+                      {/* Searchable suggestions dropdown */}
+                      {showRosterSuggestions && rawAllowedStudents.length > 0 && (
+                        <div className="absolute z-30 left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-lg divide-y divide-slate-100">
+                          <div className="p-2 bg-slate-50 text-[10px] text-slate-400 font-bold uppercase tracking-wider sticky top-0 flex justify-between items-center">
+                            <span>Danh sách học sinh lớp</span>
+                            <button 
+                              type="button" 
+                              onClick={() => setShowRosterSuggestions(false)} 
+                              className="text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
+                            >
+                              Đóng [x]
+                            </button>
+                          </div>
+                          {(() => {
+                            const filtered = rawAllowedStudents.filter((s: any) => {
+                              const q = rosterSearch.trim().toLowerCase();
+                              if (!q) return true;
+                              return String(s.name).toLowerCase().includes(q) || String(s.code).toLowerCase().includes(q);
+                            });
+                            
+                            if (filtered.length === 0) {
+                              return <div className="p-3 text-center text-xs text-slate-400 font-medium">Không tìm thấy tên trong danh sách</div>;
+                            }
+                            
+                            return filtered.map((s: any, idx: number) => (
+                              <div 
+                                key={idx} 
+                                onClick={() => {
+                                  setStudentInfo({
+                                    name: s.name,
+                                    class: studentInfo.class || s.class || "12A"
+                                  });
+                                  setRosterSearch(s.name);
+                                  setShowRosterSuggestions(false);
+                                }}
+                                className="p-3 text-xs text-slate-700 font-semibold hover:bg-emerald-50 hover:text-emerald-950 cursor-pointer transition-colors flex items-center justify-between"
+                              >
+                                <span>{s.name}</span>
+                                <span className="font-mono text-[9px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded uppercase font-bold">{s.code}</span>
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                      )}
+                      {rawAllowedStudents.length > 0 && (
+                        <p className="text-[10px] text-slate-400 mt-1 leading-normal">
+                          💡 Hãy click vào ô nhập Họ tên để chọn nhanh tên của em từ danh sách gợi ý!
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">Lớp học</label>
+                      <input 
+                        type="text" 
+                        value={studentInfo.class} 
+                        onChange={e => setStudentInfo({...studentInfo, class: e.target.value})} 
+                        className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-semibold text-slate-800" 
+                        placeholder="Ví dụ: 12A1" 
+                        disabled={isBeforeStart || isAfterEnd}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <button 
+                  disabled={
+                    !studentInfo.name.trim() || 
+                    !studentInfo.class.trim() || 
+                    isBeforeStart || 
+                    isAfterEnd ||
+                    (loginMethod === "B" && !rawAllowedStudents.some((s: any) => String(s.code).toUpperCase() === studentCode.toUpperCase()))
                   }
-                }
-                setTimeLeft(totalSecs);
-              } else {
-                setTimeLeft(null);
-              }
-            }}
-            className="w-full py-3.5 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-          >
-            {isBeforeStart 
-              ? "Chưa đến giờ mở đề" 
-              : isAfterEnd 
-              ? "Phòng thi đã đóng" 
-              : `Bắt đầu làm bài ${isUnlimited ? "(Không giới hạn thời gian)" : `(${examDuration} phút)`}`}
-          </button>
+                  onClick={() => {
+                    const currentNow = Date.now();
+                    if (startTimeStr && currentNow < new Date(startTimeStr).getTime()) {
+                      alert(`Phòng thi chưa đến giờ mở đề! Giờ mở đề: ${new Date(startTimeStr).toLocaleString('vi-VN')}`);
+                      return;
+                    }
+                    if (endTimeStr && currentNow > new Date(endTimeStr).getTime()) {
+                      alert(`Đã hết thời hạn làm bài thi! Phòng thi đã đóng lúc ${new Date(endTimeStr).toLocaleString('vi-VN')}`);
+                      return;
+                    }
+
+                    setIsStarted(true);
+                    const mins = parseInt(String(examDuration), 10);
+                    if (!isUnlimited && !isNaN(mins) && mins > 0) {
+                      let totalSecs = mins * 60;
+                      if (endTimeStr) {
+                        const secsUntilEnd = Math.floor((new Date(endTimeStr).getTime() - currentNow) / 1000);
+                        if (secsUntilEnd > 0 && secsUntilEnd < totalSecs) {
+                          totalSecs = secsUntilEnd;
+                        }
+                      }
+                      setTimeLeft(totalSecs);
+                    } else {
+                      setTimeLeft(null);
+                    }
+                  }}
+                  className="w-full py-3.5 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm cursor-pointer"
+                >
+                  {isBeforeStart 
+                    ? "Chưa đến giờ mở đề" 
+                    : isAfterEnd 
+                    ? "Phòng thi đã đóng" 
+                    : `Bắt đầu làm bài ${isUnlimited ? "(Không giới hạn thời gian)" : `(${examDuration} phút)`}`}
+                </button>
+              </>
+            );
+          })()}
         </div>
       </div>
     );

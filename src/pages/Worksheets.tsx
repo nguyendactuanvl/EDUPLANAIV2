@@ -634,7 +634,8 @@ export function Worksheets() {
           id: q.id || idx + 1,
           content,
           solution,
-          explanation: solution
+          explanation: solution,
+          options: q.options ? q.options.map((opt: string) => cleanOptionText(opt)) : []
         };
       });
 
@@ -814,7 +815,8 @@ export function Worksheets() {
               id: q.id || idx + 1,
               content,
               solution,
-              explanation: solution
+              explanation: solution,
+              options: q.options ? q.options.map((opt: string) => cleanOptionText(opt)) : []
             };
           });
 

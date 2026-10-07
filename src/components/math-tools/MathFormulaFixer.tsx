@@ -12,7 +12,8 @@ import {
   normalizeLogicAndSetSymbols, 
   normalizeSetNotation, 
   fixInlineOptionText, 
-  cleanMath 
+  cleanMath,
+  fixSequencesAndFractions
 } from '../../lib/utils';
 import { exportHtmlToWord } from '../../lib/exportUtils';
 import { printElement } from '../../lib/print';
@@ -66,7 +67,7 @@ c) Tìm m để phương trình x^2 - 2(m+1)x + m^2 + 2 = 0 có hai nghiệm ph�
 export const run1ClickMathFix = (rawInput: string): string => {
   if (!rawInput) return '';
 
-  let text = rawInput;
+  let text = fixSequencesAndFractions(rawInput);
 
   // Step 1: Clean Vietnamese Unicode NFD/NFC & broken accents
   text = cleanVietnameseUnicode(text);
