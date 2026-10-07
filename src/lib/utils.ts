@@ -1,9 +1,9 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { unflattenMarkdownTables, embedBbtSvgsInText } from './bbtRenderer';
-import { normalizeMathText, triggerGlobalMathRender } from './globalMath';
+import { normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas } from './globalMath';
 
-export { unflattenMarkdownTables, embedBbtSvgsInText, normalizeMathText, triggerGlobalMathRender };
+export { unflattenMarkdownTables, embedBbtSvgsInText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas };
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -1067,6 +1067,9 @@ export const polishMathText = (content: string): string => {
     .replace(/\bpm\s*\\infty\b/g, '\\pm\\infty')
     .replace(/(?<!\\)\binfty\b/g, '\\infty')
     .replace(/(?<![\\a-zA-Z])([xymtabckuvwz])\s+e\s+(-?\d+)/g, '$1 \\ne $2');
+
+  // 7. Chuẩn hóa công thức Cấp số cộng và tách chữ tiếng Việt ra khỏi dấu $
+  text = normalizeArithmeticProgressionFormulas(text);
 
   return text;
 };

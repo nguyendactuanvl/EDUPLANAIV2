@@ -46,7 +46,7 @@ import {
 } from './utils';
 import { convertBbtTableToSvg } from './bbtRenderer';
 import { getTikzSvg } from '../components/TikzRenderer';
-import { normalizeMathText } from './globalMath';
+import { normalizeMathText, normalizeArithmeticProgressionFormulas } from './globalMath';
 
 interface RunStyle {
   bold?: boolean;
@@ -773,11 +773,11 @@ function parseInlineContent(
 
 /**
  * Strips leading true/false statement letters (a), b), c), d)) so labels are not duplicated.
+ * BẮT BUỘC có dấu ngoặc hoặc dấu phân cách để TUYỆT ĐỐI không cắt nhầm chữ cái đầu câu như "Công thức...", "Dãy số...", "Biết rằng...".
  */
 function cleanTfText(text: string): string {
   return text
-    .replace(/^\s*(?:[-*]\s*)?(?:\*{0,2})[a-d][\.\:\)]?(?:\*{0,2})[\.\:\)]?\s*/i, '')
-    .replace(/^[\s\.\:\)]+/, '')
+    .replace(/^\s*(?:[-*]\s*)?(?:\*{0,2})(?:\([a-d]\)[\.\:\)]?|[a-d][\.\:\)])(?:\*{0,2})\s*/i, '')
     .trim();
 }
 
@@ -904,8 +904,8 @@ function parseStatementRuns(
   options: ExportOptions
 ): ParagraphChild[] {
   let cleanText = (statementText || '').trim();
-  // Xóa bỏ nhãn tiền tố của ý (a), b), c), d) nếu có ở đầu chuỗi)
-  cleanText = cleanText.replace(/^\s*(?:[-*]\s*)?(?:\*{0,2})\(?[a-d]\)?[\.\:\)]?(?:\*{0,2})[\.\:\)]?\s*/i, '').trim();
+  // Xóa bỏ nhãn tiền tố của ý (a), b), c), d) nếu có ở đầu chuỗi (BẮT BUỘC có dấu ngoặc hoặc dấu chấm/hai chấm để không cắt nhầm chữ cái đầu câu như "Công thức...", "Dãy số...", "Biết rằng...")
+  cleanText = cleanText.replace(/^\s*(?:[-*]\s*)?(?:\*{0,2})(?:\([a-d]\)[\.\:\)]?|[a-d][\.\:\)])(?:\*{0,2})\s*/i, '').trim();
 
   if (!cleanText) {
     return [];
@@ -998,21 +998,38 @@ async function parseDomToDocxChildren(
     const tagName = el.tagName.toUpperCase();
 
     // 0. Page Breaks
-    if (
-      el.classList.contains('page-break') || 
-      el.classList.contains('docx-page-break') ||
-      el.style.pageBreakBefore === 'always' || 
-      el.style.pageBreakAfter === 'always' || 
-      el.style.breakBefore === 'page' || 
-      el.style.breakAfter === 'page' || 
-      el.getAttribute('data-page-break') === 'true'
-    ) {
+    const isExplicitDivider =
+      (el.classList.contains('page-break') || 
+       el.classList.contains('docx-page-break') ||
+       el.getAttribute('data-page-break') === 'true' ||
+       el.style.pageBreakBefore === 'always' || 
+       el.style.pageBreakAfter === 'always' || 
+       el.style.breakBefore === 'page' || 
+       el.style.breakAfter === 'page') &&
+      !el.textContent?.trim() &&
+      el.children.length === 0;
+
+    if (isExplicitDivider) {
       result.push(
         new Paragraph({
           children: [new PageBreak()],
         })
       );
       return;
+    }
+
+    // Element has page-break-before style but contains child content (e.g. export-solution-block):
+    // Insert a PageBreak into docx first, then CONTINUE processing the element and all its children!
+    if (
+      el.style.pageBreakBefore === 'always' || 
+      el.style.breakBefore === 'page' ||
+      el.classList.contains('page-break-before')
+    ) {
+      result.push(
+        new Paragraph({
+          children: [new PageBreak()],
+        })
+      );
     }
 
     // 1. Headings
@@ -1557,17 +1574,18 @@ export async function exportHtmlToWord(
       (details as HTMLElement).style.display = 'block';
     });
 
-    // 0. Pre-process naked math environments in DOM text nodes before word translation
+    // 0. Pre-process naked math environments & AP formulas in DOM text nodes before word translation
     const walkAndPreprocessTextNodes = (node: Node) => {
       if (node.nodeType === Node.TEXT_NODE) {
-        const text = node.textContent || '';
-        if (/(\\left\s*\[|\\begin\s*\{(?:aligned|cases|array|matrix)\*?\})/i.test(text)) {
-          const parent = node.parentNode;
-          if (parent && !['SCRIPT', 'STYLE', 'CODE', 'PRE'].includes(parent.nodeName)) {
-            const safeText = preProcessMathContent(text);
-            if (safeText !== text) {
-              node.textContent = safeText;
-            }
+        let text = node.textContent || '';
+        const parent = node.parentNode;
+        if (parent && !['SCRIPT', 'STYLE', 'CODE', 'PRE'].includes(parent.nodeName)) {
+          let updated = normalizeArithmeticProgressionFormulas(text);
+          if (/(\\left\s*\[|\\begin\s*\{(?:aligned|cases|array|matrix)\*?\})/i.test(updated)) {
+            updated = preProcessMathContent(updated);
+          }
+          if (updated !== text) {
+            node.textContent = updated;
           }
         }
         return;

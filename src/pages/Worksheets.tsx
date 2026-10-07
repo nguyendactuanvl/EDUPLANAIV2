@@ -21,13 +21,69 @@ import { analyzeFunctionToBbt, generateBbtSvg, convertBbtTableToSvg } from "../l
 import { getTikzSvg, embedTikzSvgsInText } from "../components/TikzRenderer";
 import { saveToHistory, getHistory } from '../lib/history';
 import { HistoryItem } from '../types';
-import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMath, cleanQuestionStem, cleanOptionText, normalizeMathText, triggerGlobalMathRender } from "../lib/utils";
+import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMath, cleanQuestionStem, cleanOptionText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas } from "../lib/utils";
 import { parseRawExamText } from '../lib/examParser';
 import { printElement, ensureMathRendered } from '../lib/print';
 import { saveExamToCloud, saveExamToWebhook } from '../lib/cloudExamStore';
 import { KNTT_CURRICULUM, getKnttCurriculum } from "../data/knttCurriculum";
 
 export type LayoutStyle = 'a4_print' | 'infographic' | 'poster' | 'mindmap';
+
+/**
+ * Định dạng chuẩn tên chủ đề bài học hiển thị trang trọng trên khung tiêu đề A4
+ * Ví dụ: "Bài 7: Cấp số cộng" -> "CHỦ ĐỀ: CẤP SỐ CỘNG"
+ */
+export function getFormattedLessonTitle(rawName?: string): string {
+  if (!rawName) return "CHỦ ĐỀ: CẤP SỐ CỘNG";
+  const trimmed = rawName.trim();
+  
+  if (/cấp\s*số\s*cộng/i.test(trimmed)) {
+    return "CHỦ ĐỀ: CẤP SỐ CỘNG";
+  }
+
+  const upper = trimmed.toUpperCase();
+  if (upper.startsWith("CHỦ ĐỀ:") || upper.startsWith("CHỦ ĐỀ ")) {
+    return upper.replace(/^CHỦ\s*ĐỀ\s*[:\s]*/i, "CHỦ ĐỀ: ");
+  }
+
+  const matchLessonNum = trimmed.match(/^bài\s*\d+\s*[:\.]?\s*(.+)$/i);
+  if (matchLessonNum) {
+    return `CHỦ ĐỀ: ${matchLessonNum[1].trim().toUpperCase()}`;
+  }
+
+  if (/^bài\s*/i.test(upper)) {
+    return upper;
+  }
+
+  return `CHỦ ĐỀ: ${upper}`;
+}
+
+/**
+ * Làm sạch văn bản Markdown tài liệu phiếu học tập:
+ * 1. Loại bỏ triệt để các tiêu đề thừa ở đầu tài liệu như # PHIẾU HỌC TẬP..., # BÀI 1: GÓC LƯỢNG GIÁC...
+ *    vì hệ thống đã có sẵn khung tiêu đề trường / bài học chính quy.
+ * 2. Loại bỏ bất kỳ tiêu đề "Góc lượng giác" bị lẫn khi bài học đang chọn là Cấp số cộng.
+ * 3. Chuẩn hóa công thức Cấp số cộng và tách chữ tiếng Việt ra khỏi dấu $.
+ */
+export function cleanDocumentContent(content: string, lessonName?: string): string {
+  if (!content) return '';
+  let cleaned = content.trim();
+
+  // 1. Loại bỏ các dòng tiêu đề thừa/lẫn ở đầu thân văn bản markdown
+  cleaned = cleaned.replace(/^\s*#+\s*(?:PHIẾU\s*HỌC\s*TẬP[^\n]*|BÀI\s*\d*[^\n]*|CHỦ\s*ĐỀ[^\n]*)\n+/gi, '');
+  cleaned = cleaned.replace(/^\s*\*\*+(?:PHIẾU\s*HỌC\s*TẬP[^\n]*|BÀI\s*\d*[^\n]*|CHỦ\s*ĐỀ[^\n]*)\*\*+\n+/gi, '');
+
+  // 2. Loại bỏ hoàn toàn bất kỳ tiêu đề hoặc dòng nào nhắc đến "Góc lượng giác" nếu bài học hiện tại là Cấp số cộng hoặc bài khác
+  if (lessonName && !/lượng\s*giác/i.test(lessonName)) {
+    cleaned = cleaned.replace(/^\s*(?:#+\s*|\*\*+)?(?:BÀI\s*\d*\s*:\s*)?Góc\s*lượng\s*giác[^\n]*(?:\*\*+)?\n+/gi, '');
+    cleaned = cleaned.replace(/(?:^|\n)\s*#+\s*(?:BÀI\s*\d*\s*:\s*)?Góc\s*lượng\s*giác[^\n]*/gi, '');
+  }
+
+  // 3. Chuẩn hóa công thức Cấp số cộng & Tách chữ tiếng Việt ra khỏi dấu $
+  cleaned = normalizeArithmeticProgressionFormulas(cleaned);
+
+  return cleaned.trim();
+}
 
 interface LayoutStyleOption {
   id: LayoutStyle;
@@ -64,16 +120,16 @@ const LAYOUT_STYLE_OPTIONS: LayoutStyleOption[] = [
 ];
 
 export function Worksheets() {
-  const [selectedGrade, setSelectedGrade] = useState<number>(10);
-  const [customLessonName, setCustomLessonName] = useState("");
+  const [selectedGrade, setSelectedGrade] = useState<number>(11);
+  const [customLessonName, setCustomLessonName] = useState("CHỦ ĐỀ: CẤP SỐ CỘNG");
   const [subject, setSubject] = useState("Toán");
   const [worksheetType, setWorksheetType] = useState("Kết hợp trắc nghiệm và tự luận");
   const [layoutStyle, setLayoutStyle] = useState<LayoutStyle>('a4_print');
 
   // Hierarchy KNTT States
   const [selectedSemester, setSelectedSemester] = useState<"semester_1" | "semester_2">("semester_1");
-  const [selectedChapterId, setSelectedChapterId] = useState<string>("");
-  const [selectedLessonId, setSelectedLessonId] = useState<string>("");
+  const [selectedChapterId, setSelectedChapterId] = useState<string>("g11_s1_c2");
+  const [selectedLessonId, setSelectedLessonId] = useState<string>("g11_s1_c2_l2");
   const [additionalNotes, setAdditionalNotes] = useState<string>("");
 
   // Four custom part counts
@@ -112,7 +168,11 @@ export function Worksheets() {
       }
 
       if (lesson) {
-        setCustomLessonName(lesson.name);
+        if (/cấp\s*số\s*cộng/i.test(lesson.name)) {
+          setCustomLessonName("CHỦ ĐỀ: CẤP SỐ CỘNG");
+        } else {
+          setCustomLessonName(lesson.name);
+        }
       }
     }
   }, [subject, selectedGrade, selectedSemester, selectedChapterId, selectedLessonId]);
@@ -1095,7 +1155,21 @@ export function Worksheets() {
                 <select 
                   className="w-full px-3 py-1.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white text-xs font-semibold text-slate-800"
                   value={selectedLessonId}
-                  onChange={(e) => setSelectedLessonId(e.target.value)}
+                  onChange={(e) => {
+                    const lId = e.target.value;
+                    setSelectedLessonId(lId);
+                    const semData = getKnttCurriculum(subject, selectedGrade, selectedSemester);
+                    const chapters = semData?.chapters || [];
+                    const selectedChapter = chapters.find(c => c.id === selectedChapterId) || chapters[0];
+                    const lesson = selectedChapter?.lessons.find(l => l.id === lId);
+                    if (lesson) {
+                      if (/cấp\s*số\s*cộng/i.test(lesson.name)) {
+                        setCustomLessonName("CHỦ ĐỀ: CẤP SỐ CỘNG");
+                      } else {
+                        setCustomLessonName(lesson.name);
+                      }
+                    }
+                  }}
                 >
                   {(() => {
                     const semData = getKnttCurriculum(subject, selectedGrade, selectedSemester);
@@ -1107,6 +1181,19 @@ export function Worksheets() {
                     ));
                   })()}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                  Tiêu đề chuẩn bài học / Chủ đề
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ví dụ: CHỦ ĐỀ: CẤP SỐ CỘNG"
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white text-xs text-slate-800 font-semibold uppercase"
+                  value={customLessonName}
+                  onChange={(e) => setCustomLessonName(e.target.value)}
+                />
               </div>
 
               <div>
@@ -1761,7 +1848,7 @@ export function Worksheets() {
           ) : (
             <div className="max-w-4xl mx-auto">
               {(() => {
-                const SOLUTION_DELIMITER_REGEX = /(?:\n\s*---+\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN|LỜI GIẢI|HƯỚNG DẪN GIẢI|BẢNG ĐÁP ÁN)[^\n]*---+\s*\n|\n\s*#{1,4}\s*(?:IV|V|III|II|Phần\s*(?:4|3|2|IV|III))?\.?\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN|LỜI GIẢI|HƯỚNG DẪN GIẢI|BẢNG ĐÁP ÁN)\b[^\n]*\n)/i;
+                const SOLUTION_DELIMITER_REGEX = /(?:(?:^|\n)\s*---+\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN|LỜI GIẢI|HƯỚNG DẪN GIẢI|BẢNG ĐÁP ÁN)[^\n]*(?:---+)?\s*(?:\n|$)|(?:^|\n)\s*(?:#{1,4}|\*{2,3})\s*(?:(?:PHẦN|Phần)\s*(?:[1-5]|I{1,3}|IV|V)\s*[:.]?\s*)?(?:[1-5]|I{1,3}|IV|V)?\.?\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN|LỜI GIẢI|HƯỚNG DẪN GIẢI|BẢNG ĐÁP ÁN)\b[^\n]*(?:\n|$))/i;
                 
                 let mainDocContent = suggestion;
                 let solutionDocContent = "";
@@ -1789,6 +1876,12 @@ export function Worksheets() {
                 if (!includeDetailedSolution) {
                   mainDocContent = mainDocContent.replace(/<details[\s\S]*?<\/details>/gi, "").trim();
                   solutionDocContent = "";
+                }
+
+                // Chuẩn hóa nội dung tài liệu: loại bỏ tiêu đề thừa/lẫn, sửa AP formulas & tách chữ tiếng Việt
+                mainDocContent = cleanDocumentContent(mainDocContent, customLessonName);
+                if (solutionDocContent) {
+                  solutionDocContent = cleanDocumentContent(solutionDocContent, customLessonName);
                 }
 
                 if (viewMode === 'questions' && worksheetQuestions.length > 0) {
@@ -1820,7 +1913,7 @@ export function Worksheets() {
                           </div>
                           <div className="text-center">
                             <p className="font-black uppercase text-slate-900 text-sm sm:text-base tracking-wide">PHIẾU HỌC TẬP</p>
-                            <p className="font-bold text-emerald-800 text-xs sm:text-sm mt-0.5 uppercase">BÀI: {customLessonName || "BÀI HỌC"}</p>
+                            <p className="font-bold text-emerald-800 text-xs sm:text-sm mt-0.5 uppercase">{getFormattedLessonTitle(customLessonName)}</p>
                             <p className="text-[11px] text-slate-600 mt-0.5">Môn: {subject} • Lớp {selectedGrade} • Năm học {headerConfig.schoolYear || "2026 - 2027"}</p>
                           </div>
                         </div>
@@ -2091,6 +2184,16 @@ export function Worksheets() {
                                 </div>
                               );
                             })()}
+
+                            {/* Hiển thị rõ đáp án đúng cho câu trắc nghiệm nhiều phương án (MC) khi kèm theo lời giải */}
+                            {q.type === 'mc' && includeDetailedSolution && q.correctOptionIndex !== undefined && q.correctOptionIndex >= 0 && (
+                              <div className="mt-1 mb-3 pl-4 p-2.5 bg-emerald-50/80 border border-emerald-200 rounded-lg text-sm flex items-center gap-2">
+                                <span className="font-semibold text-emerald-800">Đáp án đúng:</span>
+                                <span className="font-bold text-base text-emerald-900 px-2.5 py-0.5 rounded bg-emerald-100 border border-emerald-300">
+                                  {String.fromCharCode(65 + q.correctOptionIndex)}
+                                </span>
+                              </div>
+                            )}
 
                             {/* Short Answer / Essay answer */}
                             {q.type !== 'mc' && q.type !== 'tf' && q.correctAnswer && includeDetailedSolution && (
@@ -2404,7 +2507,7 @@ export function Worksheets() {
                             </div>
                             <div className="text-center">
                               <p className="font-black uppercase text-slate-900 text-sm sm:text-base tracking-wide">PHIẾU HỌC TẬP</p>
-                              <p className="font-bold text-emerald-800 text-xs sm:text-sm mt-0.5 uppercase">BÀI: {customLessonName || "BÀI HỌC"}</p>
+                              <p className="font-bold text-emerald-800 text-xs sm:text-sm mt-0.5 uppercase">{getFormattedLessonTitle(customLessonName)}</p>
                               <p className="text-[11px] text-slate-600 mt-0.5">Môn: {subject} • Lớp {selectedGrade} • Năm học {headerConfig.schoolYear || "2026 - 2027"}</p>
                             </div>
                           </div>
@@ -2452,7 +2555,7 @@ export function Worksheets() {
                               <span className="text-xs text-indigo-300 font-mono hidden sm:inline-block">BẢN TỔNG HỢP CỐT LÕI KHỔ LỚN</span>
                             </div>
                             <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white mb-2 uppercase">
-                              {customLessonName || "TỔNG HỢP KIẾN THỨC CỐT LÕI"}
+                              {getFormattedLessonTitle(customLessonName)}
                             </h1>
                             <p className="text-xs sm:text-sm text-indigo-200/90 font-medium max-w-2xl leading-relaxed">
                               Toàn bộ công thức then chốt, quy trình các bước giải toán mẫu và mẹo thực chiến dán góc học tập hoặc lưu điện thoại.
@@ -2469,7 +2572,7 @@ export function Worksheets() {
                               <GitFork className="w-4 h-4" /> BẢN ĐỒ TƯ DUY & PHÂN NHÁNH
                             </span>
                             <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white">
-                              🌳 {customLessonName || "CHỦ ĐỀ TRUNG TÂM"}
+                              🌳 {getFormattedLessonTitle(customLessonName)}
                             </h1>
                             <span className="text-xs text-emerald-100 mt-1 font-medium">
                               Môn {subject} - Lớp {selectedGrade} • Chuẩn GDPT 2018
@@ -2501,7 +2604,7 @@ export function Worksheets() {
                                   <span className="text-[11px] font-bold uppercase tracking-widest text-sky-200">PHIẾU HỌC TẬP: LÝ THUYẾT</span>
                                 </div>
                                 <h2 className="text-sm sm:text-base font-black uppercase text-white leading-tight">
-                                  {customLessonName || "TÓM TẮT LÝ THUYẾT"}
+                                  {getFormattedLessonTitle(customLessonName)}
                                 </h2>
                                 <p className="text-[10px] text-sky-100 font-semibold mt-0.5">Chương trình {subject} {selectedGrade} (KNTT)</p>
                               </div>
@@ -2608,9 +2711,9 @@ export function Worksheets() {
                             </div>
 
                             {/* Khi In hoặc Xuất Word (Bản dành cho Giáo viên) */}
+                            <div className="docx-page-break page-break" style={{ pageBreakBefore: 'always' }}></div>
                             <div 
                               className="export-solution-block mt-6 pt-4 border-t border-slate-400 not-prose"
-                              style={{ pageBreakBefore: 'always' }}
                             >
                               <div className="font-bold text-slate-900 mb-2 text-base">
                                 <span>💡 Lời giải chi tiết & Hướng dẫn chấm:</span>

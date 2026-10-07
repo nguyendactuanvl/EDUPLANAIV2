@@ -4481,7 +4481,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                                           .replace(/trà\s+sữ\s*\n*\s*a\./gi, 'trà sữa. ')
                                           .replace(/trà\s+sữ\s*\n*\s*a\)/gi, 'trà sữa) ')
                                           .replace(/sữ\s*\n+\s*a\./gi, 'sữa. ')
-                                          .replace(/^\s*(?:[-*]\s*)?(?:\*{0,2})[a-d][\.\:\)]?(?:\*{0,2})[\.\:\)]?\s*/i, '');
+                                          .replace(/^\s*(?:[-*]\s*)?(?:\*{0,2})(?:\([a-d]\)[\.\:\)]?|[a-d][\.\:\)])(?:\*{0,2})\s*/i, '');
                                         return (
                                           <tr key={sIdx}>
                                             <td style={{ width: '32px', border: 'none', padding: '2pt 2pt', verticalAlign: 'top', fontWeight: 'bold', fontSize: '12pt', whiteSpace: 'nowrap' }}>

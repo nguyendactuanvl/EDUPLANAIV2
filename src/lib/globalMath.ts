@@ -132,11 +132,65 @@ export function normalizeMathText(text: any): string {
   t = t.replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$');
   t = t.replace(/\\\[([\s\S]*?)\\\]/g, '$$$$$1$$$$');
 
+  // Enforce LaTeX standard syntax: \frac, \ge, \le, \in
+  t = t.replace(/\\dfrac\b/g, '\\frac');
+  t = t.replace(/\\geq\b/g, '\\ge');
+  t = t.replace(/\\leq\b/g, '\\le');
+
+  // 4. Chuẩn hóa công thức Cấp số cộng & Tách chữ tiếng Việt ra khỏi dấu $
+  t = normalizeArithmeticProgressionFormulas(t);
+
   // Clean orphan dots right after display math
   t = t.replace(/(\$\$[\s\S]*?\$\$)\s*\.\s*(?=[A-ZÀ-Ỹ])/g, '$1\n\n');
 
   // Clean leaked undefined/null
   t = t.replace(/(?<![a-zA-Z0-9_\$])(?:undefined|null)(?![a-zA-Z0-9_\$])/g, '');
+
+  return t;
+}
+
+/**
+ * Chuẩn hóa các công thức Cấp số cộng (AP) và tách biệt chữ tiếng Việt ra khỏi dấu $
+ * Đảm bảo 100% hiển thị chuẩn xác:
+ * 1. Dãy số $(u_n)$ là một cấp số cộng $\Rightarrow u_{n+1} = u_n + d$ ($d$: công sai).
+ * 2. $u_n = u_1 + (n-1)d$ với $n \ge 2$.
+ * 3. $u_k = \frac{u_{k-1} + u_{k+1}}{2}$ với $k \ge 2$.
+ */
+export function normalizeArithmeticProgressionFormulas(text: string): string {
+  if (!text) return '';
+  let t = text;
+
+  // 1. Khái niệm / Định nghĩa Cấp số cộng
+  t = t.replace(/(?:Dãy\s*số\s*\(?u_?n\)?\s*là\s*một\s*cấp\s*số\s*cộng|(?:\$)?\s*Dãy\s*số\s*\(?u_?n\)?\s*là\s*một\s*cấp\s*số\s*cộng(?:\$)?)\s*(?:\\Rightarrow|=>|->)?\s*(?:\$)?(?:\\Rightarrow|=>)?\s*u_?\{?n\+1\}?\s*=\s*u_?n\s*\+\s*d(?:\$)?\s*(?:\(?\s*(?:\$)?d(?:\$)?\s*:\s*công\s*sai\s*\)?|\(?d\s*:\s*công\s*sai\)?|(?:\$)?\s*\(d:\s*công\s*sai\)(?:\$)?)[.]?(?:\$)?/gi,
+    'Dãy số $(u_n)$ là một cấp số cộng $\\Rightarrow u_{n+1} = u_n + d$ ($d$: công sai).'
+  );
+  t = t.replace(/Dãy\s*số\s*(?:\$\(?u_?n\)?\$|\(?u_?n\)?|\$u_n\$)\s*là\s*một\s*cấp\s*số\s*cộng\s*(?:\$?\\Rightarrow\$?|=>)?\s*(?:\$)?u_?\{?n\+1\}?\s*=\s*u_?n\s*\+\s*d(?:\$)?\s*(?:\(\s*\$?d\$?\s*:\s*công\s*sai\s*\)|\(d:\s*công\s*sai\))[.]?(?:\$)?/gi,
+    'Dãy số $(u_n)$ là một cấp số cộng $\\Rightarrow u_{n+1} = u_n + d$ ($d$: công sai).'
+  );
+
+  // 2. Công thức số hạng tổng quát Cấp số cộng
+  t = t.replace(/(?:\$)?\s*u_?n\s*=\s*u_?1\s*\+\s*\(n\s*-\s*1\)\s*d(?:\$)?\s*(?:\\text\{\s*với\s*\}|,\s*với|với)\s*(?:\$)?\s*n\s*(?:\\ge|\\geq|>=)\s*2(?:\$)?/gi,
+    '$u_n = u_1 + (n-1)d$ với $n \\ge 2$'
+  );
+
+  // 3. Tính chất số hạng trung bình Cấp số cộng
+  t = t.replace(/(?:\$)?\s*u_?k\s*=\s*\\(?:d)?frac\{\s*u_?\{?k-1\}?\s*\+\s*u_?\{?k\+1\}?\s*\}\{\s*2\s*\}(?:\$)?\s*(?:\\text\{\s*với\s*\}|,\s*với|với)\s*(?:\$)?\s*k\s*(?:\\ge|\\geq|>=)\s*2(?:\$)?/gi,
+    '$u_k = \\frac{u_{k-1} + u_{k+1}}{2}$ với $k \\ge 2$'
+  );
+
+  // 4. Tách các từ nối tiếng Việt ("với", "khi", "nếu", "và", "hoặc") bị nhốt bên trong dấu $
+  t = t.replace(/(?<!\$)\$([^\$\s][^\$]*?)\s*(?:\\text\{\s*)?(với|khi|nếu|và|hoặc|hay)(?:\s*\})?\s*([^\$]*?[^\$\s])\$(?!\$)/gi, (_m, p1, conj, p2) => {
+    return `$${p1.trim()}$ ${conj} $${p2.trim()}$`;
+  });
+
+  // Tách từ nối dính liền với dấu $ (ví dụ $u_n = u_1 + (n-1)d$với$n \ge 2$)
+  t = t.replace(/\$([^\$\n]+)\$(với|khi|nếu|và|hoặc|hay)\$([^\$\n]+)\$/gi, '$$$1$$ $2 $$$3$$');
+
+  // Tách chữ "Dãy số" nếu bị nhốt trong $: $Dãy số (u_n)$ -> Dãy số $(u_n)$
+  t = t.replace(/\$\s*Dãy\s*số\s*(\([uv]_?n?\)|[uv]_?n)\s*\$/gi, 'Dãy số $$$1$$');
+
+  // Chuẩn hóa ($d$: công sai) và ($q$: công bội)
+  t = t.replace(/\(?\$?([dq])\$?\s*:\s*(?:\\text\{)?công\s*(sai|bội)\}?\)?/gi, '($$$1$$: công $2)');
 
   return t;
 }
