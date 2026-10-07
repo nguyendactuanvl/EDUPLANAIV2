@@ -973,15 +973,15 @@ HƯỚNG DẪN BẮT BUỘC BÁM SÁT 100% MA TRẬN & BẢN ĐẶC TẢ ĐÍNH 
     const promptText = `Bạn là một chuyên gia khảo thí và giáo viên giỏi bộ môn ${subject}.
 Nhiệm vụ của bạn là biên soạn một Đề kiểm tra chuẩn chất lượng cao cho học sinh Lớp ${grade}, môn ${subject}, Thời gian làm bài: ${duration} phút.
 
-CHÚ Ý RÀNG BUỘC CHƯƠNG TRÌNH KHỐI LỚP (BẮT BUỘC):
-Bạn phải CHỈ sử dụng các đơn vị kiến thức và chủ đề thuộc đúng chương trình học của Lớp ${grade} (theo chương trình GDPT 2018). TUYỆT ĐỐI KHÔNG được sử dụng bất kỳ câu hỏi, công thức, hay kiến thức thuộc các khối lớp khác. Cụ thể:
-- Nếu học sinh Lớp 10: Chỉ sử dụng các chủ đề Lớp 10 như Mệnh đề, Tập hợp, Hàm số bậc hai, Tam thức bậc hai, Bất phương trình bậc hai, Vectơ phẳng, Tọa độ vectơ phẳng, Hệ thức lượng trong tam giác, Tổ hợp, Xác suất cơ bản. TUYỆT ĐỐI CẤM dùng các chủ đề Lớp 11 hay Lớp 12 như giới hạn, đạo hàm, tích phân, hình học không gian 3D, mũ, logarit, số phức, tọa độ Oxyz.
-- Nếu học sinh Lớp 11: Chỉ sử dụng các chủ đề Lớp 11 như Góc lượng giác, Công thức lượng giác, Hàm số lượng giác, Phương trình lượng giác, Dãy số, Cấp số cộng, Cấp số nhân, Giới hạn, Liên tục, Đạo hàm, Quan hệ song song và vuông góc trong không gian (3D cơ bản), Hàm số mũ, logarit, Hình chóp, Lăng trụ. TUYỆT ĐỐI CẤM dùng tích phân, số phức, hệ tọa độ Oxyz của Lớp 12.
-- Nếu học sinh Lớp 12: Sử dụng các chủ đề Lớp 12 như Khảo sát hàm số (Cực trị, đơn điệu, tiệm cận, vẽ đồ thị bao gồm hàm phân thức bậc 2 trên bậc 1), Vectơ và Hệ tọa độ Oxyz trong không gian, Nguyên hàm, Tích phân, Ứng dụng tích phân, Số phức, Xác suất có điều kiện.
+CHỈ ĐƯỢC PHÉP SỬ DỤNG CÁC CHỦ ĐỀ/KIẾN THỨC SAU (TUYỆT ĐỐI KHÔNG DÙNG CÁC CHỦ ĐỀ KHÁC):
+${selectedTopics.length > 0 ? selectedTopics.join(', ') : (hasMatrixFile ? 'Dựa theo nội dung/chủ đề trong Ma trận/Bản đặc tả đã được cung cấp.' : 'Chương trình học Lớp ' + grade)}
+
+RÀNG BUỘC CHƯƠNG TRÌNH KHỐI LỚP (BẮT BUỘC):
+Bạn phải CHỈ sử dụng các đơn vị kiến thức và chủ đề thuộc đúng chương trình học của Lớp ${grade} (theo chương trình GDPT 2018). TUYỆT ĐỐI KHÔNG được sử dụng bất kỳ câu hỏi, công thức, hay kiến thức thuộc các khối lớp khác hoặc ngoài danh sách chủ đề đã nêu ở trên. 
+- Nếu chủ đề yêu cầu chỉ là "Mệnh đề" và "Tập hợp", TUYỆT ĐỐI CẤM sinh câu hỏi về: Hàm số bậc hai, Vectơ, Hình học phẳng/không gian, Phương trình đường thẳng, hay bất kỳ nội dung nào khác ngoài Mệnh đề và Tập hợp.
+- Nếu ma trận được cung cấp có giới hạn các chương mục, bạn phải tuân thủ đúng 100% giới hạn đó.
 
 Hình thức/Kỳ thi: ${examType}.
-${selectedTopics.length > 0 ? `Các chủ đề/bài học trọng tâm: ${selectedTopics.join(', ')}.` : ''}
-${matrix ? `Yêu cầu ma trận/đặc tả: ${matrix}` : ''}
 ${customPrompt ? `Yêu cầu chi tiết của giáo viên:\n${customPrompt}` : ''}
 ${realWorldDirective}
 ${matrixDirective}
