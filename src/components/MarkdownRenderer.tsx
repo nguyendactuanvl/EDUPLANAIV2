@@ -2,14 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
-import katex from 'katex';
-// @ts-ignore
-import renderMathInElement from 'katex/dist/contrib/auto-render.js';
 import { TikzRenderer, getTikzSvg } from './TikzRenderer';
 import { ImageViewerModal } from './ImageViewerModal';
 import { convertBbtTableToSvg, unflattenMarkdownTables } from '../lib/bbtRenderer';
+import { MathView, preprocessMath } from './MathView';
 import { 
   fixMath, 
   formatMathContent, 
@@ -51,6 +48,25 @@ export {
   preProcessMathContent,
   rescueCodeAndNestedText,
   normalizePropositionQuotes
+};
+
+/**
+ * Triggers MathJax 3 typesetPromise on a given container or globally across the document.
+ */
+export const typesetMathJax = (element?: HTMLElement | null) => {
+  if (typeof window !== 'undefined' && (window as any).MathJax) {
+    const mj = (window as any).MathJax;
+    if (mj.typesetPromise) {
+      if (element) {
+        if (mj.typesetClear) {
+          try { mj.typesetClear([element]); } catch (e) {}
+        }
+        mj.typesetPromise([element]).catch((err: any) => console.warn('MathJax typeset error:', err));
+      } else {
+        mj.typesetPromise().catch((err: any) => console.warn('MathJax typeset error:', err));
+      }
+    }
+  }
 };
 
 /**
@@ -355,7 +371,8 @@ export const MarkdownRenderer = ({
   }, []);
 
   // Let's rewrite the text preparation block of MarkdownRenderer in a pristine, robust way.
-  let processedContent = content || '';
+  // Normalize math text globally (converts backticks to $, fixes torn backslashes)
+  let processedContent = preprocessMath(content);
 
   // Clean leaked undefined/null strings
   processedContent = processedContent.replace(/(?<![a-zA-Z0-9_\$])(?:undefined|null)(?![a-zA-Z0-9_\$])/g, () => '');
@@ -382,12 +399,27 @@ export const MarkdownRenderer = ({
     return cleaned;
   });
 
+  // 2.5. Tự động chuyển đổi toàn bộ các công thức toán bị bọc bởi dấu backtick `...` sang $...$
+  processedContent = processedContent.replace(/`([^`]+)`/g, (match, inner) => {
+    if (/\b(?:if|for|while|def|class|return|import|print|input|const|let|var|function)\b/.test(inner)) {
+      return match;
+    }
+    const cleanInner = inner.trim().replace(/^\$+|\$+$/g, '');
+    if (!cleanInner) return match;
+    return `$${cleanInner}$`;
+  });
+
   // 3. Chuẩn hóa phân định công thức LaTeX \(...\) thành $...$ và \[...\] thành $$...$$
   // Bảo toàn 100% các ký tự gạch chéo ngược (\) bằng cách sử dụng các hàm phản hồi () => ...
   processedContent = processedContent.replace(/\\\(([\s\S]*?)\\\)/g, (_, formula) => `$${formula}$`);
   processedContent = processedContent.replace(/\\\[([\s\S]*?)\\\]/g, (_, formula) => `\n\n$$${formula}$$\n\n`);
   // Bỏ các bộ tiền xử lý và regex thủ công chồng chéo, sử dụng bộ render chuẩn.
   processedContent = processedContent.replace(/\\(\$)/g, '$1');
+
+  // 3.5 Dọn sạch các dấu * đánh dấu đáp án trắc nghiệm ở đầu hoặc cuối phương án A, B, C, D
+  processedContent = processedContent.replace(/^([ \t]*(?:[-*−]\s*)?(?:\*{1,2}|<b>)?([A-D])[\.\:\)](?:\*{1,2}|<\/b>)?\s*)\*+([^\*\n]+?)\*+(?=\s*$)/gm, '$1$3');
+  processedContent = processedContent.replace(/^([ \t]*(?:[-*−]\s*)?(?:\*{1,2}|<b>)?([A-D])[\.\:\)](?:\*{1,2}|<\/b>)?\s*)\*+([^\*\n]+)(?=\s*$)/gm, '$1$3');
+  processedContent = processedContent.replace(/^([ \t]*(?:[-*−]\s*)?(?:\*{1,2}|<b>)?([A-D])[\.\:\)](?:\*{1,2}|<\/b>)?\s*)([^\*\n]+?)\*+(?=\s*$)/gm, '$1$3');
 
   // Chuẩn hóa khối display math $$...$$: nếu có nhiều dòng, đảm bảo dấu mở $$ và đóng $$ luôn ở dòng riêng biệt
   // Điều này ngăn remark-math bị lỗi "Expected EOF got \end{cases}" và nuốt luôn câu văn tiếng Việt phía sau
@@ -424,62 +456,27 @@ export const MarkdownRenderer = ({
     }
   });
 
-  // 3. Pre-render LaTeX inside raw HTML tags (e.g. <table>, <td>, <div>)
-  // Because remark-math ignores LaTeX inside raw HTML elements
-  if (/<(table|td|th|div|span|p)[^>]*>/i.test(processedContent)) {
-    processedContent = processedContent.replace(/(<(table|tr|td|th|div|span|p)[^>]*>[\s\S]*?<\/\2>)/gi, (htmlBlock) => {
-      // Replace $$...$$ in HTML
-      let rendered = htmlBlock.replace(/\$\$([\s\S]*?)\$\$/g, (m, tex) => {
-        try {
-          return katex.renderToString(tex.trim(), { displayMode: true, throwOnError: false, errorColor: 'inherit', strict: false });
-        } catch (e) {
-          return m;
-        }
-      });
-      // Replace $...$ in HTML
-      rendered = rendered.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)(?<!\$)\$(?!\$)/g, (m, tex) => {
-        try {
-          let trimmed = tex.trim();
-          let trailingPunct = "";
-          const punctMatch = trimmed.match(/([.,;:!?]+)$/);
-          if (punctMatch && !/[\\\}]/.test(punctMatch[1])) {
-            trailingPunct = punctMatch[1];
-            trimmed = trimmed.slice(0, -trailingPunct.length).trim();
-          }
-          return katex.renderToString(trimmed, { displayMode: false, throwOnError: false, errorColor: 'inherit', strict: false }) + trailingPunct;
-        } catch (e) {
-          return m;
-        }
-      });
-      return rendered;
-    });
-  }
-
   // 3.5 Triệt tiêu hoàn toàn bất kỳ rò rỉ nào của chữ "undefined" hoặc "null" lẻ loi trong tài liệu tiếng Việt
   processedContent = processedContent.replace(/(?<![a-zA-Z0-9_\$])(?:undefined|null)(?![a-zA-Z0-9_\$])/g, '');
 
-  // 4. Auto-scanner effect: whenever content updates or AI streams in new text,
-  // scan the rendered DOM container with katex auto-render to catch any unparsed formula delimiters
+  // 4. Auto-scanner effect with MathJax 3: whenever content updates or AI streams in new text,
+  // scan the rendered DOM container with MathJax typeset and attach data-latex attributes
   useEffect(() => {
-    if (!containerRef.current) return;
-    try {
-      if (typeof renderMathInElement === 'function') {
-        renderMathInElement(containerRef.current, {
-          delimiters: [
-            { left: "$$", right: "$$", display: true },
-            { left: "$", right: "$", display: false },
-            { left: "\\(", right: "\\)", display: false },
-            { left: "\\[", right: "\\]", display: true }
-          ],
-          throwOnError: false,
-          errorColor: 'inherit',
-          strict: false,
-          ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
-          ignoredClasses: ["katex", "katex-display", "katex-html", "katex-mathml"]
-        });
-      }
-    } catch (err) {
-      console.warn("KaTeX auto-render pass completed with warnings:", err);
+    if (containerRef.current) {
+      typesetMathJax(containerRef.current);
+      setTimeout(() => {
+        if (containerRef.current) {
+          const containers = containerRef.current.querySelectorAll('mjx-container');
+          containers.forEach((mjx) => {
+            if (!mjx.hasAttribute('data-latex')) {
+              const text = mjx.getAttribute('aria-label') || mjx.querySelector('mjx-assistive-mml')?.textContent || '';
+              if (text) {
+                mjx.setAttribute('data-latex', text.replace(/^\$+|\$+$/g, '').trim());
+              }
+            }
+          });
+        }
+      }, 200);
     }
   }, [processedContent]);
 
@@ -491,7 +488,7 @@ export const MarkdownRenderer = ({
       >
         <Markdown
           remarkPlugins={[remarkMath, remarkGfm]}
-          rehypePlugins={[rehypeRaw, [rehypeKatex, { strict: false, throwOnError: false, errorColor: 'inherit' }]]}
+          rehypePlugins={[rehypeRaw]}
           components={{
             p: ({ node, children, ...props }: any) => (
               <span className="inline" {...props}>
@@ -502,7 +499,15 @@ export const MarkdownRenderer = ({
               <span className="inline" {...props}>
                 {children}
               </span>
-            )
+            ),
+            code: ({ children, className, ...props }: any) => {
+              const codeStr = String(children || '').replace(/\n$/, '');
+              if (/\b(?:if|for|while|def|class|return|import|print|input|const|let|var|function)\b/.test(codeStr)) {
+                return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...props}>{children}</code>;
+              }
+              const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
+              return cleanMath ? <span className="math-inline font-serif" data-latex={cleanMath}>{`$${cleanMath}$`}</span> : null;
+            }
           }}
         >
           {processedContent}
@@ -518,7 +523,7 @@ export const MarkdownRenderer = ({
     >
       <Markdown 
         remarkPlugins={[remarkMath, remarkGfm]} 
-        rehypePlugins={[rehypeRaw, [rehypeKatex, { strict: false, throwOnError: false, errorColor: 'inherit' }]]}
+        rehypePlugins={[rehypeRaw]}
         components={{
           p: ({ node, children, ...props }: any) => {
             const firstChild = React.Children.toArray(children)[0];
@@ -528,6 +533,14 @@ export const MarkdownRenderer = ({
                 {children}
               </div>
             );
+          },
+          code: ({ children, className, ...props }: any) => {
+            const codeStr = String(children || '').replace(/\n$/, '');
+            if (/\b(?:if|for|while|def|class|return|import|print|input|const|let|var|function)\b/.test(codeStr)) {
+              return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...props}>{children}</code>;
+            }
+            const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
+            return cleanMath ? <span className="math-inline font-serif" data-latex={cleanMath}>{`$${cleanMath}$`}</span> : null;
           },
           // @ts-ignore
           'svg-wrapper': ({node}: any) => {
@@ -594,9 +607,6 @@ export const MarkdownRenderer = ({
               {children}
             </td>
           ),
-          code({node, inline, className, children, ...props}: any) {
-            return <code className={className} {...props}>{children}</code>;
-          },
           pre({node, children, ...props}: any) {
             return (
               <pre className="bg-slate-50 border border-slate-200 text-slate-800 rounded-lg p-3 overflow-x-auto my-3 text-sm font-mono" {...props}>
@@ -661,7 +671,7 @@ export const MarkdownRenderer = ({
 };
 
 export const MathSpan: React.FC<{ content: string; className?: string }> = ({ content, className }) => {
-  return <MarkdownRenderer content={content} inline className={className} />;
+  return <MathView content={content} inline className={className} />;
 };
 
 

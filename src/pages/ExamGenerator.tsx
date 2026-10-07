@@ -1,4 +1,5 @@
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
+import { MathView } from "../components/MathView";
 import { embedTikzSvgsInText } from "../components/TikzRenderer";
 import { embedBbtSvgsInText, convertBbtTableToSvg, analyzeFunctionToBbt, generateBbtSvg } from "../lib/bbtRenderer";
 import { apiFetch } from '../lib/apiFetch';

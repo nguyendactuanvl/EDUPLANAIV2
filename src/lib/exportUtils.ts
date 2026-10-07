@@ -90,13 +90,28 @@ function latexToOmmlComponent(rawTex: string, isBlock: boolean = false): any {
   const effectiveDisplayMode = isBlock || hasMultlineEnv;
 
   try {
-    const mathmlHtml = katex.renderToString(cleanTex, {
-      displayMode: effectiveDisplayMode,
-      output: 'mathml',
-      throwOnError: false,
-    });
+    let mathmlHtml = '';
+    if (typeof window !== 'undefined' && (window as any).MathJax?.tex2mml) {
+      try {
+        mathmlHtml = (window as any).MathJax.tex2mml(cleanTex, { display: effectiveDisplayMode });
+      } catch (e) {
+        console.warn('MathJax.tex2mml conversion error:', e);
+      }
+    }
 
-    const match = mathmlHtml.match(/<math[\s\S]*?<\/math>/i);
+    if (!mathmlHtml) {
+      try {
+        mathmlHtml = katex.renderToString(cleanTex, {
+          output: 'mathml',
+          displayMode: effectiveDisplayMode,
+          throwOnError: false,
+        });
+      } catch (e) {
+        console.warn('KaTeX mathml conversion error:', e);
+      }
+    }
+
+    const match = mathmlHtml ? mathmlHtml.match(/<math[\s\S]*?<\/math>/i) : null;
     if (match) {
       const convertFn = typeof mml2omml === 'function' ? mml2omml : ((mml2omml as any)?.mml2omml || (mml2omml as any)?.default || mml2omml);
       let omml = convertFn(match[0]);
@@ -592,43 +607,44 @@ function parseInlineContent(
     const el = node as HTMLElement;
     const tagName = el.tagName.toUpperCase();
 
-    // Check if it's an OMML math token (preprocessed KaTeX)
-    if (el.classList.contains('omml-math-node')) {
-      const tex = decodeURIComponent(el.getAttribute('data-latex') || '');
-      const isBlock = el.getAttribute('data-block') === '1';
+    // Check if it's a MathJax container, KaTeX element, OMML math node, or has data-latex
+    const isMathJaxNode = tagName === 'MJX-CONTAINER' || el.classList.contains('MathJax') || el.classList.contains('MathJax_SVG') || el.classList.contains('mjx-chtml') || el.classList.contains('math-inline');
+    const isKaTeXNode = el.classList.contains('katex') || el.classList.contains('katex-display');
+    const isOmmlNode = el.classList.contains('omml-math-node');
+    const hasMathAttr = el.hasAttribute('data-latex') || el.hasAttribute('data-tex');
 
-      if (options.mathFormat === 'latex') {
-        const mathText = isBlock ? `\n$$${tex}$$\n` : ` $${tex}$ `;
-        return createTextRunsWithMathFont(mathText, {
-          ...style,
-          italics: true,
-          font: style.font || 'Times New Roman',
-        });
+    if (isMathJaxNode || isKaTeXNode || isOmmlNode || hasMathAttr) {
+      let tex = el.getAttribute('data-latex') || el.getAttribute('data-tex') || '';
+      if (!tex) {
+        const ann = el.querySelector("annotation[encoding='application/x-tex']") || el.querySelector("annotation") || el.querySelector("script[type*='math/tex']");
+        tex = ann ? ann.textContent || '' : '';
       }
-      return [latexToOmmlComponent(tex, isBlock)];
+      if (!tex && isMathJaxNode) {
+        const mml = el.querySelector("mjx-assistive-mml") || el;
+        tex = mml ? mml.textContent || '' : '';
+      }
+
+      tex = decodeURIComponent(tex).trim();
+      const isBlock = el.classList.contains('katex-display') || el.getAttribute('display') === 'true' || el.getAttribute('data-block') === '1' || (tagName === 'MJX-CONTAINER' && el.getAttribute('display') === 'true');
+
+      if (tex) {
+        if (options.mathFormat === 'latex') {
+          const mathText = isBlock ? `\n$$${tex}$$\n` : ` $${tex}$ `;
+          return createTextRunsWithMathFont(mathText, {
+            ...style,
+            italics: true,
+            font: style.font || 'Times New Roman',
+          });
+        }
+        return [latexToOmmlComponent(tex, isBlock)];
+      }
     }
 
-    // Check if it's a KaTeX math element directly
-    if (el.classList.contains('katex') || el.classList.contains('katex-display')) {
-      const ann = el.querySelector("annotation[encoding='application/x-tex']") || el.querySelector("annotation");
-      const tex = ann ? ann.textContent || '' : el.getAttribute('data-tex') || el.getAttribute('data-latex') || '';
-      const isBlock = el.classList.contains('katex-display') || !!el.closest('.katex-display');
-
-      if (options.mathFormat === 'latex') {
-        const mathText = isBlock ? `\n$$${tex}$$\n` : ` $${tex}$ `;
-        return createTextRunsWithMathFont(mathText, {
-          ...style,
-          italics: true,
-          font: style.font || 'Times New Roman',
-        });
-      }
-      return [latexToOmmlComponent(tex, isBlock)];
-    }
-
-    // Guard: ignore internal KaTeX structures so they never leak raw text
+    // Guard: ignore internal KaTeX or MathJax assistive structures so they never leak raw text
     if (
       el.classList.contains('katex-mathml') ||
       el.classList.contains('katex-html') ||
+      el.tagName === 'MJX-ASSISTIVE-MML' ||
       tagName === 'MATH' ||
       tagName === 'ANNOTATION' ||
       tagName === 'SEMANTICS'
@@ -1492,6 +1508,12 @@ export async function exportHtmlToWord(
     clone.querySelectorAll('.print-only, .only-print').forEach(el => {
       (el as HTMLElement).style.display = 'block';
       el.classList.remove('print-only', 'only-print');
+    });
+
+    // Ensure all details elements (like solution boxes) are opened and visible during export
+    clone.querySelectorAll('details').forEach(details => {
+      details.setAttribute('open', 'true');
+      (details as HTMLElement).style.display = 'block';
     });
 
     // 0. Pre-process naked math environments in DOM text nodes before word translation

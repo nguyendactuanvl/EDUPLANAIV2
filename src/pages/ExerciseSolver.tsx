@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 
 import { MarkdownRenderer, fixMath } from "../components/MarkdownRenderer";
+import { MathView } from "../components/MathView";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { ImageCropperModal } from "../components/ImageCropperModal";
 import { GeoGebraDrawer } from "../components/math-tools/GeoGebraDrawer";
@@ -924,7 +925,7 @@ export function ExerciseSolver() {
             {/* Markdown Solution Document View */}
             <div className="bg-slate-50 rounded-xl p-6 lg:p-8 border border-slate-200">
               <div ref={exportRef} className="markdown-body prose prose-slate max-w-none prose-headings:text-slate-800 prose-h2:text-2xl prose-h2:text-blue-700 prose-h2:border-b prose-h2:pb-2 prose-h3:text-xl prose-a:text-emerald-600">
-                <ErrorBoundary><MarkdownRenderer content={fixMath(solution)} /></ErrorBoundary>
+                <ErrorBoundary><MathView content={solution} /></ErrorBoundary>
               </div>
             </div>
           </div>
@@ -962,7 +963,7 @@ export function ExerciseSolver() {
                 .custom-presentation .katex { font-size: 1.8rem !important; }
                 .custom-presentation .katex-display { margin: 2rem 0 !important; }
               `}</style>
-              <ErrorBoundary><MarkdownRenderer content={presentationSlides[currentSlide]} /></ErrorBoundary>
+              <ErrorBoundary><MathView content={presentationSlides[currentSlide]} /></ErrorBoundary>
             </div>
           </div>
           

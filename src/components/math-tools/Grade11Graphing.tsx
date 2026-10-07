@@ -3,6 +3,7 @@ import { InteractivePlot } from "./InteractivePlot";
 import { Geometry3DViewer } from "./Geometry3DViewer";
 import { VariationTable, VariationTablePoint, VariationInterval } from "./VariationTable";
 import { MarkdownRenderer, MathSpan } from "../MarkdownRenderer";
+import { MathView } from "../MathView";
 import { FunctionPlotData, Point2D, AsymptoteLine, Shape3DType } from "./types";
 import { Sparkles, Box, Info, CheckCircle2 } from "lucide-react";
 
@@ -14,6 +15,14 @@ export const Grade11Graphing: React.FC = () => {
   // ==========================================
   const [funcType, setFuncType] = useState<"exp" | "log">("exp");
   const [baseA, setBaseA] = useState<number>(2);
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && (window as any).MathJax) {
+      if ((window as any).MathJax.typesetPromise) {
+        (window as any).MathJax.typesetPromise().catch(() => {});
+      }
+    }
+  }, [funcType, baseA, activeTab]);
 
   const expLogAnalysis = useMemo(() => {
     const a = baseA <= 0 || baseA === 1 ? 2 : baseA;
@@ -308,13 +317,13 @@ export const Grade11Graphing: React.FC = () => {
                 {funcType === "exp" ? (
                   <div className="space-y-1">
                     <div>
-                      <MarkdownRenderer inline content="• **Tập xác định:** $D = \mathbb{R}$." />
+                      <MathView inline content="• **Tập xác định:** $D = \mathbb{R}$." />
                     </div>
                     <div>
-                      <MarkdownRenderer inline content="• **Tập giá trị:** $T = (0; +\infty)$ (đồ thị luôn nằm hoàn toàn phía trên trục hoành $Ox$)." />
+                      <MathView inline content="• **Tập giá trị:** $T = (0; +\infty)$ (đồ thị luôn nằm hoàn toàn phía trên trục hoành $Ox$)." />
                     </div>
                     <div>
-                      <MarkdownRenderer
+                      <MathView
                         inline
                         content={expLogAnalysis.isIncreasing 
                           ? `• **Tính đơn điệu:** Do $a = ${expLogAnalysis.a} > 1$ nên hàm số đồng biến trên $\\mathbb{R}$.`
@@ -323,22 +332,22 @@ export const Grade11Graphing: React.FC = () => {
                       />
                     </div>
                     <div>
-                      <MarkdownRenderer inline content="• **Đường tiệm cận:** Tiệm cận ngang là trục hoành $Ox$ ($y = 0$)." />
+                      <MathView inline content="• **Đường tiệm cận:** Tiệm cận ngang là trục hoành $Ox$ ($y = 0$)." />
                     </div>
                     <div>
-                      <MarkdownRenderer inline content={`• **Điểm cố định:** Luôn đi qua điểm $(0; 1)$ và điểm $(1; ${expLogAnalysis.a})$.`} />
+                      <MathView inline content={`• **Điểm cố định:** Luôn đi qua điểm $(0; 1)$ và điểm $(1; ${expLogAnalysis.a})$.`} />
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-1">
                     <div>
-                      <MarkdownRenderer inline content="• **Tập xác định:** $D = (0; +\infty)$ (đồ thị luôn nằm ở nửa bên phải trục tung $Oy$)." />
+                      <MathView inline content="• **Tập xác định:** $D = (0; +\infty)$ (đồ thị luôn nằm ở nửa bên phải trục tung $Oy$)." />
                     </div>
                     <div>
-                      <MarkdownRenderer inline content="• **Tập giá trị:** $T = \mathbb{R}$." />
+                      <MathView inline content="• **Tập giá trị:** $T = \mathbb{R}$." />
                     </div>
                     <div>
-                      <MarkdownRenderer
+                      <MathView
                         inline
                         content={expLogAnalysis.isIncreasing 
                           ? `• **Tính đơn điệu:** Do $a = ${expLogAnalysis.a} > 1$ nên hàm số đồng biến trên $(0; +\\infty)$.`
@@ -347,10 +356,10 @@ export const Grade11Graphing: React.FC = () => {
                       />
                     </div>
                     <div>
-                      <MarkdownRenderer inline content="• **Đường tiệm cận:** Tiệm cận đứng là trục tung $Oy$ ($x = 0$)." />
+                      <MathView inline content="• **Đường tiệm cận:** Tiệm cận đứng là trục tung $Oy$ ($x = 0$)." />
                     </div>
                     <div>
-                      <MarkdownRenderer inline content={`• **Điểm cố định:** Luôn đi qua điểm $(1; 0)$ và điểm $(${expLogAnalysis.a}; 1)$.`} />
+                      <MathView inline content={`• **Điểm cố định:** Luôn đi qua điểm $(1; 0)$ và điểm $(${expLogAnalysis.a}; 1)$.`} />
                     </div>
                   </div>
                 )}

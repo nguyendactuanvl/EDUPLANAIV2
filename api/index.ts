@@ -623,15 +623,10 @@ async function generateWithFallback(req: any, payloadOptions: any) {
   const client = getAiClient(req);
   const isCustomKey = !!req.headers['x-gemini-api-key'] || (!!req.headers['authorization'] && (req.headers['authorization'] as string).startsWith('Bearer '));
   
-  // Prioritize active, fast, responsive models with available quota
+  // Prioritize active, valid models according to @google/genai guidelines
   const models = [
-    "gemini-3-flash-preview",
-    "gemini-3.5-flash-lite",
-    "gemini-flash-lite-latest",
-    "gemini-3.5-flash",
     "gemini-3.8-flash",
-    "gemini-3.6-flash",
-    "gemini-3.7-flash",
+    "gemini-3.1-flash-lite",
     "gemini-flash-latest"
   ];
   if (isCustomKey) {
@@ -716,6 +711,65 @@ async function generateWithFallback(req: any, payloadOptions: any) {
   
   if (primaryError) throw primaryError;
   throw new Error("429 RESOURCE_EXHAUSTED: Hệ thống đang quá tải hoặc tạm thời không khả dụng do nhu cầu cao (429). Vui lòng thử lại sau ít phút hoặc sử dụng API Key cá nhân.");
+}
+
+async function generateWithFallbackStream(req: any, res: any, payloadOptions: any) {
+  const client = getAiClient(req);
+  const isCustomKey = !!req.headers['x-gemini-api-key'] || (!!req.headers['authorization'] && (req.headers['authorization'] as string).startsWith('Bearer '));
+  
+  const models = [
+    "gemini-3.8-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-flash-latest"
+  ];
+  if (isCustomKey) {
+    models.push("gemini-3.1-pro-preview");
+  }
+
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Transfer-Encoding', 'chunked');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
+  const config = payloadOptions.config || {};
+  const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán.
+- LUÔN LUÔN sử dụng \\frac thay thế cho \\dfrac.
+- TẤT CẢ các biến số, tham số đơn lẻ (như x, y, m, a, b, c...) BẮT BUỘC bọc trong cặp dấu $...$.
+- Tuyệt đối KHÔNG chào hỏi hay giải thích ngoài lề, xuất trực tiếp văn bản Markdown của phiếu học tập.`;
+
+  let primaryError: any = null;
+
+  for (const model of models) {
+    try {
+      const updatedPayload = {
+        ...payloadOptions,
+        model,
+        config: {
+          maxOutputTokens: 8192,
+          ...config,
+          systemInstruction: config.systemInstruction || defaultSystemInstruction
+        }
+      };
+
+      const responseStream = await client.models.generateContentStream(updatedPayload);
+      for await (const chunk of responseStream) {
+        if (chunk.text) {
+          res.write(chunk.text);
+        }
+      }
+      res.end();
+      return;
+    } catch (e: any) {
+      console.warn(`[generateWithFallbackStream] Model ${model} error:`, e?.message || e);
+      primaryError = e;
+    }
+  }
+
+  if (!res.headersSent) {
+    res.status(500).json({ error: primaryError?.message || "Lỗi khi gọi AI streaming." });
+  } else {
+    res.write(`\n\nSERVER_ERROR: ${primaryError?.message || "Lỗi khi truyền dữ liệu streaming."}\n`);
+    res.end();
+  }
 }
 
 app.all("/api/circulars", async (req, res) => {
@@ -2094,6 +2148,56 @@ BẮT BUỘC kiểm tra và SỬA LỖI CHÍNH TẢ tiếng Việt thật cẩn 
     
     });
 
+});
+
+app.all("/api/generate-worksheet-stream", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ message: 'Method not allowed' });
+
+  const {
+    grade,
+    subject,
+    lesson,
+    numPartI = 6,
+    numPartII = 2,
+    numPartIII = 2,
+    numPartIV = 2,
+    realWorldPercent = 30,
+    hasParametric = false,
+    additionalNotes,
+    answerMode
+  } = req.body || {};
+
+  let exercisePrompt = `Cấu trúc các phần bài tập:`;
+  if (numPartI > 0) exercisePrompt += `\n- PHẦN I: TRẮC NGHIỆM LỰA CHỌN: đúng ${numPartI} câu.`;
+  if (numPartII > 0) exercisePrompt += `\n- PHẦN II: TRẮC NGHIỆM ĐÚNG/SAI: đúng ${numPartII} câu (mỗi câu 4 ý a, b, c, d).`;
+  if (numPartIII > 0) exercisePrompt += `\n- PHẦN III: TRẮC NGHIỆM TRẢ LỜI NGẮN: đúng ${numPartIII} câu.`;
+  if (numPartIV > 0) exercisePrompt += `\n- PHẦN IV: TỰ LUẬN RÈN LUYỆN: đúng ${numPartIV} câu.`;
+
+  exercisePrompt += `\n- Thực tế: ${realWorldPercent}%. ${hasParametric ? 'Có tham số m.' : 'Không chứa tham số.'}`;
+  if (additionalNotes) exercisePrompt += `\n- Ghi chú riêng: ${additionalNotes}`;
+
+  let answerPrompt = 'Cung cấp Bảng đáp án nhanh. Hướng dẫn giải súc tích gói trong thẻ <details class="solution-box"><summary>👉 BẤM ĐỂ XEM ĐÁP ÁN VÀ LỜI GIẢI CHI TIẾT</summary>...</details>.';
+  if (answerMode === 'none') answerPrompt = 'Không kèm đáp án hay lời giải.';
+  else if (answerMode === 'summary') answerPrompt = 'Chỉ kèm bảng đáp án nhanh ở cuối.';
+
+  const prompt = `Bạn là chuyên gia Toán THPT Việt Nam (CT 2018 KNTT).
+Hãy tạo ngay PHIẾU HỌC TẬP A4 Chuẩn in ấn cho học sinh lớp ${grade}, môn ${subject || "Toán"}, bài: "${lesson}".
+
+YÊU CẦU QUAN TRỌNG:
+1. Xuất trực tiếp nội dung phiếu học tập Markdown, không viết câu chào hay mở đầu.
+2. Công thức LaTeX bọc trong $...$ hoặc $$...$$.
+3. ${exercisePrompt}
+4. ${answerPrompt}`;
+
+  await generateWithFallbackStream(req, res, {
+    contents: prompt,
+    config: { temperature: 0.7 }
+  });
 });
 
 app.all("/api/pdf-to-word", async (req, res) => {

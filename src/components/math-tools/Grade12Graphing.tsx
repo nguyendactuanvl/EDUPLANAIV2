@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef } from "react";
 import { InteractivePlot } from "./InteractivePlot";
 import { VariationTable, VariationTablePoint, VariationInterval } from "./VariationTable";
 import { MarkdownRenderer, MathSpan } from "../MarkdownRenderer";
+import { MathView } from "../MathView";
 import { formatCubic, formatQuadratic, formatQuartic, formatLinearEquation } from "../../lib/mathFormatters";
 import { FunctionPlotData, Point2D, AsymptoteLine } from "./types";
 import { Copy, Check, Printer, Sparkles } from "lucide-react";
@@ -40,6 +41,70 @@ export const Grade12Graphing: React.FC = () => {
   const [pC, setPC] = useState<number>(3);
 
   const [copiedKSHS, setCopiedKSHS] = useState<boolean>(false);
+
+  // Kích hoạt MathJax render lại công thức mỗi khi thay đổi hệ số hoặc chọn hàm mẫu
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && (window as any).MathJax) {
+      if ((window as any).MathJax.typesetPromise) {
+        (window as any).MathJax.typesetPromise().catch(() => {});
+      }
+    }
+  }, [funcType, c3A, c3B, c3C, c3D, r1A, r1B, r1C, r1D, r2A, r2B, r2C, r2D, r2E, c4A, c4B, c4C, pA, pB, pC]);
+
+  const triggerMathJax = () => {
+    if (typeof window !== 'undefined' && (window as any).MathJax && (window as any).MathJax.typesetPromise) {
+      (window as any).MathJax.typesetPromise().catch(() => {});
+    }
+  };
+
+  const updateC3 = (a?: number, b?: number, c?: number, d?: number) => {
+    if (a !== undefined) setC3A(a);
+    if (b !== undefined) setC3B(b);
+    if (c !== undefined) setC3C(c);
+    if (d !== undefined) setC3D(d);
+    if (typeof window !== 'undefined' && (window as any).MathJax) {
+      (window as any).MathJax.typesetPromise?.();
+    }
+  };
+
+  const updateR1 = (a?: number, b?: number, c?: number, d?: number) => {
+    if (a !== undefined) setR1A(a);
+    if (b !== undefined) setR1B(b);
+    if (c !== undefined) setR1C(c);
+    if (d !== undefined) setR1D(d);
+    if (typeof window !== 'undefined' && (window as any).MathJax) {
+      (window as any).MathJax.typesetPromise?.();
+    }
+  };
+
+  const updateR2 = (a?: number, b?: number, c?: number, d?: number, e?: number) => {
+    if (a !== undefined) setR2A(a);
+    if (b !== undefined) setR2B(b);
+    if (c !== undefined) setR2C(c);
+    if (d !== undefined) setR2D(d);
+    if (e !== undefined) setR2E(e);
+    if (typeof window !== 'undefined' && (window as any).MathJax) {
+      (window as any).MathJax.typesetPromise?.();
+    }
+  };
+
+  const updateC4 = (a?: number, b?: number, c?: number) => {
+    if (a !== undefined) setC4A(a);
+    if (b !== undefined) setC4B(b);
+    if (c !== undefined) setC4C(c);
+    if (typeof window !== 'undefined' && (window as any).MathJax) {
+      (window as any).MathJax.typesetPromise?.();
+    }
+  };
+
+  const updateP = (a?: number, b?: number, c?: number) => {
+    if (a !== undefined) setPA(a);
+    if (b !== undefined) setPB(b);
+    if (c !== undefined) setPC(c);
+    if (typeof window !== 'undefined' && (window as any).MathJax) {
+      (window as any).MathJax.typesetPromise?.();
+    }
+  };
 
   // ==========================================
   // 1. ANALYSIS: HÀM BẬC BA: y = ax^3 + bx^2 + cx + d
@@ -1075,7 +1140,7 @@ $$\\lim_{x \\to \\pm\\infty} y = ${a > 0 ? "+\\infty" : "-\\infty"}$$`;
               ].map((p, idx) => (
                 <button
                   key={idx}
-                  onClick={() => { setC3A(p.a); setC3B(p.b); setC3C(p.c); setC3D(p.d); }}
+                  onClick={() => updateC3(p.a, p.b, p.c, p.d)}
                   className="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-700 rounded-lg text-xs cursor-pointer transition-colors"
                 >
                   <MathSpan content={`$${p.label}$`} />
@@ -1144,7 +1209,7 @@ $$\\lim_{x \\to \\pm\\infty} y = ${a > 0 ? "+\\infty" : "-\\infty"}$$`;
               ].map((p, idx) => (
                 <button
                   key={idx}
-                  onClick={() => { setR1A(p.a); setR1B(p.b); setR1C(p.c); setR1D(p.d); }}
+                  onClick={() => updateR1(p.a, p.b, p.c, p.d)}
                   className="px-2.5 py-1 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 rounded-lg text-xs cursor-pointer transition-colors"
                 >
                   <MathSpan content={`$${p.label}$`} />
@@ -1226,7 +1291,7 @@ $$\\lim_{x \\to \\pm\\infty} y = ${a > 0 ? "+\\infty" : "-\\infty"}$$`;
               ].map((p, idx) => (
                 <button
                   key={idx}
-                  onClick={() => { setR2A(p.a); setR2B(p.b); setR2C(p.c); setR2D(p.d); setR2E(p.e); }}
+                  onClick={() => updateR2(p.a, p.b, p.c, p.d, p.e)}
                   className="px-2.5 py-1 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 rounded-lg text-xs cursor-pointer transition-colors"
                 >
                   <MathSpan content={`$${p.label}$`} />
@@ -1401,7 +1466,7 @@ $$\\lim_{x \\to \\pm\\infty} y = ${a > 0 ? "+\\infty" : "-\\infty"}$$`;
               I. Tập xác định
             </h4>
             <div className="pl-4">
-              <MarkdownRenderer content={section1Markdown} />
+              <MathView content={section1Markdown} />
             </div>
           </div>
 
@@ -1413,7 +1478,7 @@ $$\\lim_{x \\to \\pm\\infty} y = ${a > 0 ? "+\\infty" : "-\\infty"}$$`;
             </h4>
             
             <div className="pl-4">
-              <MarkdownRenderer content={section2Markdown} />
+              <MathView content={section2Markdown} />
             </div>
 
             {/* BẢNG BIẾN THIÊN (BBT) LỒNG TRỰC TIẾP TRONG MỤC II - RỘNG RÃI RÕ RÀNG */}
@@ -1476,7 +1541,7 @@ $$\\lim_{x \\to \\pm\\infty} y = ${a > 0 ? "+\\infty" : "-\\infty"}$$`;
             </h4>
 
             <div className="pl-4">
-              <MarkdownRenderer content={section3Markdown} />
+              <MathView content={section3Markdown} />
             </div>
 
             {/* KHUNG ĐỒ THỊ MÔ PHỎNG TƯƠNG TÁC (INTERACTIVE PLOT) LỒNG TRỰC TIẾP TRONG MỤC III - KÍCH THƯỚC TO RỘNG (580px) */}

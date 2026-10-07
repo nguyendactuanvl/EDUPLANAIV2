@@ -9,6 +9,7 @@ import {
   TrendingUp, BarChart2, Plus, Box, BarChart3, School, User, Wand2
 } from "lucide-react";
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
+import { MathView } from "../components/MathView";
 import { run1ClickMathFix } from "../components/math-tools/MathFormulaFixer";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { UploadTeacherExamModal } from "../components/UploadTeacherExamModal";
@@ -20,7 +21,7 @@ import { analyzeFunctionToBbt, generateBbtSvg, convertBbtTableToSvg } from "../l
 import { getTikzSvg, embedTikzSvgsInText } from "../components/TikzRenderer";
 import { saveToHistory, getHistory } from '../lib/history';
 import { HistoryItem } from '../types';
-import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMath, cleanQuestionStem, cleanOptionText } from "../lib/utils";
+import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMath, cleanQuestionStem, cleanOptionText, normalizeMathText, triggerGlobalMathRender } from "../lib/utils";
 import { parseRawExamText } from '../lib/examParser';
 import { printElement, ensureMathRendered } from '../lib/print';
 import { saveExamToCloud, saveExamToWebhook } from '../lib/cloudExamStore';
@@ -117,6 +118,7 @@ export function Worksheets() {
   }, [subject, selectedGrade, selectedSemester, selectedChapterId, selectedLessonId]);
   
   const [suggestion, setSuggestion] = useState("");
+  const [streamProgress, setStreamProgress] = useState<{ percentage: number; text: string } | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   
@@ -676,12 +678,13 @@ export function Worksheets() {
     setIsLoading(true);
     setError(null);
     setSuggestion("");
+    setStreamProgress({ percentage: 10, text: "Khởi tạo kết nối tạo phiếu học tập..." });
     
     try {
-      const response = await apiFetch('/api/generate-worksheet', {
+      const response = await fetch('/api/generate-worksheet-stream', {
         method: 'POST',
         headers: { 
-          'Content-Type': 'text/plain;charset=utf-8', // Dùng text/plain để tránh bị lỗi CORS preflight với Apps Script
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           lesson: customLessonName,
@@ -693,7 +696,6 @@ export function Worksheets() {
           numEssay: numEssay !== "auto" ? Number(numEssay) : undefined,
           includeRealWorld: includeRealWorld,
           answerMode: answerMode,
-          // New advanced parameters from configured sidebar
           additionalNotes,
           numPartI,
           numPartII,
@@ -701,57 +703,61 @@ export function Worksheets() {
           numPartIV,
           realWorldPercent,
           hasParametric
-        }),
-        redirect: 'follow', // Bắt buộc để theo dõi chuyển hướng 302 từ Google Script sang Googleusercontent
+        })
       });
 
-      if (!response.ok) {
-        let errorMsg = "Lỗi khi kết nối với AI (API trả về lỗi).";
-        try {
-          const errText = await response.text();
-          if (errText.trim().startsWith('<') || errText.includes('<!DOCTYPE html>')) {
-            throw new Error("Dịch vụ tạo đề tạm thời gián đoạn hoặc API Key chưa được nạp đúng. Vui lòng kiểm tra lại cấu hình API.");
-          }
-          try {
-             const errorData = JSON.parse(errText);
-             errorMsg = errorData.error || errorMsg;
-          } catch(e) {
-             if (response.status === 503 || response.status === 504 || response.status === 502) {
-                errorMsg = "Hệ thống đang quá tải hoặc hết thời gian chờ. Vui lòng thử lại sau.";
-             } else {
-                errorMsg = `Lỗi hệ thống (${response.status}): Không thể kết nối với máy chủ.`;
-             }
-          }
-        } catch (e: any) {
-          if (e.message && e.message.includes("API Key")) throw e;
-        }
-        throw new Error(errorMsg);
+      if (!response.ok || !response.body) {
+        // Fallback to non-stream if streaming unavailable
+        const resNonStream = await apiFetch('/api/generate-worksheet', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lesson: customLessonName, subject, grade: selectedGrade,
+            type: worksheetType, layoutStyle, answerMode, additionalNotes,
+            numPartI, numPartII, numPartIII, numPartIV, realWorldPercent, hasParametric
+          })
+        });
+        const data = await resNonStream.json();
+        setSuggestion(normalizeMathText(data.result || ''));
+        setStreamProgress({ percentage: 100, text: "Tạo phiếu học tập hoàn tất!" });
+        setTimeout(() => setStreamProgress(null), 1000);
+        setIsLoading(false);
+        triggerGlobalMathRender();
+        return;
       }
 
-      const rawText = await response.text();
-      
-      // Kiểm tra xem dữ liệu trả về có bị dính HTML không
-      if (rawText.trim().startsWith('<') || rawText.includes('<!DOCTYPE html>')) {
-        console.error("Server trả về trang HTML thay vì JSON:", rawText);
-        throw new Error("Dịch vụ tạo đề tạm thời gián đoạn hoặc API Key chưa được nạp đúng. Vui lòng kiểm tra lại cấu hình API.");
-      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let rawAccumulated = "";
 
-      let data: any;
-      try {
-        data = JSON.parse(rawText);
-      } catch (e) {
-        try {
-          data = parseApiResponse<{ result: string }>(rawText);
-        } catch (e2) {
-          console.error("Lỗi parse JSON:", rawText);
-          throw new Error("Phản hồi từ máy chủ không đúng định dạng dữ liệu.");
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        rawAccumulated += chunk;
+
+        // Progressive display normalized cleanly
+        setSuggestion(normalizeMathText(rawAccumulated));
+
+        // Update progress bar based on structural sections
+        if (rawAccumulated.includes('PHẦN IV')) {
+          setStreamProgress({ percentage: 85, text: "Đang sinh PHẦN IV: Bài tập tự luận..." });
+        } else if (rawAccumulated.includes('PHẦN III')) {
+          setStreamProgress({ percentage: 65, text: "Đang sinh PHẦN III: Trắc nghiệm trả lời ngắn..." });
+        } else if (rawAccumulated.includes('PHẦN II')) {
+          setStreamProgress({ percentage: 45, text: "Đang sinh PHẦN II: Trắc nghiệm Đúng / Sai..." });
+        } else if (rawAccumulated.includes('PHẦN I')) {
+          setStreamProgress({ percentage: 25, text: "Đang sinh PHẦN I: Trắc nghiệm lựa chọn..." });
+        } else if (rawAccumulated.includes('details') || rawAccumulated.includes('ĐÁP ÁN')) {
+          setStreamProgress({ percentage: 95, text: "Đang hoàn thiện Bảng đáp án & Hướng dẫn giải..." });
+        } else {
+          setStreamProgress({ percentage: 15, text: "Đang phân tích cấu trúc phiếu học tập..." });
         }
       }
-      const rawResult = (typeof data?.result === 'string' ? data.result : String(data?.result || '')).replace(/\s*(?:undefined|null)\s*$/gi, '').trim();
-      let processedResult = preProcessMathContent(rawResult);
-      // Tự động chuyển đổi toàn bộ mã TikZ sang ảnh SVG đồ họa sắc nét (không để mã tex)
+
+      let processedResult = preProcessMathContent(rawAccumulated);
       processedResult = embedTikzSvgsInText(processedResult);
-      // Tự động chuyển đổi toàn bộ BBT markdown tables sang ảnh SVG vector chuẩn SGK
       processedResult = processedResult.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
         if (/(?:y'|f'\(x\)|\\searrow|\\nearrow)/i.test(match)) {
           const svg = convertBbtTableToSvg(match);
@@ -762,9 +768,11 @@ export function Worksheets() {
         }
         return match;
       });
-      setSuggestion(processedResult);
 
-      // Tự động phân tích các câu hỏi để hiển thị giao diện câu hỏi trực quan kèm bộ công cụ BBT & Đồ thị
+      setSuggestion(processedResult);
+      setStreamProgress({ percentage: 100, text: "Tạo phiếu học tập thành công!" });
+
+      // Automatically parse structured questions
       try {
         const parsed = parseRawExamText(processedResult);
         if (parsed && parsed.length > 0) {
@@ -794,7 +802,6 @@ export function Worksheets() {
               return match;
             });
 
-            // Tự động tạo BBT dạng ảnh SVG nếu câu hỏi nhắc đến BBT
             if (isMissingBbt(content)) {
               const fMatch = content.match(/(?:y|f\(x\))\s*=\s*([^,;.\n$]+)/i) || 
                              content.match(/hàm\s*số\s*(?:\$)?(?:y\s*=\s*)?([^,;.\n$]+)/i);
@@ -840,9 +847,16 @@ export function Worksheets() {
         content: processedResult
       });
       setHistoryItems(getHistory().filter(item => item.type === 'PHT'));
+
+      // Non-blocking background MathJax rendering
+      triggerGlobalMathRender();
+
+      setTimeout(() => setStreamProgress(null), 1200);
+
     } catch (err: any) {
       console.error(err);
       setError(err.message || "Không thể tạo phiếu học tập lúc này. Vui lòng thử lại sau.");
+      setStreamProgress(null);
     } finally {
       setIsLoading(false);
     }
@@ -1747,7 +1761,7 @@ export function Worksheets() {
           ) : (
             <div className="max-w-4xl mx-auto">
               {(() => {
-                const SOLUTION_DELIMITER_REGEX = /(?:\n\s*---+\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN CHI TIẾT|LỜI GIẢI CHI TIẾT|HƯỚNG DẪN GIẢI|BẢNG ĐÁP ÁN NHANH|BẢNG ĐÁP ÁN)[^\n]*---+\s*\n|\n\s*#{1,3}\s*(?:IV|V|III|Phần\s*(?:4|IV))?\.?\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN CHI TIẾT|LỜI GIẢI CHI TIẾT|HƯỚNG DẪN GIẢI|BẢNG ĐÁP ÁN NHANH|BẢNG ĐÁP ÁN)\b[^\n]*\n)/i;
+                const SOLUTION_DELIMITER_REGEX = /(?:\n\s*---+\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN|LỜI GIẢI|HƯỚNG DẪN GIẢI|BẢNG ĐÁP ÁN)[^\n]*---+\s*\n|\n\s*#{1,4}\s*(?:IV|V|III|II|Phần\s*(?:4|3|2|IV|III))?\.?\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN|LỜI GIẢI|HƯỚNG DẪN GIẢI|BẢNG ĐÁP ÁN)\b[^\n]*\n)/i;
                 
                 let mainDocContent = suggestion;
                 let solutionDocContent = "";
@@ -1769,6 +1783,12 @@ export function Worksheets() {
                     mainDocContent = suggestion.substring(0, delimiterMatch.index).trim();
                     solutionDocContent = suggestion.substring(delimiterMatch.index).trim();
                   }
+                }
+
+                // If Student Mode selected (includeDetailedSolution === false), strip solutions completely
+                if (!includeDetailedSolution) {
+                  mainDocContent = mainDocContent.replace(/<details[\s\S]*?<\/details>/gi, "").trim();
+                  solutionDocContent = "";
                 }
 
                 if (viewMode === 'questions' && worksheetQuestions.length > 0) {
@@ -1842,7 +1862,7 @@ export function Worksheets() {
                               <span className="text-xs text-emerald-700 group-open:rotate-180 transition-transform">▼</span>
                             </summary>
                             <div className="mt-3 pt-3 border-t border-emerald-200/80 text-slate-800 text-sm prose max-w-none">
-                              <MarkdownRenderer content={fixMath(mainDocContent)} />
+                              <MathView content={mainDocContent} />
                             </div>
                           </details>
                         </div>
@@ -2027,7 +2047,7 @@ export function Worksheets() {
 
                             <div className="font-medium text-slate-800 mb-3 flex items-start gap-2">
                               <span className="font-bold whitespace-nowrap mt-1">Câu {idx + 1}:</span>
-                              <MarkdownRenderer className="markdown-body inline-block" content={cleanQuestionStem(q.content || (q as any).question || '', q.options, q.tfStatements)} />
+                              <MathView className="inline-block flex-1" content={cleanQuestionStem(q.content || (q as any).question || '', q.options, q.tfStatements)} />
                               {q.level && <span className="text-xs text-emerald-600 font-normal mt-1 shrink-0">[{q.level}]</span>}
                             </div>
 
@@ -2037,7 +2057,7 @@ export function Worksheets() {
                                 {q.tfStatements.map((stmt: any, sIdx: number) => (
                                   <div key={sIdx} className="flex items-start gap-1 p-2 rounded-md bg-slate-50 border border-slate-200 text-sm">
                                     <span className="shrink-0 font-medium">{['a)', 'b)', 'c)', 'd)'][sIdx] || String.fromCharCode(97 + sIdx) + ')'}</span>
-                                    <span className="flex-1"><MarkdownRenderer className="markdown-body inline-block" content={fixMath(stmt.statement || '')} /></span>
+                                    <span className="flex-1"><MathView content={stmt.statement || ''} /></span>
                                     {includeDetailedSolution && (
                                       <span className={`shrink-0 font-bold px-2 rounded text-xs ${stmt.correct ? 'text-emerald-700 bg-emerald-100' : 'text-red-700 bg-red-100'}`}>
                                         {stmt.correct ? 'Đ' : 'S'}
@@ -2064,7 +2084,7 @@ export function Worksheets() {
                                     )}>
                                       <span className="shrink-0 font-bold select-none min-w-[1.75rem] whitespace-nowrap text-slate-900">{String.fromCharCode(65 + oIdx)}.</span>
                                       <span className="flex-1 break-words overflow-hidden">
-                                        <MarkdownRenderer inline={true} className="markdown-body inline align-baseline" content={fixMath(opt)} />
+                                        <MathView inline content={opt} />
                                       </span>
                                     </div>
                                   ))}
@@ -2075,7 +2095,7 @@ export function Worksheets() {
                             {/* Short Answer / Essay answer */}
                             {q.type !== 'mc' && q.type !== 'tf' && q.correctAnswer && includeDetailedSolution && (
                               <div className="mt-2 pl-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm">
-                                <span className="font-semibold text-emerald-800">Đáp án:</span> <MarkdownRenderer className="markdown-body inline-block" content={fixMath(q.correctAnswer || '')} />
+                                <span className="font-semibold text-emerald-800">Đáp án:</span> <MathView inline content={q.correctAnswer || ''} />
                               </div>
                             )}
 
@@ -2220,7 +2240,7 @@ export function Worksheets() {
                                     </div>
                                   </div>
                                   <div className="text-slate-800">
-                                    <MarkdownRenderer content={fixMath(q.solution || q.explanation || "Chưa có lời giải chi tiết cho câu hỏi này.")} />
+                                    <MathView content={q.solution || q.explanation || "Chưa có lời giải chi tiết cho câu hỏi này."} />
                                   </div>
                                 </div>
                               )}
@@ -2244,7 +2264,7 @@ export function Worksheets() {
                             {/* Lời giải chi tiết - Kèm theo khi In và Xuất Word (Bản Giáo viên) */}
                             {includeDetailedSolution && (q.solution || q.explanation) && (
                               <div 
-                                className="print-only"
+                                className="export-solution-block"
                                 style={{ 
                                   backgroundColor: '#f8fafc', 
                                   border: '1px solid #cbd5e1', 
@@ -2325,6 +2345,25 @@ export function Worksheets() {
                             onInsertSnippet={handleInsertDocVisualizerSnippet}
                             onClose={() => setIsDocVisualizerOpen(false)}
                           />
+                        </div>
+                      )}
+
+                      {/* Live Streaming Progress Bar */}
+                      {streamProgress && (
+                        <div className="bg-emerald-50/90 border border-emerald-300 rounded-2xl p-4 mb-6 shadow-sm space-y-2 backdrop-blur-xs">
+                          <div className="flex items-center justify-between text-xs font-bold text-emerald-900">
+                            <div className="flex items-center gap-2">
+                              <div className="w-3.5 h-3.5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+                              <span>{streamProgress.text}</span>
+                            </div>
+                            <span className="font-mono text-emerald-700 font-extrabold">{streamProgress.percentage}%</span>
+                          </div>
+                          <div className="w-full bg-emerald-200/80 rounded-full h-2.5 overflow-hidden">
+                            <div 
+                              className="bg-emerald-600 h-2.5 rounded-full transition-all duration-300 ease-out"
+                              style={{ width: `${streamProgress.percentage}%` }}
+                            ></div>
+                          </div>
                         </div>
                       )}
 
@@ -2475,7 +2514,7 @@ export function Worksheets() {
 
                               {/* Left Content prose rendering */}
                               <div className="p-5 prose prose-blue prose-sm max-w-none [&_h2]:bg-blue-50/80 [&_h2]:text-blue-950 [&_h2]:p-3 [&_h2]:rounded-xl [&_h2]:border-l-4 [&_h2]:border-blue-600 [&_h2]:text-[12px] [&_h2]:font-black [&_h2]:mt-5 [&_h2]:mb-3 [&_blockquote]:bg-amber-50/80 [&_blockquote]:border-l-4 [&_blockquote]:border-amber-400 [&_blockquote]:p-3.5 [&_blockquote]:rounded-r-xl [&_blockquote]:text-amber-950 [&_blockquote]:text-[11px] [&_blockquote]:font-semibold [&_blockquote]:not-italic [&_table]:border-collapse [&_th]:border [&_th]:border-slate-300 [&_td]:border [&_td]:border-slate-300 leading-relaxed font-sans">
-                                <MarkdownRenderer content={fixMath(splitContent(mainDocContent).left)} />
+                                <MathView content={splitContent(mainDocContent).left} />
                               </div>
                             </div>
 
@@ -2514,7 +2553,7 @@ export function Worksheets() {
 
                               {/* Right Content prose rendering */}
                               <div className="p-5 prose prose-indigo prose-sm max-w-none [&_h2]:bg-indigo-50/80 [&_h2]:text-indigo-950 [&_h2]:p-3 [&_h2]:rounded-xl [&_h2]:border-l-4 [&_h2]:border-indigo-600 [&_h2]:text-[12px] [&_h2]:font-black [&_h2]:mt-5 [&_h2]:mb-3 [&_blockquote]:bg-rose-50/80 [&_blockquote]:border-l-4 [&_blockquote]:border-rose-400 [&_blockquote]:p-3.5 [&_blockquote]:rounded-r-xl [&_blockquote]:text-rose-950 [&_blockquote]:text-[11px] [&_blockquote]:font-semibold [&_blockquote]:not-italic [&_table]:border-collapse [&_th]:border [&_th]:border-slate-300 [&_td]:border [&_td]:border-slate-300 leading-relaxed font-sans">
-                                <MarkdownRenderer content={fixMath(splitContent(mainDocContent).right)} />
+                                <MathView content={splitContent(mainDocContent).right} />
                               </div>
                             </div>
 
@@ -2536,7 +2575,7 @@ export function Worksheets() {
                           layoutStyle === 'mindmap' && "prose-emerald [&_h2]:bg-emerald-50 [&_h2]:text-emerald-950 [&_h2]:p-3.5 [&_h2]:rounded-xl [&_h2]:border-l-4 [&_h2]:border-emerald-600 [&_h2]:font-bold [&_blockquote]:bg-teal-50 [&_blockquote]:border-l-4 [&_blockquote]:border-teal-500 [&_blockquote]:p-4 [&_blockquote]:rounded-r-xl"
                         )}>
                           <ErrorBoundary>
-                            <MarkdownRenderer content={fixMath(mainDocContent)} />
+                            <MathView content={mainDocContent} />
                           </ErrorBoundary>
                         </div>
                       )}
@@ -2570,7 +2609,7 @@ export function Worksheets() {
 
                             {/* Khi In hoặc Xuất Word (Bản dành cho Giáo viên) */}
                             <div 
-                              className="print-only mt-6 pt-4 border-t border-slate-400 not-prose"
+                              className="export-solution-block mt-6 pt-4 border-t border-slate-400 not-prose"
                               style={{ pageBreakBefore: 'always' }}
                             >
                               <div className="font-bold text-slate-900 mb-2 text-base">

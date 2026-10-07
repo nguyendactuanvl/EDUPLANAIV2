@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { MarkdownRenderer } from '../MarkdownRenderer';
 import { 
+  fixMath,
   cleanVietnameseUnicode, 
   polishMathText, 
   normalizeInfinity, 
@@ -66,39 +67,7 @@ c) Tìm m để phương trình x^2 - 2(m+1)x + m^2 + 2 = 0 có hai nghiệm ph�
 // Core 1-Click Math Repair Engine
 export const run1ClickMathFix = (rawInput: string): string => {
   if (!rawInput) return '';
-
-  let text = fixSequencesAndFractions(rawInput);
-
-  // Step 1: Clean Vietnamese Unicode NFD/NFC & broken accents
-  text = cleanVietnameseUnicode(text);
-
-  // Step 2: Fix naked leq, geq, neq
-  text = fixNakedLeqGeq(text);
-
-  // Step 3: Polish math text and separation of Vietnamese conjunctions (và, hoặc, với)
-  text = polishMathText(text);
-
-  // Step 4: Normalize infinity symbols (-\infty, +\infty, \in fty)
-  text = normalizeInfinity(text);
-
-  // Step 5: Normalize logic & set symbols (\forall, \exists, \cap, \cup, \setminus, \mathbb{R})
-  text = normalizeLogicAndSetSymbols(text);
-
-  // Step 6: Normalize set notation & braces (\{ \})
-  text = normalizeSetNotation(text);
-
-  // Step 7: Fix inline option text (A., B., C., D.)
-  text = fixInlineOptionText(text);
-
-  // Step 8: Additional standardizations for trigonometric/logarithmic functions missing backslash
-  text = text.replace(/(?<!\\)\b(sin|cos|tan|cot)\s*([a-zA-Z0-9xθ\alpha\beta]+)/g, (_m, fn, arg) => {
-    return `\\${fn} ${arg}`;
-  });
-
-  // Step 9: Clean orphan dollars
-  text = cleanMath(text);
-
-  return text;
+  return fixMath(rawInput);
 };
 
 export const MathFormulaFixer: React.FC = () => {
@@ -376,7 +345,7 @@ export const MathFormulaFixer: React.FC = () => {
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>Sẵn sàng dán trực tiếp vào Microsoft Word, Đề thi hoặc Bài giảng</span>
             </span>
-            <span>Độ chính xác: 100% KaTeX</span>
+            <span>Độ chính xác: 100% MathJax 3</span>
           </div>
         </div>
       </div>

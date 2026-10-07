@@ -1,8 +1,9 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { unflattenMarkdownTables, embedBbtSvgsInText } from './bbtRenderer';
+import { normalizeMathText, triggerGlobalMathRender } from './globalMath';
 
-export { unflattenMarkdownTables, embedBbtSvgsInText };
+export { unflattenMarkdownTables, embedBbtSvgsInText, normalizeMathText, triggerGlobalMathRender };
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -751,9 +752,15 @@ export const normalizePropositionQuotes = (text: string): string => {
   if (!text) return "";
   let s = text;
 
+  // 0. Triệt tiêu hoàn toàn các dấu gạch chéo rác :// hoặc // bị AI hoặc regex trước chèn nhầm vào mệnh đề
+  s = s.replace(/:\s*\\text\{\/\/\}\s*/g, ': ');
+  s = s.replace(/:\s*\/\/\s*/g, ': ');
+  s = s.replace(/:\s*"\s*\/\/\s*/g, ': "');
+  s = s.replace(/\/\/\s*([\\$\w]+)/g, '$1');
+
   // 1. Dạng $ \overline{P} : "..." $ hoặc $ P : "..." $ (toàn bộ nằm trong math mode)
   s = s.replace(/(?<!\$)\$\s*((?:\\overline\{[A-Za-z]\}|[A-Za-z]))\s*:\s*([“"”])([\s\S]*?)([”"”])\s*\$(?!\$)/g, (_m, prop, q1, body, q2) => {
-    let cleanBody = body.trim().replace(/^\$+|\$+$/g, "").trim();
+    let cleanBody = body.trim().replace(/^\/\/\s*/, '').replace(/^\$+|\$+$/g, "").trim();
     return `$${prop}$: ${q1}$${cleanBody}$${q2}`;
   });
 
@@ -945,45 +952,45 @@ export function fixSequencesAndFractions(text: string): string {
     if (!p) continue;
     
     // 1. Standalone sequence terms list: "u1, u2, u3" -> "$u_1, u_2, u_3$", "u1, u2, ..., un" -> "$u_1, u_2, ..., u_n$"
-    p = p.replace(/\b([uv])(\d+)\s*,\s*([uv])(\d+)\s*,\s*([uv])(\d+)\b/g, '$$$1_$2, $3_$4, $5_$6$$');
-    p = p.replace(/\b([uv])(\d+)\s*,\s*([uv])(\d+)\s*,\s*\.\.\.\s*,\s*([uv])(n)\b/g, '$$$1_$2, $3_$4, ..., $5_$6$$');
+    p = p.replace(/\b([uv])(\d+)\s*,\s*([uv])(\d+)\s*,\s*([uv])(\d+)\b/g, (_, a, b, c, d, e, f) => `$${a}_${b}, ${c}_${d}, ${e}_${f}$`);
+    p = p.replace(/\b([uv])(\d+)\s*,\s*([uv])(\d+)\s*,\s*\.\.\.\s*,\s*([uv])(n)\b/g, (_, a, b, c, d, e, f) => `$${a}_${b}, ${c}_${d}, ..., ${e}_${f}$`);
 
     // 2. Parentheses sequence notation: "(un)" -> "$(u_n)$", "(vn)" -> "$(v_n)$"
-    p = p.replace(/\(([uv])(n)\)/g, '$$($1_$2)$$');
+    p = p.replace(/\(([uv])(n)\)/g, (_, a, b) => `$(${a}_${b})$`);
 
     // 3. Standalone sequence terms equations: "u1 = 2", "un = 2n + 1", "u_n = u_{n-1} + 3"
-    p = p.replace(/\b([uv])(\d+)\s*=\s*([+-]?\d+(?:\/\d+)?)\b/g, '$$$1_$2 = $3$$');
-    p = p.replace(/\b([uv])(n)\s*=\s*([+-]?\d+(?:\/\d+)?)\b/g, '$$$1_$2 = $3$$');
-    p = p.replace(/\b([uv])(\d+)\s*=\s*(\\frac\{[^{}]*\}\s*\{[^{}]*\})/g, '$$$1_$2 = $3$$');
-    p = p.replace(/\b([uv])(n)\s*=\s*(\\frac\{[^{}]*\}\s*\{[^{}]*\})/g, '$$$1_$2 = $3$$');
+    p = p.replace(/\b([uv])(\d+)\s*=\s*([+-]?\d+(?:\/\d+)?)\b/g, (_, a, b, c) => `$${a}_${b} = ${c}$`);
+    p = p.replace(/\b([uv])(n)\s*=\s*([+-]?\d+(?:\/\d+)?)\b/g, (_, a, b, c) => `$${a}_${b} = ${c}$`);
+    p = p.replace(/\b([uv])(\d+)\s*=\s*(\\frac\{[^{}]*\}\s*\{[^{}]*\})/g, (_, a, b, c) => `$${a}_${b} = ${c}$`);
+    p = p.replace(/\b([uv])(n)\s*=\s*(\\frac\{[^{}]*\}\s*\{[^{}]*\})/g, (_, a, b, c) => `$${a}_${b} = ${c}$`);
 
     // 4. Standalone parameters d (công sai) and q (công bội): e.g. "d = 5/3", "d = -3", "q = \frac{1}{2}"
-    p = p.replace(/\b([dq])\s*=\s*([+-]?\d+(?:\/\d+)?)\b/g, '$$$1 = $2$$');
-    p = p.replace(/\b([dq])\s*=\s*(\\frac\{[^{}]*\}\s*\{[^{}]*\})/g, '$$$1 = $2$$');
+    p = p.replace(/\b([dq])\s*=\s*([+-]?\d+(?:\/\d+)?)\b/g, (_, a, b) => `$${a} = ${b}$`);
+    p = p.replace(/\b([dq])\s*=\s*(\\frac\{[^{}]*\}\s*\{[^{}]*\})/g, (_, a, b) => `$${a} = ${b}$`);
 
-    // 5. Raw LaTeX fractions with variables (allow spaces between braces like \\frac{a} {b}): "d=\frac{5}{3}", "u_n=\frac{n}{n+1}"
-    p = p.replace(/\b([a-zA-Z0-9_{}\(\)\+\-\*\/']+[ \t]*=[ \t]*\\frac\{[^{}]*\}\s*\{[^{}]*\})/g, '$$$1$$');
+    // 5. Raw LaTeX fractions with variables: "d=\frac{5}{3}", "u_n=\frac{n}{n+1}"
+    p = p.replace(/\b([a-zA-Z0-9_{}\(\)\+\-\*\/']+[ \t]*=[ \t]*\\frac\{[^{}]*\}\s*\{[^{}]*\})/g, (_, a) => `$${a}$`);
     
     // 5.5 Match equations or declarations containing LaTeX symbols: e.g. "D = \mathbb{R} \setminus {1}"
-    p = p.replace(/(?<![\$\w])([a-zA-Z0-9_']+\s*=\s*(?:\\[a-zA-Z]+(?:\{[^{}]*\}|\s)*)+)/g, '$$$1$$');
+    p = p.replace(/(?<![\$\w])([a-zA-Z0-9_']+\s*=\s*(?:\\[a-zA-Z]+(?:\{[^{}]*\}|\s)*)+)/g, (_, a) => `$${a}$`);
 
-    // 6. Naked fractions: "\frac{5}{3}" (ensure no preceding backslash to avoid matching double-escapes, allow spaces between braces)
-    p = p.replace(/(?<![\$\\\w])(\\frac\{[^{}]*\}\s*\{[^{}]*\})/g, '$$$1$$');
+    // 6. Naked fractions: "\frac{5}{3}"
+    p = p.replace(/(?<![\$\\\w])(\\frac\{[^{}]*\}\s*\{[^{}]*\})/g, (_, a) => `$${a}$`);
 
     // 6.5 Naked limit expressions: e.g. "\lim_{x \to +\infty}" -> "$\lim_{x \to +\infty}$"
-    p = p.replace(/(?<![\$\\\w])(\\lim_\{[^{}]*\}\s*[a-zA-Z0-9\(\)\s=+\-*\/_']*(?:\\[a-zA-Z]+)?)/g, '$$$1$$');
+    p = p.replace(/(?<![\$\\\w])(\\lim_\{[^{}]*\}\s*[a-zA-Z0-9\(\)\s=+\-*\/_']*(?:\\[a-zA-Z]+)?)/g, (_, a) => `$${a}$`);
 
     // 7. General standalone subscript sequence variables: "u1" -> "$u_1$", "un" -> "$u_n$"
-    p = p.replace(/\b([uv])(\d+)\b/g, '$$$1_$2$$');
-    p = p.replace(/\b([uv])(n)\b/g, '$$$1_$2$$');
+    p = p.replace(/\b([uv])(\d+)\b/g, (_, a, b) => `$${a}_${b}$`);
+    p = p.replace(/\b([uv])(n)\b/g, (_, a, b) => `$${a}_${b}$`);
     
     // 8. General sequence terms with subscript notation like u_n, u_{n+1}
-    p = p.replace(/\b([uv])_\{([a-zA-Z0-9\+\-]+)\}\b/g, '$$$1_{$2}$$');
-    p = p.replace(/\b([uv])_([a-zA-Z0-9])\b/g, '$$$1_$2$$');
-    p = p.replace(/\b([uv])\(([a-zA-Z0-9\+\-]+)\)\b/g, '$$$1_{$2}$$');
+    p = p.replace(/\b([uv])_\{([a-zA-Z0-9\+\-]+)\}\b/g, (_, a, b) => `$${a}_{${b}}$`);
+    p = p.replace(/\b([uv])_([a-zA-Z0-9])\b/g, (_, a, b) => `$${a}_${b}$`);
+    p = p.replace(/\b([uv])\(([a-zA-Z0-9\+\-]+)\)\b/g, (_, a, b) => `$${a}_{${b}}$`);
 
     // 9. Raw interval and coordinate notations outside math: e.g. "(-\infty; 1)", "(1; +\infty)"
-    p = p.replace(/(?<![\$\w])([\[\(]\s*[+-]?\\?(?:infty|[0-9a-zA-Z\pi\theta]+)\s*[;,]\s*[+-]?\\?(?:infty|[0-9a-zA-Z\pi\theta]+)\s*[\]\)])/g, '$$$1$$');
+    p = p.replace(/(?<![\$\w])([\[\(]\s*[+-]?\\?(?:infty|[0-9a-zA-Z\pi\theta]+)\s*[;,]\s*[+-]?\\?(?:infty|[0-9a-zA-Z\pi\theta]+)\s*[\]\)])/g, (_, a) => `$${a}$`);
 
     parts[i] = p;
   }
@@ -2002,7 +2009,7 @@ export function cleanOptionText(opt: any): string {
   if (opt === undefined || opt === null) return '';
   let text = String(opt).trim();
   
-  // 0. Triệt tiêu undefined rò rỉ
+  // 0. Triệt tiêu undefined/null rò rỉ
   text = text.replace(/(?:=\s*)?undefined(?![a-zA-Z0-9_\$])/gi, '').replace(/\bundefined\b/gi, '');
   
   // Dọn dẹp thẻ HTML nếu có
@@ -2015,7 +2022,16 @@ export function cleanOptionText(opt: any): string {
     .trim();
 
   // 2. Loại bỏ hoàn toàn dấu sao (*) hoặc gạch dưới (_) đánh dấu phương án đúng ở đầu hoặc cuối phương án
-  text = text.replace(/^[\s\*_]+/, '').replace(/[\s\*_]+$/, '').trim();
+  // Kể cả khi dấu sao nằm ngay trong hoặc ngoài cặp dấu $...$ (vd: *[-2; 3]*, *$[-2; 3]*$, * $[-2; 3] *)
+  text = text
+    .replace(/^[\s\*_]+/, '')
+    .replace(/[\s\*_]+$/, '')
+    .replace(/^\$\s*\*+/, '$')
+    .replace(/\*+\s*\$$/, '$')
+    .replace(/\*+\s*\$([^\$]+)\$\s*\*+/g, '$$$1$')
+    .replace(/\$([^\$]+)\*\$/g, '$$$1$')
+    .replace(/\$\*([^\$]+)\$/g, '$$$1$')
+    .trim();
 
   return text;
 }
@@ -2378,15 +2394,12 @@ export const wrapAllNakedMath = (str: string): string => {
   return result;
 };
 
-export const fixMath = (text: any) => {
-    if (!text || text === 'undefined') return '';
-    if (typeof text !== 'string') text = String(text);
-    // Normalize to NFC (Precomposed Form) to completely prevent Vietnamese diacritics split bugs in Chrome print/PDF
-    let t = text.normalize("NFC");
-    t = embedBbtSvgsInText(unflattenMarkdownTables(sanitizeLatexString(t.trim())));
-    t = rescueCodeAndNestedText(t);
-    t = normalizePropositionQuotes(t);
-    t = normalizeLogicAndSetSymbols(normalizeMathLatex(t));
+export const fixMath = (text: any): string => {
+    return normalizeMathText(text);
+};
+
+const old_fixMath_disabled_for_safety = (text: any) => {
+    let t = typeof text === 'string' ? text : String(text || '');
     
     // 0. Remove stray preamble packages that might be generated in math or TikZ
     t = t.replace(/\\(usetikzlibrary|usepackage)\s*\{[^}]*\}\s*/gi, '');

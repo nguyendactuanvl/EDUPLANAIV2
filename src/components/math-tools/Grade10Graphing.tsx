@@ -16,6 +16,14 @@ export const Grade10Graphing: React.FC = () => {
   const [pB, setPB] = useState<number>(-2);
   const [pC, setPC] = useState<number>(-3);
 
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && (window as any).MathJax) {
+      if ((window as any).MathJax.typesetPromise) {
+        (window as any).MathJax.typesetPromise().catch(() => {});
+      }
+    }
+  }, [pA, pB, pC, activeSubTab]);
+
   const parabolaAnalysis = useMemo(() => {
     const a = pA === 0 ? 1 : pA;
     const b = pB;

@@ -63,6 +63,27 @@
         }
       }
     </style>
+    <!-- MathJax 3 Configuration & TeX-MML-SVG Engine -->
+    <script>
+      window.MathJax = {
+        tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+          displayMath: [['$$', '$$'], ['\\[', '\\]']],
+          processEscapes: true,
+          processEnvironments: true
+        },
+        asciimath: {
+          delimiters: [['`', '`']]
+        },
+        svg: {
+          fontCache: 'global'
+        },
+        options: {
+          skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre']
+        }
+      };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-svg.js"></script>
     <script src="https://www.geogebra.org/apps/deployggb.js"></script>
   </head>
   <body>

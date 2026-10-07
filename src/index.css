@@ -49,129 +49,53 @@ body, html, #root, .font-serif, .markdown-body, .prose, .choice-label {
   font-weight: 600;
 }
 
-/* Protect KaTeX borders from Tailwind's reset */
-.katex, .katex * {
-  border-color: currentColor !important;
-}
-/* Ensure hline and vline are visible */
-.katex .katex-hline {
-  border-bottom: 1px solid currentColor !important;
-  background-color: currentColor !important;
-}
-.katex .vertical-separator {
-  border-right: 1px solid currentColor !important;
-  background-color: currentColor !important;
-}
-.katex .array {
-  border-collapse: collapse;
-}
-
-/* Fix for KaTeX fractions overlapping in Tailwind typography and prevent delimiter/equation line breaks */
-.katex, .katex * {
-  box-sizing: content-box !important;
-  line-height: 1.2 !important;
-  text-rendering: auto;
-  background: transparent !important;
-}
-.katex {
-  white-space: nowrap !important;
-}
-
-.katex .katex-html {
-  white-space: nowrap !important;
-}
-
-.katex .base {
-  white-space: nowrap !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  vertical-align: middle !important;
-}
-
-/* Chuẩn hóa hiển thị dấu ngoặc nhọn hệ phương trình/bất phương trình (\begin{cases}, \left\{...) và ma trận */
-.katex .minner {
-  line-height: normal !important;
-  vertical-align: middle !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  white-space: nowrap !important;
-  flex-shrink: 0 !important;
-}
-
-.katex .delimsizing {
-  line-height: normal !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  flex-shrink: 0 !important;
-}
-
-.katex .mopen,
-.katex .mclose {
-  line-height: normal !important;
-  vertical-align: middle !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  flex-shrink: 0 !important;
-}
-
-.katex .mtable {
-  line-height: normal !important;
-  vertical-align: middle !important;
-  display: inline-table !important;
-  white-space: nowrap !important;
-}
-
-/* --- HIỂN THỊ GIỚI HẠN (LIMITS) CHUẨN SÁCH GIÁO KHOA --- */
-/* Căn chỉnh chỉ số dưới lim (x -> x0, x -> +-∞) ngay ngắn, rõ nét, không bị dính chữ hoặc lệch dòng */
-.katex .op-limits {
-  display: inline-flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  vertical-align: -0.45em !important;
-  margin: 0 0.15em !important;
-}
-
-.katex .op-limits > .vlist-t {
-  text-align: center !important;
-}
-
-.katex .op-limits .vlist-r {
-  text-align: center !important;
-}
-
-.katex .op-limits .mop {
-  font-weight: 600 !important;
-  font-size: 1.05em !important;
-  letter-spacing: 0.02em !important;
-}
-
-.katex .op-limits .vlist > span:last-child {
-  font-size: 0.8em !important;
-  line-height: 1.1 !important;
-}
-
-.katex-display {
-  display: block !important;
-  margin: 1em 0 !important;
-  overflow-x: auto !important;
-  overflow-y: hidden !important;
-  max-width: 100% !important;
-  text-align: center;
-}
-
-.katex-display > .katex {
-  white-space: nowrap !important;
-  display: inline-block !important;
-  text-align: initial !important;
-}
-
-/* KaTeX safe fallback - strictly inherit color, never display red error text */
-.katex-error {
-  color: inherit !important;
+/* --- LOẠI BỎ THỦ CÔNG KHỐI XÁM CODE VÀ BỌC GIẢ VỜ CỦA TAILWIND PROSE CODE --- */
+.prose code,
+.markdown-body code,
+.math-view-container code {
   background-color: transparent !important;
-  font-family: inherit !important;
-  font-style: normal !important;
-  white-space: normal !important;
+  border: none !important;
+  padding: 0 !important;
+  font-weight: normal !important;
+  font-family: 'Times New Roman', 'Tinos', 'Liberation Serif', Georgia, serif !important;
+  color: inherit !important;
+}
+
+.prose code::before,
+.prose code::after,
+.markdown-body code::before,
+.markdown-body code::after {
+  content: "" !important;
+}
+
+/* --- CHUẨN HÓA CÔNG THỨC TOÁN (MATHJAX 3 SVG STYLING) --- */
+mjx-container {
+  display: inline-block !important;
+  line-height: 0 !important;
+  text-indent: 0 !important;
+  text-align: left !important;
+  margin: 0 0.12em !important;
+  vertical-align: -0.18em !important;
+  box-sizing: content-box !important;
+}
+
+mjx-container[jax="SVG"][display="true"] {
+  display: block !important;
+  text-align: center !important;
+  margin: 0.8em 0 !important;
+  width: 100% !important;
+}
+
+mjx-container svg {
+  display: inline-block !important;
+  vertical-align: baseline !important;
+  overflow: visible !important;
+}
+
+/* Fix MathJax SVG color inheritance in options and print */
+mjx-container svg * {
+  fill: currentColor;
+  stroke: currentColor;
 }
 
 /* --- TIKZ & TKZ-TAB IMPROVEMENTS --- */
