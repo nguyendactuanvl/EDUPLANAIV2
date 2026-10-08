@@ -3,6 +3,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
+import { rehypeSanitizeEventHandlers, cleanProps } from '../lib/globalMath';
 import { TikzRenderer, getTikzSvg } from './TikzRenderer';
 import { ImageViewerModal } from './ImageViewerModal';
 import { convertBbtTableToSvg, unflattenMarkdownTables } from '../lib/bbtRenderer';
@@ -335,6 +336,7 @@ const CustomImageRenderer: React.FC<{ cleanSrc: string; alt?: string; [key: stri
           </button>
         </div>
         <img
+          {...cleanProps(props)}
           src={cleanSrc}
           alt={alt || 'Hình minh họa SGK'}
           loading="eager"
@@ -343,7 +345,6 @@ const CustomImageRenderer: React.FC<{ cleanSrc: string; alt?: string; [key: stri
           onError={(e) => {
             (e.target as HTMLElement).style.display = 'none';
           }}
-          {...props}
         />
       </div>
     </div>
@@ -488,22 +489,22 @@ export const MarkdownRenderer = ({
       >
         <Markdown
           remarkPlugins={[remarkMath, remarkGfm]}
-          rehypePlugins={[rehypeRaw]}
+          rehypePlugins={[rehypeRaw, rehypeSanitizeEventHandlers]}
           components={{
             p: ({ node, children, ...props }: any) => (
-              <span className="inline" {...props}>
+              <span className="inline" {...cleanProps(props)}>
                 {children}
               </span>
             ),
             div: ({ node, children, ...props }: any) => (
-              <span className="inline" {...props}>
+              <span className="inline" {...cleanProps(props)}>
                 {children}
               </span>
             ),
             code: ({ children, className, ...props }: any) => {
               const codeStr = String(children || '').replace(/\n$/, '');
               if (/\b(?:if|for|while|def|class|return|import|print|input|const|let|var|function)\b/.test(codeStr)) {
-                return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...props}>{children}</code>;
+                return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...cleanProps(props)}>{children}</code>;
               }
               const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
               return cleanMath ? <span className="math-inline font-serif" data-latex={cleanMath}>{`$${cleanMath}$`}</span> : null;
@@ -523,13 +524,13 @@ export const MarkdownRenderer = ({
     >
       <Markdown 
         remarkPlugins={[remarkMath, remarkGfm]} 
-        rehypePlugins={[rehypeRaw]}
+        rehypePlugins={[rehypeRaw, rehypeSanitizeEventHandlers]}
         components={{
           p: ({ node, children, ...props }: any) => {
             const firstChild = React.Children.toArray(children)[0];
             const isQuestion = typeof firstChild === 'string' && /^\s*(?:\*\*)?(?:Câu|Bài|\d+\.)\s*\d*/i.test(firstChild);
             return (
-              <div className={`leading-relaxed ${isQuestion ? 'mt-6 mb-2 font-medium text-slate-900 text-base sm:text-lg' : 'my-3'}`} {...props}>
+              <div className={`leading-relaxed ${isQuestion ? 'mt-6 mb-2 font-medium text-slate-900 text-base sm:text-lg' : 'my-3'}`} {...cleanProps(props)}>
                 {children}
               </div>
             );
@@ -537,7 +538,7 @@ export const MarkdownRenderer = ({
           code: ({ children, className, ...props }: any) => {
             const codeStr = String(children || '').replace(/\n$/, '');
             if (/\b(?:if|for|while|def|class|return|import|print|input|const|let|var|function)\b/.test(codeStr)) {
-              return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...props}>{children}</code>;
+              return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...cleanProps(props)}>{children}</code>;
             }
             const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
             return cleanMath ? <span className="math-inline font-serif" data-latex={cleanMath}>{`$${cleanMath}$`}</span> : null;
@@ -586,30 +587,30 @@ export const MarkdownRenderer = ({
                 cleanSrc={cleanSrc}
                 alt={alt || 'Hình minh họa SGK'}
                 referrerPolicy="no-referrer"
-                {...props}
+                {...cleanProps(props)}
               />
             );
           },
           table: ({ node, children, ...props }: any) => (
             <div className="overflow-x-auto my-4 max-w-full">
-              <table className="min-w-fit mx-auto border-collapse border border-slate-300 text-sm text-center shadow-xs rounded-md overflow-hidden bg-white" {...props}>
+              <table className="min-w-fit mx-auto border-collapse border border-slate-300 text-sm text-center shadow-xs rounded-md overflow-hidden bg-white" {...cleanProps(props)}>
                 {children}
               </table>
             </div>
           ),
           th: ({ node, children, ...props }: any) => (
-            <th className="border border-slate-300 bg-slate-100 px-3.5 py-2 font-semibold text-slate-800 text-center whitespace-nowrap" {...props}>
+            <th className="border border-slate-300 bg-slate-100 px-3.5 py-2 font-semibold text-slate-800 text-center whitespace-nowrap" {...cleanProps(props)}>
               {children}
             </th>
           ),
           td: ({ node, children, ...props }: any) => (
-            <td className="border border-slate-300 px-3.5 py-2 text-slate-800 text-center whitespace-nowrap" {...props}>
+            <td className="border border-slate-300 px-3.5 py-2 text-slate-800 text-center whitespace-nowrap" {...cleanProps(props)}>
               {children}
             </td>
           ),
           pre({node, children, ...props}: any) {
             return (
-              <pre className="bg-slate-50 border border-slate-200 text-slate-800 rounded-lg p-3 overflow-x-auto my-3 text-sm font-mono" {...props}>
+              <pre className="bg-slate-50 border border-slate-200 text-slate-800 rounded-lg p-3 overflow-x-auto my-3 text-sm font-mono" {...cleanProps(props)}>
                 {children}
               </pre>
             );
@@ -635,12 +636,12 @@ export const MarkdownRenderer = ({
               const isLong = fullText.length > 140;
               const gridCols = isLong ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-2 lg:grid-cols-4";
               return (
-                <ul className={`grid ${gridCols} gap-2.5 my-3 pl-0 list-none text-slate-800`} {...props}>
+                <ul className={`grid ${gridCols} gap-2.5 my-3 pl-0 list-none text-slate-800`} {...cleanProps(props)}>
                   {children}
                 </ul>
               );
             }
-            return <ul className="my-3 pl-6 list-disc space-y-1 text-slate-800" {...props}>{children}</ul>;
+            return <ul className="my-3 pl-6 list-disc space-y-1 text-slate-800" {...cleanProps(props)}>{children}</ul>;
           },
           li: ({ node, children, ...props }: any) => {
             const getNodePlainText = (n: any): string => {
@@ -655,12 +656,12 @@ export const MarkdownRenderer = ({
             const isChoice = /^\s*(?:\*\*)?[A-D][\.\)]/.test(text) || /\b[A-D][\.\)]/.test(text);
             if (isChoice) {
               return (
-                <li className="flex items-baseline gap-2 py-1.5 px-3 rounded-lg bg-slate-50/70 border border-slate-200 text-slate-800 hover:bg-slate-100 transition-colors shadow-none list-none m-0" {...props}>
+                <li className="flex items-baseline gap-2 py-1.5 px-3 rounded-lg bg-slate-50/70 border border-slate-200 text-slate-800 hover:bg-slate-100 transition-colors shadow-none list-none m-0" {...cleanProps(props)}>
                   {children}
                 </li>
               );
             }
-            return <li className="my-1 leading-relaxed text-slate-800" {...props}>{children}</li>;
+            return <li className="my-1 leading-relaxed text-slate-800" {...cleanProps(props)}>{children}</li>;
           }
         }}
       >

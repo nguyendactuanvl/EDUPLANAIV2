@@ -3,7 +3,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
-import { normalizeMathText } from '../lib/globalMath';
+import { normalizeMathText, rehypeSanitizeEventHandlers, cleanProps } from '../lib/globalMath';
 
 interface MathViewProps {
   content?: string | null;
@@ -59,7 +59,7 @@ export const MathView: React.FC<MathViewProps> = ({ content, className, inline =
   const customCodeRenderer = ({ children, className, ...props }: any) => {
     const codeStr = String(children || '').replace(/\n$/, '');
     if (/\b(?:if|for|while|def|class|return|import|print|input|const|let|var|function)\b/.test(codeStr)) {
-      return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...props}>{children}</code>;
+      return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...cleanProps(props)}>{children}</code>;
     }
     const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
     return cleanMath ? <span className="math-inline font-serif" data-latex={cleanMath}>{`$${cleanMath}$`}</span> : null;
@@ -73,10 +73,10 @@ export const MathView: React.FC<MathViewProps> = ({ content, className, inline =
       >
         <Markdown
           remarkPlugins={[remarkMath, remarkGfm]}
-          rehypePlugins={[rehypeRaw]}
+          rehypePlugins={[rehypeRaw, rehypeSanitizeEventHandlers]}
           components={{
-            p: ({ children, ...props }: any) => <span className="inline" {...props}>{children}</span>,
-            div: ({ children, ...props }: any) => <span className="inline" {...props}>{children}</span>,
+            p: ({ children, ...props }: any) => <span className="inline" {...cleanProps(props)}>{children}</span>,
+            div: ({ children, ...props }: any) => <span className="inline" {...cleanProps(props)}>{children}</span>,
             code: customCodeRenderer
           }}
         >
@@ -93,7 +93,7 @@ export const MathView: React.FC<MathViewProps> = ({ content, className, inline =
     >
       <Markdown
         remarkPlugins={[remarkMath, remarkGfm]}
-        rehypePlugins={[rehypeRaw]}
+        rehypePlugins={[rehypeRaw, rehypeSanitizeEventHandlers]}
         components={{
           code: customCodeRenderer
         }}

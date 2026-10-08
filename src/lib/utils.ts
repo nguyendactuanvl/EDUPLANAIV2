@@ -1,9 +1,9 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { unflattenMarkdownTables, embedBbtSvgsInText } from './bbtRenderer';
-import { normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas } from './globalMath';
+import { normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections } from './globalMath';
 
-export { unflattenMarkdownTables, embedBbtSvgsInText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas };
+export { unflattenMarkdownTables, embedBbtSvgsInText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections };
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));

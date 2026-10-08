@@ -21,7 +21,7 @@ import { analyzeFunctionToBbt, generateBbtSvg, convertBbtTableToSvg } from "../l
 import { getTikzSvg, embedTikzSvgsInText } from "../components/TikzRenderer";
 import { saveToHistory, getHistory } from '../lib/history';
 import { HistoryItem } from '../types';
-import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMath, cleanQuestionStem, cleanOptionText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas } from "../lib/utils";
+import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMath, cleanQuestionStem, cleanOptionText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections } from "../lib/utils";
 import { parseRawExamText } from '../lib/examParser';
 import { printElement, ensureMathRendered } from '../lib/print';
 import { saveExamToCloud, saveExamToWebhook } from '../lib/cloudExamStore';
@@ -81,6 +81,9 @@ export function cleanDocumentContent(content: string, lessonName?: string): stri
 
   // 3. Chuẩn hóa công thức Cấp số cộng & Tách chữ tiếng Việt ra khỏi dấu $
   cleaned = normalizeArithmeticProgressionFormulas(cleaned);
+
+  // 4. Chuẩn hóa đánh số câu hỏi (Câu 1, Câu 2...) và tách các phương án A, B, C, D rõ ràng
+  cleaned = formatWorksheetQuestionsAndSections(cleaned);
 
   return cleaned.trim();
 }

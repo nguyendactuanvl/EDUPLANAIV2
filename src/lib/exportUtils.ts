@@ -553,10 +553,33 @@ function createTextRunsWithMathFont(
  * Converts an array of TextOrMathTokens into Word ParagraphChild runs (TextRun and OMML equations).
  */
 function tokensToRuns(
-  tokens: TextOrMathToken[],
+  rawTokens: TextOrMathToken[],
   style: RunStyle = {},
   options: ExportOptions
 ): ParagraphChild[] {
+  // Clone tokens so we don't mutate input
+  const tokens = rawTokens.map(t => ({ ...t }));
+
+  // Ensure spacing between text and math so formulas never stick to Vietnamese words
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].type === 'math') {
+      // Check previous token
+      if (i > 0 && tokens[i - 1].type === 'text') {
+        const prevContent = tokens[i - 1].content;
+        if (prevContent && !/\s$/.test(prevContent) && !/[([{<"'\''“]/.test(prevContent.slice(-1))) {
+          tokens[i - 1].content += ' ';
+        }
+      }
+      // Check next token
+      if (i < tokens.length - 1 && tokens[i + 1].type === 'text') {
+        const nextContent = tokens[i + 1].content;
+        if (nextContent && !/^\s/.test(nextContent) && !/[.,:;?!%)\]}>"'\''”]/.test(nextContent[0])) {
+          tokens[i + 1].content = ' ' + tokens[i + 1].content;
+        }
+      }
+    }
+  }
+
   const runs: ParagraphChild[] = [];
 
   for (const token of tokens) {
@@ -1235,13 +1258,49 @@ async function parseDomToDocxChildren(
         return;
       }
 
-      // Standard list items
+      // Standard list items (Kiểm tra nếu item là câu hỏi trắc nghiệm hoặc bắt đầu bằng Câu/Bài thì không chèn bullet tròn)
+      const mcRegex = /^(.*?)\s*(?:[-*]\s*)?(?:\*{0,2})A[\.\)](?:\*{0,2})\s+([\s\S]*?)(?:[-*]\s*)?(?:\*{0,2})B[\.\)](?:\*{0,2})\s+([\s\S]*?)(?:[-*]\s*)?(?:\*{0,2})(?<![a-zA-Z0-9_\$\\\(])C[\.\)](?:\*{0,2})\s+([\s\S]*?)(?:[-*]\s*)?(?:\*{0,2})(?<![a-zA-Z0-9_\$\\\(])D[\.\)](?:\*{0,2})\s+([\s\S]*)$/;
+
       for (const li of items) {
+        const rawText = stripInternalTags(getNodeLatexOrText(li)).trim();
+        const mcMatch = rawText.match(mcRegex);
+
+        if (mcMatch) {
+          const stemText = stripInternalTags(mcMatch[1].trim());
+          const optA = mcMatch[2].trim();
+          const optB = mcMatch[3].trim();
+          const optC = mcMatch[4].trim();
+          const optD = mcMatch[5].trim();
+
+          if (stemText) {
+            result.push(
+              new Paragraph({
+                spacing: { line: 288, after: 80 },
+                children: parseTextWithMath(stemText, {}, options),
+              })
+            );
+          }
+
+          result.push(
+            buildInvisibleChoiceTable(
+              [
+                { label: 'A.', text: optA },
+                { label: 'B.', text: optB },
+                { label: 'C.', text: optC },
+                { label: 'D.', text: optD },
+              ],
+              options
+            )
+          );
+          continue;
+        }
+
+        const isQuestionItem = /^\s*(?:\*\*)?(?:Câu|Bài)\s*\d+/i.test(rawText);
         const runs = parseInlineContent(li, {}, options);
         result.push(
           new Paragraph({
-            bullet: { level: 0 },
-            spacing: { line: 288, after: 60 },
+            bullet: isQuestionItem ? undefined : { level: 0 },
+            spacing: { line: 288, after: isQuestionItem ? 80 : 60 },
             children: runs,
           })
         );

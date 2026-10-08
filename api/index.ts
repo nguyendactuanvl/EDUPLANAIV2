@@ -2103,6 +2103,14 @@ ${stylePrompt}
 ${exercisePrompt}
 
 Hãy trình bày các câu hỏi thành các phần rõ ràng như sau (nếu hình thức bài tập có đủ các phần tương ứng):
+- **QUY TẮC ĐÁNH SỐ THỨ TỰ BẮT BUỘC**:
+  + TUYỆT ĐỐI KHÔNG dùng dấu gạch đầu dòng '-' hoặc bullet '•', '*' để mở đầu các câu hỏi.
+  + MỖI CÂU HỎI BẮT BUỘC phải có số thứ tự rõ ràng (**Câu 1:**, **Câu 2:**, ...):
+    * PHẦN I: **Câu 1:** [Đề bài] \n A. [Phương án] \n B. [Phương án] \n C. [Phương án] \n D. [Phương án] \n\n **Câu 2:** ...
+    * PHẦN II: **Câu 1:** [Mệnh đề dẫn] \n a) [Ý 1] \n b) [Ý 2] \n c) [Ý 3] \n d) [Ý 4] \n\n **Câu 2:** ...
+    * PHẦN III: **Câu 1:** [Đề bài] \n\n **Câu 2:** [Đề bài] ...
+    * PHẦN IV: **Câu 1:** [Đề bài] \n\n **Câu 2:** [Đề bài] ...
+  + Luôn có dấu cách trắng giữa từ tiếng Việt và dấu $: 'hàm số $y = f(x)$ có', 'tại điểm $x = 1$', 'A. $x = 0$', không bao giờ viết dính 'hàm số$y=f(x)$có'.
 - **PHẦN I: CÂU HỎI TRẮC NGHIỆM NHIỀU PHƯƠNG ÁN LỰA CHỌN** (Đúng số lượng yêu cầu)
   + Bốn phương án ký hiệu: A.  B.  C.  D.
   + QUY TẮC BẮT BUỘC: KHÔNG dùng bullet tròn/vuông trước các chữ cái A, B, C, D. Trình bày thẳng hàng hoặc chia 2/4 cột cân đối.
@@ -2191,13 +2199,21 @@ Hãy tạo ngay PHIẾU HỌC TẬP A4 Chuẩn in ấn cho học sinh lớp ${gr
 YÊU CẦU QUAN TRỌNG:
 1. Xuất trực tiếp nội dung phiếu học tập Markdown, không viết câu chào hay mở đầu.
 2. ĐỒNG BỘ TIÊU ĐỀ: TUYỆT ĐỐI KHÔNG tự ý chèn thêm tiêu đề bài học hay header thừa ở đầu văn bản (như "# BÀI 1: GÓC LƯỢNG GIÁC" hay "# PHIẾU HỌC TẬP"), vì hệ thống đã có sẵn khung tiêu đề chuẩn chính quy bên trên. Bắt đầu ngay bằng mục Tóm tắt kiến thức / Lý thuyết trọng tâm.
-3. QUY TẮC CÔNG THỨC TOÁN & TÁCH CHỮ TIẾNG VIỆT KHỎI DẤU $:
+3. ĐÁNH SỐ CÂU HỎI CHUẨN ĐỀ THI:
+   - TUYỆT ĐỐI KHÔNG dùng dấu gạch đầu dòng '-' hoặc bullet '•', '*' để mở đầu các câu hỏi.
+   - TẤT CẢ các câu hỏi BẮT BUỘC phải đánh số thứ tự rõ ràng (**Câu 1:**, **Câu 2:**, ...):
+     + PHẦN I: **Câu 1:** [Đề bài] \n A. [Phương án] \n B. [Phương án] \n C. [Phương án] \n D. [Phương án] \n\n **Câu 2:** ...
+     + PHẦN II: **Câu 1:** [Mệnh đề dẫn] \n a) ... \n b) ... \n c) ... \n d) ... \n\n **Câu 2:** ...
+     + PHẦN III: **Câu 1:** [Đề bài] \n\n **Câu 2:** [Đề bài] ...
+     + PHẦN IV: **Câu 1:** [Đề bài] \n\n **Câu 2:** [Đề bài] ...
+4. QUY TẮC CÔNG THỨC TOÁN & TÁCH CHỮ TIẾNG VIỆT KHỎI DẤU $:
    - TUYỆT ĐỐI KHÔNG để chữ tiếng Việt bị nhốt bên trong dấu $ (Ví dụ: phải viết chuẩn 'Dãy số $(u_n)$ là một cấp số cộng $\\Rightarrow u_{n+1} = u_n + d$ ($d$: công sai).', '$u_n = u_1 + (n-1)d$ với $n \\ge 2$.', '$u_k = \\frac{u_{k-1} + u_{k+1}}{2}$ với $k \\ge 2$.').
+   - LUÔN CÓ KHOẢNG TRẮNG GIỮA TỪ TIẾNG VIỆT VÀ DẤU $: viết 'hàm số $y = f(x)$ có', 'tại điểm $x = 1$', 'A. $x = 0$', TUYỆT ĐỐI KHÔNG viết dính 'hàm số$y = f(x)$có'.
    - Sử dụng cú pháp LaTeX chuẩn: \\frac thay cho \\dfrac, \\ge thay cho \\geq, \\le thay cho \\leq.
-4. PHẦN II (TRẮC NGHIỆM ĐÚNG / SAI):
+5. PHẦN II (TRẮC NGHIỆM ĐÚNG / SAI):
    - Với từng ý a), b), c), d), bắt buộc viết câu phát biểu hoàn chỉnh, TUYỆT ĐỐI giữ nguyên vẹn chữ cái đầu tiên (ví dụ: 'a) Công thức số hạng tổng quát của cấp số cộng...', 'b) Dãy số $(u_n)$ có công sai...').
-5. ${exercisePrompt}
-6. ${answerPrompt}`;
+6. ${exercisePrompt}
+7. ${answerPrompt}`;
 
   await generateWithFallbackStream(req, res, {
     contents: prompt,

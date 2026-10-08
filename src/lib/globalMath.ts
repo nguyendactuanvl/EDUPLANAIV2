@@ -65,6 +65,11 @@ export function normalizeMathText(text: any): string {
   // 0. Chuẩn hóa các dấu ngoặc kép bị escape \" bên trong hoặc xung quanh công thức
   t = t.replace(/\\"/g, '"');
 
+  // Loại bỏ triệt để các thuộc tính sự kiện inline HTML nguy hiểm (onclick, onmouseover...) gây lỗi React event listener string
+  while (/(<\w+[^>]*?)\s+on[a-zA-Z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/i.test(t)) {
+    t = t.replace(/(<\w+[^>]*?)\s+on[a-zA-Z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '$1');
+  }
+
   // 1. Chuyển đổi toàn bộ dấu huyền backtick sang $...$
   t = convertBacktickMathToDollars(t);
 
@@ -195,6 +200,152 @@ export function normalizeArithmeticProgressionFormulas(text: string): string {
   return t;
 }
 
+/**
+ * Chuẩn hóa đánh số thứ tự câu hỏi (Câu 1, Câu 2...) và định dạng các Phần I, II, III, IV trong Phiếu học tập.
+ * Đảm bảo:
+ * - PHẦN I: Mỗi câu trắc nghiệm bắt đầu bằng **Câu X:**, tách riêng 4 phương án A, B, C, D rõ ràng (không dính hàng).
+ * - PHẦN II: Mỗi câu bắt đầu bằng **Câu X:** [Lời dẫn], theo sau là các ý a), b), c), d).
+ * - PHẦN III & IV: Mỗi câu bắt đầu bằng **Câu X:** (hoặc Bài X:), loại bỏ hoàn toàn bullet '-' hoặc '•'.
+ * - Tự động chèn khoảng trắng giữa chữ tiếng Việt và công thức toán $...$ để chữ không bị dính vào công thức.
+ */
+export function formatWorksheetQuestionsAndSections(markdown: string): string {
+  if (!markdown) return "";
+  let text = markdown;
+
+  // 1. Tách chữ tiếng Việt dính liền với công thức $
+  text = text.replace(/([a-zA-ZÀ-ỹ0-9:;,!?)]?)(\$(?!\$)[^\$\n]+?\$(?!\$))([a-zA-ZÀ-ỹ0-9(]?)/g, (match, before, math, after) => {
+    let res = "";
+    if (before && !/\s/.test(before)) {
+      res += before + " ";
+    } else if (before) {
+      res += before;
+    }
+    res += math;
+    if (after && !/\s/.test(after)) {
+      res += " " + after;
+    } else if (after) {
+      res += after;
+    }
+    return res;
+  });
+  text = text.replace(/([A-D]\.)(?=[^\s])/g, "$1 ");
+
+  // 2. Duyệt từng dòng và đánh số câu hỏi cho từng Phần I, II, III, IV
+  const lines = text.split("\n");
+  const result: string[] = [];
+  let currentPart = 0; // 1, 2, 3, 4
+  let qIndex = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Kiểm tra dòng tiêu đề PHẦN
+    const partMatch = trimmed.match(/^(?:#{1,4}|\*{2,3})?\s*PHẦN\s*([1-4]|I{1,3}|IV)\b[:.]?\s*([^\n*#]*)(?:\*{2,3})?/i);
+    if (partMatch) {
+      const pStr = partMatch[1].toUpperCase();
+      if (pStr === "1" || pStr === "I") currentPart = 1;
+      else if (pStr === "2" || pStr === "II") currentPart = 2;
+      else if (pStr === "3" || pStr === "III") currentPart = 3;
+      else if (pStr === "4" || pStr === "IV") currentPart = 4;
+      qIndex = 1;
+      result.push(line);
+      continue;
+    }
+
+    if (currentPart === 0) {
+      result.push(line);
+      continue;
+    }
+
+    // Nếu gặp tiêu đề kết thúc các phần bài tập (ví dụ Đáp án, Lời giải, Bảng đáp án, details)
+    if (/^(?:#{1,4}|\*{2,3})?\s*(?:HƯỚNG DẪN|ĐÁP ÁN|LỜI GIẢI|BẢNG ĐÁP ÁN|<details)/i.test(trimmed)) {
+      currentPart = 0;
+      result.push(line);
+      continue;
+    }
+
+    if (currentPart === 1) {
+      // PHẦN I: Trắc nghiệm lựa chọn A, B, C, D
+      const isQuestionStart =
+        /^(?:[-*]\s+|\*{0,2}Câu\s*\d+[:\.]?\*{0,2}|\d+[\.\)]\s+)/i.test(trimmed) ||
+        (!trimmed.startsWith("A.") && !trimmed.startsWith("B.") && !trimmed.startsWith("C.") && !trimmed.startsWith("D.") &&
+         trimmed.includes("A.") && trimmed.includes("B.") && trimmed.includes("C.") && trimmed.includes("D."));
+
+      if (isQuestionStart) {
+        let stemLine = trimmed.replace(/^[-*]\s+/, "");
+        if (/^(?:\*{0,2}Câu\s*\d+[:\.]?\*{0,2}|\d+[\.\)])\s*/i.test(stemLine)) {
+          stemLine = stemLine.replace(/^(?:\*{0,2}Câu\s*\d+[:\.]?\*{0,2}|\d+[\.\)])\s*/i, `**Câu ${qIndex}:** `);
+        } else {
+          stemLine = `**Câu ${qIndex}:** ` + stemLine;
+        }
+        qIndex++;
+
+        // Kiểm tra xem A. B. C. D. có nằm chung dòng không
+        const mcMatch = stemLine.match(/^(.*?)(?:[:\.\s]+)\s*(?:[-*]\s*)?(?:\*{0,2})A[\.\)](?:\*{0,2})\s+([\s\S]*?)(?:[-*]\s*)?(?:\*{0,2})B[\.\)](?:\*{0,2})\s+([\s\S]*?)(?:[-*]\s*)?(?:\*{0,2})(?<![a-zA-Z0-9_\$\\\(])C[\.\)](?:\*{0,2})\s+([\s\S]*?)(?:[-*]\s*)?(?:\*{0,2})(?<![a-zA-Z0-9_\$\\\(])D[\.\)](?:\*{0,2})\s+([\s\S]*)$/);
+        if (mcMatch) {
+          const stem = mcMatch[1].trim();
+          const optA = mcMatch[2].trim();
+          const optB = mcMatch[3].trim();
+          const optC = mcMatch[4].trim();
+          const optD = mcMatch[5].trim();
+          result.push(stem);
+          result.push(`A. ${optA}`);
+          result.push(`B. ${optB}`);
+          result.push(`C. ${optC}`);
+          result.push(`D. ${optD}`);
+          result.push(""); // Dòng trống ngăn cách
+          continue;
+        }
+
+        result.push(stemLine);
+        continue;
+      }
+    }
+
+    if (currentPart === 2) {
+      // PHẦN II: Trắc nghiệm Đúng/Sai
+      // Các ý a), b), c), d) giữ nguyên vẹn
+      if (/^[a-d]\)[\s\S]*/i.test(trimmed)) {
+        result.push(line);
+        continue;
+      }
+      // Dòng đề dẫn câu hỏi
+      if (trimmed && !trimmed.startsWith("#")) {
+        let stemLine = trimmed.replace(/^[-*]\s+/, "");
+        if (/^(?:\*{0,2}Câu\s*\d+[:\.]?\*{0,2}|\d+[\.\)])\s*/i.test(stemLine)) {
+          stemLine = stemLine.replace(/^(?:\*{0,2}Câu\s*\d+[:\.]?\*{0,2}|\d+[\.\)])\s*/i, `**Câu ${qIndex}:** `);
+          qIndex++;
+        } else if (/^(?:Cho|Xét|Trong|Giả sử|Biết)\b/i.test(stemLine) || qIndex === 1) {
+          stemLine = `**Câu ${qIndex}:** ` + stemLine;
+          qIndex++;
+        }
+        result.push(stemLine);
+        continue;
+      }
+    }
+
+    if (currentPart === 3 || currentPart === 4) {
+      // PHẦN III & IV: Trắc nghiệm trả lời ngắn & Tự luận
+      if (/^(?:[-*]\s+|\*{0,2}(?:Câu|Bài)\s*\d+[:\.]?\*{0,2}|\d+[\.\)]\s+)/i.test(trimmed)) {
+        let stemLine = trimmed.replace(/^[-*]\s+/, "");
+        if (/^(?:\*{0,2}(?:Câu|Bài)\s*\d+[:\.]?\*{0,2}|\d+[\.\)])\s*/i.test(stemLine)) {
+          stemLine = stemLine.replace(/^(?:\*{0,2}(?:Câu|Bài)\s*\d+[:\.]?\*{0,2}|\d+[\.\)])\s*/i, `**Câu ${qIndex}:** `);
+        } else {
+          stemLine = `**Câu ${qIndex}:** ` + stemLine;
+        }
+        qIndex++;
+        result.push(stemLine);
+        continue;
+      }
+    }
+
+    result.push(line);
+  }
+
+  return result.join("\n");
+}
+
 let mathRenderTimer: any = null;
 
 export function triggerGlobalMathRender(targetElement?: HTMLElement | null) {
@@ -282,4 +433,46 @@ export function setupGlobalMathObserver() {
   window.addEventListener('load', () => {
     triggerGlobalMathRender();
   });
+}
+
+/**
+ * Plugin to strip all inline DOM event handlers (onclick, onload, onerror, etc.)
+ * from HAST nodes produced by rehype-raw. This prevents React from throwing:
+ * "Expected `onClick` listener to be a function, instead got a value of `string` type."
+ */
+export function rehypeSanitizeEventHandlers() {
+  return (tree: any) => {
+    function visit(node: any) {
+      if (node && node.type === 'element' && node.properties) {
+        for (const key of Object.keys(node.properties)) {
+          if (
+            /^on[a-zA-Z]/i.test(key) ||
+            (typeof node.properties[key] === 'string' && key.toLowerCase().startsWith('on'))
+          ) {
+            delete node.properties[key];
+          }
+        }
+      }
+      if (node && node.children && Array.isArray(node.children)) {
+        node.children.forEach(visit);
+      }
+    }
+    visit(tree);
+  };
+}
+
+/**
+ * Filter out any invalid event handler props (like onClick="string")
+ * before spreading props onto React DOM elements.
+ */
+export function cleanProps<T extends Record<string, any>>(props: T): T {
+  if (!props || typeof props !== 'object') return props;
+  const result: any = {};
+  for (const [key, value] of Object.entries(props)) {
+    if (key.startsWith('on') && typeof value !== 'function') {
+      continue;
+    }
+    result[key] = value;
+  }
+  return result;
 }
