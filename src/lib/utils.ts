@@ -1,9 +1,9 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { unflattenMarkdownTables, embedBbtSvgsInText } from './bbtRenderer';
-import { normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections } from './globalMath';
+import { normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections, autoWrapNakedMathExpression } from './globalMath';
 
-export { unflattenMarkdownTables, embedBbtSvgsInText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections };
+export { unflattenMarkdownTables, embedBbtSvgsInText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections, autoWrapNakedMathExpression };
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -44,34 +44,55 @@ export function sanitizeJsonString(str: string): string {
           result += "\\\\";
           i++;
         } else {
-          const next = str[i + 1];
-          if (next === "\"" || next === "\\") {
-            result += "\\" + next;
-            i += 2;
-          } else if (next === "/") {
-            result += "/";
-            i += 2;
-          } else if (next === "b" || next === "f" || next === "n" || next === "r" || next === "t") {
-            const charAfter = (i + 2 < len) ? str[i + 2] : "";
-            if (charAfter && /[a-zA-Z]/.test(charAfter)) {
-              result += "\\\\" + next;
-              i += 2;
+          let slashCount = 0;
+          let k = i;
+          while (k < len && str[k] === "\\") {
+            slashCount++;
+            k++;
+          }
+
+          const nextChar = (k < len) ? str[k] : "";
+          const isLetterOrMathSymbol = /[a-zA-Z\{\}\[\]\(\)\$\%]/.test(nextChar);
+
+          if (isLetterOrMathSymbol) {
+            if (slashCount === 1) {
+              if (nextChar === "b" || nextChar === "f" || nextChar === "n" || nextChar === "r" || nextChar === "t") {
+                const charAfter = (k + 1 < len) ? str[k + 1] : "";
+                if (charAfter && /[a-zA-Z]/.test(charAfter)) {
+                  result += "\\\\";
+                  i += 1;
+                } else {
+                  result += "\\" + nextChar;
+                  i += 2;
+                }
+              } else if (nextChar === "u") {
+                const hex = str.slice(k + 1, k + 5);
+                if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+                  result += "\\u" + hex;
+                  i += 5;
+                } else {
+                  result += "\\\\";
+                  i += 1;
+                }
+              } else {
+                result += "\\\\";
+                i += 1;
+              }
             } else {
-              result += "\\" + next;
-              i += 2;
-            }
-          } else if (next === "u") {
-            const hex = str.slice(i + 2, i + 6);
-            if (/^[0-9a-fA-F]{4}$/.test(hex)) {
-              result += "\\u" + hex;
-              i += 6;
-            } else {
-              result += "\\\\u";
-              i += 2;
+              result += "\\\\";
+              i += slashCount;
             }
           } else {
-            result += "\\\\" + next;
-            i += 2;
+            if (nextChar === "\"") {
+              result += "\\\"";
+              i += slashCount + 1;
+            } else if (nextChar === "/") {
+              result += "/";
+              i += slashCount + 1;
+            } else {
+              result += "\\\\\\\\";
+              i += slashCount;
+            }
           }
         }
       } else if (ch === "\n") {
@@ -493,7 +514,11 @@ export function sanitizeLatexString(text: string): string {
   if (!text) return '';
   let s = text.replace(/\\dfrac\b/g, '\\frac');
 
-  // 0. Sửa lỗi 3 backslash trở lên thành 2 hoặc 1 backslash (BẢO VỆ TUYỆT ĐỐI DOUBLE BACKSLASH `\\` DÙNG ĐỂ NGẮT DÒNG HỆ PT / HỆ BPT / CASES / MATRIX):
+  // 0. Khắc phục triệt để lỗi double-backslash (\\ thay vì \) do tàn dư KaTeX cũ hoặc escape thừa:
+  // Đổi \\frac, \\sqrt, \\begin, \\alpha, \\le, \\in... thành \frac, \sqrt, \begin, \alpha, \le, \in...
+  // Bảo vệ tuyệt đối dấu \\ dùng để ngắt dòng trong \begin{cases}...\end{cases} hoặc matrix/aligned
+  s = s.replace(/\\{2,}([a-zA-Z]+)/g, (_m, g1) => '\\' + g1);
+  s = s.replace(/\\{2,}([\{\}\[\]\(\)\$\%])/g, (_m, g1) => '\\' + g1);
   s = s.replace(/\\{3,}/g, '\\\\');
   s = s.replace(/(?<!\\)\\\s+(frac|sqrt|sin|cos|tan|cot|left|right|begin|end|text|pi|infty|mathbb|setminus|quad|mid|cap|cup|in|notin|subset|supset|subseteq|supseteq|ne|neq|le|ge|leq|geq|times|cdot|pm|lim|to|alpha|beta|gamma|theta|Delta|Omega|circ|overline|vert|parallel|perp|cases|aligned|matrix|array)\b/gi, '\\$1');
 
@@ -1853,7 +1878,10 @@ export const normalizeMathLatex = (rawText: string): string => {
 
   // BƯỚC 4: Tự động bọc an toàn cho các môi trường toán trần (nếu chưa nằm trong $ hoặc $$)
   text = wrapNakedMathEnvironments(text);
-  text = text.replace(/\\\\(?=[a-zA-Z0-9])/g, '\\\\ ');
+  // Khắc phục triệt để lỗi double-backslash (\\ thay vì \) do tàn dư KaTeX cũ hoặc escape thừa:
+  // Đổi \\frac, \\sqrt, \\begin, \\alpha, \\le, \\in, \\infty... thành \frac, \sqrt, \begin, \alpha, \le, \in, \infty...
+  text = text.replace(/\\{2,}([a-zA-Z]+)/g, (_m, g1) => '\\' + g1);
+  text = text.replace(/\\{2,}([\{\}\[\]\(\)\$\%])/g, (_m, g1) => '\\' + g1);
 
   return text;
 };
@@ -2034,6 +2062,12 @@ export function cleanOptionText(opt: any): string {
     .replace(/\$([^\$]+)\*\$/g, '$$$1$')
     .replace(/\$\*([^\$]+)\$/g, '$$$1$')
     .trim();
+
+  // 3. Tự động bọc $ cho phương án là biểu thức toán học hoặc khoảng/đoạn thiếu $
+  text = autoWrapNakedMathExpression(text);
+
+  // 4. Chuẩn hóa KaTeX double backslash (\\) thành MathJax single backslash (\)
+  text = sanitizeLatexString(text);
 
   return text;
 }

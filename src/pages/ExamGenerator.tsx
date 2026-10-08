@@ -1,5 +1,5 @@
-import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { MathView } from "../components/MathView";
+import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { embedTikzSvgsInText } from "../components/TikzRenderer";
 import { embedBbtSvgsInText, convertBbtTableToSvg, analyzeFunctionToBbt, generateBbtSvg } from "../lib/bbtRenderer";
 import { apiFetch } from '../lib/apiFetch';
@@ -10,8 +10,6 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import LZString from 'lz-string';
 import { Link } from 'lucide-react';
-import rehypeKatex from 'rehype-katex';
-import 'katex/dist/katex.min.css';
 import { exportHtmlToWord } from '../lib/exportUtils';
 import { cn, fixMath, cleanQuestionStem, parseApiResponse, cleanOptionText, getPublicAppUrl, isRealWorldQuestion, sanitizeShortAnswerInput, validateShortAnswer, compareShortAnswers, sanitizeLatexString } from '../lib/utils';
 import { ensureMathRendered } from '../lib/print';
@@ -3515,7 +3513,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                         <div className="font-medium text-slate-800 text-sm sm:text-base leading-relaxed pl-1 flex items-start gap-2">
                           <span className="font-black text-indigo-950 whitespace-nowrap mt-1">Câu {idx + 1}:</span>
                           <div className="flex-1 min-w-0">
-                            <MarkdownRenderer className="markdown-body" content={cleanQuestionStem(q.content || (q as any).question || (q as any).text || '', q.options, q.tfStatements)} /> 
+                            <MathView content={cleanQuestionStem(q.content || (q as any).question || (q as any).text || '', q.options, q.tfStatements)} /> 
                           </div>
                         </div>
 
@@ -3587,7 +3585,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                             {q.tfStatements.map((stmt, sIdx) => (
                               <div key={sIdx} className="flex items-start gap-1 p-2 rounded-md border border-transparent">
                                 <span className="shrink-0 font-medium">{['a)', 'b)', 'c)', 'd)'][sIdx] || String.fromCharCode(97 + sIdx) + ')'}</span>
-                                <MarkdownRenderer className="markdown-body inline-block" content={fixMath(stmt.statement || '')} />
+                                <MathView content={fixMath(stmt.statement || '')} />
                                 <span className={`shrink-0 font-bold px-2 rounded ${stmt.correct ? 'text-emerald-700 bg-emerald-100' : 'text-red-700 bg-red-100'}`}>
                                   {stmt.correct ? 'Đ' : 'S'}
                                 </span>
@@ -3604,7 +3602,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                               {cleanedOpts.map((opt, oIdx) => (
                                 <div key={oIdx} className={`min-h-[40px] flex items-center px-3.5 py-1.5 text-left rounded-lg border transition-colors break-words overflow-hidden ${oIdx === q.correctOptionIndex ? 'bg-emerald-50 border-emerald-300 font-medium text-emerald-950' : 'bg-slate-50/50 border-slate-200/80 text-slate-800'}`}>
                                   <span className="shrink-0 font-bold select-none min-w-[1.75rem] whitespace-nowrap text-slate-900">{String.fromCharCode(65 + oIdx)}.</span>
-                                  <span className="flex-1 break-words overflow-hidden"><MarkdownRenderer inline={true} className="markdown-body inline align-baseline" content={fixMath(opt)} /></span>
+                                  <span className="flex-1 break-words overflow-hidden"><MathView inline className="inline align-baseline" content={fixMath(opt)} /></span>
                                 </div>
                               ))}
                             </div>
@@ -3613,7 +3611,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                         
                         {q.type !== 'mc' && q.correctAnswer && (
                           <div className="mt-2 pl-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
-                            <span className="font-semibold text-emerald-800">Đáp án:</span> <MarkdownRenderer className="markdown-body inline-block" content={fixMath(q.correctAnswer || '')} />
+                            <span className="font-semibold text-emerald-800">Đáp án:</span> <MathView inline content={fixMath(q.correctAnswer || '')} />
                           </div>
                         )}
 
@@ -5412,7 +5410,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
 
                           {/* Nội dung câu hỏi (Đề bài) */}
                           <div className="text-slate-900 text-sm sm:text-base leading-relaxed">
-                            <MarkdownRenderer content={item.questionContent || 'Nội dung câu hỏi'} />
+                            <MathView content={item.questionContent || 'Nội dung câu hỏi'} />
                           </div>
 
                           {/* Hiển thị trực quan kết quả theo loại câu hỏi */}
@@ -5479,7 +5477,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                                       <div key={optIdx} className={`w-full min-h-[44px] flex items-center px-4 py-2 text-left rounded-lg border transition-colors break-words overflow-hidden text-xs sm:text-sm gap-2 ${optBoxStyle}`}>
                                         <span className="font-bold shrink-0 min-w-[1.5rem]">{optLetter}.</span>
                                         <div className="flex-1 break-words overflow-hidden">
-                                          <MarkdownRenderer content={cleanOptionText(opt)} />
+                                          <MathView inline content={cleanOptionText(opt)} />
                                         </div>
                                         {isChosen && (
                                           <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ml-auto shrink-0 whitespace-nowrap ${
@@ -5545,7 +5543,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                                         <div className="flex items-start gap-2 flex-1 min-w-[220px]">
                                           <span className="font-bold text-slate-800">{sub})</span>
                                           <div className="text-slate-800">
-                                            <MarkdownRenderer content={stmt.statement || ''} />
+                                            <MathView content={stmt.statement || ''} />
                                           </div>
                                         </div>
 
@@ -5696,7 +5694,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                                 <span>💡 Lời giải chi tiết:</span>
                               </p>
                               <div className="text-slate-800">
-                                <MarkdownRenderer content={item.explanation} />
+                                <MathView content={item.explanation} />
                               </div>
                             </div>
                           )}

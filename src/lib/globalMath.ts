@@ -56,6 +56,39 @@ export function convertBacktickMathToDollars(text: string): string {
   return t;
 }
 
+/**
+ * Tự động bọc $...$ cho các biểu thức toán học trần trụi (naked math) hoặc khoảng/đoạn thiếu $
+ * Phục vụ cho các phương án trắc nghiệm hoặc biểu thức ngắn chưa được kẹp $
+ */
+export function autoWrapNakedMathExpression(text: string): string {
+  if (!text) return '';
+  let t = text.trim();
+  if (t.includes('$') || t.includes('\\begin{')) return t;
+
+  const withoutConj = t.replace(/(?:^|\s+)(?:và|hoặc|hay)(?:\s+|$)/gi, ' ').trim();
+  const hasVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(withoutConj);
+  const isSentential = t.length > 70 || t.split(/\s+/).length > 8;
+
+  if (!hasVietnamese && !isSentential) {
+    if (/\s+(?:và|hoặc|hay)\s+/i.test(t)) {
+      const parts = t.split(/(\s+(?:và|hoặc|hay)\s+)/i);
+      return parts.map(p => {
+        if (/^\s*(?:và|hoặc|hay)\s*$/i.test(p)) return p;
+        let sub = p.trim();
+        if (/^[\[\(].+[\]\)]$/.test(sub) || /[\^_\\]/.test(sub) || /^[a-zA-Z0-9\+\-\*\/\=><\s,;]+$/.test(sub)) {
+          return `$${sub}$`;
+        }
+        return p;
+      }).join('');
+    } else {
+      if (/^[\[\(].+[\]\)]$/.test(t) || /[\^_\\]/.test(t) || /^[a-zA-Z]\s*[=><\le\ge]/.test(t) || /^\\?\{[^}\n]+\\?\}$/.test(t) || /^[0-9]+(?:\.[0-9]+)?$/.test(t)) {
+        return `$${t}$`;
+      }
+    }
+  }
+  return t;
+}
+
 export function normalizeMathText(text: any): string {
   if (text === null || text === undefined) return '';
   if (typeof text !== 'string') text = String(text);
@@ -64,11 +97,22 @@ export function normalizeMathText(text: any): string {
 
   // 0. Chuẩn hóa các dấu ngoặc kép bị escape \" bên trong hoặc xung quanh công thức
   t = t.replace(/\\"/g, '"');
+  t = t.replace(/\\dfrac\b/g, '\\frac');
+
+  // Khắc phục triệt để lỗi double-backslash (\\ thay vì \) do tàn dư KaTeX cũ hoặc escape thừa:
+  // Đổi \\frac, \\sqrt, \\begin, \\alpha, \\le, \\in... thành \frac, \sqrt, \begin, \alpha, \le, \in...
+  // Bảo vệ dấu \\ ngắt dòng phương trình trong \begin{cases}...\end{cases} hoặc matrix/aligned
+  t = t.replace(/\\{2,}([a-zA-Z]+)/g, (_m, g1) => '\\' + g1);
+  t = t.replace(/\\{2,}([\{\}\[\]\(\)\$\%])/g, (_m, g1) => '\\' + g1);
+  t = t.replace(/\\{3,}/g, '\\\\');
 
   // Loại bỏ triệt để các thuộc tính sự kiện inline HTML nguy hiểm (onclick, onmouseover...) gây lỗi React event listener string
   while (/(<\w+[^>]*?)\s+on[a-zA-Z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/i.test(t)) {
     t = t.replace(/(<\w+[^>]*?)\s+on[a-zA-Z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '$1');
   }
+
+  // Tự động bọc $ cho các phương án trắc nghiệm hoặc biểu thức toán trần thiếu $
+  t = autoWrapNakedMathExpression(t);
 
   // 1. Chuyển đổi toàn bộ dấu huyền backtick sang $...$
   t = convertBacktickMathToDollars(t);

@@ -1,11 +1,10 @@
-import { MarkdownRenderer } from "../components/MarkdownRenderer";
+import { MathView } from "../components/MathView";
 import React, { useState, useEffect } from 'react';
 import { Loader2, FileText, Trophy, CheckCircle2, XCircle, Clock, Copy, Camera, X, Image as ImageIcon, Calculator } from 'lucide-react';
 import { ScientificCalculatorModal } from '../components/math-tools/ScientificCalculatorModal';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
 import { apiFetch } from '../lib/apiFetch';
 import LZString from 'lz-string';
 import { fixMath, cleanMath, cleanQuestionStem, cleanOptionText, formatMathContent, sanitizeShortAnswerInput, validateShortAnswer, compareShortAnswers, sanitizeAndPolishMath, sanitizeExamQuestion } from "../lib/utils";
@@ -944,7 +943,7 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
               </div>
 
               <div className="text-gray-800 text-base mb-4">
-                <MarkdownRenderer content={questionContent} />
+                <MathView content={questionContent} />
               </div>
 
               {/* Question Image (if any) */}
@@ -986,7 +985,7 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
                       <div className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 font-bold text-xs ${isSelected && !isSubmitted ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300'}`}>
                         {String.fromCharCode(65 + oIdx)}
                       </div>
-                      <span className="flex-1 break-words overflow-hidden text-left"><MarkdownRenderer className="markdown-body inline-block" content={cleanOptionText(opt)} /></span>
+                      <span className="flex-1 break-words overflow-hidden text-left"><MathView inline content={cleanOptionText(opt)} /></span>
                       {isSubmitted && isCorrect && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />}
                       {isSubmitted && isSelected && !isCorrect && <XCircle className="w-5 h-5 text-red-600 shrink-0" />}
                     </button>
@@ -1010,7 +1009,7 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
                           <div className="flex-1 flex items-start gap-2.5">
                             <span className="font-bold text-emerald-800 shrink-0 mt-0.5">{subLabel}</span>
                             <div className="flex-1">
-                              <MarkdownRenderer className="markdown-body inline-block" content={cleanStmt} />
+                              <MathView content={cleanStmt} />
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
@@ -1297,7 +1296,7 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
                       <div className="mt-2 text-sm flex items-center gap-2 flex-wrap p-3 rounded-lg bg-emerald-50/70 border border-emerald-200">
                         <span className="text-emerald-900 font-bold">Đáp án chuẩn:</span>
                         <div className="font-mono font-bold text-base text-emerald-700 bg-white px-3 py-1 rounded border border-emerald-300">
-                          <MarkdownRenderer content={sanitizeAndPolishMath(q.correctAnswer || q.correct || '')} />
+                          <MathView inline content={sanitizeAndPolishMath(q.correctAnswer || q.correct || '')} />
                         </div>
                         {isCorrectQuestion ? (
                           <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1">
@@ -1394,7 +1393,7 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
                           Hướng dẫn chấm / Đáp án chuẩn tự luận:
                         </span>
                         <div className="text-slate-800 text-sm">
-                          <MarkdownRenderer className="markdown-body inline-block" content={sanitizeAndPolishMath(q.correctAnswer || q.explanation || q.correct || '')} />
+                          <MathView content={sanitizeAndPolishMath(q.correctAnswer || q.explanation || q.correct || '')} />
                         </div>
                       </div>
                     )}
@@ -1405,7 +1404,7 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
                 {isSubmitted && q.explanation && !isEssay && (
                    <div className="mt-4 p-4 bg-slate-100 rounded-lg border border-slate-200">
                      <span className="text-slate-500 font-semibold block mb-2">Giải thích:</span>
-                     <MarkdownRenderer className="markdown-body inline-block" content={sanitizeAndPolishMath(q.explanation || '')} />
+                     <MathView content={sanitizeAndPolishMath(q.explanation || '')} />
                    </div>
                 )}
               </div>

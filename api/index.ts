@@ -470,47 +470,55 @@ function sanitizeJsonString(str: string): string {
             k++;
           }
 
-          if (slashCount === 2) {
-            // LaTeX line break like \\ in cases, array, matrix
-            // In JSON, 4 backslashes are required to yield 2 backslashes after JSON.parse
-            result += "\\\\\\\\";
-            i += 2;
-          } else if (slashCount >= 4) {
-            result += "\\\\\\\\";
-            i += 4;
-          } else {
-            const next = str[i + 1];
-            if (next === "\"") {
-              result += "\\\"";
-              i += 2;
-            } else if (next === "/") {
-              result += "/";
-              i += 2;
-            } else if (next === "b" || next === "f" || next === "n" || next === "r" || next === "t") {
-              const charAfter = (i + 2 < len) ? str[i + 2] : "";
-              if (charAfter && /[a-zA-Z]/.test(charAfter)) {
-                // Lệnh LaTeX như \frac, \beta, \text, \tau, \rho, \rightarrow, \neq, \times...
-                result += "\\\\" + next;
-                i += 2;
+          const nextChar = (k < len) ? str[k] : "";
+          const isLetterOrMathSymbol = /[a-zA-Z\{\}\[\]\(\)\$\%]/.test(nextChar);
+
+          if (isLetterOrMathSymbol) {
+            // Đây là tên lệnh LaTeX (\frac, \sqrt, \alpha, \infty, \begin...) hoặc ký hiệu toán thoát dấu (\{, \}, \[...)
+            // Trong chuỗi JSON, 2 dấu gạch chéo ngược (\\) là chuẩn để sau khi JSON.parse trả về đúng 1 dấu gạch chéo ngược (\).
+            // Tuyệt đối không nâng lên 4 gạch chéo (\\\\) làm lộ lỗi double backslash \\ kiểu KaTeX cũ trên MathJax.
+            if (slashCount === 1) {
+              if (nextChar === "b" || nextChar === "f" || nextChar === "n" || nextChar === "r" || nextChar === "t") {
+                const charAfter = (k + 1 < len) ? str[k + 1] : "";
+                if (charAfter && /[a-zA-Z]/.test(charAfter)) {
+                  // Lệnh LaTeX bắt đầu bằng b, f, n, r, t (như \frac, \beta, \text, \neq, \rightarrow, \times)
+                  result += "\\\\";
+                  i += 1;
+                } else {
+                  // Ký tự điều khiển JSON thuần túy (\n, \t)
+                  result += "\\" + nextChar;
+                  i += 2;
+                }
+              } else if (nextChar === "u") {
+                const hex = str.slice(k + 1, k + 5);
+                if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+                  result += "\\u" + hex;
+                  i += 5;
+                } else {
+                  result += "\\\\";
+                  i += 1;
+                }
               } else {
-                // Escape chuẩn JSON như \n, \t...
-                result += "\\" + next;
-                i += 2;
-              }
-            } else if (next === "u") {
-              const hex = str.slice(i + 2, i + 6);
-              if (/^[0-9a-fA-F]{4}$/.test(hex)) {
-                result += "\\u" + hex;
-                i += 6;
-              } else {
-                // Lệnh LaTeX bắt đầu bằng \u như \upsilon, \underline...
-                result += "\\\\u";
-                i += 2;
+                result += "\\\\";
+                i += 1;
               }
             } else {
-              // Tất cả các ký tự khác sau \ (như \alpha, \le, \vec, \Delta, \[, \], \{, \}, \$, \%...)
-              result += "\\\\" + next;
-              i += 2;
+              // slashCount >= 2 trước tên lệnh LaTeX: luôn chuẩn hóa thành 2 dấu gạch chéo trong JSON để trả về đúng 1 gạch chéo (\)
+              result += "\\\\";
+              i += slashCount;
+            }
+          } else {
+            // Đây là ngắt dòng LaTeX (\\ trong cases/aligned/matrix) hoặc ký tự thoát khác
+            if (nextChar === "\"") {
+              result += "\\\"";
+              i += slashCount + 1;
+            } else if (nextChar === "/") {
+              result += "/";
+              i += slashCount + 1;
+            } else {
+              // Ngắt dòng LaTeX trong JSON cần 4 dấu gạch chéo để sau khi JSON.parse trả về đúng 2 gạch chéo (\\)
+              result += "\\\\\\\\";
+              i += slashCount;
             }
           }
         }
@@ -573,6 +581,21 @@ function repairTruncatedJson(str: string): string {
     if (top === "[") repaired += "]";
   }
   return repaired;
+}
+
+/**
+ * Chuẩn hóa trường công thức toán học trả về từ AI:
+ * Đảm bảo 100% tuân thủ MathJax (dùng 1 gạch chéo ngược \ cho tên lệnh, 2 gạch chéo \\ chỉ để ngắt dòng trong cases/aligned).
+ * Triệt tiêu hoàn toàn tàn dư KaTeX cũ hai gạch chéo ngược (\\frac, \\sqrt, \\infty, \\alpha, \\begin...).
+ */
+export function cleanLatexMathField(str: any): string {
+  if (str === null || str === undefined) return '';
+  let s = String(str);
+  s = s.replace(/\\dfrac\b/g, '\\frac');
+  s = s.replace(/\\{2,}([a-zA-Z]+)/g, (_m, g1) => '\\' + g1);
+  s = s.replace(/\\{2,}([\{\}\[\]\(\)\$\%])/g, (_m, g1) => '\\' + g1);
+  s = s.replace(/\\{3,}/g, '\\\\');
+  return s;
 }
 
 /**
@@ -648,9 +671,10 @@ async function generateWithFallback(req: any, payloadOptions: any) {
 - Chỉ số dưới BẮT BUỘC dùng dấu gạch dưới: $u_1$, $u_6$, $S_{10}$, $N_0$, $N_t$.
 - Số mũ / lũy thừa BẮT BUỘC dùng dấu mũ: $q^5$, $2^9$, $2^{10}$, $a^2 + b^2$.
 - Phân số BẮT BUỘC dùng \\frac{tử}{mẫu}: $\\frac{1 - (-2)^{10}}{1 - (-2)}$, $\\frac{108}{54}$.
-- Phép nhân dùng \\cdot, dấu suy ra/tương đương dùng \\Rightarrow, \\Leftrightarrow.
-- Họ nghiệm phương trình lượng giác (\\sin, \\cos...): BẮT BUỘC dùng dấu móc vuông \\left[ thay vì \\begin{cases}, cú pháp chuẩn KaTeX: $\\left[\\begin{aligned} x &= \\alpha + k2\\pi \\\\ x &= \\pi - \\alpha + k2\\pi \\end{aligned}\\right. \\quad (k \\in \\mathbb{Z})$.
-- Hệ phương trình / Hệ bất phương trình: GIỮ NGUYÊN dấu móc nhọn \\begin{cases} ... \\end{cases} kèm xuống dòng \\\\ rõ ràng.
+- Phép nhân dùng \cdot, dấu suy ra/tương đương dùng \Rightarrow, \Leftrightarrow.
+- QUY TẮC DẤU GẠCH CHÉO NGƯỢC (LATEX / MATHJAX CHUẨN): Mọi tên lệnh và ký hiệu toán học (\frac, \sqrt, \alpha, \infty, \sin, \cos, \begin, \end, \le, \ge, \in...) BẮT BUỘC dùng đúng 1 dấu gạch chéo ngược đơn (\). Tuyệt đối KHÔNG viết hai gạch (\\frac, \\sqrt...) cho tên lệnh. Dấu hai gạch chéo (\\) CHỈ dùng để ngắt dòng trong hệ phương trình \begin{cases} hoặc \begin{aligned}.
+- Họ nghiệm phương trình lượng giác (\sin, \cos...): BẮT BUỘC dùng dấu móc vuông \left[ thay vì \begin{cases}, cú pháp chuẩn LaTeX / MathJax: $\left[\begin{aligned} x &= \alpha + k2\pi \\ x &= \pi - \alpha + k2\pi \end{aligned}\right. \quad (k \in \mathbb{Z})$.
+- Hệ phương trình / Hệ bất phương trình: GIỮ NGUYÊN dấu móc nhọn \begin{cases} ... \end{cases} kèm xuống dòng \\ rõ ràng.
 - Tuyệt đối KHÔNG viết công thức dưới dạng text thường như u1, q5, 2^9 viết thành 29.
 - [QUY CHUẨN CẤU TRÚC ĐỀ THI / PHIẾU HỌC TẬP GDPT 2018]:
   + TUYỆT ĐỐI KHÔNG ĐƯỢC tóm tắt, không được bỏ qua bất kỳ câu nào, TUYỆT ĐỐI KHÔNG ĐƯỢC sinh placeholder như "(Các câu tương tự...)", "(Tương tự cho các câu sau...)", "(Các câu 5 đến 12 tương tự...)", "... (tiếp tục)" hoặc viết tắt câu.
@@ -1209,8 +1233,16 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
         type: qType,
         level: q.level || 'Nhận biết',
         isRealWorld: Boolean(q.isRealWorld),
-        solution: sol,
-        explanation: sol
+        content: cleanLatexMathField(q.content || q.question || ''),
+        question: cleanLatexMathField(q.question || q.content || ''),
+        options: Array.isArray(q.options) ? q.options.map(cleanLatexMathField) : q.options,
+        tfStatements: Array.isArray(q.tfStatements) ? q.tfStatements.map((tf: any) => ({
+          ...tf,
+          statement: cleanLatexMathField(tf.statement)
+        })) : q.tfStatements,
+        correctAnswer: cleanLatexMathField(q.correctAnswer),
+        solution: cleanLatexMathField(sol),
+        explanation: cleanLatexMathField(sol)
       };
     });
 
@@ -1957,8 +1989,16 @@ app.all("/api/generate-interactive-worksheet", async (req, res) => {
          ...q,
          id: idx + 1,
          number: idx + 1,
-         solution: sol,
-         explanation: sol
+         content: cleanLatexMathField(q.content || q.question || ''),
+         question: cleanLatexMathField(q.question || q.content || ''),
+         options: Array.isArray(q.options) ? q.options.map(cleanLatexMathField) : q.options,
+         tfStatements: Array.isArray(q.tfStatements) ? q.tfStatements.map((tf: any) => ({
+           ...tf,
+           statement: cleanLatexMathField(tf.statement)
+         })) : q.tfStatements,
+         correctAnswer: cleanLatexMathField(q.correctAnswer),
+         solution: cleanLatexMathField(sol),
+         explanation: cleanLatexMathField(sol)
        };
     });
 
@@ -2531,12 +2571,12 @@ QUY TẮC BẮT BUỘC VỀ TOÁN HỌC VÀ CÔNG THỨC (LATEX CHUẨN 100%):
 + QUY TẮC ĐẶC BIỆT VỀ DẤU $:
   - Tuyệt đối không tự động gắn thêm dấu $ vào cuối chuỗi nếu chuỗi đã có cặp dấu $...$ hoàn chỉnh.
   - Tuyệt đối không để ký tự $ mồ côi (trailing dollar sign) ở cuối đáp án hoặc nằm sau dấu chấm câu (ví dụ: cấm viết ".$" hay ". $", phải cắt bỏ sạch sẽ thành ".").
-+ HỌ NGHIỆM PHƯƠNG TRÌNH LƯỢNG GIÁC (\sin, \cos...): BẮT BUỘC sử dụng dấu móc vuông \left[ kết hợp \begin{aligned} ... \end{aligned}\right. thay vì dấu móc nhọn \begin{cases}. Cú pháp chuẩn KaTeX:
++ HỌ NGHIỆM PHƯƠNG TRÌNH LƯỢNG GIÁC (\sin, \cos...): BẮT BUỘC sử dụng dấu móc vuông \left[ kết hợp \begin{aligned} ... \end{aligned}\right. thay vì dấu móc nhọn \begin{cases}. Cú pháp chuẩn LaTeX / MathJax:
   $\left[\begin{aligned} x &= \alpha + k2\pi \\ x &= \pi - \alpha + k2\pi \end{aligned}\right. \quad (k \in \mathbb{Z})$
-+ HỆ PHƯƠNG TRÌNH / HỆ BẤT PHƯƠNG TRÌNH: GIỮ NGUYÊN dấu móc nhọn \begin{cases} ... \end{cases} và BẮT BUỘC bọc trong cặp dấu $...$ hoặc $$...$$. Các dòng phương trình BẮT BUỘC cách nhau bởi dấu xuống dòng \\ (hai dấu gạch chéo ngược) rõ ràng. Ví dụ:
++ HỆ PHƯƠNG TRÌNH / HỆ BẤT PHƯƠNG TRÌNH: GIỮ NGUYÊN dấu móc nhọn \begin{cases} ... \end{cases} và BẮT BUỘC bọc trong cặp dấu $...$ hoặc $$...$$. Các dòng phương trình BẮT BUỘC cách nhau bởi dấu xuống dòng \\ rõ ràng. Ví dụ:
   $\begin{cases} 2x + y = 5 \\ x - y = 1 \end{cases}$
-+ Tuyệt đối KHÔNG viết \\ x - y (một gạch) làm dính dòng phương trình, BẮT BUỘC phải là \\\\ x - y.
-+ Sử dụng cú pháp LaTeX chuẩn: \\frac{a}{b} (luôn dùng \\frac, không dùng \\dfrac), \\sqrt{x}, \\sin x, \\cos x, \\tan x, \\cot x, \\pi, \\ge, \\le, \\in, \\Leftrightarrow, \\Rightarrow, \\Delta.
++ QUY TẮC DẤU GẠCH CHÉO NGƯỢC (LATEX / MATHJAX): Mọi tên lệnh và ký hiệu toán học (\frac, \sqrt, \alpha, \infty, \sin, \cos, \begin, \end...) BẮT BUỘC dùng đúng 1 dấu gạch chéo ngược đơn (\). Tuyệt đối KHÔNG viết hai gạch (\\frac, \\sqrt...) cho tên lệnh. Dấu hai gạch chéo (\\) CHỈ dùng để ngắt dòng trong hệ phương trình \begin{cases} hoặc \begin{aligned}.
++ Sử dụng cú pháp LaTeX chuẩn: \frac{a}{b} (luôn dùng \frac, không dùng \dfrac), \sqrt{x}, \sin x, \cos x, \tan x, \cot x, \pi, \ge, \le, \in, \Leftrightarrow, \Rightarrow, \Delta.
 + Giữ nguyên font tiếng Việt UTF-8 chuẩn cho đề bài và các phương án.
 
 Trả về kết quả dưới dạng JSON có cấu trúc sau:
@@ -2557,7 +2597,7 @@ Trả về kết quả dưới dạng JSON có cấu trúc sau:
   ]
 }
 
-LƯU Ý QUAN TRỌNG VỀ JSON: Đảm bảo tất cả các dấu gạch chéo ngược (\\) trong mã LaTeX phải được escape thành kép (\\\\) khi tạo chuỗi JSON (ví dụ: \\\\begin{cases} ... \\\\end{cases}, \\\\frac{a}{b}). Tuyệt đối chỉ trả về JSON hợp lệ, không kèm bất kỳ lời dẫn hay giải thích nào ngoài khối JSON.`;
+Tuyệt đối chỉ trả về JSON hợp lệ, không kèm bất kỳ lời dẫn hay giải thích nào ngoài khối JSON.`;
 
     const userParts: any[] = [];
     if (files && files.length > 0) {
@@ -2638,8 +2678,26 @@ LƯU Ý QUAN TRỌNG VỀ JSON: Đảm bảo tất cả các dấu gạch chéo 
       }
     }
 
+    const cleanedQuestions = (parsed || []).map((q: any, idx: number) => {
+      const sol = (q.solution || q.explanation || "").trim();
+      return {
+        ...q,
+        id: q.id || idx + 1,
+        question: cleanLatexMathField(q.question || q.content || ''),
+        content: cleanLatexMathField(q.content || q.question || ''),
+        options: Array.isArray(q.options) ? q.options.map(cleanLatexMathField) : q.options,
+        tfStatements: Array.isArray(q.tfStatements) ? q.tfStatements.map((tf: any) => ({
+          ...tf,
+          statement: cleanLatexMathField(tf.statement)
+        })) : q.tfStatements,
+        correctAnswer: cleanLatexMathField(q.correctAnswer),
+        solution: cleanLatexMathField(sol),
+        explanation: cleanLatexMathField(sol)
+      };
+    });
+
     return { 
-      questions: parsed,
+      questions: cleanedQuestions,
       duration: detectedDuration,
       examTitle: detectedTitle
     };

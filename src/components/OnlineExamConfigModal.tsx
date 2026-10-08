@@ -8,7 +8,7 @@ import LZString from 'lz-string';
 import { apiFetch } from '../lib/apiFetch';
 import { saveExamToCloud } from '../lib/cloudExamStore';
 import { embedTikzSvgsInText } from './TikzRenderer';
-import { sanitizeExamQuestion } from '../lib/utils';
+import { sanitizeExamQuestion, cleanOptionText, sanitizeAndPolishMath } from '../lib/utils';
 import { 
   STANDARDIZED_EXAM_TYPES, 
   getDefaultDurationForExamType, 
@@ -149,18 +149,21 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
         codesToProcess = [{ code: '101', questions: originalQuestions }];
       }
 
-      // Pre-render TikZ figures into high-speed native SVG
+      // Pre-render TikZ figures into high-speed native SVG & sanitize math for MathJax
       const optimizedCodes = codesToProcess.map(exam => ({
         ...exam,
         questions: exam.questions.map((q: any) => ({
           ...q,
           content: sanitizeExamQuestion(embedTikzSvgsInText(q.content || q.question || q.text || '')),
+          question: sanitizeExamQuestion(embedTikzSvgsInText(q.question || q.content || q.text || '')),
           explanation: q.explanation ? sanitizeExamQuestion(embedTikzSvgsInText(q.explanation)) : undefined,
-          options: q.options ? q.options.map((opt: string) => sanitizeExamQuestion(embedTikzSvgsInText(opt))) : undefined,
+          solution: q.solution ? sanitizeExamQuestion(embedTikzSvgsInText(q.solution)) : (q.explanation ? sanitizeExamQuestion(embedTikzSvgsInText(q.explanation)) : undefined),
+          options: q.options ? q.options.map((opt: string) => cleanOptionText(embedTikzSvgsInText(opt))) : undefined,
           tfStatements: q.tfStatements ? q.tfStatements.map((tf: any) => ({
             statement: sanitizeExamQuestion(embedTikzSvgsInText(tf.statement || '')),
             correct: tf.correct
-          })) : undefined
+          })) : undefined,
+          correctAnswer: q.correctAnswer ? sanitizeAndPolishMath(q.correctAnswer) : undefined
         }))
       }));
 

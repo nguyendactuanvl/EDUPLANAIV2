@@ -21,7 +21,7 @@ import { analyzeFunctionToBbt, generateBbtSvg, convertBbtTableToSvg } from "../l
 import { getTikzSvg, embedTikzSvgsInText } from "../components/TikzRenderer";
 import { saveToHistory, getHistory } from '../lib/history';
 import { HistoryItem } from '../types';
-import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMath, cleanQuestionStem, cleanOptionText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections } from "../lib/utils";
+import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMath, cleanQuestionStem, cleanOptionText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections, sanitizeExamQuestion, sanitizeAndPolishMath } from "../lib/utils";
 import { parseRawExamText } from '../lib/examParser';
 import { printElement, ensureMathRendered } from '../lib/print';
 import { saveExamToCloud, saveExamToWebhook } from '../lib/cloudExamStore';
@@ -565,6 +565,26 @@ export function Worksheets() {
         }
       }
       
+      // Clean and sanitize math formulas for MathJax in interactive online worksheet questions
+      const sanitizedInteractiveQuestions = (examData.questions || []).map((q: any, idx: number) => {
+        const sol = (q.solution || q.explanation || "").trim();
+        return {
+          ...q,
+          id: idx + 1,
+          number: idx + 1,
+          content: sanitizeExamQuestion(q.content || q.question || ''),
+          question: sanitizeExamQuestion(q.question || q.content || ''),
+          options: Array.isArray(q.options) ? q.options.map((opt: string) => cleanOptionText(opt)) : q.options,
+          tfStatements: Array.isArray(q.tfStatements) ? q.tfStatements.map((tf: any) => ({
+            ...tf,
+            statement: sanitizeExamQuestion(tf.statement || '')
+          })) : q.tfStatements,
+          correctAnswer: q.correctAnswer ? sanitizeAndPolishMath(q.correctAnswer) : undefined,
+          solution: sanitizeAndPolishMath(sol),
+          explanation: sanitizeAndPolishMath(sol)
+        };
+      });
+
       // 2. Wrap it for the StudentExamView
       const payload = {
         examData: {
@@ -575,7 +595,7 @@ export function Worksheets() {
         codes: [
           {
             code: "PHT_01",
-            questions: examData.questions
+            questions: sanitizedInteractiveQuestions
           }
         ]
       };
