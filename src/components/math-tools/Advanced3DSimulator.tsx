@@ -1166,7 +1166,7 @@ export const Advanced3DSimulator: React.FC<Advanced3DSimulatorProps> = ({ onInse
       const ai = new GoogleGenAI({ apiKey: storedKey });
       
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-3.8-flash",
         contents: `Bạn là trợ lý Chuyên gia Toán THPT 2018. Hãy phân tích đề bài toán thực tế sau và trích xuất tham số 3D:
 "${aiPrompt}"
 

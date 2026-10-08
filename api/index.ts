@@ -367,9 +367,9 @@ function handleAiError(error: any, req: any, res: any) {
 
   if (lowerMsg.includes("resource_exhausted") || lowerMsg.includes("quota") || lowerMsg.includes("429") || error?.status === 429) {
     if (!isCustomKey) {
-        return res.status(429).json({ error: "Hệ thống đang quá tải hoặc tạm thời không khả dụng do nhu cầu cao (429). Vui lòng thử lại sau ít phút hoặc sử dụng API Key cá nhân." });
+      return res.status(429).json({ error: "Hệ thống AI đang quá tải hoặc tạm thời hết lượt yêu cầu miễn phí trong ngày (Lỗi 429). Vui lòng thử lại sau ít phút hoặc nhập API Key cá nhân trong Cài đặt hệ thống." });
     }
-    return res.status(429).json({ error: "API Key cá nhân của bạn hiện đang nhận quá nhiều yêu cầu cùng lúc (Lỗi 429). Chi tiết từ Google: " + errorMsg });
+    return res.status(429).json({ error: "API Key cá nhân của thầy/cô đã vượt quá giới hạn số lượt yêu cầu của Google (Lỗi 429 - Quota Exceeded). Vui lòng thử lại sau ít phút hoặc đổi sang API Key cá nhân khác." });
   }
   if (lowerMsg.includes("503") || error?.status === 503 || lowerMsg.includes("unavailable")) {
     if (!isCustomKey) {
@@ -646,15 +646,12 @@ async function generateWithFallback(req: any, payloadOptions: any) {
   const client = getAiClient(req);
   const isCustomKey = !!req.headers['x-gemini-api-key'] || (!!req.headers['authorization'] && (req.headers['authorization'] as string).startsWith('Bearer '));
   
-  // Prioritize active, valid models according to @google/genai guidelines
+  const primaryModel = payloadOptions?.model || "gemini-3.8-flash";
   const models = [
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash"
+    primaryModel,
+    ...(primaryModel !== "gemini-3.8-flash" ? ["gemini-3.8-flash"] : []),
+    ...(primaryModel !== "gemini-3.1-flash-lite" ? ["gemini-3.1-flash-lite"] : [])
   ];
-  if (isCustomKey) {
-    models.push("gemini-2.5-pro");
-  }
 
   let primaryError: any = null;
   const maxRetries = 3;
@@ -741,14 +738,12 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
   const client = getAiClient(req);
   const isCustomKey = !!req.headers['x-gemini-api-key'] || (!!req.headers['authorization'] && (req.headers['authorization'] as string).startsWith('Bearer '));
   
+  const primaryModel = payloadOptions?.model || "gemini-3.8-flash";
   const models = [
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash"
+    primaryModel,
+    ...(primaryModel !== "gemini-3.8-flash" ? ["gemini-3.8-flash"] : []),
+    ...(primaryModel !== "gemini-3.1-flash-lite" ? ["gemini-3.1-flash-lite"] : [])
   ];
-  if (isCustomKey) {
-    models.push("gemini-2.5-pro");
-  }
 
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.setHeader('Transfer-Encoding', 'chunked');
