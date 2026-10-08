@@ -1048,16 +1048,17 @@ HƯỚNG DẪN BẮT BUỘC BÁM SÁT 100% MA TRẬN & BẢN ĐẶC TẢ ĐÍNH 
    - Nhờ đó, hệ thống sẽ tự động điền đầy đủ và chính xác vào Bảng Ma Trận & Bản Đặc Tả cho giáo viên.
 ` : '';
 
-    const promptText = `Bạn là một chuyên gia khảo thí và giáo viên giỏi bộ môn ${subject}.
+    const promptText = `Bạn là một chuyên gia khảo thí và giáo viên xuất sắc bộ môn ${subject} (Chương trình GDPT 2018, bộ sách giáo khoa Kết nối tri thức với cuộc sống áp dụng từ năm học 2026-2027).
 Nhiệm vụ của bạn là biên soạn một Đề kiểm tra chuẩn chất lượng cao cho học sinh Lớp ${grade}, môn ${subject}, Thời gian làm bài: ${duration} phút.
 
-CHỈ ĐƯỢC PHÉP SỬ DỤNG CÁC CHỦ ĐỀ/KIẾN THỨC SAU (TUYỆT ĐỐI KHÔNG DÙNG CÁC CHỦ ĐỀ KHÁC):
-${selectedTopics.length > 0 ? selectedTopics.join(', ') : (hasMatrixFile ? 'Dựa theo nội dung/chủ đề trong Ma trận/Bản đặc tả đã được cung cấp.' : 'Chương trình học Lớp ' + grade)}
-
-RÀNG BUỘC CHƯƠNG TRÌNH KHỐI LỚP (BẮT BUỘC):
-Bạn phải CHỈ sử dụng các đơn vị kiến thức và chủ đề thuộc đúng chương trình học của Lớp ${grade} (theo chương trình GDPT 2018). TUYỆT ĐỐI KHÔNG được sử dụng bất kỳ câu hỏi, công thức, hay kiến thức thuộc các khối lớp khác hoặc ngoài danh sách chủ đề đã nêu ở trên. 
-- Nếu chủ đề yêu cầu chỉ là "Mệnh đề" và "Tập hợp", TUYỆT ĐỐI CẤM sinh câu hỏi về: Hàm số bậc hai, Vectơ, Hình học phẳng/không gian, Phương trình đường thẳng, hay bất kỳ nội dung nào khác ngoài Mệnh đề và Tập hợp.
-- Nếu ma trận được cung cấp có giới hạn các chương mục, bạn phải tuân thủ đúng 100% giới hạn đó.
+RÀNG BUỘC PHẠM VI NỘI DUNG CHỦ ĐỀ/BÀI HỌC (TẮT TẤT CẢ CÁC CÂU HỎI LẠCH CHỦ ĐỀ - BẮT BUỘC 100%):
+- CHỈ ĐƯỢC PHÉP SỬ DỤNG CÁC CHỦ ĐỀ/KIẾN THỨC SAU:
+  ${selectedTopics.length > 0 ? selectedTopics.join(', ') : (hasMatrixFile ? 'Dựa theo đúng nội dung/chủ đề trong Ma trận/Bản đặc tả đã được cung cấp.' : 'Chương trình học Lớp ' + grade)}
+- TẤT CẢ CÁC CÂU HỎI sinh ra BẮT BUỘC phải tập trung trực tiếp và 100% nằm trong phạm vi kiến thức, bài học, chương học đã chọn ở trên.
+- TUYỆT ĐỐI KHÔNG TỰ BỊA RA HOẶC CHÈN THÊM bất kỳ câu hỏi nào thuộc chủ đề khác, bài học khác, hay chương học khác ngoài danh sách giáo viên đã chọn (trừ khi giáo viên ghi rõ yêu cầu mở rộng kiến thức riêng).
+- Nếu chủ đề yêu cầu chỉ là "Mệnh đề" và "Tập hợp", TUYỆT ĐỐI CẤM sinh câu hỏi về: Hàm số, Vectơ, Hình học, Phương trình hay bất kỳ nội dung nào khác ngoài Mệnh đề và Tập hợp.
+- Nếu chủ đề chỉ thuộc 1 bài cụ thể (ví dụ: "Cấp số cộng"), TUYỆT ĐỐI CẤM chèn thêm câu hỏi thuộc bài khác (như Cấp số nhân hay Giới hạn).
+- Đảm bảo tính chính xác 100% chuyên môn theo bộ sách SGK Kết nối tri thức với cuộc sống từ năm học 2026-2027 cho tất cả các môn học.
 
 Hình thức/Kỳ thi: ${examType}.
 ${customPrompt ? `Yêu cầu chi tiết của giáo viên:\n${customPrompt}` : ''}
@@ -1922,9 +1923,14 @@ app.all("/api/generate-interactive-worksheet", async (req, res) => {
   return keepAliveExecute(req, res, async () => {
     const { lesson, subject, grade, type } = req.body;
        
-    const promptText = `Bạn là một giáo viên xuất sắc môn ${subject || "chung"}. Hãy tạo một Phiếu bài tập (Worksheet) tương tác thật chuyên nghiệp cho học sinh lớp ${grade}, bài học/chủ đề: "${lesson}". Hình thức: ${type || "Kết hợp trắc nghiệm, đúng/sai, trả lời ngắn, tự luận"}.
+    const promptText = `Bạn là một giáo viên xuất sắc môn ${subject || "Toán"} (chuẩn Chương trình GDPT 2018, bộ sách giáo khoa Kết nối tri thức với cuộc sống áp dụng từ năm học 2026-2027). Hãy tạo một Phiếu bài tập (Worksheet) tương tác thật chuyên nghiệp cho học sinh Lớp ${grade}, môn ${subject || "Toán"}, bài học/chủ đề: "${lesson}". Hình thức: ${type || "Kết hợp trắc nghiệm, đúng/sai, trả lời ngắn, tự luận"}.
        
-    YÊU CẦU:
+    RÀNG BUỘC PHẠM VI NỘI DUNG VÀ CHỦ ĐỀ (BẮT BUỘC 100%):
+    - TẤT CẢ CÁC CÂU HỎI trong phiếu bài tập BẮT BUỘC phải tập trung chính xác và 100% nằm trong phạm vi kiến thức, bài học/chủ đề: "${lesson}".
+    - TUYỆT ĐỐI KHÔNG BỊA RA HOẶC TỰ Ý CHÈN THÊM bất kỳ câu hỏi nào thuộc bài học khác, chương học khác hay khối lớp khác ngoài chủ đề "${lesson}" (trừ khi giáo viên có ghi yêu cầu mở rộng riêng).
+    - Tuân thủ 100% thuật ngữ, ký hiệu, mạch kiến thức theo đúng SGK Kết nối tri thức với cuộc sống áp dụng từ năm học 2026-2027.
+
+    YÊU CẦU CỤ THỂ:
     1. Đưa ra khoảng 5-10 câu hỏi phân hóa từ cơ bản đến vận dụng. TUYỆT ĐỐI KHÔNG ĐƯỢC tóm tắt hoặc sinh placeholder như "(Các câu tương tự...)". Bắt buộc sinh đủ 100% các câu hỏi hoàn chỉnh.
     2. Các câu hỏi có thể thuộc 4 loại hình:
        - mc: Trắc nghiệm 4 lựa chọn (chỉ viết nội dung câu hỏi vào "content", 4 phương án vào mảng "options", TUYỆT ĐỐI KHÔNG lặp lại các phương án A, B, C, D trong "content").
@@ -2119,12 +2125,14 @@ YÊU CẦU PHONG CÁCH: A4 CHUẨN IN ẤN (Đen trắng / Tiết kiệm mực -
         answerPrompt = 'Ở cuối tài liệu, hãy cung cấp phần Hướng dẫn giải chi tiết từng câu, phân cách bằng tiêu đề "--- HƯỚNG DẪN CHẤM / ĐÁP ÁN CHI TIẾT ---". BẮT BUỘC giải thích chi tiết từng bước biến đổi, kèm lý do chọn đáp án, viết bằng công thức LaTeX chuẩn cho từng câu hỏi.';
       }
 
-      const prompt = `Bạn là chuyên gia sư phạm Toán THPT hàng đầu tại Việt Nam, nắm vững 100% Chương trình Giáo dục phổ thông 2018 và bộ sách giáo khoa "Kết nối tri thức với cuộc sống" (KNTT).
-Nhiệm vụ của bạn là nhận thông tin cấu hình và tạo ra một "PHIẾU HỌC TẬP" hoàn chỉnh, khoa học, thẩm mỹ cao và chuẩn mực sư phạm cho học sinh lớp ${grade}, môn học ${subject || "Toán"}, bài học/chủ đề: "${lesson}".
+      const prompt = `Bạn là chuyên gia sư phạm bộ môn ${subject || "Toán"} hàng đầu Việt Nam, nắm vững 100% Chương trình GDPT 2018 và bộ sách giáo khoa "Kết nối tri thức với cuộc sống" (KNTT) áp dụng từ năm học 2026-2027.
+Nhiệm vụ của bạn là nhận thông tin cấu hình và tạo ra một "PHIẾU HỌC TẬP" hoàn chỉnh, khoa học, thẩm mỹ cao và chuẩn mực sư phạm cho học sinh Lớp ${grade}, môn ${subject || "Toán"}, bài học/chủ đề: "${lesson}".
 
 ---
-### 1. QUY CHUẨN NỘI DUNG VÀ CHUYÊN MÔN TOÁN 2018 (BẮT BUỘC TUÂN THỦ)
-- Chuẩn SGK KNTT: Sử dụng chuẩn xác thuật ngữ, ký hiệu toán học theo bộ sách Kết nối tri thức với cuộc sống.
+### 1. RÀNG BUỘC PHẠM VI NỘI DUNG VÀ CHUYÊN MÔN SGK KNTT 2026-2027 (BẮT BUỘC 100%)
+- PHẠM VI CHỦ ĐỀ CHÍNH XÁC: TẤT CẢ các câu hỏi trong phiếu học tập BẮT BUỘC phải tập trung trực tiếp và 100% thuộc về bài học/chủ đề: "${lesson}".
+- KHÔNG BỊA LẠCH CHỦ ĐỀ: TUYỆT ĐỐI KHÔNG tự ý bịa ra hoặc chèn thêm bất kỳ câu hỏi nào thuộc các bài học khác, chương học khác hay khối lớp khác ngoài chủ đề "${lesson}".
+- Chuẩn SGK KNTT: Sử dụng chuẩn xác thuật ngữ, ký hiệu chuyên môn theo bộ sách Kết nối tri thức với cuộc sống từ năm học 2026-2027 cho môn ${subject || "Toán"}.
 - Ranh giới kiến thức chương trình mới:
   + KHÔNG sử dụng phương pháp đổi biến số hay tích phân từng phần (đã giảm tải/không có trong CT 2018).
   + Lớp 11: Không sử dụng phương pháp vectơ trong không gian 3D, không sử dụng định lý Menelaus trong hình không gian.
@@ -2233,10 +2241,11 @@ app.all("/api/generate-worksheet-stream", async (req, res) => {
   if (answerMode === 'none') answerPrompt = 'Không kèm đáp án hay lời giải.';
   else if (answerMode === 'summary') answerPrompt = 'Chỉ kèm bảng đáp án nhanh ở cuối.';
 
-  const prompt = `Bạn là chuyên gia Toán THPT Việt Nam (CT 2018 KNTT).
-Hãy tạo ngay PHIẾU HỌC TẬP A4 Chuẩn in ấn cho học sinh lớp ${grade}, môn ${subject || "Toán"}, bài/chủ đề: "${lesson}".
+  const prompt = `Bạn là chuyên gia sư phạm bộ môn ${subject || "Toán"} Việt Nam (Chương trình GDPT 2018, SGK Kết nối tri thức với cuộc sống áp dụng từ năm học 2026-2027).
+Hãy tạo ngay PHIẾU HỌC TẬP A4 Chuẩn in ấn cho học sinh Lớp ${grade}, môn ${subject || "Toán"}, bài học/chủ đề: "${lesson}".
 
-YÊU CẦU QUAN TRỌNG:
+YÊU CẦU QUAN TRỌNG VỀ PHẠM VI NỘI DUNG VÀ CHỦ ĐỀ (BẮT BUỘC 100%):
+0. PHẠM VI CHỦ ĐỀ CHÍNH XÁC: Tất cả các câu hỏi trong phiếu BẮT BUỘC phải tập trung 100% vào bài học/chủ đề: "${lesson}". TUYỆT ĐỐI KHÔNG BỊA RA HOẶC CHÈN THÊM bất kỳ câu hỏi nào ngoài bài học đã chọn.
 1. Xuất trực tiếp nội dung phiếu học tập Markdown, không viết câu chào hay mở đầu.
 2. ĐỒNG BỘ TIÊU ĐỀ: TUYỆT ĐỐI KHÔNG tự ý chèn thêm tiêu đề bài học hay header thừa ở đầu văn bản (như "# BÀI 1: GÓC LƯỢNG GIÁC" hay "# PHIẾU HỌC TẬP"), vì hệ thống đã có sẵn khung tiêu đề chuẩn chính quy bên trên. Bắt đầu ngay bằng mục Tóm tắt kiến thức / Lý thuyết trọng tâm.
 3. ĐÁNH SỐ CÂU HỎI CHUẨN ĐỀ THI:
