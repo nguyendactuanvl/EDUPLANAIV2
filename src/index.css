@@ -175,12 +175,16 @@ mjx-container svg * {
 }
 
 /* Ensure math formulas inside choices align horizontally with the label */
-.choice-text .katex-display {
+.choice-text .katex-display,
+.choice-text mjx-container[display="true"],
+.choice-text .MathJax_Display {
   display: inline-block !important;
   margin: 0 !important;
 }
 
-.choice-text .katex {
+.choice-text .katex,
+.choice-text mjx-container,
+.choice-text .MathJax {
   vertical-align: baseline;
 }
 

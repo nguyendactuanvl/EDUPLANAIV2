@@ -11,7 +11,6 @@ import { QuestionVisualizerPanel } from "../components/math-tools/QuestionVisual
 import { run1ClickMathFix } from "../components/math-tools/MathFormulaFixer";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import { saveToHistory } from '../lib/history';
 import { TextbookManager } from '../components/TextbookManager';

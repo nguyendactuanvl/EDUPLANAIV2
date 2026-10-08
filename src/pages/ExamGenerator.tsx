@@ -1761,7 +1761,13 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
       <html>
         <head>
           <title>In Đề Kiểm Tra</title>
-          <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+          <script>
+            window.MathJax = {
+              tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+              svg: { fontCache: 'global' }
+            };
+          </script>
+          <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-svg.js"></script>
           <style>
             body { font-family: "Times New Roman", Times, serif; line-height: 1.5; padding: 20px; }
             h2 { text-align: center; }
@@ -2469,7 +2475,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                        </div>
                        <div className="flex justify-between items-center">
                           <span className="text-sm text-slate-600">Model</span>
-                          <span className="font-bold text-slate-800">gemini-3.5-flash</span>
+                          <span className="font-bold text-slate-800">gemini-2.5-flash</span>
                        </div>
                     </div>
                  </div>

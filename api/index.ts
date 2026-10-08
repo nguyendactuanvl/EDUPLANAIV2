@@ -648,12 +648,12 @@ async function generateWithFallback(req: any, payloadOptions: any) {
   
   // Prioritize active, valid models according to @google/genai guidelines
   const models = [
-    "gemini-3.8-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-flash-latest"
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash"
   ];
   if (isCustomKey) {
-    models.push("gemini-3.1-pro-preview");
+    models.push("gemini-2.5-pro");
   }
 
   let primaryError: any = null;
@@ -742,12 +742,12 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
   const isCustomKey = !!req.headers['x-gemini-api-key'] || (!!req.headers['authorization'] && (req.headers['authorization'] as string).startsWith('Bearer '));
   
   const models = [
-    "gemini-3.8-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-flash-latest"
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash"
   ];
   if (isCustomKey) {
-    models.push("gemini-3.1-pro-preview");
+    models.push("gemini-2.5-pro");
   }
 
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');

@@ -52,7 +52,15 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     }
     cachedAccessToken = credential.accessToken;
     return { user: result.user, accessToken: cachedAccessToken };
-  } catch (error) {
+  } catch (error: any) {
+    if (
+      error?.code === 'auth/popup-closed-by-user' ||
+      error?.code === 'auth/cancelled-popup-request' ||
+      error?.code === 'auth/popup-blocked'
+    ) {
+      console.info("Đã đóng cửa sổ đăng nhập Google hoặc người dùng hủy thao tác.");
+      return null;
+    }
     console.error("Lỗi đăng nhập Google:", error);
     throw error;
   } finally {

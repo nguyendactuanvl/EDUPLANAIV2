@@ -19,7 +19,6 @@ import { run1ClickMathFix } from "../components/math-tools/MathFormulaFixer";
 import { renderAllPdfPages } from "../lib/pdfUtils";
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 
 import mammoth from 'mammoth';
