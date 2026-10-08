@@ -1633,6 +1633,48 @@ export async function exportHtmlToWord(
       (details as HTMLElement).style.display = 'block';
     });
 
+    // 0.0 Ensure Question Numbers (Câu 1:, Câu 2:...) and True/False items (a), b)...) in worksheets and exams
+    // are merged with question prompt so they are strictly preserved as bold lead-ins in Word export
+    clone.querySelectorAll('div, li').forEach(qHeader => {
+      const firstChild = qHeader.firstElementChild;
+      if (!firstChild) return;
+      const firstText = (firstChild.textContent || '').trim();
+      const qMatch = firstText.match(/^\s*(?:\*\*)?(?:Câu|Bài|Question|Q)\s*\d+[:\.]?/i);
+      if (qMatch) {
+        const qNumText = qMatch[0].replace(/\*+/g, '').trim();
+        const mathContainer = qHeader.querySelector('.math-view-container, div, p');
+        if (mathContainer && mathContainer !== firstChild) {
+          const targetP = mathContainer.querySelector('p') || mathContainer;
+          if (targetP && !targetP.textContent?.trim().startsWith(qNumText)) {
+            const strong = document.createElement('strong');
+            strong.textContent = qNumText + ' ';
+            targetP.prepend(strong);
+            firstChild.remove();
+          }
+        }
+      }
+    });
+
+    clone.querySelectorAll('div, li').forEach(tfItem => {
+      const firstChild = tfItem.firstElementChild;
+      if (!firstChild) return;
+      const firstText = (firstChild.textContent || '').trim();
+      const tfMatch = firstText.match(/^\s*(?:\*\*)?[a-d][\)\.]/i);
+      if (tfMatch) {
+        const tfLabel = tfMatch[0].replace(/\*+/g, '').trim();
+        const contentContainer = tfItem.querySelector('.math-view-container, div, p');
+        if (contentContainer && contentContainer !== firstChild) {
+          const targetP = contentContainer.querySelector('p') || contentContainer;
+          if (targetP && !targetP.textContent?.trim().startsWith(tfLabel)) {
+            const strong = document.createElement('strong');
+            strong.textContent = tfLabel + ' ';
+            targetP.prepend(strong);
+            firstChild.remove();
+          }
+        }
+      }
+    });
+
     // 0. Pre-process naked math environments & AP formulas in DOM text nodes before word translation
     const walkAndPreprocessTextNodes = (node: Node) => {
       if (node.nodeType === Node.TEXT_NODE) {

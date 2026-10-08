@@ -230,6 +230,40 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     ],
     // DÁN LINK YOUTUBE CỦA BẠN VÀO ĐÂY
     youtubeUrl: ""
+  },
+  {
+    id: "worksheet_generator",
+    title: "Mục 8: Tạo Phiếu học tập thông minh & Bản in A4 / Xuất Word chuẩn GDPT 2018",
+    category: "Chuyên môn Toán",
+    badge: "Chuẩn GDPT 2018 & Xuất Word",
+    iconName: "BookOpen",
+    shortDesc: "Tạo phiếu bài tập, tóm tắt lý thuyết, trắc nghiệm 4 lựa chọn, đúng/sai, tự luận và xuất file Word .docx",
+    description: "Bộ công cụ tự động hóa toàn diện quy trình thiết kế Phiếu học tập cho giáo viên: Tự động phân chia 4 phần bài tập theo chuẩn cấu trúc đề thi GDPT 2018 (Trắc nghiệm nhiều lựa chọn, Trắc nghiệm Đúng/Sai, Trả lời ngắn và Tự luận), tích hợp vẽ Bảng biến thiên SVG, Đồ thị hàm số, Hình không gian 3D và xuất file Word .docx chuẩn Equation OMML / Bản in A4 sắc nét.",
+    steps: [
+      {
+        title: "Bước 1: Chọn Khối lớp, Môn học và Bài học",
+        detail: "Chọn Khối 10, 11 hoặc 12, chọn chương và bài học theo chương trình SGK mới (Kết nối tri thức) hoặc tự nhập tên chủ đề mong muốn."
+      },
+      {
+        title: "Bước 2: Cấu hình số lượng câu hỏi và phong cách trình bày",
+        detail: "Tùy chỉnh số câu hỏi cho từng phần (Phần I Trắc nghiệm, Phần II Đúng/Sai, Phần III Điền số, Phần IV Tự luận), tỷ lệ câu hỏi thực tế và chọn phong cách hiển thị (A4 Chuẩn in ấn hoặc Phiếu 2 cột màu sắc sinh động)."
+      },
+      {
+        title: "Bước 3: Nhấn 'Tạo bản Word/In' và tùy chỉnh câu hỏi",
+        detail: "Hệ thống AI tự động sinh trọn vẹn phiếu học tập. Thầy cô có thể chuyển sang tab 'Chi tiết từng câu' để dùng công cụ '+ BBT', '+ Đồ thị', '+ Hình 3D' chèn trực tiếp hình ảnh vào đề bài."
+      },
+      {
+        title: "Bước 4: Xuất file Word (.docx) hoặc In ấn",
+        detail: "Nhấn nút 'Xuất Word' để tải file Word chuẩn công thức toán học MathType / Equation, hoặc 'Bản in phiếu học tập (A4)' để in trực tiếp cho học sinh làm bài."
+      }
+    ],
+    tips: [
+      "Có thể bật/tắt tùy chọn 'Kèm theo lời giải chi tiết' khi in hoặc xuất Word cho Giáo viên hoặc Học sinh.",
+      "Tính năng '⚡ Sửa lỗi Toán 1-Click' tự động chuẩn hóa mọi công thức LaTeX và tách chữ tiếng Việt ra khỏi dấu $.",
+      "Thông tin tiêu đề trường, tổ chuyên môn, họ tên giáo viên và năm học được tùy chỉnh dễ dàng qua nút ✏️ Chỉnh sửa."
+    ],
+    // DÁN LINK YOUTUBE CỦA BẠN VÀO ĐÂY (Hỗ trợ https://www.youtube.com/watch?v=... hoặc https://youtu.be/...)
+    youtubeUrl: ""
   }
 ];
 

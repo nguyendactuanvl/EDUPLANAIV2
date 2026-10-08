@@ -1,9 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   X, Search, Play, Video, ExternalLink, Copy, Check, Sparkles, 
   Lightbulb, ChevronRight, ChevronLeft, BookOpen, Key, TrendingUp, 
   BarChart3, Calculator, BarChart2, FileCheck, Users, HelpCircle,
-  PlayCircle, Youtube, CheckCircle2, Bookmark
+  PlayCircle, Youtube, CheckCircle2, Bookmark, Edit, RotateCcw
 } from 'lucide-react';
 import { GUIDE_SECTIONS, GuideSection, getYoutubeEmbedUrl } from '../data/guideSections';
 import { MathSpan } from './MarkdownRenderer';
@@ -35,15 +35,34 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>('Tất cả');
   const [isPlayingInline, setIsPlayingInline] = useState<boolean>(false);
   const [copiedUrl, setCopiedUrl] = useState<boolean>(false);
+  
+  // Custom YouTube URL storage for dynamic user configuration
+  const [customUrls, setCustomUrls] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem('eduplan_custom_youtube_urls');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [isEditingUrl, setIsEditingUrl] = useState<boolean>(false);
+  const [urlInput, setUrlInput] = useState<string>('');
 
   // Categories list
   const categories = useMemo(() => {
     return ['Tất cả', 'Cấu hình', 'Chuyên môn Toán', 'Kiểm tra & Thi', 'Công tác GV'];
   }, []);
 
-  // Filtered sections
+  // Filtered sections with custom URLs applied
+  const sectionsWithCustomUrls = useMemo(() => {
+    return GUIDE_SECTIONS.map(section => ({
+      ...section,
+      youtubeUrl: customUrls[section.id] !== undefined ? customUrls[section.id] : section.youtubeUrl
+    }));
+  }, [customUrls]);
+
   const filteredSections = useMemo(() => {
-    return GUIDE_SECTIONS.filter(section => {
+    return sectionsWithCustomUrls.filter(section => {
       const matchCat = selectedCategory === 'Tất cả' || section.category === selectedCategory;
       const q = searchQuery.toLowerCase().trim();
       const matchSearch = !q || 
@@ -53,17 +72,51 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         section.steps.some(s => s.title.toLowerCase().includes(q) || s.detail.toLowerCase().includes(q));
       return matchCat && matchSearch;
     });
-  }, [searchQuery, selectedCategory]);
+  }, [searchQuery, selectedCategory, sectionsWithCustomUrls]);
 
   // Current active section
   const currentSection = useMemo(() => {
-    const found = GUIDE_SECTIONS.find(s => s.id === selectedId);
-    return found || filteredSections[0] || GUIDE_SECTIONS[0];
-  }, [selectedId, filteredSections]);
+    const found = sectionsWithCustomUrls.find(s => s.id === selectedId);
+    return found || filteredSections[0] || sectionsWithCustomUrls[0];
+  }, [selectedId, filteredSections, sectionsWithCustomUrls]);
 
-  const currentIndex = GUIDE_SECTIONS.findIndex(s => s.id === currentSection.id);
+  const currentIndex = sectionsWithCustomUrls.findIndex(s => s.id === currentSection.id);
+
+  useEffect(() => {
+    setIsEditingUrl(false);
+    setUrlInput(currentSection.youtubeUrl || '');
+  }, [selectedId, currentSection.youtubeUrl]);
 
   if (!isOpen) return null;
+
+  const handleSaveCustomUrl = () => {
+    const newUrls = {
+      ...customUrls,
+      [currentSection.id]: urlInput.trim()
+    };
+    setCustomUrls(newUrls);
+    try {
+      localStorage.setItem('eduplan_custom_youtube_urls', JSON.stringify(newUrls));
+    } catch (e) {
+      console.error(e);
+    }
+    setIsEditingUrl(false);
+    if (urlInput.trim()) {
+      setIsPlayingInline(true);
+    }
+  };
+
+  const handleResetUrl = () => {
+    const baseDefault = GUIDE_SECTIONS.find(s => s.id === currentSection.id)?.youtubeUrl || '';
+    const newUrls = { ...customUrls };
+    delete newUrls[currentSection.id];
+    setCustomUrls(newUrls);
+    try {
+      localStorage.setItem('eduplan_custom_youtube_urls', JSON.stringify(newUrls));
+    } catch (e) {}
+    setUrlInput(baseDefault);
+    setIsEditingUrl(false);
+  };
 
   const handleCopyLink = async (url: string) => {
     if (!url) return;
@@ -293,6 +346,15 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                 {hasVideo && (
                   <div className="flex items-center gap-2 flex-wrap">
                     <button
+                      onClick={() => setIsEditingUrl(prev => !prev)}
+                      className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-medium border border-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+                      title="Dán đường dẫn YouTube của thầy/cô cho mục hướng dẫn này"
+                    >
+                      <Edit className="w-3.5 h-3.5 text-amber-400" />
+                      <span>{isEditingUrl ? "Đóng nhập link" : "Đổi link YouTube"}</span>
+                    </button>
+
+                    <button
                       onClick={() => setIsPlayingInline(prev => !prev)}
                       className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                         isPlayingInline
@@ -333,7 +395,60 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                     </a>
                   </div>
                 )}
+
+                {/* Action when no video: Allow user to add one */}
+                {!hasVideo && (
+                  <button
+                    onClick={() => setIsEditingUrl(prev => !prev)}
+                    className="px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 rounded-xl text-xs font-semibold border border-rose-500/40 flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Edit className="w-3.5 h-3.5" />
+                    <span>{isEditingUrl ? "Đóng nhập link" : "+ Gắn link video YouTube"}</span>
+                  </button>
+                )}
               </div>
+
+              {/* Inline Input Box to paste/update YouTube Link */}
+              {isEditingUrl && (
+                <div className="p-3 bg-slate-950/70 border border-amber-500/30 rounded-xl space-y-2 animate-in fade-in duration-150">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                      <Youtube className="w-4 h-4 text-rose-500" />
+                      Dán link YouTube hướng dẫn cho mục này:
+                    </label>
+                    {customUrls[currentSection.id] && (
+                      <button
+                        onClick={handleResetUrl}
+                        className="text-[11px] text-slate-400 hover:text-rose-400 flex items-center gap-1 cursor-pointer"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Khôi phục mặc định
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={urlInput}
+                      onChange={e => setUrlInput(e.target.value)}
+                      placeholder="https://www.youtube.com/watch?v=... hoặc https://youtu.be/..."
+                      className="flex-1 px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-amber-400"
+                    />
+                    <button
+                      onClick={handleSaveCustomUrl}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer shrink-0"
+                    >
+                      Lưu link
+                    </button>
+                    <button
+                      onClick={() => setIsEditingUrl(false)}
+                      className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg cursor-pointer shrink-0"
+                    >
+                      Hủy
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Embedded Player or Video Placeholder */}
               {hasVideo ? (

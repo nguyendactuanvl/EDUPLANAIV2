@@ -240,20 +240,25 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
     const line = lines[i];
     const trimmed = line.trim();
 
-    // Kiểm tra dòng tiêu đề PHẦN
-    const partMatch = trimmed.match(/^(?:#{1,4}|\*{2,3})?\s*PHẦN\s*([1-4]|I{1,3}|IV)\b[:.]?\s*([^\n*#]*)(?:\*{2,3})?/i);
-    if (partMatch) {
-      const pStr = partMatch[1].toUpperCase();
-      if (pStr === "1" || pStr === "I") currentPart = 1;
-      else if (pStr === "2" || pStr === "II") currentPart = 2;
-      else if (pStr === "3" || pStr === "III") currentPart = 3;
-      else if (pStr === "4" || pStr === "IV") currentPart = 4;
-      qIndex = 1;
-      result.push(line);
-      continue;
-    }
-
-    if (currentPart === 0) {
+    // 1. Kiểm tra dòng tiêu đề PHẦN / BÀI TẬP
+    const isSectionHeader = /^(?:#{1,4}|\*{2,3})?\s*(?:PHẦN\s*([1-4]|I{1,3}|IV)|BÀI\s*TẬP|LUYỆN\s*TẬP|CÂU\s*HỎI|TRẮC\s*NGHIỆM|TỰ\s*LUẬN|[A-D]\.\s*TRẮC|[A-D]\.\s*TỰ)/i.test(trimmed);
+    if (isSectionHeader) {
+      if (/TRẮC\s*NGHIỆM.*(?:NHIỀU|LỰA\s*CHỌN|A,?\s*B)|PHẦN\s*(?:I\b|1\b)|A\.\s*TRẮC/i.test(trimmed)) {
+        currentPart = 1;
+        qIndex = 1;
+      } else if (/ĐÚNG\s*[\/\-]?\s*SAI|PHẦN\s*(?:II\b|2\b)|B\.\s*TRẮC/i.test(trimmed)) {
+        currentPart = 2;
+        qIndex = 1;
+      } else if (/TRẢ\s*LỜI\s*NGẮN|ĐIỀN\s*SỐ|PHẦN\s*(?:III\b|3\b)/i.test(trimmed)) {
+        currentPart = 3;
+        qIndex = 1;
+      } else if (/TỰ\s*LUẬN|PHẦN\s*(?:IV\b|4\b)|B\.\s*TỰ|D\.\s*TỰ/i.test(trimmed)) {
+        currentPart = 4;
+        qIndex = 1;
+      } else if (currentPart === 0) {
+        currentPart = 1;
+        qIndex = 1;
+      }
       result.push(line);
       continue;
     }
@@ -263,6 +268,17 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
       currentPart = 0;
       result.push(line);
       continue;
+    }
+
+    // Nếu đang ở ngoài các phần bài tập nhưng gặp câu hỏi rõ ràng (Câu 1, Bài 1...)
+    if (currentPart === 0) {
+      if (/^(?:[-*•]\s+|\*{0,2}(?:Câu|Bài)\s*\d+[:\.]?\*{0,2}|\b\d+[\.\)]\s+)/i.test(trimmed)) {
+        currentPart = 1;
+        qIndex = 1;
+      } else {
+        result.push(line);
+        continue;
+      }
     }
 
     if (currentPart === 1) {
