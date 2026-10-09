@@ -17,7 +17,6 @@ export function Sidebar({ activeTab, setActiveTab, onOpenSettings, onOpenGuide }
     {
       title: "Chuyên môn & Soạn giảng",
       items: [
-        { id: "ai_studio", label: "AI Studio & Sáng tạo", icon: Sparkles },
         { id: "math_tools", label: "Công cụ Toán học", icon: Calculator },
         { id: "de_online_pdf", label: "Đề online từ file PDF của GV", icon: FileText },
         { id: "khgd", label: "Kế hoạch giáo dục", icon: Calendar },
@@ -26,6 +25,7 @@ export function Sidebar({ activeTab, setActiveTab, onOpenSettings, onOpenGuide }
         { id: "exercise", label: "Giải bài tập", icon: Sparkles },
         { id: "pdf2word", label: "Chuyển PDF sang Word", icon: FileEdit },
         { id: "exam", label: "Tạo & Trộn đề", icon: FileCheck },
+        { id: "ai_studio", label: "AI Studio & Sáng tạo", icon: Sparkles },
       ]
     },
     {

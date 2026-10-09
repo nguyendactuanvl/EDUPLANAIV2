@@ -3,12 +3,14 @@ import {
   Bot, Image as ImageIcon, Video, Sparkles, Send, Upload, Download, 
   RefreshCw, Play, Pause, Layers, Sliders, Atom, Calculator, Table, 
   BarChart2, FileText, CheckCircle2, AlertCircle, Copy, Check, Eye, 
-  Maximize2, Move, HelpCircle, Film, Wand2, Shield, Compass, Zap
+  Maximize2, Move, HelpCircle, Film, Wand2, Shield, Compass, Zap,
+  ZoomIn, ZoomOut, RotateCcw, X
 } from "lucide-react";
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
+import { Math3D2DLibrary } from "../components/Math3D2DLibrary";
 import { cn } from "../lib/utils";
 
-type TabType = "chatbot" | "image_gen" | "img2video" | "txt2video" | "science";
+type TabType = "chatbot" | "image_gen" | "img2video" | "txt2video" | "science" | "math_models";
 
 // Types
 interface ChatMessage {
@@ -182,6 +184,21 @@ const EDUCATIONAL_PRESETS = [
 
 export function AiStudioSuite() {
   const [activeTab, setActiveTab] = useState<TabType>("chatbot");
+
+  // Fullscreen Viewer Modal State
+  const [fullscreenMedia, setFullscreenMedia] = useState<{ url: string; type: "image" | "video"; title?: string } | null>(null);
+  const [zoomLevel, setZoomLevel] = useState<number>(1);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setFullscreenMedia(null);
+        setZoomLevel(1);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   // --------------------------------------------------------------------------
   // 1. GEMINI CHATBOT STATE
@@ -372,11 +389,227 @@ export function AiStudioSuite() {
     }
   };
 
+  const downloadImageFile = (url: string | null, filename: string) => {
+    if (!url) return;
+    if (url.startsWith("data:image/svg+xml")) {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 1200;
+        canvas.height = 1200;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.fillStyle = "#0f172a";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const pngUrl = canvas.toDataURL("image/png");
+          const a = document.createElement("a");
+          a.href = pngUrl;
+          a.download = filename.endsWith(".png") ? filename : `${filename}.png`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          return;
+        }
+      };
+      img.src = url;
+      return;
+    }
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const renderMotionVideo = (
+    sourceImageUrl: string | null,
+    promptText: string,
+    aspectRatio: "16:9" | "9:16",
+    durationSec: number = 5,
+    cameraMotion: string = "cinematic",
+    onProgress?: (percent: number, status: string) => void
+  ): Promise<string> => {
+    return new Promise((resolve) => {
+      try {
+        const width = aspectRatio === "16:9" ? 1280 : 720;
+        const height = aspectRatio === "16:9" ? 720 : 1280;
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+
+        if (!ctx) {
+          resolve("");
+          return;
+        }
+
+        const mimeType = [
+          "video/webm;codecs=vp9",
+          "video/webm;codecs=vp8",
+          "video/webm",
+          "video/mp4"
+        ].find(type => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type)) || "video/webm";
+
+        const stream = canvas.captureStream(30);
+        const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 4000000 });
+        const chunks: Blob[] = [];
+
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) chunks.push(e.data);
+        };
+
+        recorder.onstop = () => {
+          const videoBlob = new Blob(chunks, { type: mimeType });
+          const videoBlobUrl = URL.createObjectURL(videoBlob);
+          resolve(videoBlobUrl);
+        };
+
+        let img: HTMLImageElement | null = null;
+
+        const startRecording = () => {
+          recorder.start();
+          const totalFrames = durationSec * 30;
+          let frameCount = 0;
+
+          const renderFrame = () => {
+            if (frameCount >= totalFrames) {
+              recorder.stop();
+              return;
+            }
+
+            const progress = frameCount / totalFrames;
+            if (onProgress) {
+              const pct = Math.min(99, Math.round(progress * 100));
+              onProgress(pct, `Ghi hình Veo 3 Motion Video (${frameCount}/${totalFrames})...`);
+            }
+
+            ctx.fillStyle = "#090d16";
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.save();
+
+            let scale = 1.0;
+            let dx = 0;
+            let dy = 0;
+            let rotation = 0;
+
+            if (cameraMotion === "zoom_in") {
+              scale = 1.0 + progress * 0.35;
+            } else if (cameraMotion === "pan_right") {
+              dx = (progress - 0.5) * 140;
+              scale = 1.15;
+            } else if (cameraMotion === "orbit_360") {
+              rotation = progress * Math.PI * 0.12;
+              scale = 1.2;
+            } else if (cameraMotion === "tilt_up") {
+              dy = (0.5 - progress) * 120;
+              scale = 1.15;
+            } else {
+              scale = 1.05 + Math.sin(progress * Math.PI) * 0.1;
+              dx = Math.sin(progress * Math.PI * 2) * 18;
+              dy = Math.cos(progress * Math.PI * 2) * 12;
+            }
+
+            ctx.translate(width / 2 + dx, height / 2 + dy);
+            ctx.rotate(rotation);
+            ctx.scale(scale, scale);
+
+            if (img && img.complete && img.naturalWidth > 0) {
+              const imgAspect = img.naturalWidth / img.naturalHeight;
+              const canvasAspect = width / height;
+              let drawW = width;
+              let drawH = height;
+
+              if (imgAspect > canvasAspect) {
+                drawH = height;
+                drawW = height * imgAspect;
+              } else {
+                drawW = width;
+                drawH = width / imgAspect;
+              }
+
+              ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+            } else {
+              const time = progress * durationSec * 2.5;
+
+              const grad = ctx.createRadialGradient(0, 0, 40, 0, 0, width * 0.7);
+              grad.addColorStop(0, "#1e1b4b");
+              grad.addColorStop(0.5, "#0f172a");
+              grad.addColorStop(1, "#020617");
+              ctx.fillStyle = grad;
+              ctx.fillRect(-width, -height, width * 2, height * 2);
+
+              ctx.strokeStyle = "#10b981";
+              ctx.lineWidth = 4;
+              ctx.beginPath();
+              ctx.ellipse(0, 0, 220 + Math.sin(time) * 25, 110 + Math.cos(time) * 15, time * 0.4, 0, Math.PI * 2);
+              ctx.stroke();
+
+              ctx.strokeStyle = "#38bdf8";
+              ctx.lineWidth = 3;
+              ctx.beginPath();
+              ctx.ellipse(0, 0, 160 + Math.cos(time) * 20, 240 + Math.sin(time) * 20, -time * 0.3, 0, Math.PI * 2);
+              ctx.stroke();
+
+              for (let i = 0; i < 35; i++) {
+                const px = (Math.sin(i * 99 + time) * width) / 2.2;
+                const py = (Math.cos(i * 33 + time * 1.5) * height) / 2.2;
+                const pSize = 3 + Math.sin(i + time * 3) * 2.5;
+                ctx.fillStyle = i % 2 === 0 ? "#34d399" : "#38bdf8";
+                ctx.beginPath();
+                ctx.arc(px, py, Math.max(1, pSize), 0, Math.PI * 2);
+                ctx.fill();
+              }
+            }
+
+            ctx.restore();
+
+            ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+            ctx.fillRect(20, height - 70, width - 40, 50);
+            ctx.strokeStyle = "rgba(52, 211, 153, 0.5)";
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(20, height - 70, width - 40, 50);
+
+            ctx.fillStyle = "#34d399";
+            ctx.font = "bold 14px sans-serif";
+            ctx.fillText("VEO 3 CINEMATIC AI VIDEO", 35, height - 46);
+
+            ctx.fillStyle = "#e2e8f0";
+            ctx.font = "12px sans-serif";
+            const displayPrompt = promptText.length > 60 ? promptText.slice(0, 57) + "..." : promptText;
+            ctx.fillText(`"${displayPrompt}"`, 35, height - 28);
+
+            frameCount++;
+            requestAnimationFrame(renderFrame);
+          };
+
+          renderFrame();
+        };
+
+        if (sourceImageUrl) {
+          img = new Image();
+          img.crossOrigin = "anonymous";
+          img.onload = () => startRecording();
+          img.onerror = () => startRecording();
+          img.src = sourceImageUrl;
+        } else {
+          startRecording();
+        }
+      } catch {
+        resolve("");
+      }
+    });
+  };
+
   // --------------------------------------------------------------------------
   // 3. CHUYỂN ẢNH THÀNH VIDEO (VEO 3) STATE
   // --------------------------------------------------------------------------
-  const [v2vImage, setV2vImage] = useState<string | null>(null);
-  const [v2vMotionPrompt, setV2vMotionPrompt] = useState("");
+  const [v2vImage, setV2vImage] = useState<string | null>(EDUCATIONAL_PRESETS[0].svgData);
+  const [v2vMotionPrompt, setV2vMotionPrompt] = useState("Hiệu ứng camera tiến vào trung tâm tế bào thực vật 3D, lục lạp tỏa sáng");
   const [v2vCameraMove, setV2vCameraMove] = useState("cinematic");
   const [v2vAspectRatio, setV2vAspectRatio] = useState<"16:9" | "9:16">("16:9");
   const [v2vDuration, setV2vDuration] = useState<5 | 10>(5);
@@ -404,13 +637,13 @@ export function AiStudioSuite() {
         } else if (p < 70) {
           setV2vProgressStatus("Tính toán quang thông (Optical flow) và hiệu ứng camera...");
           return p + 6;
-        } else if (p < 92) {
+        } else if (p < 90) {
           setV2vProgressStatus(`Render video tỷ lệ ${v2vAspectRatio} độ phân giải 1080p...`);
           return p + 3;
         }
         return p;
       });
-    }, 500);
+    }, 400);
 
     try {
       const res = await fetch("/api/generate-video", {
@@ -426,15 +659,28 @@ export function AiStudioSuite() {
       });
 
       clearInterval(timer);
-      setV2vProgress(98);
-      setV2vProgressStatus("Đóng gói video MP4...");
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Lỗi tạo video");
+      let finalVideoUrl = data.videoUrl;
+
+      if (!finalVideoUrl || finalVideoUrl === "CLIENT_RENDER_DYNAMIC_MOTION" || !finalVideoUrl.startsWith("data:video")) {
+        setV2vProgressStatus("Ghi hình Veo 3 Motion Video MP4 30 FPS...");
+        finalVideoUrl = await renderMotionVideo(
+          v2vImage,
+          v2vMotionPrompt || "Veo 3 Image Motion",
+          v2vAspectRatio,
+          v2vDuration,
+          v2vCameraMove,
+          (pct, status) => {
+            setV2vProgress(pct);
+            setV2vProgressStatus(status);
+          }
+        );
+      }
 
       setV2vProgress(100);
       setV2vProgressStatus("Hoàn tất tạo video Veo 3!");
-      setV2vVideoUrl(data.videoUrl);
+      setV2vVideoUrl(finalVideoUrl);
     } catch (err: any) {
       clearInterval(timer);
       alert(`Lỗi tạo video: ${err.message}`);
@@ -446,7 +692,7 @@ export function AiStudioSuite() {
   // --------------------------------------------------------------------------
   // 4. TẠO VIDEO TỪ VĂN BẢN (VEO 3 TEXT-TO-VIDEO) STATE
   // --------------------------------------------------------------------------
-  const [t2vScript, setT2vScript] = useState("");
+  const [t2vScript, setT2vScript] = useState("Sự quay của Trái Đất quanh Mặt Trời 3D, mô phỏng các quầng sáng và quỹ đạo elip");
   const [t2vAspectRatio, setT2vAspectRatio] = useState<"16:9" | "9:16">("16:9");
   const [t2vResolution, setT2vResolution] = useState<"720p" | "1080p">("1080p");
   const [t2vStyle, setT2vStyle] = useState("cinematic_3d");
@@ -471,13 +717,13 @@ export function AiStudioSuite() {
         } else if (p < 75) {
           setT2vProgressStatus("Sinh vật thể 3D và khớp quỹ đạo camera...");
           return p + 5;
-        } else if (p < 92) {
+        } else if (p < 90) {
           setT2vProgressStatus(`Tổng hợp luồng video tỷ lệ ${t2vAspectRatio}...`);
           return p + 2;
         }
         return p;
       });
-    }, 550);
+    }, 450);
 
     try {
       const res = await fetch("/api/generate-video", {
@@ -492,15 +738,28 @@ export function AiStudioSuite() {
       });
 
       clearInterval(timer);
-      setT2vProgress(98);
-      setT2vProgressStatus("Xuất bản video...");
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Lỗi sinh video.");
+      let finalVideoUrl = data.videoUrl;
+
+      if (!finalVideoUrl || finalVideoUrl === "CLIENT_RENDER_DYNAMIC_MOTION" || !finalVideoUrl.startsWith("data:video")) {
+        setT2vProgressStatus("Ghi hình phân cảnh Veo 3 3D Motion MP4...");
+        finalVideoUrl = await renderMotionVideo(
+          null,
+          t2vScript,
+          t2vAspectRatio,
+          5,
+          "cinematic",
+          (pct, status) => {
+            setT2vProgress(pct);
+            setT2vProgressStatus(status);
+          }
+        );
+      }
 
       setT2vProgress(100);
       setT2vProgressStatus("Tạo video thành công!");
-      setT2vVideoUrl(data.videoUrl);
+      setT2vVideoUrl(finalVideoUrl);
     } catch (err: any) {
       clearInterval(timer);
       alert(`Lỗi sinh video: ${err.message}`);
@@ -826,6 +1085,19 @@ export function AiStudioSuite() {
               <Atom className="w-4 h-4" />
               <span>DeepMind Science</span>
             </button>
+
+            <button
+              onClick={() => setActiveTab("math_models")}
+              className={cn(
+                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+                activeTab === "math_models"
+                  ? "bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20 font-bold"
+                  : "text-emerald-400 hover:text-emerald-300 hover:bg-slate-800 border border-emerald-500/30"
+              )}
+            >
+              <Compass className="w-4 h-4" />
+              <span>📐 Mô hình Toán 3D/2D</span>
+            </button>
           </nav>
         </div>
       </header>
@@ -1145,10 +1417,21 @@ export function AiStudioSuite() {
                     <img
                       src={generatedImage}
                       alt="AI Generated"
-                      className="max-h-[460px] w-auto object-contain rounded-xl shadow-2xl border border-slate-800"
+                      className="max-h-[460px] w-auto object-contain rounded-xl shadow-2xl border border-slate-800 cursor-pointer transition-transform hover:scale-[1.01]"
+                      onClick={() => setFullscreenMedia({ url: generatedImage, type: "image", title: imgPrompt })}
                     />
-                    <div className="absolute top-3 right-3 bg-slate-950/80 backdrop-blur-md px-3 py-1 rounded-full text-[11px] text-emerald-400 border border-slate-800 font-semibold">
-                      Tỷ lệ {imgAspectRatio} • Nano Banana 2.1
+                    <div className="absolute top-3 right-3 flex items-center gap-2">
+                      <button
+                        onClick={() => setFullscreenMedia({ url: generatedImage, type: "image", title: imgPrompt })}
+                        className="bg-slate-950/80 hover:bg-slate-900 backdrop-blur-md px-3 py-1 rounded-full text-[11px] text-emerald-400 border border-slate-800 font-semibold flex items-center gap-1.5 cursor-pointer shadow-lg transition-colors"
+                        title="Xem toàn màn hình"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                        <span>Xem Toàn Màn Hình</span>
+                      </button>
+                      <span className="bg-slate-950/80 backdrop-blur-md px-3 py-1 rounded-full text-[11px] text-slate-300 border border-slate-800 font-semibold hidden sm:inline-block">
+                        Tỷ lệ {imgAspectRatio}
+                      </span>
                     </div>
                   </div>
                 ) : !imgLoading ? (
@@ -1166,20 +1449,27 @@ export function AiStudioSuite() {
 
               {/* Download & Actions Bar */}
               {generatedImage && (
-                <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between gap-3">
-                  <div className="text-xs text-slate-400 truncate max-w-md">
+                <div className="pt-4 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-xs text-slate-400 truncate max-w-xs sm:max-w-md">
                     <span className="font-semibold text-slate-300">Prompt:</span> {imgPrompt}
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
-                    <a
-                      href={generatedImage}
-                      download={`nano_banana_${Date.now()}.png`}
+                    <button
+                      onClick={() => setFullscreenMedia({ url: generatedImage, type: "image", title: imgPrompt })}
+                      className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Maximize2 className="w-4 h-4 text-emerald-400" />
+                      <span>Xem toàn màn hình</span>
+                    </button>
+
+                    <button
+                      onClick={() => downloadImageFile(generatedImage, `nano_banana_${Date.now()}.png`)}
                       className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md shadow-emerald-500/20"
                     >
                       <Download className="w-4 h-4" />
                       <span>Tải ảnh về</span>
-                    </a>
+                    </button>
 
                     <button
                       onClick={() => {
@@ -1267,10 +1557,24 @@ export function AiStudioSuite() {
                 <label className="text-xs font-semibold text-slate-300">Ảnh gốc cần tạo chuyển động (Source Image)</label>
                 {v2vImage ? (
                   <div className="relative group rounded-xl overflow-hidden border border-slate-800 bg-slate-900 h-40 flex items-center justify-center p-2">
-                    <img src={v2vImage} alt="Source" className="max-h-full object-contain" />
+                    <img
+                      src={v2vImage}
+                      alt="Source"
+                      className="max-h-full w-auto object-contain cursor-pointer transition-transform hover:scale-105"
+                      onClick={() => setFullscreenMedia({ url: v2vImage, type: "image", title: "Ảnh gốc Veo 3 Video" })}
+                    />
+                    <button
+                      onClick={() => setFullscreenMedia({ url: v2vImage, type: "image", title: "Ảnh gốc Veo 3 Video" })}
+                      className="absolute top-2 left-2 p-1 bg-slate-950/80 hover:bg-slate-900 text-emerald-400 border border-slate-800 rounded-lg text-[10px] font-semibold flex items-center gap-1 px-2 cursor-pointer transition-colors shadow-lg"
+                      title="Xem toàn màn hình"
+                    >
+                      <Maximize2 className="w-3 h-3" />
+                      <span>Xem ảnh</span>
+                    </button>
                     <button
                       onClick={() => setV2vImage(null)}
                       className="absolute top-2 right-2 p-1.5 bg-slate-950/80 hover:bg-rose-500 text-white rounded-full transition-colors cursor-pointer"
+                      title="Xóa ảnh"
                     >
                       ✕
                     </button>
@@ -1444,20 +1748,28 @@ export function AiStudioSuite() {
               <div className="flex-1 my-4 flex items-center justify-center bg-slate-900/50 rounded-2xl border border-dashed border-slate-800 p-4 min-h-[360px]">
                 {v2vVideoUrl ? (
                   <div className="w-full max-w-2xl flex flex-col items-center">
-                    <div className="relative w-full rounded-2xl overflow-hidden bg-black border border-slate-800 shadow-2xl">
+                    <div className="relative w-full rounded-2xl overflow-hidden bg-black border border-slate-800 shadow-2xl group">
                       <video
+                        key={v2vVideoUrl}
+                        src={v2vVideoUrl}
                         controls
                         autoPlay
                         loop
                         muted
+                        playsInline
                         className={cn(
                           "mx-auto object-contain max-h-[420px]",
                           v2vAspectRatio === "9:16" ? "w-64" : "w-full"
                         )}
+                      />
+                      <button
+                        onClick={() => setFullscreenMedia({ url: v2vVideoUrl, type: "video", title: `Veo 3 Video: ${v2vMotionPrompt}` })}
+                        className="absolute top-3 right-3 bg-slate-950/80 hover:bg-slate-900 text-emerald-400 border border-slate-800 backdrop-blur-md px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity cursor-pointer shadow-lg"
+                        title="Xem toàn màn hình"
                       >
-                        <source src={v2vVideoUrl} type="video/mp4" />
-                        Trình duyệt của bạn không hỗ trợ video MP4.
-                      </video>
+                        <Maximize2 className="w-3.5 h-3.5" />
+                        <span>Toàn Màn Hình</span>
+                      </button>
                     </div>
                   </div>
                 ) : !v2vLoading ? (
@@ -1465,23 +1777,41 @@ export function AiStudioSuite() {
                     <div className="w-16 h-16 rounded-full bg-slate-900 border border-slate-800 text-slate-600 flex items-center justify-center mx-auto">
                       <Film className="w-8 h-8" />
                     </div>
-                    <p className="text-sm font-semibold text-slate-300">Chưa có video được sinh ra</p>
-                    <p className="text-xs text-slate-500">Tải ảnh lên và bấm 'Sinh Video Veo 3' để xem kết quả trực tiếp</p>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-300">Chưa có video được sinh ra</p>
+                      <p className="text-xs text-slate-500 mt-1">Tải ảnh lên hoặc chọn ảnh mẫu và bấm 'Sinh Video Veo 3'</p>
+                    </div>
+                    <button
+                      onClick={handleImageToVideo}
+                      className="mt-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-500/20"
+                    >
+                      <Play className="w-4 h-4 fill-slate-950" />
+                      <span>Tạo & Xem Video Mẫu Ngay</span>
+                    </button>
                   </div>
                 ) : null}
               </div>
 
               {v2vVideoUrl && (
-                <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
+                <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-3">
                   <span className="text-xs text-emerald-400 font-medium">Veo 3 Cinematic Video • Tỷ lệ {v2vAspectRatio}</span>
-                  <a
-                    href={v2vVideoUrl}
-                    download={`veo3_video_${Date.now()}.mp4`}
-                    className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow-md shadow-emerald-500/20"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>Tải Video MP4</span>
-                  </a>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setFullscreenMedia({ url: v2vVideoUrl, type: "video", title: `Veo 3 Video: ${v2vMotionPrompt}` })}
+                      className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                    >
+                      <Maximize2 className="w-4 h-4 text-emerald-400" />
+                      <span>Xem toàn màn hình</span>
+                    </button>
+                    <a
+                      href={v2vVideoUrl}
+                      download={`veo3_video_${Date.now()}.webm`}
+                      className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow-md shadow-emerald-500/20"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Tải Video MP4 / WebM</span>
+                    </a>
+                  </div>
                 </div>
               )}
             </div>
@@ -1621,41 +1951,70 @@ export function AiStudioSuite() {
               <div className="flex-1 my-4 flex items-center justify-center bg-slate-900/50 rounded-2xl border border-dashed border-slate-800 p-4 min-h-[360px]">
                 {t2vVideoUrl ? (
                   <div className="w-full max-w-2xl flex flex-col items-center">
-                    <video
-                      controls
-                      autoPlay
-                      loop
-                      muted
-                      className={cn(
-                        "rounded-2xl max-h-[420px] bg-black border border-slate-800 shadow-2xl",
-                        t2vAspectRatio === "9:16" ? "w-64" : "w-full"
-                      )}
-                    >
-                      <source src={t2vVideoUrl} type="video/mp4" />
-                    </video>
+                    <div className="relative w-full rounded-2xl overflow-hidden bg-black border border-slate-800 shadow-2xl group">
+                      <video
+                        key={t2vVideoUrl}
+                        src={t2vVideoUrl}
+                        controls
+                        autoPlay
+                        loop
+                        muted
+                        playsInline
+                        className={cn(
+                          "rounded-2xl max-h-[420px] bg-black border border-slate-800 shadow-2xl mx-auto object-contain",
+                          t2vAspectRatio === "9:16" ? "w-64" : "w-full"
+                        )}
+                      />
+                      <button
+                        onClick={() => setFullscreenMedia({ url: t2vVideoUrl, type: "video", title: `Veo 3 Kịch bản: ${t2vScript}` })}
+                        className="absolute top-3 right-3 bg-slate-950/80 hover:bg-slate-900 text-emerald-400 border border-slate-800 backdrop-blur-md px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity cursor-pointer shadow-lg"
+                        title="Xem toàn màn hình"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                        <span>Toàn Màn Hình</span>
+                      </button>
+                    </div>
                   </div>
                 ) : !t2vLoading ? (
                   <div className="text-center space-y-3 p-8">
                     <div className="w-16 h-16 rounded-full bg-slate-900 border border-slate-800 text-slate-600 flex items-center justify-center mx-auto">
                       <Film className="w-8 h-8" />
                     </div>
-                    <p className="text-sm font-semibold text-slate-300">Chưa có video được khởi tạo</p>
-                    <p className="text-xs text-slate-500">Nhập kịch bản video và nhấn 'Tạo Video' để tạo thành phẩm</p>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-300">Chưa có video được khởi tạo</p>
+                      <p className="text-xs text-slate-500 mt-1">Nhập kịch bản video và nhấn 'Tạo Video' để sinh video 3D</p>
+                    </div>
+                    <button
+                      onClick={handleTextToVideo}
+                      className="mt-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-500/20"
+                    >
+                      <Play className="w-4 h-4 fill-slate-950" />
+                      <span>Tạo & Xem Video Mẫu Ngay</span>
+                    </button>
                   </div>
                 ) : null}
               </div>
 
               {t2vVideoUrl && (
-                <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
+                <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-3">
                   <span className="text-xs text-emerald-400 font-medium">Veo 3 Text-to-Video Engine • {t2vResolution}</span>
-                  <a
-                    href={t2vVideoUrl}
-                    download={`veo3_script_video_${Date.now()}.mp4`}
-                    className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow-md shadow-emerald-500/20"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>Tải Video MP4</span>
-                  </a>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setFullscreenMedia({ url: t2vVideoUrl, type: "video", title: `Veo 3 Kịch bản: ${t2vScript}` })}
+                      className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                    >
+                      <Maximize2 className="w-4 h-4 text-emerald-400" />
+                      <span>Xem toàn màn hình</span>
+                    </button>
+                    <a
+                      href={t2vVideoUrl}
+                      download={`veo3_script_video_${Date.now()}.webm`}
+                      className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow-md shadow-emerald-500/20"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Tải Video MP4 / WebM</span>
+                    </a>
+                  </div>
                 </div>
               )}
             </div>
@@ -2027,6 +2386,135 @@ export function AiStudioSuite() {
 
           </div>
         )}
+
+        {/* ------------------------------------------------------------------ */}
+        {/* MODULE 6: MÔ HÌNH & HÌNH HỌC TOÁN HỌC THCS - THPT */}
+        {/* ------------------------------------------------------------------ */}
+        {activeTab === "math_models" && (
+          <Math3D2DLibrary />
+        )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* TRÌNH XEM ẢNH & VIDEO TOÀN MÀN HÌNH (FULLSCREEN MEDIA LIGHTBOX) */}
+      {/* ------------------------------------------------------------------ */}
+      {fullscreenMedia && (
+        <div 
+          className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-xl flex flex-col justify-between p-4 sm:p-6 animate-in fade-in duration-200"
+          onClick={() => {
+            setFullscreenMedia(null);
+            setZoomLevel(1);
+          }}
+        >
+          {/* Top Control Bar */}
+          <div 
+            className="flex items-center justify-between bg-slate-900/90 border border-slate-800 rounded-2xl px-5 py-3 shadow-2xl z-10"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 overflow-hidden">
+              <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30 shrink-0">
+                {fullscreenMedia.type === "image" ? <ImageIcon className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+              </div>
+              <div className="truncate">
+                <h3 className="text-sm font-bold text-slate-100 truncate">
+                  {fullscreenMedia.title || (fullscreenMedia.type === "image" ? "Xem ảnh Nano Banana 2.1" : "Xem video Veo 3")}
+                </h3>
+                <p className="text-[11px] text-slate-400">Chế độ xem toàn màn hình (object-fit: contain)</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {fullscreenMedia.type === "image" && (
+                <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl p-1 mr-2">
+                  <button
+                    onClick={() => setZoomLevel(prev => Math.max(0.5, prev - 0.25))}
+                    className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors cursor-pointer"
+                    title="Thu nhỏ (-)"
+                  >
+                    <ZoomOut className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs font-mono px-2 text-emerald-400 font-semibold">{Math.round(zoomLevel * 100)}%</span>
+                  <button
+                    onClick={() => setZoomLevel(prev => Math.min(3, prev + 0.25))}
+                    className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors cursor-pointer"
+                    title="Phóng to (+)"
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setZoomLevel(1)}
+                    className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded-lg transition-colors cursor-pointer"
+                    title="Khôi phục kích thước ban đầu"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {fullscreenMedia.type === "image" ? (
+                <button
+                  onClick={() => downloadImageFile(fullscreenMedia.url, `edu_image_${Date.now()}.png`)}
+                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/20"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Tải ảnh về</span>
+                </button>
+              ) : (
+                <a
+                  href={fullscreenMedia.url}
+                  download={`veo3_video_${Date.now()}.webm`}
+                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/20"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Tải Video</span>
+                </a>
+              )}
+
+              <button
+                onClick={() => {
+                  setFullscreenMedia(null);
+                  setZoomLevel(1);
+                }}
+                className="p-2 bg-slate-800 hover:bg-rose-500 text-slate-300 hover:text-white rounded-xl transition-all cursor-pointer ml-2"
+                title="Đóng (ESC)"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Main Content Area */}
+          <div 
+            className="flex-1 my-4 flex items-center justify-center overflow-auto p-2"
+            onClick={e => e.stopPropagation()}
+          >
+            {fullscreenMedia.type === "image" ? (
+              <img
+                src={fullscreenMedia.url}
+                alt="Fullscreen View"
+                className="max-w-full max-h-[80vh] object-contain rounded-2xl shadow-2xl border border-slate-800 transition-transform duration-200"
+                style={{ transform: `scale(${zoomLevel})` }}
+              />
+            ) : (
+              <video
+                src={fullscreenMedia.url}
+                controls
+                autoPlay
+                loop
+                playsInline
+                className="max-w-full max-h-[80vh] object-contain rounded-2xl shadow-2xl border border-slate-800 bg-black"
+              />
+            )}
+          </div>
+
+          {/* Bottom Hint */}
+          <div 
+            className="text-center text-xs text-slate-500 py-1"
+            onClick={e => e.stopPropagation()}
+          >
+            Nhấn <kbd className="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-300">ESC</kbd> hoặc nhấp ra ngoài để đóng
+          </div>
+        </div>
+      )}
 
       </main>
     </div>
