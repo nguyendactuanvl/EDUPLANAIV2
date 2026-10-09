@@ -19,6 +19,167 @@ interface ChatMessage {
   attachments?: { name: string; type: string; url?: string }[];
 }
 
+// Educational Preset Images with high resolution SVGs for instant preview
+const svgToBase64 = (svgStr: string) => `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgStr.trim())))}`;
+
+const EDUCATIONAL_PRESETS = [
+  {
+    id: "plant_cell",
+    title: "Sơ đồ 3D Tế bào Thực vật",
+    category: "Sinh học",
+    prompt: "Sơ đồ 3D cấu tạo tế bào thực vật gồm nhân, lục lạp, không bào và vách tế bào sắc nét, phong cách giáo dục hiện đại, ánh sáng mềm",
+    aspectRatio: "1:1" as const,
+    style: "3d_render",
+    svgData: svgToBase64(`
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="100%" height="100%">
+        <defs>
+          <linearGradient id="cellWall" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#10b981"/>
+            <stop offset="100%" stop-color="#047857"/>
+          </linearGradient>
+          <radialGradient id="nucleusGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#c084fc"/>
+            <stop offset="100%" stop-color="#6b21a8"/>
+          </radialGradient>
+          <radialGradient id="chloroplast" cx="40%" cy="40%" r="60%">
+            <stop offset="0%" stop-color="#34d399"/>
+            <stop offset="100%" stop-color="#059669"/>
+          </radialGradient>
+        </defs>
+        <rect width="600" height="600" fill="#0f172a" rx="24"/>
+        <polygon points="100,80 500,80 550,500 50,500" fill="none" stroke="url(#cellWall)" stroke-width="16" rx="30"/>
+        <polygon points="115,95 485,95 530,485 70,485" fill="#064e3b" fill-opacity="0.4" stroke="#34d399" stroke-width="4"/>
+        <circle cx="300" cy="280" r="85" fill="url(#nucleusGlow)" stroke="#e9d5ff" stroke-width="4"/>
+        <circle cx="280" cy="260" r="30" fill="#f472b6"/>
+        <text x="300" y="285" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle">Nhân tế bào (Nucleus)</text>
+        <ellipse cx="180" cy="180" rx="45" ry="25" fill="url(#chloroplast)" transform="rotate(-20 180 180)"/>
+        <ellipse cx="420" cy="190" rx="45" ry="25" fill="url(#chloroplast)" transform="rotate(25 420 190)"/>
+        <ellipse cx="190" cy="380" rx="45" ry="25" fill="url(#chloroplast)" transform="rotate(15 190 380)"/>
+        <ellipse cx="410" cy="390" rx="45" ry="25" fill="url(#chloroplast)" transform="rotate(-30 410 390)"/>
+        <path d="M 230 180 Q 380 150 370 230 Q 360 360 250 350 Z" fill="#38bdf8" fill-opacity="0.3" stroke="#38bdf8" stroke-width="3"/>
+        <text x="300" y="210" fill="#bae6fd" font-size="12" font-weight="bold" text-anchor="middle">Không bào (Vacuole)</text>
+        <rect x="140" y="520" width="320" height="40" rx="10" fill="#0284c7"/>
+        <text x="300" y="545" fill="#ffffff" font-size="16" font-weight="bold" text-anchor="middle">SƠ ĐỒ 3D TẾ BÀO THỰC VẬT</text>
+      </svg>
+    `)
+  },
+  {
+    id: "atom_model",
+    title: "Mô hình Cấu tạo Nguyên tử Boron",
+    category: "Hóa học",
+    prompt: "Sơ đồ 3D cấu tạo nguyên tử Boron B-11 gồm hạt nhân 5 Proton, 6 Neutron và các electron quay trên quỹ đạo phát sáng",
+    aspectRatio: "1:1" as const,
+    style: "diagram",
+    svgData: svgToBase64(`
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="100%" height="100%">
+        <rect width="600" height="600" fill="#090d16" rx="24"/>
+        <ellipse cx="300" cy="300" rx="220" ry="80" fill="none" stroke="#38bdf8" stroke-width="2" stroke-dasharray="6,6" transform="rotate(30 300 300)"/>
+        <ellipse cx="300" cy="300" rx="220" ry="80" fill="none" stroke="#38bdf8" stroke-width="2" stroke-dasharray="6,6" transform="rotate(-30 300 300)"/>
+        <ellipse cx="300" cy="300" rx="220" ry="80" fill="none" stroke="#38bdf8" stroke-width="2" stroke-dasharray="6,6" transform="rotate(90 300 300)"/>
+        <circle cx="300" cy="300" r="50" fill="#ef4444" fill-opacity="0.8"/>
+        <circle cx="285" cy="285" r="22" fill="#f87171"/>
+        <circle cx="315" cy="290" r="22" fill="#3b82f6"/>
+        <circle cx="295" cy="315" r="22" fill="#ef4444"/>
+        <circle cx="315" cy="310" r="20" fill="#60a5fa"/>
+        <text x="300" y="305" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle">5P + 6N</text>
+        <circle cx="110" cy="200" r="12" fill="#38bdf8"/>
+        <circle cx="490" cy="400" r="12" fill="#38bdf8"/>
+        <circle cx="490" cy="200" r="12" fill="#38bdf8"/>
+        <circle cx="110" cy="400" r="12" fill="#38bdf8"/>
+        <circle cx="300" cy="80" r="12" fill="#38bdf8"/>
+        <rect x="110" y="520" width="380" height="40" rx="10" fill="#0284c7"/>
+        <text x="300" y="545" fill="#ffffff" font-size="16" font-weight="bold" text-anchor="middle">CẤU TẠO NGUYÊN TỬ BORON (B - Z=5)</text>
+      </svg>
+    `)
+  },
+  {
+    id: "dna_helix",
+    title: "Mô hình Chuỗi kép DNA",
+    category: "Sinh học",
+    prompt: "Mô hình 3D chuỗi xoắn đôi DNA với các cặp bazơ nitơ phát sáng sắc nét, góc nhìn cận cảnh điện ảnh",
+    aspectRatio: "1:1" as const,
+    style: "photorealistic",
+    svgData: svgToBase64(`
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="100%" height="100%">
+        <rect width="600" height="600" fill="#0b1329" rx="24"/>
+        <path d="M 150 80 Q 300 200 450 80 Q 300 350 150 500 Q 300 380 450 500" fill="none" stroke="#10b981" stroke-width="8"/>
+        <path d="M 450 80 Q 300 200 150 80 Q 300 350 450 500 Q 300 380 150 500" fill="none" stroke="#06b6d4" stroke-width="8"/>
+        <line x1="220" y1="120" x2="380" y2="120" stroke="#f43f5e" stroke-width="6"/>
+        <line x1="180" y1="200" x2="420" y2="200" stroke="#eab308" stroke-width="6"/>
+        <line x1="200" y1="280" x2="400" y2="280" stroke="#a855f7" stroke-width="6"/>
+        <line x1="230" y1="360" x2="370" y2="360" stroke="#3b82f6" stroke-width="6"/>
+        <line x1="180" y1="440" x2="420" y2="440" stroke="#f43f5e" stroke-width="6"/>
+        <rect x="140" y="520" width="320" height="40" rx="10" fill="#0284c7"/>
+        <text x="300" y="545" fill="#ffffff" font-size="16" font-weight="bold" text-anchor="middle">MÔ HÌNH CHUỖI KÉP DNA</text>
+      </svg>
+    `)
+  },
+  {
+    id: "trig_graph",
+    title: "Đồ thị Hàm số Lượng giác",
+    category: "Toán học",
+    prompt: "Đồ thị hàm số lượng giác y = sin(x) trên hệ trục tọa độ Đề-các 2D sắc nét, các điểm cực trị phát sáng neon",
+    aspectRatio: "16:9" as const,
+    style: "diagram",
+    svgData: svgToBase64(`
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="100%" height="100%">
+        <rect width="600" height="600" fill="#0f172a" rx="24"/>
+        <line x1="60" y1="300" x2="540" y2="300" stroke="#64748b" stroke-width="3"/>
+        <line x1="300" y1="60" x2="300" y2="540" stroke="#64748b" stroke-width="3"/>
+        <path d="M 60 300 C 120 100, 180 100, 240 300 C 300 500, 360 500, 420 300 C 480 100, 540 100, 580 300" fill="none" stroke="#10b981" stroke-width="6"/>
+        <circle cx="150" cy="180" r="8" fill="#34d399"/>
+        <circle cx="390" cy="420" r="8" fill="#34d399"/>
+        <text x="310" y="80" fill="#94a3b8" font-size="16" font-weight="bold">y = sin(x)</text>
+        <rect x="100" y="520" width="400" height="40" rx="10" fill="#0284c7"/>
+        <text x="300" y="545" fill="#ffffff" font-size="16" font-weight="bold" text-anchor="middle">ĐỒ THỊ HÀM SỐ LƯỢNG GIÁC Y = SIN(X)</text>
+      </svg>
+    `)
+  },
+  {
+    id: "solar_system",
+    title: "Sơ đồ 3D Hệ Mặt Trời",
+    category: "Vật lý / Thiên văn",
+    prompt: "Sơ đồ 3D Hệ Mặt Trời với Mặt Trời trung tâm rực rỡ, các quỹ đạo chuyển động của Trái Đất, Sao Hỏa, Sao Mộc",
+    aspectRatio: "16:9" as const,
+    style: "3d_render",
+    svgData: svgToBase64(`
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="100%" height="100%">
+        <rect width="600" height="600" fill="#030712" rx="24"/>
+        <circle cx="300" cy="300" r="60" fill="#f59e0b"/>
+        <circle cx="300" cy="300" r="75" fill="#fbbf24" fill-opacity="0.3"/>
+        <circle cx="300" cy="300" r="110" fill="none" stroke="#334155" stroke-width="2" stroke-dasharray="4,4"/>
+        <circle cx="300" cy="300" r="170" fill="none" stroke="#334155" stroke-width="2" stroke-dasharray="4,4"/>
+        <circle cx="300" cy="300" r="230" fill="none" stroke="#334155" stroke-width="2" stroke-dasharray="4,4"/>
+        <circle cx="410" cy="300" r="12" fill="#ef4444"/>
+        <circle cx="190" cy="180" r="18" fill="#3b82f6"/>
+        <circle cx="480" cy="400" r="28" fill="#eab308"/>
+        <rect x="100" y="520" width="400" height="40" rx="10" fill="#0284c7"/>
+        <text x="300" y="545" fill="#ffffff" font-size="16" font-weight="bold" text-anchor="middle">SƠ ĐỒ 3D HỆ MẶT TRỜI VÀ CÁC HÀNH TINH</text>
+      </svg>
+    `)
+  },
+  {
+    id: "photosynthesis",
+    title: "Sơ đồ Phản ứng Quang hợp",
+    category: "Sinh học",
+    prompt: "Sơ đồ minh họa quá trình quang hợp ở chiếc lá cây, ánh sáng mặt trời, hấp thụ H2O và CO2, sinh ra Glucose và O2",
+    aspectRatio: "4:3" as const,
+    style: "digital_art",
+    svgData: svgToBase64(`
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="100%" height="100%">
+        <rect width="600" height="600" fill="#064e3b" rx="24"/>
+        <circle cx="120" cy="120" r="50" fill="#f59e0b"/>
+        <line x1="160" y1="160" x2="250" y2="230" stroke="#fef08a" stroke-width="6" stroke-dasharray="8,8"/>
+        <path d="M 180 400 Q 300 180 450 350 Q 300 500 180 400 Z" fill="#10b981" stroke="#34d399" stroke-width="4"/>
+        <text x="300" y="320" fill="#ffffff" font-size="20" font-weight="bold" text-anchor="middle">QUANG HỢP</text>
+        <text x="300" y="360" fill="#dcfce7" font-size="14" text-anchor="middle">6CO₂ + 6H₂O → C₆H₁₂O₆ + 6O₂</text>
+        <rect x="100" y="520" width="400" height="40" rx="10" fill="#0284c7"/>
+        <text x="300" y="545" fill="#ffffff" font-size="16" font-weight="bold" text-anchor="middle">SƠ ĐỒ PHẢN ỨNG QUANG HỢP THỰC VẬT</text>
+      </svg>
+    `)
+  }
+];
+
 export function AiStudioSuite() {
   const [activeTab, setActiveTab] = useState<TabType>("chatbot");
 
@@ -36,7 +197,7 @@ export function AiStudioSuite() {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatContext, setChatContext] = useState<string>("");
-  const [attachedFiles, setAttachedFiles] = useState<{ name: string; content: string }[]>([]);
+  const [attachedFiles, setAttachedFiles] = useState<{ name: string; content: string; url?: string; isImage?: boolean }[]>([]);
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -52,7 +213,7 @@ export function AiStudioSuite() {
       sender: "user",
       text: userText,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      attachments: attachedFiles.map(f => ({ name: f.name, type: "doc" }))
+      attachments: attachedFiles.map(f => ({ name: f.name, type: f.isImage ? "image" : "doc", url: f.url }))
     };
 
     setChatMessages(prev => [...prev, userMsg]);
@@ -107,26 +268,34 @@ export function AiStudioSuite() {
 
     Array.from(files).forEach(file => {
       const reader = new FileReader();
-      reader.onload = (evt) => {
-        const text = evt.target?.result as string;
-        setAttachedFiles(prev => [...prev, { name: file.name, content: text.slice(0, 10000) }]);
-      };
-      reader.readAsText(file);
+      if (file.type.startsWith("image/")) {
+        reader.onload = (evt) => {
+          const url = evt.target?.result as string;
+          setAttachedFiles(prev => [...prev, { name: file.name, content: `[Hình ảnh: ${file.name}]`, url, isImage: true }]);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        reader.onload = (evt) => {
+          const text = evt.target?.result as string;
+          setAttachedFiles(prev => [...prev, { name: file.name, content: text.slice(0, 10000), isImage: false }]);
+        };
+        reader.readAsText(file);
+      }
     });
   };
 
   // --------------------------------------------------------------------------
   // 2. TẠO & CHỈNH SỬA ẢNH (NANO BANANA 2.1) STATE
   // --------------------------------------------------------------------------
-  const [imgPrompt, setImgPrompt] = useState("");
+  const [imgPrompt, setImgPrompt] = useState(EDUCATIONAL_PRESETS[0].prompt);
   const [imgNegativePrompt, setImgNegativePrompt] = useState("");
-  const [imgAspectRatio, setImgAspectRatio] = useState<"1:1" | "16:9" | "9:16" | "4:3" | "3:4">("1:1");
-  const [imgStyle, setImgStyle] = useState("photorealistic");
+  const [imgAspectRatio, setImgAspectRatio] = useState<"1:1" | "16:9" | "9:16" | "4:3" | "3:4">(EDUCATIONAL_PRESETS[0].aspectRatio);
+  const [imgStyle, setImgStyle] = useState(EDUCATIONAL_PRESETS[0].style);
   const [imgSource, setImgSource] = useState<string | null>(null);
   const [imgLoading, setImgLoading] = useState(false);
   const [imgProgress, setImgProgress] = useState(0);
   const [imgProgressStatus, setImgProgressStatus] = useState("");
-  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  const [generatedImage, setGeneratedImage] = useState<string | null>(EDUCATIONAL_PRESETS[0].svgData);
   const [imgCopied, setImgCopied] = useState(false);
 
   const handleGenerateImage = async () => {
@@ -752,10 +921,17 @@ export function AiStudioSuite() {
                     {msg.attachments && msg.attachments.length > 0 && (
                       <div className="mt-3 pt-2 border-t border-slate-700/50 flex flex-wrap gap-2">
                         {msg.attachments.map((att, i) => (
-                          <span key={i} className="text-xs bg-slate-800/80 px-2.5 py-1 rounded border border-slate-700 text-emerald-300 flex items-center gap-1">
-                            <FileText className="w-3.5 h-3.5" />
-                            {att.name}
-                          </span>
+                          att.url ? (
+                            <div key={i} className="flex flex-col gap-1 bg-slate-950/80 p-1.5 rounded-lg border border-slate-700/60 max-w-xs">
+                              <img src={att.url} alt={att.name} className="max-h-36 rounded object-contain" />
+                              <span className="text-[10px] text-emerald-300 font-medium px-1 truncate">{att.name}</span>
+                            </div>
+                          ) : (
+                            <span key={i} className="text-xs bg-slate-800/80 px-2.5 py-1 rounded border border-slate-700 text-emerald-300 flex items-center gap-1">
+                              <FileText className="w-3.5 h-3.5" />
+                              {att.name}
+                            </span>
+                          )
                         ))}
                       </div>
                     )}
@@ -780,7 +956,11 @@ export function AiStudioSuite() {
                 <span className="text-xs text-slate-400 font-medium">Tệp đính kèm:</span>
                 {attachedFiles.map((file, i) => (
                   <span key={i} className="text-xs bg-emerald-950 text-emerald-300 border border-emerald-800 px-2.5 py-1 rounded-md flex items-center gap-1.5">
-                    <FileText className="w-3.5 h-3.5" />
+                    {file.isImage && file.url ? (
+                      <img src={file.url} alt={file.name} className="w-4 h-4 rounded object-cover" />
+                    ) : (
+                      <FileText className="w-3.5 h-3.5" />
+                    )}
                     {file.name}
                     <button
                       onClick={() => setAttachedFiles(prev => prev.filter((_, idx) => idx !== i))}
@@ -1014,6 +1194,54 @@ export function AiStudioSuite() {
                   </div>
                 </div>
               )}
+
+              {/* Educational Art Preset Gallery */}
+              <div className="mt-6 pt-5 border-t border-slate-800/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-emerald-400" />
+                    <h3 className="text-xs font-bold text-slate-200">
+                      Bộ sưu tập Mẫu Ảnh Giáo dục & AI Art (Nhấp chọn để xem & sử dụng ngay)
+                    </h3>
+                  </div>
+                  <span className="text-[11px] text-slate-500">6 mẫu độ phân giải cao</span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {EDUCATIONAL_PRESETS.map(preset => (
+                    <div
+                      key={preset.id}
+                      onClick={() => {
+                        setGeneratedImage(preset.svgData);
+                        setImgPrompt(preset.prompt);
+                        setImgAspectRatio(preset.aspectRatio);
+                        setImgStyle(preset.style);
+                      }}
+                      className={cn(
+                        "p-2 bg-slate-900/90 hover:bg-slate-800 border rounded-xl cursor-pointer transition-all flex flex-col gap-2 group",
+                        generatedImage === preset.svgData
+                          ? "border-emerald-500 ring-1 ring-emerald-500/50 shadow-lg"
+                          : "border-slate-800 hover:border-slate-700"
+                      )}
+                    >
+                      <div className="w-full h-24 rounded-lg overflow-hidden bg-slate-950 border border-slate-800/80 flex items-center justify-center p-1 relative">
+                        <img
+                          src={preset.svgData}
+                          alt={preset.title}
+                          className="max-h-full max-w-full object-contain group-hover:scale-105 transition-transform duration-300"
+                        />
+                        <span className="absolute top-1.5 left-1.5 text-[9px] bg-slate-900/90 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-semibold">
+                          {preset.category}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-slate-200 line-clamp-1">{preset.title}</p>
+                        <p className="text-[10px] text-slate-400 line-clamp-1 mt-0.5">{preset.prompt}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -1038,7 +1266,7 @@ export function AiStudioSuite() {
               <div className="space-y-2">
                 <label className="text-xs font-semibold text-slate-300">Ảnh gốc cần tạo chuyển động (Source Image)</label>
                 {v2vImage ? (
-                  <div className="relative group rounded-xl overflow-hidden border border-slate-800 bg-slate-900 h-40 flex items-center justify-center">
+                  <div className="relative group rounded-xl overflow-hidden border border-slate-800 bg-slate-900 h-40 flex items-center justify-center p-2">
                     <img src={v2vImage} alt="Source" className="max-h-full object-contain" />
                     <button
                       onClick={() => setV2vImage(null)}
@@ -1067,6 +1295,31 @@ export function AiStudioSuite() {
                     />
                   </label>
                 )}
+
+                {/* Preset Source Image Pickers */}
+                <div className="space-y-1.5 pt-1">
+                  <span className="text-[11px] text-slate-400 font-semibold flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-emerald-400" />
+                    Hoặc chọn ảnh mẫu có sẵn để Animate:
+                  </span>
+                  <div className="grid grid-cols-3 gap-2">
+                    {EDUCATIONAL_PRESETS.slice(0, 3).map(preset => (
+                      <button
+                        key={preset.id}
+                        onClick={() => setV2vImage(preset.svgData)}
+                        className={cn(
+                          "p-1.5 rounded-lg border bg-slate-900 hover:bg-slate-800 cursor-pointer flex flex-col items-center text-left transition-all",
+                          v2vImage === preset.svgData ? "border-emerald-500 bg-emerald-950/30" : "border-slate-800"
+                        )}
+                      >
+                        <div className="w-full h-12 rounded bg-slate-950 flex items-center justify-center overflow-hidden mb-1">
+                          <img src={preset.svgData} alt={preset.title} className="max-h-full object-contain" />
+                        </div>
+                        <span className="text-[10px] text-slate-300 font-medium line-clamp-1">{preset.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               {/* Motion Prompt */}
