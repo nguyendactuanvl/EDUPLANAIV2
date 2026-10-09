@@ -70,6 +70,7 @@ const WeeklyTimetable = safeLazy(() => import('./pages/WeeklyTimetable'), "Weekl
 const Gamification = safeLazy(() => import('./pages/Gamification'), "Gamification");
 const MathTools = safeLazy(() => import('./pages/MathTools'), "MathTools");
 const DeOnlinePdf = safeLazy(() => import('./pages/DeOnlinePdf'), "DeOnlinePdf");
+const AiStudioSuite = safeLazy(() => import('./pages/AiStudioSuite'), "AiStudioSuite");
 
 
 
@@ -207,6 +208,7 @@ export default function App() {
         <div className="flex-1 overflow-y-auto relative w-full h-full">
           <ErrorBoundary key={activeTab}>
             <Suspense fallback={<div className="flex items-center justify-center h-full text-slate-500">Đang tải...</div>}>
+              {activeTab === "ai_studio" && <AiStudioSuite />}
               {activeTab === "khgd" && <EducationalPlan />}
               {activeTab === "khdh" && <LessonPlan />}
               {activeTab === "worksheets" && <Worksheets />}
