@@ -662,13 +662,33 @@ export function Worksheets() {
           }
         }
 
+        // Tự động phân tách phương án nếu còn dính trong content
+        let finalContent = content;
+        let finalOptions = q.options ? q.options.map((opt: string) => cleanOptionText(opt)) : [];
+        if (q.type === 'mc' || !q.type || finalOptions.length < 2) {
+          const mcMatch = content.match(/^(.*?)(?:\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?A[\.\):]\s*([\s\S]*?)(?:\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?B[\.\):]\s*([\s\S]*?)(?:\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?C[\.\):]\s*([\s\S]*?)(?:\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?D[\.\):]\s*([\s\S]*)$/i);
+          if (mcMatch) {
+            finalContent = mcMatch[1].trim();
+            finalOptions = [
+              cleanOptionText(mcMatch[2]),
+              cleanOptionText(mcMatch[3]),
+              cleanOptionText(mcMatch[4]),
+              cleanOptionText(mcMatch[5])
+            ];
+          } else {
+            finalContent = cleanQuestionStem(content, finalOptions, q.tfStatements);
+          }
+        } else {
+          finalContent = cleanQuestionStem(content, finalOptions, q.tfStatements);
+        }
+
         return {
           ...q,
           id: q.id || idx + 1,
-          content,
+          content: finalContent,
           solution,
           explanation: solution,
-          options: q.options ? q.options.map((opt: string) => cleanOptionText(opt)) : []
+          options: finalOptions
         };
       });
 

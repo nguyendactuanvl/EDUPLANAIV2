@@ -52,7 +52,45 @@ export const InteractivePlot: React.FC<InteractivePlotProps> = ({
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [hoverCoord, setHoverCoord] = useState<{ x: number; y: number } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [tikzCopied, setTikzCopied] = useState(false);
   const [showLabels, setShowLabels] = useState(false);
+
+  const handleCopyTikzCode = () => {
+    const lines: string[] = [];
+    lines.push("\\begin{tikzpicture}[scale=0.8, >=stealth]");
+    lines.push(`  \\draw[gray!25, very thin, step=1] (${xMin.toFixed(0)}, ${yMin.toFixed(0)}) grid (${xMax.toFixed(0)}, ${yMax.toFixed(0)});`);
+    lines.push(`  \\draw[->, thick] (${xMin.toFixed(0)}, 0) -- (${xMax.toFixed(0)}, 0) node[right] {$x$};`);
+    lines.push(`  \\draw[->, thick] (0, ${yMin.toFixed(0)}) -- (0, ${yMax.toFixed(0)}) node[above] {$y$};`);
+    lines.push("  \\node[below left] at (0, 0) {$O$};");
+
+    // Asymptotes
+    asymptotes.forEach(asym => {
+      if (asym.type === "vertical") {
+        lines.push(`  \\draw[red, dashed, thick] (${asym.value}, ${yMin.toFixed(0)}) -- (${asym.value}, ${yMax.toFixed(0)});`);
+      } else if (asym.type === "horizontal") {
+        lines.push(`  \\draw[purple, dashed, thick] (${xMin.toFixed(0)}, ${asym.value}) -- (${xMax.toFixed(0)}, ${asym.value});`);
+      } else if (asym.type === "slant" && asym.m !== undefined && asym.c !== undefined) {
+        const y1 = asym.m * xMin + asym.c;
+        const y2 = asym.m * xMax + asym.c;
+        lines.push(`  \\draw[teal, dashed, thick] (${xMin.toFixed(0)}, ${y1.toFixed(2)}) -- (${xMax.toFixed(0)}, ${y2.toFixed(2)});`);
+      }
+    });
+
+    // Key points
+    points.forEach(pt => {
+      const cleanLabel = (pt.label || "").replace(/\$/g, "");
+      lines.push(`  \\filldraw[blue] (${pt.x}, ${pt.y}) circle (2pt) node[above right] {$${cleanLabel}$};`);
+      if (pt.isDashedToAxes) {
+        lines.push(`  \\draw[dashed, gray] (${pt.x}, 0) -- (${pt.x}, ${pt.y}) -- (0, ${pt.y});`);
+      }
+    });
+
+    lines.push("\\end{tikzpicture}");
+
+    navigator.clipboard.writeText(lines.join("\n"));
+    setTikzCopied(true);
+    setTimeout(() => setTikzCopied(false), 2000);
+  };
 
   // Synchronize when default props change
   useEffect(() => {
@@ -728,6 +766,26 @@ export const InteractivePlot: React.FC<InteractivePlotProps> = ({
 
             {/* Custom Actions */}
             {customActions}
+
+            {/* Copy TikZ button */}
+            <button
+              type="button"
+              onClick={handleCopyTikzCode}
+              className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer active:scale-95"
+              title="Sao chép mã TikZ LaTeX vẽ đồ thị"
+            >
+              {tikzCopied ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="text-emerald-700 font-extrabold">Đã chép TikZ!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5 text-purple-600" />
+                  <span>Copy TikZ</span>
+                </>
+              )}
+            </button>
 
             {/* Copy Image button */}
             <button

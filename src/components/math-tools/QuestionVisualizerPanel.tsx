@@ -1158,11 +1158,11 @@ export const QuestionVisualizerPanel: React.FC<QuestionVisualizerPanelProps> = (
                 <button
                   type="button"
                   onClick={handleCopyBbtTikz}
-                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
-                  title="Sao chép mã TikZ LaTeX"
+                  className="px-3.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer active:scale-95"
+                  title="Sao chép mã TikZ LaTeX (tkz-tab) Bảng biến thiên"
                 >
-                  <FileCode className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Chép mã TikZ</span>
+                  <Copy className="w-3.5 h-3.5 text-purple-600" />
+                  <span>Copy TikZ</span>
                 </button>
               </div>
 

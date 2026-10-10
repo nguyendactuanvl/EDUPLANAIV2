@@ -151,7 +151,10 @@ export function normalizeMathText(text: any): string {
   });
 
   // 3. Khôi phục các ký tự thoát bị rách hoặc nuốt gạch chéo ngược
-  t = t.replace(/(?<=^|[\s$])([a-z])eq(?=0|\d|\s|\$)/gi, ' \\neq ');
+  t = t.replace(/(?<![a-zA-Z\\])\b([a-zA-Z])\s*a?e\s*0\b/gi, '$1 \\neq 0');
+  t = t.replace(/(?<![a-zA-Z\\])\b([a-zA-Z])\s*eq\s*0\b/gi, '$1 \\neq 0');
+  t = t.replace(/\((?:\s*|\$)*([a-zA-Z])\s*a?e\s*0(?:\s*|\$)*\)/gi, '($1 \\neq 0)');
+  t = t.replace(/(?<=^|[\s$])([a-z])\s*eq(?=0|\d|\s|\$)/gi, '$1 \\neq ');
   t = t.replace(/(?<!\\)\bneq\b/g, '\\neq');
   t = t.replace(/(?<!\\)\blim\b/g, '\\lim');
   t = t.replace(/(?<!\\)\bfrac\b/g, '\\frac');
@@ -170,6 +173,9 @@ export function normalizeMathText(text: any): string {
   t = t.replace(/(?<!\\)\bcirc\b/g, '\\circ');
   t = t.replace(/(?<!\\)\bleq\b/g, '\\leq');
   t = t.replace(/(?<!\\)\bgeq\b/g, '\\geq');
+
+  // Chuẩn hóa dấu + và - đứng độc lập trong mô tả bảng biến thiên (vd: từ + sang -)
+  t = t.replace(/(\btừ\s*)([+\-])(\s*sang\s*)([+\-])/gi, '$1$$$2$$$3$$$4$$');
 
   // Fix common math environments
   t = t.replace(/\\*begin\s*\{?cases\*?\}?/gi, '\\begin{cases}');
@@ -351,7 +357,7 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
         qIndex++;
 
         // Kiểm tra xem A. B. C. D. có nằm chung dòng không
-        const mcMatch = stemLine.match(/^(.*?)(?:[:\.\s]+)\s*(?:[-*]\s*)?(?:\*{0,2})A[\.\)](?:\*{0,2})\s+([\s\S]*?)(?:[-*]\s*)?(?:\*{0,2})B[\.\)](?:\*{0,2})\s+([\s\S]*?)(?:[-*]\s*)?(?:\*{0,2})(?<![a-zA-Z0-9_\$\\\(])C[\.\)](?:\*{0,2})\s+([\s\S]*?)(?:[-*]\s*)?(?:\*{0,2})(?<![a-zA-Z0-9_\$\\\(])D[\.\)](?:\*{0,2})\s+([\s\S]*)$/);
+        const mcMatch = stemLine.match(/^(.*?)(?:\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?A[\.\):]\s*([\s\S]*?)(?:\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?B[\.\):]\s*([\s\S]*?)(?:\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?C[\.\):]\s*([\s\S]*?)(?:\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?D[\.\):]\s*([\s\S]*)$/i);
         if (mcMatch) {
           const stem = mcMatch[1].trim();
           const optA = mcMatch[2].trim();

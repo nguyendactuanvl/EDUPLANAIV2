@@ -474,24 +474,30 @@ export function preprocessExamText(text: string): string {
   // Từ ngữ chỉ điểm/hình học/giới từ không được coi là phương án trắc nghiệm
   const geoWordPattern = /(?:tại|điểm|đỉnh|gọi|qua|với|từ|trên|của|cho|và|thuộc|đến|cạnh|đường|mặt\s*phẳng|chiếu\s*lên|tọa\s*độ|tâm|trọng\s*tâm|trực\s*tâm|bán\s*kính|vectơ|vector|tam\s*giác(?:\s+[a-zA-Z\.]+)?|tứ\s*diện(?:\s+[a-zA-Z\.]+)?|hình\s*chóp(?:\s+[a-zA-Z\.]+)?|đoạn\s*thẳng)$/i;
 
-  // Chuẩn hóa triệt để nhãn phương án dị dạng có nhiều dấu chấm, dấu sao, dấu nháy kép, khoảng trắng giữa các dấu sao (vd: "."**B"."**, * * B. * *, .**C"."**, .**B.**, "A.", "**B.**")
+  // Chuẩn hóa triệt để nhãn phương án dị dạng
   s = s.replace(/[^a-zA-Z0-9\s]?\s*["'\u201C\u201D\u2018\u2019\.\*\s\(]*\b([A-D])\b["'\u201C\u201D\u2018\u2019\.\*\s\)\:]+\s*["'\u201C\u201D\u2018\u2019\.\*\s]*/g, (match, letter, offset) => {
     const before = s.slice(Math.max(0, offset - 25), offset);
-    if (geoWordPattern.test(before.trim())) return match;
+    const after = s.slice(offset);
+    const hasMultipleChoices = /(?:\bB[\.\:\)]|\bC[\.\:\)]|\bD[\.\:\)])/.test(after);
+    if (geoWordPattern.test(before.trim()) && !hasMultipleChoices) return match;
     return `\n${letter}. `;
   });
 
-  // Tách các phương án B, C, D bị dính liền vào số/chữ/ký hiệu trước đó (vd: 12B. 16, 17,6D. 18,4)
-  s = s.replace(/([0-9\$\)\}\],.:;?!])\s*(?=(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?[B-D][\.:\)])/g, (match, p1, offset) => {
+  // Tách các phương án B, C, D bị dính liền vào số/chữ/ký hiệu/math token trước đó (vd: 12B. 16, 17,6D. 18,4, ___MATH_BLOCK_0___. B.)
+  s = s.replace(/([0-9\$\)\}\],.:;?!_])\s*(?=(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?[B-D][\.:\)])/g, (match, p1, offset) => {
     const before = s.slice(Math.max(0, offset - 25), offset + p1.length);
-    if (geoWordPattern.test(before.trim())) return match;
+    const after = s.slice(offset);
+    const hasMultipleChoices = /(?:\bC[\.\:\)]|\bD[\.\:\)])/.test(after);
+    if (geoWordPattern.test(before.trim()) && !hasMultipleChoices) return match;
     return `${p1}\n`;
   });
 
   // Tách phương án A bị dính vào đuôi đề bài (vd: $.A. 12, .A. 12, ?A. 12, :A. 12)
-  s = s.replace(/([0-9\$\)\}\],.:;?!])\s*(?=(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?A[\.:\)])/g, (match, p1, offset) => {
+  s = s.replace(/([0-9\$\)\}\],.:;?!_])\s*(?=(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?A[\.:\)])/g, (match, p1, offset) => {
     const before = s.slice(Math.max(0, offset - 25), offset + p1.length);
-    if (geoWordPattern.test(before.trim())) return match;
+    const after = s.slice(offset);
+    const hasMultipleChoices = /(?:\bB[\.\:\)]|\bC[\.\:\)])/.test(after);
+    if (geoWordPattern.test(before.trim()) && !hasMultipleChoices) return match;
     return `${p1}\n`;
   });
 

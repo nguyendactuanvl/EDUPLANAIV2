@@ -2289,8 +2289,6 @@ export function cleanQuestionStem(content: any, options?: any[], tfStatements?: 
       const aIdx = m.index! + m[0].indexOf('A');
       const beforeA = text.substring(0, aIdx).trim();
 
-      if (geoWordPattern.test(beforeA)) continue;
-
       const afterA = text.substring(aIdx);
       const hasB = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?B(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
       const hasC = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?C(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
@@ -2300,6 +2298,8 @@ export function cleanQuestionStem(content: any, options?: any[], tfStatements?: 
         text = text.substring(0, m.index).trim();
         break;
       }
+
+      if (geoWordPattern.test(beforeA)) continue;
 
       if (options && options.length >= 2 && options[0]) {
         const opt0 = String(options[0]).trim().replace(/^\$|\$$/g, '').slice(0, 10);

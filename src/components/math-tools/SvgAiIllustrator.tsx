@@ -37,6 +37,7 @@ export function SvgAiIllustrator() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [svgContent, setSvgContent] = useState("");
   const [copySuccess, setCopyStatus] = useState(false);
+  const [tikzCopied, setTikzCopied] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // File Upload State
@@ -56,6 +57,53 @@ export function SvgAiIllustrator() {
     navigator.clipboard.writeText(svgContent);
     setCopyStatus(true);
     setTimeout(() => setCopyStatus(false), 2000);
+  };
+
+  const handleCopyTikz = () => {
+    if (!svgContent) return;
+    let tikzCode = "";
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgContent, "image/svg+xml");
+      const lines: string[] = ["\\begin{tikzpicture}[scale=0.03, >=stealth]"];
+
+      const svgLines = doc.querySelectorAll("line");
+      svgLines.forEach(l => {
+        const x1 = parseFloat(l.getAttribute("x1") || "0");
+        const y1 = parseFloat(l.getAttribute("y1") || "0");
+        const x2 = parseFloat(l.getAttribute("x2") || "0");
+        const y2 = parseFloat(l.getAttribute("y2") || "0");
+        const dash = l.getAttribute("stroke-dasharray");
+        lines.push(`  \\draw[${dash ? "dashed, " : ""}thick] (${x1.toFixed(1)}, ${(-y1).toFixed(1)}) -- (${x2.toFixed(1)}, ${(-y2).toFixed(1)});`);
+      });
+
+      const svgCircles = doc.querySelectorAll("circle");
+      svgCircles.forEach(c => {
+        const cx = parseFloat(c.getAttribute("cx") || "0");
+        const cy = parseFloat(c.getAttribute("cy") || "0");
+        const r = parseFloat(c.getAttribute("r") || "0");
+        lines.push(`  \\filldraw (${cx.toFixed(1)}, ${(-cy).toFixed(1)}) circle (${r.toFixed(1)}pt);`);
+      });
+
+      const svgTexts = doc.querySelectorAll("text");
+      svgTexts.forEach(t => {
+        const x = parseFloat(t.getAttribute("x") || "0");
+        const y = parseFloat(t.getAttribute("y") || "0");
+        const text = (t.textContent || "").trim();
+        if (text) {
+          lines.push(`  \\node at (${x.toFixed(1)}, ${(-y).toFixed(1)}) {$${text.replace(/\$/g, "")}$};`);
+        }
+      });
+
+      lines.push("\\end{tikzpicture}");
+      tikzCode = lines.join("\n");
+    } catch {
+      tikzCode = "\\begin{tikzpicture}\n\\node {Hình vẽ minh họa};\n\\end{tikzpicture}";
+    }
+
+    navigator.clipboard.writeText(tikzCode);
+    setTikzCopied(true);
+    setTimeout(() => setTikzCopied(false), 2000);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -370,6 +418,24 @@ Nhiệm vụ của bạn là đọc đề bài (qua văn bản hoặc hình ản
 
               {svgContent && (
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleCopyTikz}
+                    className="text-xs text-purple-300 hover:text-white flex items-center gap-1.5 bg-purple-950/60 hover:bg-purple-900/80 px-3.5 py-1.5 rounded-xl border border-purple-500/50 hover:border-purple-400 transition font-bold cursor-pointer active:scale-95 shadow-sm"
+                    title="Sao chép mã TikZ LaTeX chuẩn biên dịch"
+                  >
+                    {tikzCopied ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-400 font-extrabold">Đã chép TikZ!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5 text-purple-400" />
+                        <span>Copy TikZ</span>
+                      </>
+                    )}
+                  </button>
+
                   <button
                     onClick={handleCopySvg}
                     className="text-xs text-slate-400 hover:text-white flex items-center gap-1 bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-850 hover:border-slate-700 transition"

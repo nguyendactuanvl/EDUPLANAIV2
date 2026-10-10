@@ -1201,6 +1201,26 @@ Hãy trả về duy nhất một chuỗi JSON thuần (không chứa markdown ba
     }
   };
 
+  const [isTikzCopied, setIsTikzCopied] = useState(false);
+
+  const handleCopyTikz = () => {
+    const tikz = `\\begin{tikzpicture}[scale=0.8, >=stealth]
+% Mã TikZ 3D mô hình: ${activePreset.name}
+\\draw[thick] (0,0) -- (4,0) -- (4,3) -- (0,3) -- cycle;
+\\draw[thick] (4,0) -- (5.5,1.2) -- (5.5,4.2) -- (4,3);
+\\draw[thick] (0,3) -- (1.5,4.2) -- (5.5,4.2);
+\\draw[dashed] (0,0) -- (1.5,1.2) -- (5.5,1.2);
+\\draw[dashed] (1.5,1.2) -- (1.5,4.2);
+\\node at (2,-0.4) {$a = ${paramA}$};
+\\node at (4.9,0.3) {$b = ${paramB}$};
+\\node at (-0.4,1.5) {$h = ${paramH}$};
+\\end{tikzpicture}`;
+
+    navigator.clipboard.writeText(tikz);
+    setIsTikzCopied(true);
+    setTimeout(() => setIsTikzCopied(false), 2000);
+  };
+
   // CAPTURE PNG TRANSPARENT
   const handleCapturePng = () => {
     if (!sceneRef.current || !cameraRef.current || !rendererRef.current) return;
@@ -1244,6 +1264,23 @@ Hãy trả về duy nhất một chuỗi JSON thuần (không chứa markdown ba
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleCopyTikz}
+            className="px-3.5 py-2 bg-purple-950/80 hover:bg-purple-900 text-purple-200 border border-purple-500/50 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95 flex items-center gap-1.5"
+            title="Sao chép mã TikZ LaTeX mô hình 3D"
+          >
+            {isTikzCopied ? (
+              <>
+                <Check className="w-4 h-4 text-emerald-400" />
+                <span className="text-emerald-400 font-extrabold">Đã chép TikZ!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-4 h-4 text-purple-400" />
+                <span>Copy TikZ</span>
+              </>
+            )}
+          </button>
           <button
             onClick={handleCapturePng}
             className="px-3.5 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-500/20 transition-all cursor-pointer flex items-center gap-1.5"

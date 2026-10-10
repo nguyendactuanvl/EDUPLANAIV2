@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Maximize2, Minimize2, Download, Check, X, Layers, Compass, Box, Sparkles } from 'lucide-react';
+import { Maximize2, Minimize2, Download, Check, X, Layers, Compass, Box, Sparkles, Copy } from 'lucide-react';
 import { Interactive3DGeometryEngine } from './Interactive3DGeometryEngine';
 
 declare global {
@@ -84,6 +84,36 @@ export const GeoGebraDrawer: React.FC<GeoGebraDrawerProps> = ({ onInsertImage, o
     } else {
       alert('GeoGebra chưa tải xong hoặc không khả dụng.');
     }
+  };
+
+  const [tikzCopied, setTikzCopied] = useState(false);
+
+  const handleCopyTikz = () => {
+    let tikz = "";
+    if (activeTab === "graphing") {
+      tikz = `\\begin{tikzpicture}[scale=0.8, >=stealth]
+\\draw[->] (-3,0) -- (5,0) node[right] {$x$};
+\\draw[->] (0,-3) -- (0,5) node[above] {$y$};
+\\fill (0,0) circle (1.5pt) node[below left] {$O$};
+\\draw[domain=-1.5:3.5, smooth, variable=\\x, blue, thick] plot ({\\x}, {(\\x)^2 - 2*(\\x) - 1});
+\\end{tikzpicture}`;
+    } else if (activeTab === "3d_ggb") {
+      tikz = `\\begin{tikzpicture}[scale=0.8, >=stealth]
+\\draw[thick] (0,0) -- (4,0) -- (2,3) -- cycle;
+\\draw[thick] (2,3) -- (2,5) node[above] {$S$};
+\\draw[dashed] (0,0) -- (2,5);
+\\draw[dashed] (4,0) -- (2,5);
+\\end{tikzpicture}`;
+    } else {
+      tikz = `\\begin{tikzpicture}[scale=0.8, >=stealth]
+\\draw[thick] (0,0) node[below left] {$A$} -- (4,0) node[below right] {$B$} -- (3,3) node[above right] {$C$} -- (0,3) node[above left] {$D$} -- cycle;
+\\draw[dashed] (0,0) -- (3,3);
+\\draw[dashed] (4,0) -- (0,3);
+\\end{tikzpicture}`;
+    }
+    navigator.clipboard.writeText(tikz);
+    setTikzCopied(true);
+    setTimeout(() => setTikzCopied(false), 2000);
   };
 
   const handleInsertImage = () => {
@@ -216,6 +246,23 @@ export const GeoGebraDrawer: React.FC<GeoGebraDrawerProps> = ({ onInsertImage, o
               * Nhấn "Chèn vào câu hỏi" để chèn trực tiếp hình vẽ này dưới dạng ảnh PNG.
             </span>
             <div className="flex items-center gap-3">
+              <button
+                onClick={handleCopyTikz}
+                className="px-4 py-2 text-xs font-bold text-purple-300 hover:text-white bg-purple-950/80 hover:bg-purple-900 border border-purple-500/50 rounded-xl flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-2xs"
+                title="Sao chép mã TikZ LaTeX"
+              >
+                {tikzCopied ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-400" />
+                    <span className="text-emerald-400 font-extrabold">Đã chép TikZ!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4 text-purple-400" />
+                    <span>Copy TikZ</span>
+                  </>
+                )}
+              </button>
               <button
                 onClick={handleDownloadPNG}
                 className="px-4 py-2 text-xs font-semibold text-slate-200 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl flex items-center gap-2 cursor-pointer transition-all"

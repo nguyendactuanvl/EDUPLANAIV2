@@ -539,8 +539,27 @@ export const VariationTableGenerator: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
+  const [isTikzCopied, setIsTikzCopied] = useState(false);
   const [isExportingWord, setIsExportingWord] = useState(false);
   const [isExportingPng, setIsExportingPng] = useState(false);
+
+  const handleCopyTikz = () => {
+    if (!bbtData || !bbtData.points) return;
+    const pts = bbtData.points;
+    const inters = bbtData.intervals;
+    const xList = pts.map(p => formatMathSymbol(p.x)).join(", ");
+    const lineSigns = inters.map((it) => `,${it.sign || "+"},0`).join("") + ",";
+    const vars = pts.map(p => {
+      const sign = p.yPosition === "top" ? "+/" : p.yPosition === "bottom" ? "-/" : "+/";
+      return `${sign} $${formatMathSymbol(p.yVal || "0")}$`;
+    }).join(", ");
+
+    const tikzCode = `\\begin{tikzpicture}\n\\tkzTabInit[lgt=1.5,espcl=2.5]{$x$/1, $y'$/1, $y$/2.2}{${xList}}\n\\tkzTabLine{${lineSigns}}\n\\tkzTabVar{${vars}}\n\\end{tikzpicture}`;
+
+    navigator.clipboard.writeText(tikzCode);
+    setIsTikzCopied(true);
+    setTimeout(() => setIsTikzCopied(false), 2000);
+  };
 
   const bbtContainerRef = useRef<HTMLDivElement>(null);
 
@@ -981,6 +1000,24 @@ export const VariationTableGenerator: React.FC = () => {
 
               {/* Nhóm nút xuất file cao cấp */}
               <div className="flex items-center gap-2">
+                <button
+                  onClick={handleCopyTikz}
+                  title="Sao chép mã TikZ LaTeX (tkz-tab) vẽ Bảng biến thiên"
+                  className="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-300 text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer active:scale-95"
+                >
+                  {isTikzCopied ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-emerald-700 font-extrabold">Đã chép TikZ!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-purple-600" />
+                      <span>Copy TikZ</span>
+                    </>
+                  )}
+                </button>
+
                 <button
                   onClick={handleDownloadPng}
                   disabled={isExportingPng}

@@ -124,6 +124,164 @@ export const Interactive3DGeometryEngine: React.FC<Interactive3DGeometryEnginePr
   const [enableUnfold, setEnableUnfold] = useState<boolean>(false);
   const [unfoldProgress, setUnfoldProgress] = useState<number>(0); // 0% -> 100%
 
+  const [tikz3dCopied, setTikz3dCopied] = useState<boolean>(false);
+
+  const handleCopyTikz3D = () => {
+    let tikzCode = "";
+    const shape = activeOption.id;
+
+    if (shape === 'pyramid_regular_tri') {
+      tikzCode = `\\begin{tikzpicture}[scale=1, >=stealth]
+\\coordinate (A) at (0,0);
+\\coordinate (B) at (3,-1);
+\\coordinate (C) at (4.5,0.5);
+\\coordinate (O) at (2.5,-0.16);
+\\coordinate (S) at (2.5,4);
+
+\\draw[dashed] (A) -- (C) (S) -- (O);
+\\draw (A) -- (B) -- (C) (S) -- (A) (S) -- (B) (S) -- (C);
+
+\\node[below left] at (A) {$A$};
+\\node[below] at (B) {$B$};
+\\node[right] at (C) {$C$};
+\\node[below] at (O) {$O$};
+\\node[above] at (S) {$S$};
+\\end{tikzpicture}`;
+    } else if (shape === 'pyramid_perp_tri') {
+      tikzCode = `\\begin{tikzpicture}[scale=1, >=stealth]
+\\coordinate (A) at (0,0);
+\\coordinate (B) at (2.5,-1.2);
+\\coordinate (C) at (4.5,0.5);
+\\coordinate (S) at (0,4);
+
+\\draw[dashed] (A) -- (C);
+\\draw (A) -- (B) -- (C) (S) -- (A) (S) -- (B) (S) -- (C);
+
+\\node[below left] at (A) {$A$};
+\\node[below] at (B) {$B$};
+\\node[right] at (C) {$C$};
+\\node[above] at (S) {$S$};
+\\end{tikzpicture}`;
+    } else if (shape === 'pyramid_regular_quad') {
+      tikzCode = `\\begin{tikzpicture}[scale=1, >=stealth]
+\\coordinate (A) at (0,0);
+\\coordinate (B) at (3,-1.2);
+\\coordinate (C) at (5.2,0);
+\\coordinate (D) at (2.2,1.2);
+\\coordinate (O) at (2.6,0);
+\\coordinate (S) at (2.6,4);
+
+\\draw[dashed] (A) -- (D) -- (C) (A) -- (C) (B) -- (D) (S) -- (O);
+\\draw (A) -- (B) -- (C) (S) -- (A) (S) -- (B) (S) -- (C);
+
+\\node[below left] at (A) {$A$};
+\\node[below] at (B) {$B$};
+\\node[below right] at (C) {$C$};
+\\node[above right] at (D) {$D$};
+\\node[below] at (O) {$O$};
+\\node[above] at (S) {$S$};
+\\end{tikzpicture}`;
+    } else if (shape === 'pyramid_perp_quad') {
+      tikzCode = `\\begin{tikzpicture}[scale=1, >=stealth]
+\\coordinate (A) at (0,0);
+\\coordinate (B) at (2.8,-1.2);
+\\coordinate (C) at (5,0);
+\\coordinate (D) at (2.2,1.2);
+\\coordinate (S) at (0,4);
+
+\\draw[dashed] (A) -- (D) -- (C) (S) -- (D);
+\\draw (A) -- (B) -- (C) (S) -- (A) (S) -- (B) (S) -- (C);
+
+\\node[below left] at (A) {$A$};
+\\node[below] at (B) {$B$};
+\\node[right] at (C) {$C$};
+\\node[above right] at (D) {$D$};
+\\node[above] at (S) {$S$};
+\\end{tikzpicture}`;
+    } else if (shape === 'prism_triangular') {
+      tikzCode = `\\begin{tikzpicture}[scale=1, >=stealth]
+\\coordinate (A) at (0,0);
+\\coordinate (B) at (2.5,-1.2);
+\\coordinate (C) at (4.2,0.5);
+\\coordinate (A1) at (0,3.5);
+\\coordinate (B1) at (2.5,2.3);
+\\coordinate (C1) at (4.2,4.0);
+
+\\draw[dashed] (A) -- (C);
+\\draw (A) -- (B) -- (C) (A1) -- (B1) -- (C1) -- (A1) (A) -- (A1) (B) -- (B1) (C) -- (C1);
+
+\\node[below left] at (A) {$A$};
+\\node[below] at (B) {$B$};
+\\node[right] at (C) {$C$};
+\\node[above left] at (A1) {$A'$};
+\\node[above] at (B1) {$B'$};
+\\node[right] at (C1) {$C'$};
+\\end{tikzpicture}`;
+    } else if (shape === 'cuboid') {
+      tikzCode = `\\begin{tikzpicture}[scale=1, >=stealth]
+\\coordinate (A) at (0,0);
+\\coordinate (B) at (3,-1);
+\\coordinate (C) at (5,0);
+\\coordinate (D) at (2,1);
+\\coordinate (A1) at (0,3.5);
+\\coordinate (B1) at (3,2.5);
+\\coordinate (C1) at (5,3.5);
+\\coordinate (D1) at (2,4.5);
+
+\\draw[dashed] (A) -- (D) -- (C) (D) -- (D1);
+\\draw (A) -- (B) -- (C) (A1) -- (B1) -- (C1) -- (D1) -- (A1) (A) -- (A1) (B) -- (B1) (C) -- (C1);
+
+\\node[below left] at (A) {$A$};
+\\node[below] at (B) {$B$};
+\\node[right] at (C) {$C$};
+\\node[above right] at (D) {$D$};
+\\node[above left] at (A1) {$A'$};
+\\node[below] at (B1) {$B'$};
+\\node[right] at (C1) {$C'$};
+\\node[above] at (D1) {$D'$};
+\\end{tikzpicture}`;
+    } else if (shape === 'cone') {
+      tikzCode = `\\begin{tikzpicture}[scale=1, >=stealth]
+\\coordinate (O) at (0,0);
+\\coordinate (S) at (0,3.8);
+\\draw[dashed] (2,0) arc (0:180:2cm and 0.6cm);
+\\draw (-2,0) arc (180:360:2cm and 0.6cm);
+\\draw (-2,0) -- (S) -- (2,0);
+\\draw[dashed] (S) -- (O) -- (2,0);
+
+\\node[below] at (O) {$O$};
+\\node[above] at (S) {$S$};
+\\node[right] at (2,0) {$A$};
+\\end{tikzpicture}`;
+    } else if (shape === 'cylinder') {
+      tikzCode = `\\begin{tikzpicture}[scale=1, >=stealth]
+\\coordinate (O) at (0,0);
+\\coordinate (O1) at (0,3.5);
+\\draw[dashed] (2,0) arc (0:180:2cm and 0.6cm);
+\\draw (-2,0) arc (180:360:2cm and 0.6cm);
+\\draw (0,3.5) ellipse (2cm and 0.6cm);
+\\draw (-2,0) -- (-2,3.5) (2,0) -- (2,3.5);
+\\draw[dashed] (O) -- (O1);
+
+\\node[below] at (O) {$O$};
+\\node[above] at (O1) {$O'$};
+\\end{tikzpicture}`;
+    } else {
+      tikzCode = `\\begin{tikzpicture}[scale=1, >=stealth]
+\\coordinate (O) at (0,0);
+\\draw (0,0) circle (2.2cm);
+\\draw[dashed] (2.2,0) arc (0:180:2.2cm and 0.7cm);
+\\draw (-2.2,0) arc (180:360:2.2cm and 0.7cm);
+\\filldraw (O) circle (1.5pt) node[below] {$O$};
+\\draw[dashed] (O) -- (2.2,0) node[midway,above] {$R$};
+\\end{tikzpicture}`;
+    }
+
+    navigator.clipboard.writeText(tikzCode);
+    setTikz3dCopied(true);
+    setTimeout(() => setTikz3dCopied(false), 2000);
+  };
+
   // Copy Status
   const [copied, setCopied] = useState<boolean>(false);
 
@@ -942,6 +1100,24 @@ export const Interactive3DGeometryEngine: React.FC<Interactive3DGeometryEnginePr
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={handleCopyTikz3D}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-300 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer active:scale-95"
+            title="Sao chép mã TikZ LaTeX hình không gian 3D"
+          >
+            {tikz3dCopied ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="text-emerald-700 font-extrabold">Đã chép TikZ!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-3.5 h-3.5 text-purple-600" />
+                <span>Copy TikZ</span>
+              </>
+            )}
+          </button>
+
           <button
             onClick={handleResetCamera}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold border border-slate-700 transition-colors cursor-pointer"

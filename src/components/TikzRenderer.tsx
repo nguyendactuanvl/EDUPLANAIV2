@@ -853,8 +853,9 @@ const fixSvgLines = (svg: SVGSVGElement) => {
     } catch (e) {}
 };
 
-export const TikzTableWrapper = ({ children, svgContent }: { children?: React.ReactNode, svgContent?: string }) => {
+export const TikzTableWrapper = ({ children, svgContent, code }: { children?: React.ReactNode, svgContent?: string, code?: string }) => {
     const containerRef = useRef<HTMLSpanElement>(null);
+    const [copied, setCopied] = useState(false);
     
     useLayoutEffect(() => {
         if (containerRef.current) {
@@ -863,9 +864,35 @@ export const TikzTableWrapper = ({ children, svgContent }: { children?: React.Re
         }
     }, [svgContent, children]);
 
+    const handleCopyTikz = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!code) return;
+        navigator.clipboard.writeText(code);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
     if (svgContent) {
         return (
-            <span ref={containerRef} className="tikz-wrapper relative w-full flex flex-col items-center justify-center min-h-[100px]">
+            <span ref={containerRef} className="tikz-wrapper relative w-full flex flex-col items-center justify-center min-h-[100px] group">
+                {code && (
+                    <button
+                        type="button"
+                        onClick={handleCopyTikz}
+                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-all z-20 px-2.5 py-1 bg-purple-50/90 hover:bg-purple-100 text-purple-700 border border-purple-300 rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm cursor-pointer"
+                        title="Sao chép mã TikZ LaTeX"
+                    >
+                        {copied ? (
+                            <>
+                                <span className="text-emerald-700">Đã chép TikZ!</span>
+                            </>
+                        ) : (
+                            <>
+                                <span>Copy TikZ</span>
+                            </>
+                        )}
+                    </button>
+                )}
                 <span className="tikzjax-instance w-full flex justify-center" dangerouslySetInnerHTML={{ __html: svgContent }} />
             </span>
         );
@@ -1041,7 +1068,7 @@ export const TikzRenderer = ({ content }: { content: string }) => {
   }, [content, cachedSvg]);
 
   if (cachedSvg) {
-      return <TikzTableWrapper svgContent={cachedSvg} />;
+      return <TikzTableWrapper svgContent={cachedSvg} code={content} />;
   }
 
   return (
