@@ -1545,13 +1545,30 @@ app.all("/api/upgrade-lesson-plan", async (req, res) => {
   }
   
   try {
-    const { lesson, subject } = req.body;
+    const { lesson, subject, templateMode = 'uploaded', customTemplateInstructions = '' } = req.body || {};
     const files = resolveFiles(req.body);
+
+    let templateDirective = '';
+    if (templateMode === 'uploaded') {
+      templateDirective = `
+5. QUY CHUẨN MẪU ĐỊNH DẠNG (THEO MẪU GIÁO ÁN GỐC CỦA NGUỜI DÙNG ĐÃ ĐƯA LÊN):
+   - BẮT BUỘC giữ nguyên 100% cấu trúc, thứ tự tiêu đề các phần, tên gọi hoạt động, cách chia mục và các bảng biểu từ chính tệp giáo án gốc mà giáo viên đã tải lên.
+   - Nâng cấp và lồng ghép bổ sung chi tiết về Năng lực số (NLS), công cụ AI, câu lệnh prompt mẫu, thiết bị công nghệ và kịch bản dạy học tương tác trực tiếp vào ĐÚNG các mục/hoạt động tương ứng trong cấu trúc gốc đó.`;
+    } else if (templateMode === 'custom' && customTemplateInstructions.trim()) {
+      templateDirective = `
+5. QUY CHUẨN MẪU ĐỊNH DẠNG (THEO YÊU CẦU CHI TIẾT MẪU TÙY CHỈNH CỦA GIÁO VIÊN):
+   - BẮT BUỘC tuân thủ nghiêm ngặt khung mẫu và quy chuẩn cấu trúc do giáo viên chỉ định sau đây:
+   "${customTemplateInstructions.trim()}"`;
+    } else {
+      templateDirective = `
+5. QUY CHUẨN MẪU ĐỊNH DẠNG (THEO KHUNG HỆ THỐNG CÔNG VĂN 5512 CHUẨN GDPT 2018):
+   - Tái cấu trúc và trình bày toàn bộ giáo án theo đúng 4 phần chuẩn Công văn 5512 (I. Mục tiêu, II. Thiết bị dạy học & Học liệu, III. Tiến trình dạy học với 4 Hoạt động cho từng tiết, IV. Hướng dẫn về nhà).`;
+    }
     
-    const prompt = `Bạn là một chuyên gia giáo dục và công nghệ thông tin. Tôi đã tải lên một tài liệu Giáo án cũ (Kế hoạch bài dạy) môn ${subject || "chung"} cho bài học: "${lesson}".
+    const prompt = `Bạn là một chuyên gia giáo dục và công nghệ thông tin hàng đầu. Tôi đã tải lên một tài liệu Giáo án cũ (Kế hoạch bài dạy) môn ${subject || "chung"} cho bài học: "${lesson}".
 
 YÊU CẦU:
-Hãy đọc toàn bộ giáo án cũ này và viết lại toàn bộ giáo án, giữ nguyên cấu trúc và những nội dung cốt lõi, nhưng TÍCH HỢP VÀ BỔ SUNG CHI TIẾT việc ứng dụng công nghệ, năng lực số (NLS), năng lực AI, và STEM vào các hoạt động dạy học.
+Hãy đọc toàn bộ giáo án cũ này và viết lại toàn bộ giáo án, giữ nguyên các nội dung chuyên môn cốt lõi, đồng thời TÍCH HỢP VÀ BỔ SUNG CHI TIẾT việc ứng dụng công nghệ, năng lực số (NLS), năng lực AI, và STEM vào các hoạt động dạy học.
 
 HƯỚNG DẪN CHI TIẾT:
 1. **Phần Mục tiêu**: Hãy thêm hoặc làm rõ các mục tiêu về Năng lực số, Năng lực AI (nếu có thể), và STEM.
@@ -1565,9 +1582,10 @@ HƯỚNG DẪN CHI TIẾT:
        * Bước 3: Báo cáo, thảo luận (chỉ định nhóm/HS trình bày, các nhóm phản biện và đối chiếu kết quả phản biện từ công cụ AI/phần mềm).
        * Bước 4: Kết luận, nhận định (GV chốt kiến thức, ghi rõ bảng tổng kết kiến thức hoặc nội dung cần ghi chép vào vở).
 4. **Nổi bật Năng lực số và Năng lực AI**: Khi nhắc đến bất kỳ phần mềm, công cụ thiết bị số, Năng lực số hoặc công cụ AI nào (đặc biệt là những cái bạn vừa bổ sung), BẮT BUỘC định dạng bằng Markdown in đậm chuẩn: **[Tên công cụ / NLS / AI]** (TUYỆT ĐỐI CẤM dùng mã HTML inline như <mark style="..."> hay <span>).
+${templateDirective}
 ${MATH_FORMATTING_RULES}
-5. TUYỆT ĐỐI KHÔNG sử dụng thẻ HTML \`<br>\` hoặc \`<br/>\`. Sử dụng dấu xuống dòng chuẩn Markdown.
-6. Soạn chi tiết đầy đủ 100%, không tóm tắt, không dùng dấu ba chấm (...).`;
+6. TUYỆT ĐỐI KHÔNG sử dụng thẻ HTML \`<br>\` hoặc \`<br/>\`. Sử dụng dấu xuống dòng chuẩn Markdown.
+7. Soạn chi tiết đầy đủ 100%, không tóm tắt, không dùng dấu ba chấm (...).`;
 
     const response = await generateWithFallback(req, {
       contents: [

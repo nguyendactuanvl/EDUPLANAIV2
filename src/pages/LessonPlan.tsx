@@ -29,7 +29,9 @@ export function LessonPlan() {
   const [subject, setSubject] = useState("Toán");
   const [uploadedFiles, setUploadedFiles] = useState<{data: string, type: string, name: string}[]>([]);
   
-  
+  // Options for upgrade template mode
+  const [upgradeTemplateMode, setUpgradeTemplateMode] = useState<"system" | "uploaded" | "custom">("uploaded");
+  const [customTemplateInstructions, setCustomTemplateInstructions] = useState("");
   const [suggestion, setSuggestion] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -229,7 +231,9 @@ export function LessonPlan() {
         subject: subject,
         grade: selectedGrade,
         periods: customPeriods || 2,
-        files: uploadedFiles
+        files: uploadedFiles,
+        templateMode: upgradeTemplateMode,
+        customTemplateInstructions: customTemplateInstructions
       };
     }
 
@@ -449,6 +453,72 @@ export function LessonPlan() {
               />
             </div>
             
+            {activeTab === 'upgrade' && (
+              <div className="space-y-2 p-3 bg-emerald-50/60 border border-emerald-200/80 rounded-xl">
+                <label className="block text-xs font-bold text-emerald-950">
+                  Tùy chọn mẫu định dạng Giáo án nâng cấp:
+                </label>
+                <div className="space-y-2 text-xs font-medium text-slate-700">
+                  <label className={`flex items-start gap-2.5 p-2.5 rounded-lg border transition-all cursor-pointer ${upgradeTemplateMode === 'uploaded' ? 'bg-white border-emerald-500 text-emerald-950 shadow-2xs font-bold' : 'bg-white/70 border-slate-200 hover:bg-white'}`}>
+                    <input 
+                      type="radio" 
+                      name="upgradeTemplateMode" 
+                      value="uploaded"
+                      checked={upgradeTemplateMode === 'uploaded'}
+                      onChange={() => setUpgradeTemplateMode('uploaded')}
+                      className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div>
+                      <p className="font-bold text-slate-800">Theo mẫu giáo án đã đưa lên để nâng cấp (Giữ bố cục gốc)</p>
+                      <p className="font-normal text-slate-500 text-[11px] mt-0.5">Bảo toàn 100% bố cục, các mục và bảng biểu của file giáo án cũ, chỉ bổ sung NLS & AI vào đúng các mục đó.</p>
+                    </div>
+                  </label>
+
+                  <label className={`flex items-start gap-2.5 p-2.5 rounded-lg border transition-all cursor-pointer ${upgradeTemplateMode === 'system' ? 'bg-white border-emerald-500 text-emerald-950 shadow-2xs font-bold' : 'bg-white/70 border-slate-200 hover:bg-white'}`}>
+                    <input 
+                      type="radio" 
+                      name="upgradeTemplateMode" 
+                      value="system"
+                      checked={upgradeTemplateMode === 'system'}
+                      onChange={() => setUpgradeTemplateMode('system')}
+                      className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div>
+                      <p className="font-bold text-slate-800">Theo mẫu hệ thống (CV 5512 chuẩn GDPT 2018)</p>
+                      <p className="font-normal text-slate-500 text-[11px] mt-0.5">Tự động cấu trúc lại toàn bộ giáo án cũ theo chuẩn 4 phần Công văn 5512 mẫu mực.</p>
+                    </div>
+                  </label>
+
+                  <label className={`flex items-start gap-2.5 p-2.5 rounded-lg border transition-all cursor-pointer ${upgradeTemplateMode === 'custom' ? 'bg-white border-emerald-500 text-emerald-950 shadow-2xs font-bold' : 'bg-white/70 border-slate-200 hover:bg-white'}`}>
+                    <input 
+                      type="radio" 
+                      name="upgradeTemplateMode" 
+                      value="custom"
+                      checked={upgradeTemplateMode === 'custom'}
+                      onChange={() => setUpgradeTemplateMode('custom')}
+                      className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div className="flex-1">
+                      <p className="font-bold text-slate-800">Yêu cầu chi tiết mẫu khác của GV (Mẫu tùy chỉnh)</p>
+                      <p className="font-normal text-slate-500 text-[11px] mt-0.5">Thầy/Cô tự ghi chú rõ mẫu bố cục hoặc quy chuẩn riêng cần AI tuân thủ.</p>
+                    </div>
+                  </label>
+
+                  {upgradeTemplateMode === 'custom' && (
+                    <div className="pt-2">
+                      <textarea
+                        rows={3}
+                        placeholder="VD: Soạn theo mẫu 3 cột: Hoạt động của GV - Hoạt động của HS - Sản phẩm dự kiến..."
+                        className="w-full p-2.5 border border-emerald-300 rounded-lg text-xs font-normal text-slate-800 bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                        value={customTemplateInstructions}
+                        onChange={(e) => setCustomTemplateInstructions(e.target.value)}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">{activeTab === 'upgrade' ? 'Tải lên giáo án cũ cần nâng cấp' : 'Tải lên tệp Kế hoạch giáo dục'}</label>
               <div 
