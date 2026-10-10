@@ -1,10 +1,10 @@
 import { apiFetch } from '../lib/apiFetch';
-import { exportHtmlToWord } from '../lib/exportUtils';
+import { exportHtmlToWord, exportToLatexTexFile } from '../lib/exportUtils';
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Upload, X, FileText, Loader2, Download, AlertCircle, 
   Clipboard, CheckCircle2, Clock, Layers, Sliders, Sparkles, Zap, Wand2,
-  Image as ImageIcon, Scissors, PlusCircle
+  Image as ImageIcon, Scissors, PlusCircle, FileCode
 } from 'lucide-react';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { parseApiResponse, normalizeOcrChoicesAndFormatting } from '../lib/utils';
@@ -420,6 +420,12 @@ export function PdfToWord() {
     exportHtmlToWord(exportRef.current, `TaiLieu_DaChuyenDoi_${new Date().getTime()}${keepLatex ? '_LaTeX' : ''}.doc`, keepLatex);
   };
 
+  const handleExportLatex = () => {
+    if (!resultText) return;
+    const rawName = selectedFile ? selectedFile.name.replace(/\.[^/.]+$/, '') : 'TaiLieu_DaChuyenDoi';
+    exportToLatexTexFile(resultText, `${rawName}_LaTeX.tex`);
+  };
+
   const isPdf = selectedFile && (selectedFile.type === 'application/pdf' || selectedFile.name.toLowerCase().endsWith('.pdf'));
 
   return (
@@ -714,19 +720,26 @@ export function PdfToWord() {
               >
                 Chuyển file khác
               </button>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <button 
                   onClick={() => handleExportWord(false)}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm font-bold text-xs"
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm font-bold text-xs cursor-pointer"
                 >
                   <Download className="w-4 h-4" /> Word (Chuẩn)
                 </button>
                 <button 
                   onClick={() => handleExportWord(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm font-bold text-xs"
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm font-bold text-xs cursor-pointer"
                   title="Dành cho giáo viên dùng MathType"
                 >
                   <Download className="w-4 h-4" /> Word (Mã LaTeX)
+                </button>
+                <button 
+                  onClick={handleExportLatex}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all shadow-sm font-bold text-xs cursor-pointer active:scale-95"
+                  title="Tải file mã nguồn LaTeX (.tex) chuẩn biên dịch TeXMaker / Overleaf / TeXStudio"
+                >
+                  <FileCode className="w-4 h-4 text-purple-200" /> Tải mã LaTeX (.tex)
                 </button>
               </div>
             </div>

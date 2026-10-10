@@ -2148,5 +2148,75 @@ export async function exportElementToImage(
   }
 }
 
+/**
+ * Chuyển đổi nội dung văn bản / đề thi Markdown sang file mã nguồn LaTeX chuẩn (.tex)
+ * và tự động kích hoạt tải xuống cho giáo viên.
+ */
+export function exportToLatexTexFile(
+  markdownText: string, 
+  filename: string = 'TaiLieu_DaChuyenDoi.tex'
+): void {
+  if (!markdownText) return;
+
+  let body = markdownText.trim();
+
+  // 1. Chuyển đổi các trang phân đoạn
+  body = body.replace(/--- \[[^\]]*\] ---/g, '\n\\newpage\n');
+
+  // 2. Chuyển đổi tiêu đề
+  body = body.replace(/^#\s+(.*$)/gm, '\\section*{$1}');
+  body = body.replace(/^##\s+(.*$)/gm, '\\subsection*{$1}');
+  body = body.replace(/^###\s+(.*$)/gm, '\\subsubsection*{$1}');
+
+  // 3. Chuyển đổi định dạng chữ in đậm và in nghiêng ngoài math
+  const mathBlocks: string[] = [];
+  body = body.replace(/(\$\$[\s\S]*?\$\$|\$[^\$\n]+?\$)/g, (match) => {
+    mathBlocks.push(match);
+    return `___TEX_MATH_${mathBlocks.length - 1}___`;
+  });
+
+  // Chuyển đổi **text** -> \textbf{text}
+  body = body.replace(/\*\*(.*?)\*\*/g, '\\textbf{$1}');
+  // Chuyển đổi *text* -> \textit{text}
+  body = body.replace(/\*([^\*\n]+)\*/g, '\\textit{$1}');
+
+  // Khôi phục math blocks
+  body = body.replace(/___TEX_MATH_(\d+)___/g, (_m, idx) => mathBlocks[Number(idx)] || '');
+
+  // 4. Tạo document LaTeX hoàn chỉnh chuẩn Việt Nam
+  const texContent = `% =========================================================
+% TÀI LIỆU CHUYỂN ĐỔI SỐ HÓA LATEX (ĐỊNH DẠNG CHUẨN VIỆT NAM)
+% =========================================================
+\\documentclass[12pt,a4paper]{article}
+\\usepackage[utf8]{vietnam}
+\\usepackage[utf8]{inputenc}
+\\usepackage{amsmath,amssymb,amsfonts,amsbsy}
+\\usepackage{graphicx}
+\\usepackage{geometry}
+\\geometry{a4paper, left=2cm, right=2cm, top=2cm, bottom=2cm}
+\\usepackage{multicol}
+\\usepackage{array}
+\\usepackage{tabularx}
+\\usepackage{enumitem}
+
+\\title{Tài liệu Số hóa từ PDF/Ảnh}
+\\author{Hệ thống Trợ lý Soạn giảng \\& Đề thi GDPT 2018}
+\\date{\\today}
+
+\\begin{document}
+
+${body}
+
+\\end{document}
+`;
+
+  // Trigger file download
+  const blob = new Blob([texContent], { type: 'text/x-tex;charset=utf-8' });
+  if (typeof window !== 'undefined') {
+    saveAs(blob, filename.endsWith('.tex') ? filename : `${filename}.tex`);
+  }
+}
+
+
 
 
