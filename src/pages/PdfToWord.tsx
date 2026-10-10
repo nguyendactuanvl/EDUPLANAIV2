@@ -4,13 +4,15 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   Upload, X, FileText, Loader2, Download, AlertCircle, 
   Clipboard, CheckCircle2, Clock, Layers, Sliders, Sparkles, Zap, Wand2,
-  Image as ImageIcon, Scissors, PlusCircle, FileCode
+  Image as ImageIcon, Scissors, PlusCircle, FileCode, Palette, BarChart2, TrendingUp
 } from 'lucide-react';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { parseApiResponse, normalizeOcrChoicesAndFormatting } from '../lib/utils';
 import { run1ClickMathFix } from '../components/math-tools/MathFormulaFixer';
 import { getPdfTotalPages, renderPdfPageRange, renderPdfPageToDataUrl } from '../lib/pdfUtils';
 import { ImageCropperModal } from '../components/ImageCropperModal';
+import { QuestionVisualizerPanel } from '../components/math-tools/QuestionVisualizerPanel';
+import { autoEnrichTextWithVisuals } from '../lib/bbtRenderer';
 import mammoth from 'mammoth';
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -23,6 +25,7 @@ const fileToBase64 = (file: File): Promise<string> => {
 };
 
 type PageMode = 'recommended' | 'range' | 'all';
+type VisualMode = 'auto_redraw' | 'crop_original' | 'manual_visualizer';
 
 export function PdfToWord() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -33,6 +36,9 @@ export function PdfToWord() {
   const [pageMode, setPageMode] = useState<PageMode>('recommended');
   const [fromPage, setFromPage] = useState<number>(1);
   const [toPage, setToPage] = useState<number>(5);
+
+  // BBT & Graph redraw options
+  const [visualMode, setVisualMode] = useState<VisualMode>('auto_redraw');
 
   // Conversion state & Progress tracking
   const [isUploading, setIsUploading] = useState(false);
@@ -50,6 +56,10 @@ export function PdfToWord() {
   const [cropperSourceImage, setCropperSourceImage] = useState<string>('');
   const [targetReplacePlaceholder, setTargetReplacePlaceholder] = useState<string | null>(null);
   
+  // Interactive Visualizer Panel Modal
+  const [isVisualizerOpen, setIsVisualizerOpen] = useState(false);
+  const [visualizerTab, setVisualizerTab] = useState<'bbt' | 'graph' | 'geometry3d' | 'statistics'>('bbt');
+
   const exportRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const progressIntervalRef = useRef<any>(null);
@@ -314,6 +324,10 @@ export function PdfToWord() {
         }).join('');
 
         finalResult = normalizeOcrChoicesAndFormatting(finalResult);
+
+        if (visualMode === 'auto_redraw') {
+          finalResult = autoEnrichTextWithVisuals(finalResult);
+        }
 
       } else {
         // Single Image or DOCX
@@ -617,6 +631,73 @@ export function PdfToWord() {
                 </div>
               )}
 
+              {/* BBT & Graph Redraw Options */}
+              <div className="p-4 bg-white rounded-xl border border-slate-200/80 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-bold text-slate-800 pb-2 border-b border-slate-100">
+                  <TrendingUp className="w-4 h-4 text-indigo-600" />
+                  <span>Tùy chọn vẽ lại Bảng biến thiên (BBT) & Đồ thị như đề gốc (GV tự chọn)</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-xs font-semibold">
+                  <label className={`flex items-start gap-2.5 p-3 rounded-lg border transition-all cursor-pointer ${visualMode === 'auto_redraw' ? 'bg-indigo-50/80 border-indigo-400 text-indigo-950 shadow-2xs' : 'bg-slate-50/50 border-slate-200 hover:bg-slate-100/60'}`}>
+                    <input 
+                      type="radio" 
+                      name="visualMode" 
+                      checked={visualMode === 'auto_redraw'}
+                      onChange={() => setVisualMode('auto_redraw')}
+                      className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <div>
+                      <p className="font-bold text-indigo-950 flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Tự động vẽ lại BBT & Đồ thị Vector (Khuyên dùng)</span>
+                      </p>
+                      <p className="font-normal text-slate-500 text-[11px] mt-1 leading-relaxed">
+                        Hệ thống tự động phát hiện hàm số và tái tạo BBT/Đồ thị dạng bảng vector sắc nét chuẩn 100% SGK.
+                      </p>
+                    </div>
+                  </label>
+
+                  <label className={`flex items-start gap-2.5 p-3 rounded-lg border transition-all cursor-pointer ${visualMode === 'crop_original' ? 'bg-indigo-50/80 border-indigo-400 text-indigo-950 shadow-2xs' : 'bg-slate-50/50 border-slate-200 hover:bg-slate-100/60'}`}>
+                    <input 
+                      type="radio" 
+                      name="visualMode" 
+                      checked={visualMode === 'crop_original'}
+                      onChange={() => setVisualMode('crop_original')}
+                      className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <div>
+                      <p className="font-bold text-indigo-950 flex items-center gap-1">
+                        <Scissors className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Giữ vị trí [Hình vẽ] để tự Cắt ảnh gốc PDF</span>
+                      </p>
+                      <p className="font-normal text-slate-500 text-[11px] mt-1 leading-relaxed">
+                        Giữ thẻ đánh dấu hình vẽ/đồ thị để thầy/cô kéo cắt ảnh trực tiếp từ trang PDF đính kèm.
+                      </p>
+                    </div>
+                  </label>
+
+                  <label className={`flex items-start gap-2.5 p-3 rounded-lg border transition-all cursor-pointer ${visualMode === 'manual_visualizer' ? 'bg-indigo-50/80 border-indigo-400 text-indigo-950 shadow-2xs' : 'bg-slate-50/50 border-slate-200 hover:bg-slate-100/60'}`}>
+                    <input 
+                      type="radio" 
+                      name="visualMode" 
+                      checked={visualMode === 'manual_visualizer'}
+                      onChange={() => setVisualMode('manual_visualizer')}
+                      className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <div>
+                      <p className="font-bold text-indigo-950 flex items-center gap-1">
+                        <Palette className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Tự chọn vẽ lại BBT / Đồ thị tương tác</span>
+                      </p>
+                      <p className="font-normal text-slate-500 text-[11px] mt-1 leading-relaxed">
+                        Mở bộ công cụ vẽ BBT/Đồ thị tương tác để tự chọn dạng hàm số, tùy chỉnh tham số theo ý muốn.
+                      </p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
               {/* Progress Indicator when converting */}
               {isUploading ? (
                 <div className="p-6 bg-white rounded-xl border border-blue-200 shadow-sm space-y-4 animate-in fade-in">
@@ -706,6 +787,29 @@ export function PdfToWord() {
             <div className="flex items-center gap-2 flex-wrap">
               <button 
                 onClick={() => {
+                  setVisualizerTab('bbt');
+                  setIsVisualizerOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-lg transition-all shadow-sm font-bold text-xs cursor-pointer active:scale-95"
+                title="Mở công cụ tự chọn vẽ lại Bảng biến thiên hoặc Đồ thị hàm số tương tác"
+              >
+                <Palette className="w-4 h-4 text-purple-200" />
+                <span>🎨 Tự chọn vẽ lại BBT / Đồ thị</span>
+              </button>
+
+              <button 
+                onClick={() => {
+                  setResultText(prev => autoEnrichTextWithVisuals(prev));
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-lg transition-all shadow-sm font-bold text-xs cursor-pointer active:scale-95"
+                title="Tự động bóc tách và vẽ lại 100% BBT và Đồ thị vector sắc nét"
+              >
+                <Sparkles className="w-4 h-4 text-cyan-200" />
+                <span>⚡ Tái tạo BBT & Đồ thị Vector</span>
+              </button>
+
+              <button 
+                onClick={() => {
                   setResultText(prev => run1ClickMathFix(prev));
                 }}
                 className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg transition-all shadow-sm font-bold text-xs cursor-pointer active:scale-95"
@@ -744,6 +848,55 @@ export function PdfToWord() {
               </div>
             </div>
           </div>
+
+          {/* Detected Figure Placeholders Manager */}
+          {(() => {
+            const matches = Array.from(resultText.matchAll(/\[(?:Hình\s*vẽ|Đồ\s*thị|Bảng\s*biến\s*thiên|Hình\s*ảnh|Hình|BBT)[^\]]*\]/gi));
+            if (matches.length === 0) return null;
+
+            return (
+              <div className="mb-6 p-4 bg-amber-50/80 border border-amber-200 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 text-amber-600" />
+                    <span>Phát hiện {matches.length} vị trí hình vẽ / đồ thị / BBT cần hoàn thiện trong văn bản:</span>
+                  </h4>
+                  <span className="text-[11px] text-amber-800 font-medium">Chọn thao tác để thay thế hình minh họa ngay vị trí đó:</span>
+                </div>
+
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {matches.map((m, idx) => {
+                    const tag = m[0];
+                    return (
+                      <div key={idx} className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-amber-200/80 text-xs gap-2">
+                        <span className="font-semibold text-slate-800 truncate max-w-md">{tag}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            onClick={() => {
+                              setTargetReplacePlaceholder(tag);
+                              setVisualizerTab(tag.toLowerCase().includes('bbt') || tag.toLowerCase().includes('biến thiên') ? 'bbt' : 'graph');
+                              setIsVisualizerOpen(true);
+                            }}
+                            className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-700 rounded font-bold border border-indigo-200 flex items-center gap-1 transition-all"
+                          >
+                            <Palette className="w-3.5 h-3.5" />
+                            <span>🎨 Tự vẽ BBT/Đồ thị</span>
+                          </button>
+                          <button
+                            onClick={() => handleOpenCropper(1, tag)}
+                            className="px-2.5 py-1 bg-amber-100 hover:bg-amber-600 hover:text-white text-amber-800 rounded font-bold border border-amber-300 flex items-center gap-1 transition-all"
+                          >
+                            <Scissors className="w-3.5 h-3.5" />
+                            <span>✂️ Cắt từ trang PDF</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Quick Crop & Attach Image from PDF pages */}
           {Object.keys(pdfPageImages).length > 0 && (
@@ -794,6 +947,26 @@ export function PdfToWord() {
         onCrop={handleCropComplete}
         onClose={() => setIsCropperOpen(false)}
       />
+
+      {/* Question Visualizer Modal for interactive BBT & Graph redraw */}
+      {isVisualizerOpen && (
+        <QuestionVisualizerPanel
+          questionNumber={1}
+          questionContent={resultText.slice(0, 500)}
+          defaultTab={visualizerTab}
+          onInsertSnippet={(_target, snippet) => {
+            setIsVisualizerOpen(false);
+            if (!snippet) return;
+            if (targetReplacePlaceholder && resultText.includes(targetReplacePlaceholder)) {
+              setResultText(prev => prev.replace(targetReplacePlaceholder, `\n\n${snippet}\n\n`));
+            } else {
+              setResultText(prev => prev + `\n\n${snippet}\n\n`);
+            }
+            setTargetReplacePlaceholder(null);
+          }}
+          onClose={() => setIsVisualizerOpen(false)}
+        />
+      )}
     </div>
   );
 }
