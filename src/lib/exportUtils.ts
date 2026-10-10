@@ -44,7 +44,7 @@ import {
   wrapNakedMathEnvironments,
   preProcessMathContent
 } from './utils';
-import { convertBbtTableToSvg } from './bbtRenderer';
+import { convertBbtTableToSvg, autoEnrichTextWithVisuals } from './bbtRenderer';
 import { getTikzSvg } from '../components/TikzRenderer';
 import { normalizeMathText, normalizeArithmeticProgressionFormulas } from './globalMath';
 
@@ -1694,6 +1694,18 @@ export async function exportHtmlToWord(
       if (node.nodeType === Node.ELEMENT_NODE) {
         const el = node as HTMLElement;
         if (el.classList.contains('katex') || el.classList.contains('omml-math-node')) return;
+
+        // Tự động bổ sung BBT / Đồ thị nếu khối câu hỏi đề cập BBT hoặc đồ thị mà thiếu hình vẽ
+        if (el.classList.contains('question-block') || el.classList.contains('question-stem') || el.classList.contains('math-view-container')) {
+          const html = el.innerHTML;
+          if (/(?:bảng\s*biến\s*thiên|bảng\s*xét\s*dấu|đồ\s*thị|hình\s*bên|hình\s*vẽ)/i.test(html) && !html.includes('svg-wrapper') && !html.includes('img') && !html.includes('svg')) {
+            const enriched = autoEnrichTextWithVisuals(html);
+            if (enriched !== html) {
+              el.innerHTML = enriched;
+            }
+          }
+        }
+
         Array.from(node.childNodes).forEach(walkAndPreprocessTextNodes);
       }
     };

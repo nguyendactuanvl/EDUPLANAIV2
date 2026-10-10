@@ -51,7 +51,9 @@ export function cleanMathText(str?: string): string {
     .replace(/\\prime/g, "'")
     .replace(/\^\{\s*['’′]\s*\}/g, "'")
     .replace(/\^\{\s*\\prime\s*\}/g, "'")
+    .replace(/-\\frac\{([^}]+)\}\{([^}]+)\}/g, '-$1/$2')
     .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '$1/$2')
+    .replace(/\\pi/g, 'π')
     .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
     .replace(/\\mathbb\{R\}/g, 'ℝ')
     .replace(/_([a-zA-Z0-9])/g, '$1')
@@ -1383,7 +1385,317 @@ export function analyzeFunctionToBbt(expression: string): BBTData | null {
         };
       }
     }
+
+    // =========================================================================
+    // 6. HÀM SỐ LƯỢNG GIÁC: y = sin x, y = cos x, y = tan x, y = cot x
+    // =========================================================================
+    if (/\b(?:sin|cos|tan|cot)\b/i.test(clean)) {
+      if (clean.includes('sin')) {
+        return {
+          functionName: 'y = \\sin x',
+          domainNote: 'Xét trên 1 chu kỳ [0; 2\\pi]',
+          points: [
+            { x: '0', yPrime: '', yVal: '0', yPosition: 'middle' },
+            { x: '\\frac{\\pi}{2}', yPrime: '0', yVal: '1', yPosition: 'top' },
+            { x: '\\frac{3\\pi}{2}', yPrime: '0', yVal: '-1', yPosition: 'bottom' },
+            { x: '2\\pi', yPrime: '', yVal: '0', yPosition: 'middle' }
+          ],
+          intervals: [
+            { sign: '+', trend: 'increasing' },
+            { sign: '-', trend: 'decreasing' },
+            { sign: '+', trend: 'increasing' }
+          ]
+        };
+      }
+      if (clean.includes('cos')) {
+        return {
+          functionName: 'y = \\cos x',
+          domainNote: 'Xét trên 1 chu kỳ [0; 2\\pi]',
+          points: [
+            { x: '0', yPrime: '', yVal: '1', yPosition: 'top' },
+            { x: '\\pi', yPrime: '0', yVal: '-1', yPosition: 'bottom' },
+            { x: '2\\pi', yPrime: '', yVal: '1', yPosition: 'top' }
+          ],
+          intervals: [
+            { sign: '-', trend: 'decreasing' },
+            { sign: '+', trend: 'increasing' }
+          ]
+        };
+      }
+      if (clean.includes('tan')) {
+        return {
+          functionName: 'y = \\tan x',
+          domainNote: 'Xét trên khoảng (-\\frac{\\pi}{2}; \\frac{\\pi}{2})',
+          points: [
+            { x: '-\\frac{\\pi}{2}', yPrime: '||', isAsymptote: true, yLeftVal: '-\\infty', yLeftPosition: 'bottom', yRightVal: '-\\infty', yRightPosition: 'bottom' },
+            { x: '0', yPrime: '', yVal: '0', yPosition: 'middle' },
+            { x: '\\frac{\\pi}{2}', yPrime: '||', isAsymptote: true, yLeftVal: '+\\infty', yLeftPosition: 'top', yRightVal: '+\\infty', yRightPosition: 'top' }
+          ],
+          intervals: [
+            { sign: '+', trend: 'increasing' },
+            { sign: '+', trend: 'increasing' }
+          ]
+        };
+      }
+    }
   } catch (err) {}
 
   return null;
 }
+
+/**
+ * Sinh đồ thị hàm số vector SVG chuẩn SGK Toán 10, 11, 12 GDPT 2018
+ * Hiển thị đầy đủ hệ trục Oxy, điểm cực trị, tiệm cận và đường cong sắc nét
+ */
+export function generateFunctionGraphSvg(expression: string): string | null {
+  if (!expression || !expression.trim()) return null;
+
+  try {
+    let clean = expression.trim()
+      .replace(/\s+/g, '')
+      .replace(/\$/g, '')
+      .replace(/^y\s*=\s*/i, '')
+      .replace(/^f\([a-z]\)\s*=\s*/i, '');
+
+    const width = 420;
+    const height = 300;
+    const originX = 210;
+    const originY = 150;
+    const scale = 26; // 26 pixels per unit
+
+    const toSvgX = (x: number) => originX + x * scale;
+    const toSvgY = (y: number) => originY - y * scale;
+
+    // Evaluator helper
+    const evalY = (xVal: number): number | null => {
+      try {
+        const bbtData = analyzeFunctionToBbt(clean);
+        // Check rational function (ax+b)/(cx+d) or (ax^2+bx+c)/(dx+e)
+        if (clean.includes('/')) {
+          const parts = clean.split('/');
+          if (parts.length === 2) {
+            const numCoeffs = parsePolynomialCoeffs(parts[0].replace(/^\(|\)$/g, ''));
+            const denCoeffs = parsePolynomialCoeffs(parts[1].replace(/^\(|\)$/g, ''));
+            const num = (numCoeffs[2] || 0) * xVal * xVal + (numCoeffs[1] || 0) * xVal + (numCoeffs[0] || 0);
+            const den = (denCoeffs[1] || 0) * xVal + (denCoeffs[0] || 0);
+            if (Math.abs(den) < 1e-4) return null;
+            return num / den;
+          }
+        }
+
+        const coeffs = parsePolynomialCoeffs(clean);
+        let res = 0;
+        let hasCoeff = false;
+        for (let p = 0; p <= 4; p++) {
+          if (coeffs[p] !== undefined) {
+            res += coeffs[p] * Math.pow(xVal, p);
+            hasCoeff = true;
+          }
+        }
+        if (hasCoeff) return res;
+
+        // Trigonometric fallbacks
+        if (clean.includes('sin')) return Math.sin(xVal);
+        if (clean.includes('cos')) return Math.cos(xVal);
+        if (clean.includes('tan')) {
+          const t = Math.tan(xVal);
+          return Math.abs(t) > 8 ? null : t;
+        }
+
+        return null;
+      } catch (e) {
+        return null;
+      }
+    };
+
+    const svgParts: string[] = [];
+
+    // Grid dots / lines
+    svgParts.push(`<defs>
+      <pattern id="graph-grid" width="${scale}" height="${scale}" patternUnits="userSpaceOnUse">
+        <path d="M ${scale} 0 L 0 0 0 ${scale}" fill="none" stroke="#f1f5f9" stroke-width="1" />
+      </pattern>
+      <marker id="graph-arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#1e293b" />
+      </marker>
+    </defs>`);
+
+    // Background grid
+    svgParts.push(`<rect width="${width}" height="${height}" fill="#ffffff" />`);
+    svgParts.push(`<rect width="${width}" height="${height}" fill="url(#graph-grid)" />`);
+
+    // Asymptotes
+    let xAsym: number | null = null;
+    let yAsym: number | null = null;
+    if (clean.includes('/')) {
+      const parts = clean.split('/');
+      if (parts.length === 2) {
+        const numCoeffs = parsePolynomialCoeffs(parts[0].replace(/^\(|\)$/g, ''));
+        const denCoeffs = parsePolynomialCoeffs(parts[1].replace(/^\(|\)$/g, ''));
+        if (denCoeffs[1] && denCoeffs[1] !== 0) {
+          xAsym = - (denCoeffs[0] || 0) / denCoeffs[1];
+          if ((numCoeffs[2] === undefined || numCoeffs[2] === 0) && numCoeffs[1]) {
+            yAsym = numCoeffs[1] / denCoeffs[1];
+          }
+        }
+      }
+    }
+
+    if (xAsym !== null && isFinite(xAsym)) {
+      const sx = toSvgX(xAsym);
+      svgParts.push(`<line x1="${sx}" y1="10" x2="${sx}" y2="${height - 10}" stroke="#ef4444" stroke-width="1.2" stroke-dasharray="4,4" />`);
+    }
+    if (yAsym !== null && isFinite(yAsym)) {
+      const sy = toSvgY(yAsym);
+      svgParts.push(`<line x1="10" y1="${sy}" x2="${width - 10}" y2="${sy}" stroke="#ef4444" stroke-width="1.2" stroke-dasharray="4,4" />`);
+    }
+
+    // Axes
+    svgParts.push(`<line x1="15" y1="${originY}" x2="${width - 15}" y2="${originY}" stroke="#1e293b" stroke-width="1.5" marker-end="url(#graph-arrow)" />`);
+    svgParts.push(`<line x1="${originX}" y1="${height - 15}" x2="${originX}" y2="15" stroke="#1e293b" stroke-width="1.5" marker-end="url(#graph-arrow)" />`);
+
+    // Origin and axis labels
+    svgParts.push(`<text x="${originX - 12}" y="${originY + 16}" font-family="'Times New Roman', Times, serif" font-size="14" font-style="italic" fill="#0f172a">O</text>`);
+    svgParts.push(`<text x="${width - 18}" y="${originY + 18}" font-family="'Times New Roman', Times, serif" font-size="15" font-style="italic" fill="#0f172a">x</text>`);
+    svgParts.push(`<text x="${originX - 16}" y="18" font-family="'Times New Roman', Times, serif" font-size="15" font-style="italic" fill="#0f172a">y</text>`);
+
+    // Tick marks on axes
+    for (let u = -6; u <= 6; u++) {
+      if (u === 0) continue;
+      const tx = toSvgX(u);
+      if (tx > 20 && tx < width - 20) {
+        svgParts.push(`<line x1="${tx}" y1="${originY - 3}" x2="${tx}" y2="${originY + 3}" stroke="#1e293b" stroke-width="1" />`);
+        if (Math.abs(u) <= 3) {
+          svgParts.push(`<text x="${tx}" y="${originY + 16}" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="12" fill="#475569">${u}</text>`);
+        }
+      }
+      const ty = toSvgY(u);
+      if (ty > 20 && ty < height - 20) {
+        svgParts.push(`<line x1="${originX - 3}" y1="${ty}" x2="${originX + 3}" y2="${ty}" stroke="#1e293b" stroke-width="1" />`);
+        if (Math.abs(u) <= 3) {
+          svgParts.push(`<text x="${originX - 12}" y="${ty + 4}" text-anchor="end" font-family="'Times New Roman', Times, serif" font-size="12" fill="#475569">${u}</text>`);
+        }
+      }
+    }
+
+    // Sample points & construct path
+    const minX = -6.5;
+    const maxX = 6.5;
+    const step = 0.08;
+    let pathD = '';
+    let inSubpath = false;
+
+    for (let xVal = minX; xVal <= maxX; xVal += step) {
+      if (xAsym !== null && Math.abs(xVal - xAsym) < 0.15) {
+        inSubpath = false;
+        continue;
+      }
+      const yVal = evalY(xVal);
+      if (yVal === null || isNaN(yVal) || !isFinite(yVal) || Math.abs(yVal) > 6.5) {
+        inSubpath = false;
+        continue;
+      }
+
+      const sx = toSvgX(xVal);
+      const sy = toSvgY(yVal);
+
+      if (sx < 10 || sx > width - 10 || sy < 10 || sy > height - 10) {
+        inSubpath = false;
+        continue;
+      }
+
+      if (!inSubpath) {
+        pathD += ` M ${sx.toFixed(1)} ${sy.toFixed(1)}`;
+        inSubpath = true;
+      } else {
+        pathD += ` L ${sx.toFixed(1)} ${sy.toFixed(1)}`;
+      }
+    }
+
+    if (pathD.trim()) {
+      svgParts.push(`<path d="${pathD.trim()}" stroke="#2563eb" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" />`);
+    }
+
+    // Key extreme points projections
+    const bbtData = analyzeFunctionToBbt(clean);
+    if (bbtData && bbtData.points) {
+      bbtData.points.forEach(pt => {
+        if (pt.yPrime === '0' && pt.x && pt.yVal) {
+          const numX = parseFloat(pt.x.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/, '$1/$2'));
+          const numY = parseFloat(pt.yVal.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/, '$1/$2'));
+          if (!isNaN(numX) && !isNaN(numY) && Math.abs(numX) <= 6 && Math.abs(numY) <= 6) {
+            const px = toSvgX(numX);
+            const py = toSvgY(numY);
+            if (px > 20 && px < width - 20 && py > 20 && py < height - 20) {
+              svgParts.push(`<line x1="${px}" y1="${originY}" x2="${px}" y2="${py}" stroke="#64748b" stroke-dasharray="3,3" stroke-width="1" />`);
+              svgParts.push(`<line x1="${originX}" y1="${py}" x2="${px}" y2="${py}" stroke="#64748b" stroke-dasharray="3,3" stroke-width="1" />`);
+              svgParts.push(`<circle cx="${px}" cy="${py}" r="3.5" fill="#1e293b" />`);
+            }
+          }
+        }
+      });
+    }
+
+    return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" class="max-w-full h-auto mx-auto my-3 drop-shadow-sm bg-white rounded-lg border border-slate-200">
+      ${svgParts.join('\n      ')}
+    </svg>`;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Tự động quét và hoàn thiện 1-click tất cả BBT & Đồ thị trong văn bản/câu hỏi
+ * Đảm bảo 100% không bị thiếu BBT hoặc đồ thị khi soạn thảo hay xuất Word/PDF
+ */
+export function autoEnrichTextWithVisuals(text: string): string {
+  if (!text) return '';
+  let updated = text;
+
+  // 1. Chuyển đổi mã TikZ trần thành SVG wrapper
+  if (/```tikz|\\begin\{tikzpicture\}/i.test(updated)) {
+    try {
+      const { embedTikzSvgsInText } = require('../components/TikzRenderer');
+      updated = embedTikzSvgsInText(updated);
+    } catch (e) {}
+  }
+
+  // 2. Chuyển đổi Bảng biến thiên Markdown table thành SVG wrapper
+  updated = embedBbtSvgsInText(updated);
+
+  // 3. Tự động bổ sung BBT nếu câu hỏi đề cập "bảng biến thiên" / "bảng xét dấu" mà chưa có hình/SVG
+  if (/(?:bảng\s*biến\s*thiên|bảng\s*xét\s*dấu|chiều\s*biến\s*thiên)/i.test(updated) && !updated.includes('svg-wrapper') && !updated.includes('<img')) {
+    const fMatch = updated.match(/(?:y|f\(x\)|g\(x\))\s*=\s*([^,;.\n$]+)/i) ||
+                   updated.match(/hàm\s*số\s*(?:\$)?(?:y\s*=\s*)?([^,;.\n$]+)/i);
+    if (fMatch) {
+      const bbt = analyzeFunctionToBbt(fMatch[1].trim());
+      if (bbt) {
+        const svg = generateBbtSvg(bbt);
+        if (svg) {
+          const b64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : '';
+          if (b64) {
+            updated += `\n\n<svg-wrapper data-svg="${b64}"></svg-wrapper>\n\n`;
+          }
+        }
+      }
+    }
+  }
+
+  // 4. Tự động bổ sung Đồ thị nếu câu hỏi đề cập "đồ thị" / "hình vẽ" / "hình bên" mà chưa có hình/SVG
+  if (/(?:đồ\s*thị|hình\s*bên|hình\s*vẽ|cho\s*đồ\s*thị)/i.test(updated) && !updated.includes('svg-wrapper') && !updated.includes('<img')) {
+    const fMatch = updated.match(/(?:y|f\(x\)|g\(x\))\s*=\s*([^,;.\n$]+)/i) ||
+                   updated.match(/hàm\s*số\s*(?:\$)?(?:y\s*=\s*)?([^,;.\n$]+)/i);
+    if (fMatch) {
+      const graphSvg = generateFunctionGraphSvg(fMatch[1].trim());
+      if (graphSvg) {
+        const b64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(graphSvg)) : '';
+        if (b64) {
+          updated += `\n\n<svg-wrapper data-svg="${b64}"></svg-wrapper>\n\n`;
+        }
+      }
+    }
+  }
+
+  return updated;
+}
+

@@ -177,6 +177,15 @@ export function normalizeMathText(text: any): string {
   t = t.replace(/\\*begin\s*\{?aligned\*?\}?/gi, '\\begin{aligned}');
   t = t.replace(/\\*end\s*\{?aligned\*?\}?/gi, '\\end{aligned}');
 
+  // Chuẩn hóa \begin{array} {|c|c|c|\n\n} -> \begin{array}{|c|c|c|}
+  t = t.replace(/\\begin\s*\{array\}\s*\{([\s\S]*?)\}/gi, (_match, cols) => {
+    const cleanCols = cols.replace(/[\r\n\s]+/g, '').trim();
+    return `\\begin{array}{${cleanCols}}`;
+  });
+  t = t.replace(/(\\begin\s*\{array\}[\s\S]*?\\end\s*\{array\})/gi, (match) => {
+    return match.replace(/\r\n/g, '\n').replace(/\n\s*\n+/g, '\n');
+  });
+
   // Convert \(...\) to $...$ and \[...\] to $$...$$
   t = t.replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$');
   t = t.replace(/\\\[([\s\S]*?)\\\]/g, '$$$$$1$$$$');

@@ -42,6 +42,12 @@ const MATH_FORMATTING_RULES = `QUY TẮC ĐỊNH DẠNG TOÁN HỌC VÀ VĂN B�
    - Nếu có tiệm cận đứng hoặc điểm gián đoạn (như hàm phân thức bậc nhất/bậc nhất): dùng vạch đôi $\\|$ ở hàng $y'$ và phân tách 2 giới hạn ở hàng $y$ bằng $\\|$ (ví dụ: $2 \\searrow -\\infty \\| +\\infty \\searrow 2$).
    - TUYỆT ĐỐI KHÔNG viết toàn bộ bảng biến thiên dính liền trên cùng 1 dòng mà không có ký tự ngắt dòng \\n.
 
+2.5. BẢNG SỐ LIỆU THỐNG KÊ (BẢNG GHÉP NHÓM, TẦN SỐ, NĂNG SUẤT, CÂN NẶNG, THỜI GIAN...):
+   - BẮT BUỘC dùng Markdown Table chuẩn (có tiêu đề và vạch phân cách |---|---|) HOẶC nếu dùng \\begin{array} thì BẮT BUỘC viết liền khối tham số cột trên 1 dòng duy nhất:
+     $$\\begin{array}{|c|c|c|c|c|}\\hline \\text{Nhóm} & [a; b) & [b; c) \\\\ \\hline \\text{Tần số} & n_1 & n_2 \\\\ \\hline \\end{array}$$
+   - TUYỆT ĐỐI KHÔNG chèn dòng trống \\n\\n giữa \\begin{array} và ngoặc nhọn } khai báo cột.
+   - TUYỆT ĐỐI KHÔNG chèn dòng trống \\n\\n rác bên trong khối $$\\begin{array}...\\end{array}$$.
+
 3. HÌNH VẼ ĐỒ THỊ:
    - Nếu câu hỏi trích dẫn hình vẽ mà không có URL ảnh thực tế: BẮT BUỘC phải mô tả rõ đặc điểm đồ thị bằng lời trong đề (ví dụ: "Đồ thị đi qua điểm $A(0; -1)$, đỉnh $I(1; -2)$, cắt trục hoành tại...") HOẶC sinh kèm mã SVG đồ thị nội tuyến, KHÔNG để thẻ img/div trống rỗng.
 

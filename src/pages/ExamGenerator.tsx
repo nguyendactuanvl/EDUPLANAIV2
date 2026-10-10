@@ -1,7 +1,7 @@
 import { MathView } from "../components/MathView";
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { embedTikzSvgsInText } from "../components/TikzRenderer";
-import { embedBbtSvgsInText, convertBbtTableToSvg, analyzeFunctionToBbt, generateBbtSvg } from "../lib/bbtRenderer";
+import { embedBbtSvgsInText, convertBbtTableToSvg, analyzeFunctionToBbt, generateBbtSvg, autoEnrichTextWithVisuals } from "../lib/bbtRenderer";
 import { apiFetch } from '../lib/apiFetch';
 
 import { fullPlan } from "../data/mockData";
@@ -1673,9 +1673,9 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
           topic: q.topic || 'Chủ đề trọng tâm',
           subtopic: q.subtopic || 'Nội dung kiến thức',
           level: q.level || 'Thông hiểu',
-          content: embedBbtSvgsInText(embedTikzSvgsInText(q.content || (q as any).question || (q as any).text || '')),
-          solution: embedBbtSvgsInText(embedTikzSvgsInText((q.solution || q.explanation || "").trim())),
-          explanation: embedBbtSvgsInText(embedTikzSvgsInText((q.solution || q.explanation || "").trim()))
+          content: autoEnrichTextWithVisuals(q.content || (q as any).question || (q as any).text || ''),
+          solution: autoEnrichTextWithVisuals((q.solution || q.explanation || "").trim()),
+          explanation: autoEnrichTextWithVisuals((q.solution || q.explanation || "").trim())
         }));
 
         // Nếu có ảnh / file đính kèm (matrixBase64), tự động crop và nhúng ảnh vào câu hỏi
@@ -1714,13 +1714,32 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
     }
   };
 
+  const handleAutoEnrichAllVisuals = () => {
+    if (questions.length === 0) return;
+    let count = 0;
+    const updated = questions.map((q: any) => {
+      const newContent = autoEnrichTextWithVisuals(q.content || q.question || '');
+      const newSol = autoEnrichTextWithVisuals(q.solution || q.explanation || '');
+      if (newContent !== (q.content || '') || newSol !== (q.solution || '')) count++;
+      return {
+        ...q,
+        content: newContent,
+        solution: newSol,
+        explanation: newSol
+      };
+    });
+    setQuestions(updated);
+    setToastMessage(`🎉 Đã tự động hoàn thiện BBT & Đồ thị vector cho ${count > 0 ? `${count} câu hỏi` : 'tất cả câu hỏi trong đề'}`);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
   const handleShuffle = () => {
     if (questions.length === 0) return;
     const processedQuestions = questions.map((q: any) => ({
       ...q,
-      content: embedBbtSvgsInText(embedTikzSvgsInText(q.content || q.question || q.text || '')),
-      solution: embedBbtSvgsInText(embedTikzSvgsInText(q.solution || q.explanation || '')),
-      explanation: embedBbtSvgsInText(embedTikzSvgsInText(q.solution || q.explanation || ''))
+      content: autoEnrichTextWithVisuals(q.content || q.question || q.text || ''),
+      solution: autoEnrichTextWithVisuals(q.solution || q.explanation || ''),
+      explanation: autoEnrichTextWithVisuals(q.solution || q.explanation || '')
     }));
     const mixed = mixExam(processedQuestions as any[], {
       numCodes: Math.min(Math.max(1, numCodes), 24),
@@ -2595,6 +2614,16 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                         title="Thêm câu hỏi mới vào đề"
                       >
                         <Plus className="w-4 h-4 text-emerald-600" /> Thêm câu hỏi
+                      </button>
+
+                      <button
+                        onClick={handleAutoEnrichAllVisuals}
+                        disabled={questions.length === 0}
+                        className="px-3 py-2 bg-emerald-50 border border-emerald-300 text-emerald-800 text-sm font-semibold rounded-lg hover:bg-emerald-100 flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                        title="Tự động vẽ và tạo ảnh vector cho tất cả các câu có Bảng biến thiên hoặc Đồ thị"
+                      >
+                        <Wand2 className="w-4 h-4 text-emerald-600" />
+                        <span>⚡ Hoàn thiện BBT & Đồ thị</span>
                       </button>
 
                       <button

@@ -439,6 +439,135 @@ export function formatAlignedTrigBody(body: string): string {
 }
 
 /**
+ * Giải phóng các công thức toán hoặc bảng LaTeX bị bao bọc nhầm trong khối code block markdown (```latex ... ```)
+ * khiến giao diện hiển thị thành các ô màu tối chứa mã nguồn trần.
+ */
+export function stripMathCodeBlocks(text: string): string {
+  if (!text) return '';
+  let s = text;
+
+  // Giải phóng ```latex ... ```, ```math ... ``` hoặc ``` ... ``` chứa toán/bảng
+  s = s.replace(/```(?:latex|math|tex|markdown)?\s*([\s\S]*?)```/gi, (match, inner) => {
+    // Bảo vệ mã lập trình thực thụ trong các bài Tin học / STEM (có print, def, class, if, for...)
+    if (/\b(?:def|class|return|import|print|input|while)\b/.test(inner)) {
+      return match;
+    }
+    // Nếu khối chứa \begin{array}, \begin{cases}, $$, \hline, \text, \frac... -> Tháo bỏ code block
+    if (/\\begin\s*\{(?:array|cases|aligned|matrix|tabular)\}|\\hline|\$\$|\\text\{|\\frac|\\sqrt/i.test(inner)) {
+      return `\n\n${inner.trim()}\n\n`;
+    }
+    return match;
+  });
+
+  return s;
+}
+
+/**
+ * Tự động chuyển đổi các bảng số liệu ghép nhóm dạng \begin{array}... \end{array} sang Markdown Table
+ * giúp giao diện hiển thị thành BẢNG TRẮNG KẺ KHUNG SẮC NÉT, đẹp mắt, không bao giờ bị lỗi ô tối hay mã trần.
+ */
+export function convertArrayTableToMarkdownTable(text: string): string {
+  if (!text || !text.includes('\\begin{array}')) return text;
+
+  return text.replace(/(?:\$\$|\$)?\s*\\begin\s*\{array\}(?:\s*\{[^{}]*\})?([\s\S]*?)\\end\s*\{array\}\s*(?:\$\$|\$)?/gi, (fullMatch, body) => {
+    try {
+      // Tách từng hàng theo dấu \\
+      const rawRows = body.split(/\\\\|\\cr/).map((r: string) => r.trim()).filter((r: string) => r && r !== '\\hline');
+      if (rawRows.length < 1) return fullMatch;
+
+      const parsedRows: string[][] = [];
+      for (const rawRow of rawRows) {
+        const cleanRow = rawRow.replace(/\\hline/g, '').trim();
+        if (!cleanRow) continue;
+
+        // Tách các ô theo dấu &
+        const cells = cleanRow.split('&').map((cell: string) => {
+          let c = cell.trim();
+          // Bóc \text{...} nếu toàn bộ ô là \text{...}
+          c = c.replace(/^\\text\{([^{}]+)\}$/, '$1').trim();
+          // Bọc $...$ cho khoảng/đoạn hoặc số liệu toán nếu chưa có $
+          if (c && !c.includes('$')) {
+            if (/^[\[\(].+[\]\)]$/.test(c) || /^[0-9]+(?:\.[0-9]+)?$/.test(c) || /[+\-*\/=><]/.test(c) || /\\frac/.test(c)) {
+              c = `$${c}$`;
+            }
+          }
+          return c;
+        });
+
+        if (cells.length > 0) {
+          parsedRows.push(cells);
+        }
+      }
+
+      if (parsedRows.length === 0) return fullMatch;
+
+      const maxCols = Math.max(...parsedRows.map(r => r.length));
+      if (maxCols === 0) return fullMatch;
+
+      const paddedRows = parsedRows.map(row => {
+        while (row.length < maxCols) row.push('');
+        return row;
+      });
+
+      const headerRow = `| ${paddedRows[0].join(' | ')} |`;
+      const delimiterRow = `| ${new Array(maxCols).fill('---').join(' | ')} |`;
+      const dataRows = paddedRows.slice(1).map(row => `| ${row.join(' | ')} |`);
+
+      return `\n\n${headerRow}\n${delimiterRow}\n${dataRows.join('\n')}\n\n`;
+    } catch (e) {
+      return fullMatch;
+    }
+  });
+}
+
+/**
+ * Chuẩn hóa các môi trường bảng LaTeX (\begin{array}... \end{array}) và bảng dữ liệu thống kê:
+ * 1. Tháo bỏ triệt để các khối code block ```latex làm đen ô hiển thị bảng
+ * 2. Khắc phục triệt để lỗi tham số cột bị ngắt dòng hoặc phân rã: \begin{array} {|c|c|c|\n\n} -> \begin{array}{|c|c|c|}
+ * 3. Chuyển đổi toàn bộ bảng số liệu ghép nhóm sang Markdown Table trắng chuẩn SGK
+ */
+export function normalizeArrayAndTableEnvironments(text: string): string {
+  if (!text) return '';
+  let s = text.normalize('NFC');
+
+  // 0. Tháo bỏ code block ```latex bọc quanh toán/bảng
+  s = stripMathCodeBlocks(s);
+
+  // 1. Chữa lành \begin{array} {|c|c|c|\n\n} hoặc \begin{array}\s*\{([\s\S]*?)\} bị ngắt dòng ở tham số cột
+  s = s.replace(/\\begin\s*\{array\}\s*\{([\s\S]*?)\}/gi, (_match, cols) => {
+    const cleanCols = cols.replace(/[\r\n\s]+/g, '').trim();
+    return `\\begin{array}{${cleanCols}}`;
+  });
+
+  // 1.5 Chữa lành \begin{array} |c|c|c| (thiếu ngoặc nhọn quanh tham số cột)
+  s = s.replace(/\\begin\s*\{array\}\s*([|c|l|r|]+)(?=[\r\n\s\\])/gi, (_match, cols) => {
+    return `\\begin{array}{${cols.trim()}}`;
+  });
+
+  // 2. Chữa lành các khối \begin{array} ... \end{array} bị dính dòng trống \n\n bên trong
+  s = s.replace(/(\\begin\s*\{array\}[\s\S]*?\\end\s*\{array\})/gi, (match) => {
+    let clean = match.replace(/\r\n/g, '\n');
+    clean = clean.replace(/\n\s*\n+/g, '\n');
+    return clean;
+  });
+
+  // 3. Tự động chuyển đổi các bảng \begin{array} ghép nhóm sang Markdown Table đẹp mắt
+  s = convertArrayTableToMarkdownTable(s);
+
+  // 4. Nếu còn khối \begin{array} chưa chuyển đổi, đảm bảo bọc chuẩn $$
+  s = s.replace(/(?<!\$)\${1,2}\s*(\\begin\s*\{array\}[\s\S]*?\\end\s*\{array\})\s*\${1,2}(?!\$)/gi, (_m, body) => {
+    return `\n\n$$\n${body.trim()}\n$$\n\n`;
+  });
+
+  s = s.replace(/(?<![\$\w])(\\begin\s*\{array\}[\s\S]*?\\end\s*\{array\})(?![\$\w])/gi, (match, body, offset) => {
+    if (isInsideMath(s, offset)) return match;
+    return `\n\n$$\n${body.trim()}\n$$\n\n`;
+  });
+
+  return s;
+}
+
+/**
  * Chuẩn hóa biểu diễn họ nghiệm phương trình lượng giác:
  * - Khi biểu diễn họ nghiệm tuyển của phương trình lượng giác (\sin, \cos, \tan, \cot...):
  *   + BẮT BUỘC sử dụng dấu móc vuông \left[ thay vì dấu móc nhọn \begin{cases}.
@@ -512,7 +641,7 @@ export function isInsideMath(text: string, pos: number): boolean {
  */
 export function sanitizeLatexString(text: string): string {
   if (!text) return '';
-  let s = text.replace(/\\dfrac\b/g, '\\frac');
+  let s = text.normalize('NFC').replace(/\\dfrac\b/g, '\\frac');
 
   // 0. Khắc phục triệt để lỗi double-backslash (\\ thay vì \) do tàn dư KaTeX cũ hoặc escape thừa:
   // Đổi \\frac, \\sqrt, \\begin, \\alpha, \\le, \\in... thành \frac, \sqrt, \begin, \alpha, \le, \in...
@@ -539,14 +668,26 @@ export function sanitizeLatexString(text: string): string {
   s = s.replace(/k(\d*)\s*pi\b/gi, 'k$1\\pi');
   s = s.replace(/(?<![\\a-zA-Z])\bpi\b(?![a-zA-Z])/g, '\\pi');
 
-  // 2. Sửa lỗi escape đơn vị đo:
-  s = s.replace(/(\d+)\s*\\*text\s*\{?\s*([a-zA-Z]+)\s*\}?/g, '$1\\text{ $2}');
+  // 2. Sửa lỗi escape đơn vị đo (bảo vệ tuyệt đối các chuỗi \text{...} chứa tiếng Việt hoặc ngoặc nhọn):
+  // 2.1 Nếu đã có dạng \text{...} với ngoặc nhọn hoàn chỉnh, giữ nguyên nội dung bên trong ngoặc nhọn:
+  s = s.replace(/(\d+)\s*\\text\{([^{}\n]+)\}/g, (_m, num, inner) => {
+    const trimmed = inner.trim();
+    return `${num}\\text{ ${trimmed}}`;
+  });
+  // 2.2 Nếu thiếu gạch chéo ngược hoặc thiếu ngoặc nhọn (vd: 6textcm, 6 text cm, 6\text cm):
+  s = s.replace(/(\d+)\s*(?:\\?text|text)\s+([a-zA-Zà-ỹÀ-Ỹ0-9]+)(?![a-zA-Zà-ỹÀ-Ỹ0-9\{])/gi, '$1\\text{ $2}');
+
+  // 2.3 Sửa lỗi \text{... thiếu ngoặc đóng do AI hoặc regex trước cắt xén
+  s = s.replace(/\\text\{([^{}\n]+)$/g, '\\text{$1}');
 
   // 3. Sửa lỗi cú pháp số mũ / ký hiệu độ:
   s = s.replace(/\^\{\s*\\+\s*circ\s*\}/g, '^\\circ');
   s = s.replace(/\^\{\s*circ\s*\}/g, '^\\circ');
   s = s.replace(/\^\s*\\+\s*circ\b/g, '^\\circ');
   s = s.replace(/(?<=\d)\s*\^\s*circ\b/g, '^\\circ');
+
+  // 4. Chuẩn hóa môi trường bảng số liệu ghép nhóm \begin{array}... \end{array}
+  s = normalizeArrayAndTableEnvironments(s);
 
   return s;
 }
@@ -2237,7 +2378,7 @@ export const wrapAllNakedMath = (str: string): string => {
     "mu", "sigma", "Sigma", "omega", "Omega", "phi", "Phi", "in", "notin", "subset", "supset", "subseteq", "supseteq",
     "cup", "cap", "setminus", "emptyset", "forall", "exists", "infty", "pm", "mp", "times", "div",
     "le", "ge", "leq", "geq", "neq", "approx", "equiv", "sim", "cong", "parallel", "perp", "angle", "circ", "partial", "nabla",
-    "mathbb", "mathbf", "mathrm", "mathcal", "text", "to", "rightarrow", "Rightarrow", "leftarrow", "Leftarrow", "leftrightarrow", "Leftrightarrow",
+    "mathbb", "mathbf", "mathrm", "mathcal", "to", "rightarrow", "Rightarrow", "leftarrow", "Leftarrow", "leftrightarrow", "Leftrightarrow",
     "cdots", "ldots", "cdot"
   ].join("|");
 
@@ -2377,6 +2518,9 @@ export const wrapAllNakedMath = (str: string): string => {
           }
         }
 
+        lastValidEnd = i + 1;
+      } else {
+        // Bên trong dấu ngoặc nhọn/vuông/tròn: luôn cập nhật lastValidEnd cho tất cả các ký tự bên trong TeX group
         lastValidEnd = i + 1;
       }
       i++;

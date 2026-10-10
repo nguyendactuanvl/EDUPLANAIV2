@@ -17,11 +17,11 @@ import { QuestionEditModal } from "../components/QuestionEditModal";
 import { HeaderConfigModal } from "../components/HeaderConfigModal";
 import { HeaderConfig, getHeaderConfig, saveHeaderConfig } from "../lib/headerConfig";
 import { QuestionVisualizerPanel } from "../components/math-tools/QuestionVisualizerPanel";
-import { analyzeFunctionToBbt, generateBbtSvg, convertBbtTableToSvg } from "../lib/bbtRenderer";
+import { analyzeFunctionToBbt, generateBbtSvg, convertBbtTableToSvg, autoEnrichTextWithVisuals } from "../lib/bbtRenderer";
 import { getTikzSvg, embedTikzSvgsInText } from "../components/TikzRenderer";
 import { saveToHistory, getHistory } from '../lib/history';
 import { HistoryItem } from '../types';
-import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMath, cleanQuestionStem, cleanOptionText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections, sanitizeExamQuestion, sanitizeAndPolishMath } from "../lib/utils";
+import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMath, cleanQuestionStem, cleanOptionText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections, sanitizeExamQuestion, sanitizeAndPolishMath, normalizeArrayAndTableEnvironments } from "../lib/utils";
 import { parseRawExamText } from '../lib/examParser';
 import { printElement, ensureMathRendered } from '../lib/print';
 import { saveExamToCloud, saveExamToWebhook } from '../lib/cloudExamStore';
@@ -82,8 +82,14 @@ export function cleanDocumentContent(content: string, lessonName?: string): stri
   // 3. Chuẩn hóa công thức Cấp số cộng & Tách chữ tiếng Việt ra khỏi dấu $
   cleaned = normalizeArithmeticProgressionFormulas(cleaned);
 
+  // 3.5 Chuẩn hóa các môi trường bảng số liệu thống kê \begin{array}... \end{array}
+  cleaned = normalizeArrayAndTableEnvironments(cleaned);
+
   // 4. Chuẩn hóa đánh số câu hỏi (Câu 1, Câu 2...) và tách các phương án A, B, C, D rõ ràng
   cleaned = formatWorksheetQuestionsAndSections(cleaned);
+
+  // 5. Tự động hoàn thiện BBT & Đồ thị vector (zero-effort cho giáo viên)
+  cleaned = autoEnrichTextWithVisuals(cleaned);
 
   return cleaned.trim();
 }
@@ -368,64 +374,19 @@ export function Worksheets() {
       const updatedQuestions = [...worksheetQuestions];
       for (let i = 0; i < updatedQuestions.length; i++) {
         const q = updatedQuestions[i];
-        let changed = false;
         let content = q.content || q.question || '';
         let solution = q.solution || q.explanation || '';
 
-        // Tự động chuyển đổi nếu có mã TikZ trần thành SVG
-        if (/```tikz|\\begin\{tikzpicture\}/i.test(content)) {
-          content = embedTikzSvgsInText(content);
-          changed = true;
+        const enrichedContent = autoEnrichTextWithVisuals(content);
+        const enrichedSolution = autoEnrichTextWithVisuals(solution);
+
+        if (enrichedContent !== content || enrichedSolution !== solution) {
           count++;
-        }
-        if (/```tikz|\\begin\{tikzpicture\}/i.test(solution)) {
-          solution = embedTikzSvgsInText(solution);
-          changed = true;
-          count++;
-        }
-
-        // Tự động chuyển đổi nếu có Markdown BBT table sang SVG wrapper
-        if (/\|[^\n]+\|[^\n]+\|/.test(content) && /(?:y'|f'\(x\)|\\searrow|\\nearrow)/i.test(content)) {
-          const match = content.match(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/m);
-          if (match) {
-            const svg = convertBbtTableToSvg(match[1]);
-            if (svg) {
-              const base64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : '';
-              if (base64) {
-                content = content.replace(match[1], `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n`);
-                changed = true;
-                count++;
-              }
-            }
-          }
-        }
-
-        // Nếu thiếu BBT mà có hàm số: tự động vẽ
-        if (isMissingBbt(content)) {
-          const fMatch = content.match(/(?:y|f\(x\))\s*=\s*([^,;.\n$]+)/i) || 
-                         content.match(/hàm\s*số\s*(?:\$)?(?:y\s*=\s*)?([^,;.\n$]+)/i);
-          if (fMatch) {
-            const bbt = analyzeFunctionToBbt(fMatch[1].trim());
-            if (bbt) {
-              const svg = generateBbtSvg(bbt);
-              if (svg) {
-                const b64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : '';
-                if (b64) {
-                  content += `\n\n<svg-wrapper data-svg="${b64}"></svg-wrapper>\n\n`;
-                  changed = true;
-                  count++;
-                }
-              }
-            }
-          }
-        }
-
-        if (changed) {
           updatedQuestions[i] = {
             ...q,
-            content,
-            solution,
-            explanation: solution
+            content: enrichedContent,
+            solution: enrichedSolution,
+            explanation: enrichedSolution
           };
         }
       }
@@ -433,27 +394,14 @@ export function Worksheets() {
 
       // 2. Quét và chuyển đổi trong suggestion (document view)
       if (suggestion) {
-        let newSuggestion = suggestion;
-        // Chuyển đổi toàn bộ mã TikZ thành SVG
-        newSuggestion = embedTikzSvgsInText(newSuggestion);
-        // Chuyển đổi toàn bộ BBT markdown tables thành SVG wrappers
-        newSuggestion = newSuggestion.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
-          if (/(?:y'|f'\(x\)|\\searrow|\\nearrow)/i.test(match)) {
-            const svg = convertBbtTableToSvg(match);
-            if (svg) {
-              const b64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : '';
-              if (b64) {
-                count++;
-                return `\n\n<svg-wrapper data-svg="${b64}"></svg-wrapper>\n\n`;
-              }
-            }
-          }
-          return match;
-        });
-        setSuggestion(newSuggestion);
+        const newSuggestion = autoEnrichTextWithVisuals(suggestion);
+        if (newSuggestion !== suggestion) {
+          count++;
+          setSuggestion(newSuggestion);
+        }
       }
 
-      showToast(`🎉 Đã tự động tạo và xuất ảnh cho ${count > 0 ? `${count} bảng/đồ thị` : 'tất cả phần'} (dạng ảnh đồ họa, không dùng tex)!`);
+      showToast(`🎉 Đã tự động tạo và xuất ảnh vector cho ${count > 0 ? `${count} phần (BBT/Đồ thị)` : 'tất cả phần trong phiếu bài tập'}!`);
     } catch (err) {
       console.warn("Lỗi auto generate:", err);
       showToast("Đã hoàn tất kiểm tra BBT và Đồ thị.");

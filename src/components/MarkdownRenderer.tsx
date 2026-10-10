@@ -28,7 +28,8 @@ import {
   sanitizeLatexString,
   preProcessMathContent,
   rescueCodeAndNestedText,
-  normalizePropositionQuotes
+  normalizePropositionQuotes,
+  normalizeArrayAndTableEnvironments
 } from '../lib/utils';
 
 export { 
@@ -374,6 +375,9 @@ export const MarkdownRenderer = ({
   // Let's rewrite the text preparation block of MarkdownRenderer in a pristine, robust way.
   // Normalize math text globally (converts backticks to $, fixes torn backslashes)
   let processedContent = preprocessMath(content);
+
+  // Normalize array and table environments (repair \begin{array} column specifiers and remove inner blank lines)
+  processedContent = normalizeArrayAndTableEnvironments(processedContent);
 
   // Clean leaked undefined/null strings
   processedContent = processedContent.replace(/(?<![a-zA-Z0-9_\$])(?:undefined|null)(?![a-zA-Z0-9_\$])/g, () => '');
