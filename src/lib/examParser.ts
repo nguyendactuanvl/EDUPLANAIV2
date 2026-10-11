@@ -693,7 +693,8 @@ export function parseRawExamText(rawText: string): ParsedQuestion[] {
         }
       }
 
-      if (sec.type === 'mc' || optMatchA !== -1) {
+      const isNonMcSection = sec.type === 'sa' || sec.type === 'essay' || (sec.type as string) === 'tf';
+      if ((sec.type === 'mc' || optMatchA !== -1) && !isNonMcSection) {
         if (optMatchA !== -1) {
           const stem = mainBlock.substring(0, optMatchA).replace(/^(?:Câu|Bài|Question|Q)?\s*\d+[\.:\s]*/i, '').trim();
           let optionsContent = mainBlock.substring(optMatchA);

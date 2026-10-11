@@ -1,5 +1,5 @@
 import { MathView } from "../components/MathView";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Loader2, FileText, Trophy, CheckCircle2, XCircle, Clock, Copy, Camera, X, Image as ImageIcon, Calculator } from 'lucide-react';
 import { ScientificCalculatorModal } from '../components/math-tools/ScientificCalculatorModal';
 import Markdown from 'react-markdown';
@@ -10,6 +10,578 @@ import LZString from 'lz-string';
 import { fixMath, cleanMath, cleanQuestionStem, cleanOptionText, formatMathContent, sanitizeShortAnswerInput, validateShortAnswer, compareShortAnswers, sanitizeAndPolishMath, sanitizeExamQuestion } from "../lib/utils";
 import { fetchExamFromCloud, SYSTEM_EXAM_WEBHOOK } from "../lib/cloudExamStore";
 import { LanguageSpeechControls } from "../components/LanguageSpeechControls";
+
+const EMPTY_ESSAY_IMAGES: string[] = [];
+
+interface StudentQuestionCardProps {
+  idx: number;
+  q: any;
+  examLanguage: 'vi' | 'en';
+  isSubmitted: boolean;
+  answer: any;
+  onAnswerChange: (idx: number, ans: any) => void;
+  essayImages: string[];
+  onImageUpload: (idx: number, files: FileList | null) => void;
+  onRemoveEssayImage: (idx: number, imgIdx: number) => void;
+  onPreviewImage: (url: string) => void;
+}
+
+const StudentQuestionCard = React.memo<StudentQuestionCardProps>(({
+  idx,
+  q,
+  examLanguage,
+  isSubmitted,
+  answer,
+  onAnswerChange,
+  essayImages,
+  onImageUpload,
+  onRemoveEssayImage,
+  onPreviewImage
+}) => {
+  let isCorrectQuestion = false;
+  let showRedBorder = false;
+
+  if (isSubmitted) {
+    const ans = answer;
+    const qType = String(q.type || '').toUpperCase();
+    if (q.type === 'mc' || qType === 'MULTIPLE_CHOICE' || (!q.type && q.options)) {
+      isCorrectQuestion = ans === q.correctOptionIndex;
+      showRedBorder = !isCorrectQuestion;
+    } else if (q.type === 'tf' || qType === 'TRUE_FALSE') {
+      if (q.tfStatements && q.tfStatements.length > 0) {
+        let correctCount = 0;
+        q.tfStatements.forEach((stmt: any, sIdx: number) => {
+          const studentAns = ans ? ans[sIdx] : undefined;
+          const isTrue = stmt.correct === true || String(stmt.correct).toLowerCase() === 'true';
+          if (studentAns === isTrue) correctCount++;
+        });
+        isCorrectQuestion = correctCount === q.tfStatements.length;
+        showRedBorder = correctCount < q.tfStatements.length;
+      } else {
+        const isTrue = q.correct === true || String(q.correct).toLowerCase() === 'true' || String(q.correctAnswer).toLowerCase().includes('đúng');
+        isCorrectQuestion = ans === isTrue;
+        showRedBorder = !isCorrectQuestion;
+      }
+    } else if (q.type === 'sa' || qType === 'SHORT_ANSWER') {
+      const correctAns = String(q.correctAnswer || q.correct || '').trim();
+      const studentAns = String(ans || '').trim();
+      isCorrectQuestion = !!(correctAns && compareShortAnswers(studentAns, correctAns));
+      showRedBorder = !isCorrectQuestion;
+    } else {
+      showRedBorder = false;
+      isCorrectQuestion = true;
+    }
+  }
+
+  const qType = String(q.type || '').toUpperCase();
+  const isMC = q.type === 'mc' || qType === 'MULTIPLE_CHOICE' || (!q.type && q.options);
+  const isTF = q.type === 'tf' || qType === 'TRUE_FALSE';
+  const isSA = q.type === 'sa' || qType === 'SHORT_ANSWER';
+  const isEssay = q.type === 'essay' || qType === 'ESSAY';
+
+  const questionContent = useMemo(() => {
+    const rawStem = (q.question && String(q.question).trim())
+      ? String(q.question).trim()
+      : (q.content && String(q.content).trim())
+      ? String(q.content).trim()
+      : (q.text || '');
+
+    const stemWithoutOptions = (isMC || isTF)
+      ? (cleanQuestionStem(rawStem, q.options, q.tfStatements) || rawStem)
+      : rawStem;
+
+    const trimmedStem = stemWithoutOptions.replace(/^(?:Câu|Bài|Question)\s*\d+[\s\.\:\-–—\(\)\[\]A-Za-zÀ-ỹ]*[:\.]\s*/i, '').trim();
+    const rawStemContent = trimmedStem || stemWithoutOptions || q.question || q.content || '';
+    return sanitizeExamQuestion(rawStemContent);
+  }, [q.question, q.content, q.text, q.options, q.tfStatements, isMC, isTF]);
+
+  return (
+    <div className={`bg-white p-6 rounded-xl shadow-sm border ${isSubmitted && showRedBorder ? 'border-red-200' : isSubmitted ? 'border-emerald-200' : 'border-slate-200'}`}>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="font-bold text-slate-900 text-lg">
+          {examLanguage === 'en' ? `Question ${idx + 1}:` : `Câu ${idx + 1}:`}
+        </span>
+        {isEssay && (
+          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-purple-100 text-purple-700">
+            {examLanguage === 'en' ? 'Essay' : 'Tự luận'}
+          </span>
+        )}
+        {isSA && (
+          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-indigo-100 text-indigo-700">
+            {examLanguage === 'en' ? 'Short Answer' : 'Trả lời ngắn'}
+          </span>
+        )}
+        {isTF && (
+          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-emerald-100 text-emerald-700">
+            {examLanguage === 'en' ? 'True / False' : 'Đúng / Sai'}
+          </span>
+        )}
+        {isMC && (
+          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-700">
+            {examLanguage === 'en' ? 'Multiple Choice' : 'Trắc nghiệm'}
+          </span>
+        )}
+      </div>
+
+      <div className="text-gray-800 text-base mb-4">
+        <MathView content={questionContent} />
+      </div>
+
+      {q.imageUrl && (
+        <div className="flex flex-col items-center justify-center my-4 p-2 bg-slate-50 border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+          <img
+            src={q.imageUrl}
+            alt={`Hình minh họa câu ${idx + 1}`}
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            className="max-h-80 max-w-full object-contain rounded-lg border border-slate-200 bg-white"
+          />
+          <span className="text-xs text-slate-500 mt-1 italic">Hình minh họa / Đồ thị câu {idx + 1}</span>
+        </div>
+      )}
+
+      <div className="w-full space-y-2">
+        {/* MULTIPLE CHOICE */}
+        {isMC && q.options?.map((opt: string, oIdx: number) => {
+          const isSelected = answer === oIdx;
+          const isCorrect = oIdx === q.correctOptionIndex;
+          
+          let btnClass = "w-full min-h-[44px] flex items-center px-4 py-2 text-left rounded-lg border transition-colors break-words overflow-hidden gap-3 ";
+          if (!isSubmitted) {
+            btnClass += isSelected ? "bg-emerald-50 border-emerald-500 text-emerald-900" : "bg-white border-slate-200 hover:border-emerald-300 hover:bg-slate-50 text-slate-700";
+          } else {
+            if (isCorrect) btnClass += "bg-emerald-50 border-emerald-500 text-emerald-900";
+            else if (isSelected && !isCorrect) btnClass += "bg-red-50 border-red-500 text-red-900";
+            else btnClass += "bg-white border-slate-200 text-slate-500 opacity-60";
+          }
+          
+          return (
+            <button 
+              key={oIdx} 
+              onClick={() => !isSubmitted && onAnswerChange(idx, oIdx)}
+              disabled={isSubmitted}
+              className={btnClass}
+            >
+              <div className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 font-bold text-xs ${isSelected && !isSubmitted ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300'}`}>
+                {String.fromCharCode(65 + oIdx)}
+              </div>
+              <span className="flex-1 break-words overflow-hidden text-left"><MathView inline content={cleanOptionText(opt)} /></span>
+              {isSubmitted && isCorrect && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />}
+              {isSubmitted && isSelected && !isCorrect && <XCircle className="w-5 h-5 text-red-600 shrink-0" />}
+            </button>
+          );
+        })}
+
+        {/* TRUE / FALSE (4 Statements format - GDPT 2018) */}
+        {isTF && q.tfStatements && q.tfStatements.length > 0 && (
+          <div className="space-y-4">
+            {q.tfStatements.map((stmt: any, sIdx: number) => {
+              const ansMap = answer || {};
+              const studentAns = ansMap[sIdx];
+              const isTrue = stmt.correct === true || String(stmt.correct).toLowerCase() === 'true';
+              const subLabel = ['a)', 'b)', 'c)', 'd)'][sIdx] || `${String.fromCharCode(97 + sIdx)})`;
+              let cleanStmt = (stmt.statement || '').trim();
+              cleanStmt = cleanStmt.replace(/^[a-d][\.\:\)]\s*/i, '');
+              cleanStmt = sanitizeAndPolishMath(cleanStmt);
+              
+              return (
+                <div key={sIdx} className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 rounded-xl border border-slate-200 bg-slate-50">
+                  <div className="flex-1 flex items-start gap-2.5">
+                    <span className="font-bold text-emerald-800 shrink-0 mt-0.5">{subLabel}</span>
+                    <div className="flex-1">
+                      <MathView content={cleanStmt} />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button 
+                      disabled={isSubmitted}
+                      onClick={() => !isSubmitted && onAnswerChange(idx, { ...ansMap, [sIdx]: true })}
+                      className={`px-4 py-2 rounded-lg border font-medium text-sm transition-colors ${studentAns === true ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'} ${(isSubmitted && isTrue) ? 'ring-2 ring-emerald-500' : ''}`}
+                    >
+                      Đúng
+                    </button>
+                    <button 
+                      disabled={isSubmitted}
+                      onClick={() => !isSubmitted && onAnswerChange(idx, { ...ansMap, [sIdx]: false })}
+                      className={`px-4 py-2 rounded-lg border font-medium text-sm transition-colors ${studentAns === false ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'} ${(isSubmitted && !isTrue) ? 'ring-2 ring-emerald-500' : ''}`}
+                    >
+                      Sai
+                    </button>
+                    {isSubmitted && studentAns === isTrue && <CheckCircle2 className="w-5 h-5 text-emerald-600 ml-2" />}
+                    {isSubmitted && studentAns !== undefined && studentAns !== isTrue && <XCircle className="w-5 h-5 text-red-600 ml-2" />}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        
+        {/* TRUE / FALSE (Single statement) */}
+        {isTF && (!q.tfStatements || q.tfStatements.length === 0) && (
+           <div className="flex items-center gap-3">
+             <button 
+                disabled={isSubmitted}
+                onClick={() => !isSubmitted && onAnswerChange(idx, true)}
+                className={`flex-1 py-4 rounded-xl border font-bold transition-colors ${answer === true ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
+              >
+                Đúng
+              </button>
+              <button 
+                disabled={isSubmitted}
+                onClick={() => !isSubmitted && onAnswerChange(idx, false)}
+                className={`flex-1 py-4 rounded-xl border font-bold transition-colors ${answer === false ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
+              >
+                Sai
+              </button>
+           </div>
+        )}
+
+        {/* SHORT ANSWER */}
+        {isSA && (
+          <div className="space-y-3">
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                  Nhập kết quả số (Tối đa 4 ký tự - Chuẩn GDPT 2018):
+                </label>
+                <span className="text-xs text-slate-500 font-mono">
+                  Đã nhập: <strong className={(answer || '').length === 4 ? 'text-amber-600' : 'text-indigo-600'}>{(answer || '').length}/4</strong>
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <input 
+                    type="text" 
+                    disabled={isSubmitted}
+                    maxLength={4}
+                    value={answer || ''}
+                    onChange={(e) => {
+                      const sanitized = sanitizeShortAnswerInput(e.target.value);
+                      onAnswerChange(idx, sanitized);
+                    }}
+                    placeholder="vd: 22"
+                    className={`w-36 text-center text-xl font-mono font-bold tracking-[0.45em] px-3 py-2.5 rounded-lg border-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all ${
+                      isSubmitted && isCorrectQuestion 
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-900' 
+                        : isSubmitted && !isCorrectQuestion 
+                        ? 'border-red-500 bg-red-50 text-red-900' 
+                        : 'border-indigo-400 bg-white text-indigo-950 focus:border-indigo-600'
+                    }`}
+                  />
+                </div>
+
+                <div className="flex items-center gap-1" title="Mô phỏng 4 ô vuông trên phiếu thi trắc nghiệm">
+                  {[0, 1, 2, 3].map((slotIdx) => {
+                    const char = (answer || '')[slotIdx];
+                    return (
+                      <div
+                        key={slotIdx}
+                        className={`w-8 h-10 border-2 rounded flex items-center justify-center font-mono font-bold text-base transition-colors ${
+                          char
+                            ? 'border-indigo-600 bg-indigo-50 text-indigo-800 shadow-2xs'
+                            : 'border-dashed border-slate-300 bg-white text-slate-300'
+                        }`}
+                      >
+                        {char || '•'}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="hidden sm:block text-[11px] text-slate-500 leading-tight">
+                  <div>Chỉ chấp nhận: chữ số (0-9), dấu (-) và (, hoặc .)</div>
+                  <div className="text-slate-400 italic">Ví dụ hợp lệ: 13, -3.5, 102, 0.5</div>
+                </div>
+              </div>
+
+              {(() => {
+                const curAns = answer;
+                if (!curAns || isSubmitted) return null;
+                const validation = validateShortAnswer(curAns);
+                if (!validation.isValid && validation.warning) {
+                  return (
+                    <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 flex items-center gap-1.5">
+                      <span>⚠️</span>
+                      <span>{validation.warning}</span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              {!isSubmitted && (
+                <div className="pt-2 border-t border-slate-200 mt-2">
+                  <p className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1">
+                    <span>📱</span> Tô nhanh trực tuyến (Phiếu trắc nghiệm chuẩn Bộ 100%):
+                  </p>
+                  {(() => {
+                    const ans = answer || "";
+                    const cols = ["", "", "", ""];
+                    const ansChars = ans.trim().replace(".", ",").split("");
+                    for (let i = 0; i < Math.min(4, ansChars.length); i++) {
+                      cols[i] = ansChars[i];
+                    }
+
+                    const updateCol = (colIdx: number, val: string) => {
+                      const newCols = [...cols];
+                      if (colIdx === 1 && val === ",") {
+                        if (newCols[2] === ",") newCols[2] = "";
+                      }
+                      if (colIdx === 2 && val === ",") {
+                        if (newCols[1] === ",") newCols[1] = "";
+                      }
+
+                      if (newCols[colIdx] === val) {
+                        newCols[colIdx] = "";
+                      } else {
+                        newCols[colIdx] = val;
+                      }
+                      
+                      const joined = newCols.join("").trim();
+                      const newAns = joined.replace(/,/g, ".");
+                      onAnswerChange(idx, newAns);
+                    };
+
+                    return (
+                      <div className="grid grid-cols-4 gap-2 bg-white p-3 rounded-xl border border-slate-200 max-w-[280px]">
+                        {cols.map((char, colIdx) => (
+                          <div key={colIdx} className="bg-slate-50 border border-slate-350 rounded h-8 flex items-center justify-center font-black text-sm text-slate-800 font-mono shadow-3xs">
+                            {char}
+                          </div>
+                        ))}
+
+                        {/* Column 1 bubbles (- and 0-9) */}
+                        <div className="flex flex-col items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => updateCol(0, "-")}
+                            className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
+                              cols[0] === "-"
+                                ? "bg-slate-900 border-slate-900 text-white shadow-xs"
+                                : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
+                            }`}
+                          >
+                            -
+                          </button>
+                          {Array.from({ length: 10 }, (_, i) => String(i)).map((num) => (
+                            <button
+                              key={num}
+                              type="button"
+                              onClick={() => updateCol(0, num)}
+                              className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
+                                cols[0] === num
+                                  ? "bg-slate-900 border-slate-900 text-white shadow-xs"
+                                  : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
+                              }`}
+                            >
+                              {num}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Column 2 bubbles (, and 0-9) */}
+                        <div className="flex flex-col items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => updateCol(1, ",")}
+                            className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
+                              cols[1] === ","
+                                ? "bg-slate-900 border-slate-900 text-white shadow-xs"
+                                : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
+                            }`}
+                          >
+                            ,
+                          </button>
+                          {Array.from({ length: 10 }, (_, i) => String(i)).map((num) => (
+                            <button
+                              key={num}
+                              type="button"
+                              onClick={() => updateCol(1, num)}
+                              className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
+                                cols[1] === num
+                                  ? "bg-slate-900 border-slate-900 text-white shadow-xs"
+                                  : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
+                              }`}
+                            >
+                              {num}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Column 3 bubbles (, and 0-9) */}
+                        <div className="flex flex-col items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => updateCol(2, ",")}
+                            className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
+                              cols[2] === ","
+                                ? "bg-slate-900 border-slate-900 text-white shadow-xs"
+                                : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
+                            }`}
+                          >
+                            ,
+                          </button>
+                          {Array.from({ length: 10 }, (_, i) => String(i)).map((num) => (
+                            <button
+                              key={num}
+                              type="button"
+                              onClick={() => updateCol(2, num)}
+                              className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
+                                cols[2] === num
+                                  ? "bg-slate-900 border-slate-900 text-white shadow-xs"
+                                  : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
+                              }`}
+                            >
+                              {num}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Column 4 bubbles (0-9 only) */}
+                        <div className="flex flex-col items-center gap-1 pt-6.5">
+                          {Array.from({ length: 10 }, (_, i) => String(i)).map((num) => (
+                            <button
+                              key={num}
+                              type="button"
+                              onClick={() => updateCol(3, num)}
+                              className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
+                                cols[3] === num
+                                  ? "bg-slate-900 border-slate-900 text-white shadow-xs"
+                                  : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
+                              }`}
+                            >
+                              {num}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+
+            {isSubmitted && (
+              <div className="mt-2 text-sm flex items-center gap-2 flex-wrap p-3 rounded-lg bg-emerald-50/70 border border-emerald-200">
+                <span className="text-emerald-900 font-bold">Đáp án chuẩn:</span>
+                <div className="font-mono font-bold text-base text-emerald-700 bg-white px-3 py-1 rounded border border-emerald-300">
+                  <MathView inline content={sanitizeAndPolishMath(q.correctAnswer || q.correct || '')} />
+                </div>
+                {isCorrectQuestion ? (
+                  <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1">
+                    <CheckCircle2 className="w-4 h-4" /> Chính xác
+                  </span>
+                ) : (
+                  <span className="text-xs font-semibold text-red-600 flex items-center gap-1">
+                    <XCircle className="w-4 h-4" /> Chưa chính xác
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ESSAY */}
+        {isEssay && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                <span>Nhập bài giải trực tiếp (nếu gõ phím):</span>
+                <span className="text-slate-400 font-normal">Hỗ trợ gõ text / ký hiệu toán</span>
+              </label>
+              <textarea 
+                disabled={isSubmitted}
+                value={answer || ''}
+                onChange={(e) => onAnswerChange(idx, e.target.value)}
+                placeholder="Em có thể gõ các bước giải tự luận tại đây..."
+                className="w-full p-4 rounded-xl border border-slate-300 bg-white text-slate-800 min-h-[140px] focus:ring-2 focus:ring-emerald-500 outline-none font-sans text-sm"
+              />
+            </div>
+
+            {/* Camera / Upload photos of paper work */}
+            <div className="p-4 bg-slate-50 border border-dashed border-slate-300 rounded-xl space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Camera className="w-4 h-4 text-emerald-600" />
+                    Chụp ảnh bài làm trên giấy:
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Khuyến khích học sinh chụp rõ chữ, có thể chụp nhiều trang/ảnh
+                  </p>
+                </div>
+                {!isSubmitted && (
+                  <label className="cursor-pointer px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors">
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>📷 Chụp / Tải ảnh bài làm</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => onImageUpload(idx, e.target.files)}
+                    />
+                  </label>
+                )}
+              </div>
+
+              {/* Preview Thumbnail Grid */}
+              {essayImages && essayImages.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                  {essayImages.map((imgUrl, imgIdx) => (
+                    <div key={imgIdx} className="relative group border border-slate-200 rounded-lg overflow-hidden bg-white shadow-2xs aspect-3/4 flex items-center justify-center">
+                      <img
+                        src={imgUrl}
+                        alt={`Ảnh bài làm trang ${imgIdx + 1}`}
+                        className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform"
+                        onClick={() => onPreviewImage(imgUrl)}
+                      />
+                      <div className="absolute top-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded font-bold">
+                        Ảnh {imgIdx + 1}
+                      </div>
+                      {!isSubmitted && (
+                        <button
+                          type="button"
+                          onClick={() => onRemoveEssayImage(idx, imgIdx)}
+                          className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-1 shadow hover:bg-red-700 transition-colors"
+                          title="Xóa ảnh này để chụp lại nếu bị mờ"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {isSubmitted && (
+              <div className="mt-4 p-4 bg-purple-50/80 rounded-xl border border-purple-200 space-y-2">
+                <span className="text-purple-900 font-bold block text-sm flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-purple-600" />
+                  Hướng dẫn chấm / Đáp án chuẩn tự luận:
+                </span>
+                <div className="text-slate-800 text-sm">
+                  <MathView content={sanitizeAndPolishMath(q.correctAnswer || q.explanation || q.correct || '')} />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* EXPLANATION */}
+        {isSubmitted && q.explanation && !isEssay && (
+           <div className="mt-4 p-4 bg-slate-100 rounded-lg border border-slate-200">
+             <span className="text-slate-500 font-semibold block mb-2">Giải thích:</span>
+             <MathView content={sanitizeAndPolishMath(q.explanation || '')} />
+           </div>
+        )}
+      </div>
+    </div>
+  );
+});
 
 export function StudentExamView({ examId, examRawData }: { examId?: string, examRawData?: string }) {
   const [loading, setLoading] = useState(Boolean(examId || examRawData));
@@ -110,7 +682,7 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
       }, 1000);
     }
     return () => clearInterval(timer);
-  }, [isStarted, isSubmitted, timeLeft]);
+  }, [isStarted, isSubmitted]);
 
   useEffect(() => {
     if (isStarted && !isSubmitted && timeLeft === 0) {
@@ -133,6 +705,11 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
 
   const [translatedQuestions, setTranslatedQuestions] = useState<any[] | null>(null);
   const [examLanguage, setExamLanguage] = useState<'vi' | 'en'>('vi');
+
+  const handleTranslatedQuestionsChange = useCallback((newQuestions: any[], newLang: 'vi' | 'en') => {
+    setTranslatedQuestions(newQuestions);
+    setExamLanguage(newLang);
+  }, []);
 
   const currentExam = React.useMemo(() => {
     if (!examData) return null;
@@ -221,7 +798,11 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
     );
   }
 
-  const handleImageUpload = (qIdx: number, files: FileList | null) => {
+  const handleAnswerChange = useCallback((idx: number, ans: any) => {
+    setAnswers(prev => ({ ...prev, [idx]: ans }));
+  }, []);
+
+  const handleImageUpload = useCallback((qIdx: number, files: FileList | null) => {
     if (!files || files.length === 0) return;
     Array.from(files).forEach((file) => {
       if (!file.type.startsWith('image/')) return;
@@ -237,15 +818,15 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
       };
       reader.readAsDataURL(file);
     });
-  };
+  }, []);
 
-  const removeEssayImage = (qIdx: number, imgIdx: number) => {
+  const removeEssayImage = useCallback((qIdx: number, imgIdx: number) => {
     setEssayImages(prev => {
       const list = [...(prev[qIdx] || [])];
       list.splice(imgIdx, 1);
       return { ...prev, [qIdx]: list };
     });
-  };
+  }, []);
 
   const handleSubmit = () => {
     if (!currentExam || !currentExam.questions) return;
@@ -820,10 +1401,7 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
             <LanguageSpeechControls
               content={allExamText}
               questions={currentExam?.questions || []}
-              onQuestionsChange={(newQuestions, newLang) => {
-                setTranslatedQuestions(newQuestions);
-                setExamLanguage(newLang);
-              }}
+              onQuestionsChange={handleTranslatedQuestionsChange}
               subject={examData?.subject || "Toán"}
             />
 
@@ -898,561 +1476,22 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
           </div>
         )}
         
-        {displayQuestions.map((q: any, idx: number) => {
-          
-          let isCorrectQuestion = false;
-          let showRedBorder = false;
-          
-          if (isSubmitted) {
-            const ans = answers[idx];
-            const qType = String(q.type || '').toUpperCase();
-            if (q.type === 'mc' || qType === 'MULTIPLE_CHOICE' || (!q.type && q.options)) {
-              isCorrectQuestion = ans === q.correctOptionIndex;
-              showRedBorder = !isCorrectQuestion;
-            } else if (q.type === 'tf' || qType === 'TRUE_FALSE') {
-              if (q.tfStatements && q.tfStatements.length > 0) {
-                 let correctCount = 0;
-                 q.tfStatements.forEach((stmt: any, sIdx: number) => {
-                   const studentAns = ans ? ans[sIdx] : undefined;
-                   const isTrue = stmt.correct === true || String(stmt.correct).toLowerCase() === 'true';
-                   if (studentAns === isTrue) correctCount++;
-                 });
-                 isCorrectQuestion = correctCount === q.tfStatements.length;
-                 showRedBorder = correctCount < q.tfStatements.length;
-              } else {
-                 const isTrue = q.correct === true || String(q.correct).toLowerCase() === 'true' || String(q.correctAnswer).toLowerCase().includes('đúng');
-                 isCorrectQuestion = ans === isTrue;
-                 showRedBorder = !isCorrectQuestion;
-              }
-            } else if (q.type === 'sa' || qType === 'SHORT_ANSWER') {
-               const correctAns = String(q.correctAnswer || q.correct || '').trim();
-               const studentAns = String(ans || '').trim();
-               isCorrectQuestion = !!(correctAns && compareShortAnswers(studentAns, correctAns));
-               showRedBorder = !isCorrectQuestion;
-            } else {
-               showRedBorder = false;
-               isCorrectQuestion = true;
-            }
-          }
+        {displayQuestions.map((q: any, idx: number) => (
+          <StudentQuestionCard
+            key={idx}
+            idx={idx}
+            q={q}
+            examLanguage={examLanguage}
+            isSubmitted={isSubmitted}
+            answer={answers[idx]}
+            onAnswerChange={handleAnswerChange}
+            essayImages={essayImages[idx] || EMPTY_ESSAY_IMAGES}
+            onImageUpload={handleImageUpload}
+            onRemoveEssayImage={removeEssayImage}
+            onPreviewImage={setPreviewingImage}
+          />
+        ))}
 
-          const qType = String(q.type || '').toUpperCase();
-          const isMC = q.type === 'mc' || qType === 'MULTIPLE_CHOICE' || (!q.type && q.options);
-          const isTF = q.type === 'tf' || qType === 'TRUE_FALSE';
-          const isSA = q.type === 'sa' || qType === 'SHORT_ANSWER';
-          const isEssay = q.type === 'essay' || qType === 'ESSAY';
-          const question = q;
-
-          const rawStem = (question.question && String(question.question).trim())
-            ? String(question.question).trim()
-            : (question.content && String(question.content).trim())
-            ? String(question.content).trim()
-            : (question.text || '');
-
-          const stemWithoutOptions = (isMC || isTF)
-            ? (cleanQuestionStem(rawStem, question.options, question.tfStatements) || rawStem)
-            : rawStem;
-
-          const trimmedStem = stemWithoutOptions.replace(/^(?:Câu|Bài|Question)\s*\d+[\s\.\:\-–—\(\)\[\]A-Za-zÀ-ỹ]*[:\.]\s*/i, '').trim();
-          const rawStemContent = trimmedStem || stemWithoutOptions || question.question || question.content || '';
-          const questionContent = sanitizeExamQuestion(rawStemContent);
-
-          return (
-            <div key={idx} className={`bg-white p-6 rounded-xl shadow-sm border ${isSubmitted && showRedBorder ? 'border-red-200' : isSubmitted ? 'border-emerald-200' : 'border-slate-200'}`}>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="font-bold text-slate-900 text-lg">
-                  {examLanguage === 'en' ? `Question ${idx + 1}:` : `Câu ${idx + 1}:`}
-                </span>
-                {isEssay && (
-                  <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-purple-100 text-purple-700">
-                    {examLanguage === 'en' ? 'Essay' : 'Tự luận'}
-                  </span>
-                )}
-                {isSA && (
-                  <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-indigo-100 text-indigo-700">
-                    {examLanguage === 'en' ? 'Short Answer' : 'Trả lời ngắn'}
-                  </span>
-                )}
-                {isTF && (
-                  <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-emerald-100 text-emerald-700">
-                    {examLanguage === 'en' ? 'True / False' : 'Đúng / Sai'}
-                  </span>
-                )}
-                {isMC && (
-                  <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-700">
-                    {examLanguage === 'en' ? 'Multiple Choice' : 'Trắc nghiệm'}
-                  </span>
-                )}
-              </div>
-
-              <div className="text-gray-800 text-base mb-4">
-                <MathView content={questionContent} />
-              </div>
-
-              {/* Question Image (if any) */}
-              {question.imageUrl && (
-                <div className="flex flex-col items-center justify-center my-4 p-2 bg-slate-50 border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-                  <img
-                    src={question.imageUrl}
-                    alt={`Hình minh họa câu ${idx + 1}`}
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                    className="max-h-80 max-w-full object-contain rounded-lg border border-slate-200 bg-white"
-                  />
-                  <span className="text-xs text-slate-500 mt-1 italic">Hình minh họa / Đồ thị câu {idx + 1}</span>
-                </div>
-              )}
-              
-              <div className="w-full space-y-2">
-                {/* MULTIPLE CHOICE */}
-                {isMC && q.options?.map((opt: string, oIdx: number) => {
-                  const isSelected = answers[idx] === oIdx;
-                  const isCorrect = oIdx === q.correctOptionIndex;
-                  
-                  let btnClass = "w-full min-h-[44px] flex items-center px-4 py-2 text-left rounded-lg border transition-colors break-words overflow-hidden gap-3 ";
-                  if (!isSubmitted) {
-                    btnClass += isSelected ? "bg-emerald-50 border-emerald-500 text-emerald-900" : "bg-white border-slate-200 hover:border-emerald-300 hover:bg-slate-50 text-slate-700";
-                  } else {
-                    if (isCorrect) btnClass += "bg-emerald-50 border-emerald-500 text-emerald-900";
-                    else if (isSelected && !isCorrect) btnClass += "bg-red-50 border-red-500 text-red-900";
-                    else btnClass += "bg-white border-slate-200 text-slate-500 opacity-60";
-                  }
-                  
-                  return (
-                    <button 
-                      key={oIdx} 
-                      onClick={() => !isSubmitted && setAnswers({...answers, [idx]: oIdx})}
-                      disabled={isSubmitted}
-                      className={btnClass}
-                    >
-                      <div className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 font-bold text-xs ${isSelected && !isSubmitted ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300'}`}>
-                        {String.fromCharCode(65 + oIdx)}
-                      </div>
-                      <span className="flex-1 break-words overflow-hidden text-left"><MathView inline content={cleanOptionText(opt)} /></span>
-                      {isSubmitted && isCorrect && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />}
-                      {isSubmitted && isSelected && !isCorrect && <XCircle className="w-5 h-5 text-red-600 shrink-0" />}
-                    </button>
-                  );
-                })}
-
-                {/* TRUE / FALSE (4 Statements format - GDPT 2018) */}
-                {isTF && q.tfStatements && q.tfStatements.length > 0 && (
-                  <div className="space-y-4">
-                    {q.tfStatements.map((stmt: any, sIdx: number) => {
-                      const ansMap = answers[idx] || {};
-                      const studentAns = ansMap[sIdx];
-                      const isTrue = stmt.correct === true || String(stmt.correct).toLowerCase() === 'true';
-                      const subLabel = ['a)', 'b)', 'c)', 'd)'][sIdx] || `${String.fromCharCode(97 + sIdx)})`;
-                      let cleanStmt = (stmt.statement || '').trim();
-                      cleanStmt = cleanStmt.replace(/^[a-d][\.\:\)]\s*/i, '');
-                      cleanStmt = sanitizeAndPolishMath(cleanStmt);
-                      
-                      return (
-                        <div key={sIdx} className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 rounded-xl border border-slate-200 bg-slate-50">
-                          <div className="flex-1 flex items-start gap-2.5">
-                            <span className="font-bold text-emerald-800 shrink-0 mt-0.5">{subLabel}</span>
-                            <div className="flex-1">
-                              <MathView content={cleanStmt} />
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <button 
-                              disabled={isSubmitted}
-                              onClick={() => !isSubmitted && setAnswers({...answers, [idx]: {...ansMap, [sIdx]: true}})}
-                              className={`px-4 py-2 rounded-lg border font-medium text-sm transition-colors ${studentAns === true ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'} ${(isSubmitted && isTrue) ? 'ring-2 ring-emerald-500' : ''}`}
-                            >
-                              Đúng
-                            </button>
-                            <button 
-                              disabled={isSubmitted}
-                              onClick={() => !isSubmitted && setAnswers({...answers, [idx]: {...ansMap, [sIdx]: false}})}
-                              className={`px-4 py-2 rounded-lg border font-medium text-sm transition-colors ${studentAns === false ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'} ${(isSubmitted && !isTrue) ? 'ring-2 ring-emerald-500' : ''}`}
-                            >
-                              Sai
-                            </button>
-                            {isSubmitted && studentAns === isTrue && <CheckCircle2 className="w-5 h-5 text-emerald-600 ml-2" />}
-                            {isSubmitted && studentAns !== undefined && studentAns !== isTrue && <XCircle className="w-5 h-5 text-red-600 ml-2" />}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                
-                {/* TRUE / FALSE (Single statement) */}
-                {isTF && (!q.tfStatements || q.tfStatements.length === 0) && (
-                   <div className="flex items-center gap-3">
-                     <button 
-                        disabled={isSubmitted}
-                        onClick={() => !isSubmitted && setAnswers({...answers, [idx]: true})}
-                        className={`flex-1 py-4 rounded-xl border font-bold transition-colors ${answers[idx] === true ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
-                      >
-                        Đúng
-                      </button>
-                      <button 
-                        disabled={isSubmitted}
-                        onClick={() => !isSubmitted && setAnswers({...answers, [idx]: false})}
-                        className={`flex-1 py-4 rounded-xl border font-bold transition-colors ${answers[idx] === false ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
-                      >
-                        Sai
-                      </button>
-                   </div>
-                )}
-
-                {/* SHORT ANSWER */}
-                {isSA && (
-                  <div className="space-y-3">
-                    {/* Quy chuẩn & Mô phỏng 4 ô vuông phiếu trả lời trắc nghiệm giấy */}
-                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <label className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-                          Nhập kết quả số (Tối đa 4 ký tự - Chuẩn GDPT 2018):
-                        </label>
-                        <span className="text-xs text-slate-500 font-mono">
-                          Đã nhập: <strong className={(answers[idx] || '').length === 4 ? 'text-amber-600' : 'text-indigo-600'}>{(answers[idx] || '').length}/4</strong>
-                        </span>
-                      </div>
-
-                      {/* 1 ô input duy nhất với giới hạn 4 ký tự và mô phỏng 4 ô vuông phiếu tô */}
-                      <div className="flex items-center gap-3">
-                        <div className="relative">
-                          <input 
-                            type="text" 
-                            disabled={isSubmitted}
-                            maxLength={4}
-                            value={answers[idx] || ''}
-                            onChange={(e) => {
-                              const sanitized = sanitizeShortAnswerInput(e.target.value);
-                              setAnswers({...answers, [idx]: sanitized});
-                            }}
-                            placeholder="vd: 22"
-                            className={`w-36 text-center text-xl font-mono font-bold tracking-[0.45em] px-3 py-2.5 rounded-lg border-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all ${
-                              isSubmitted && isCorrectQuestion 
-                                ? 'border-emerald-500 bg-emerald-50 text-emerald-900' 
-                                : isSubmitted && !isCorrectQuestion 
-                                ? 'border-red-500 bg-red-50 text-red-900' 
-                                : 'border-indigo-400 bg-white text-indigo-950 focus:border-indigo-600'
-                            }`}
-                          />
-                        </div>
-
-                        {/* Mô phỏng trực quan 4 ô vuông như trên phiếu tô trắc nghiệm giấy */}
-                        <div className="flex items-center gap-1" title="Mô phỏng 4 ô vuông trên phiếu thi trắc nghiệm">
-                          {[0, 1, 2, 3].map((slotIdx) => {
-                            const char = (answers[idx] || '')[slotIdx];
-                            return (
-                              <div
-                                key={slotIdx}
-                                className={`w-8 h-10 border-2 rounded flex items-center justify-center font-mono font-bold text-base transition-colors ${
-                                  char
-                                    ? 'border-indigo-600 bg-indigo-50 text-indigo-800 shadow-2xs'
-                                    : 'border-dashed border-slate-300 bg-white text-slate-300'
-                                }`}
-                              >
-                                {char || '•'}
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                        <div className="hidden sm:block text-[11px] text-slate-500 leading-tight">
-                          <div>Chỉ chấp nhận: chữ số (0-9), dấu (-) và (, hoặc .)</div>
-                          <div className="text-slate-400 italic">Ví dụ hợp lệ: 13, -3.5, 102, 0.5</div>
-                        </div>
-                      </div>
-
-                      {/* Cảnh báo validation nếu có ký tự lạ hoặc nhập sai */}
-                      {(() => {
-                        const curAns = answers[idx];
-                        if (!curAns || isSubmitted) return null;
-                        const validation = validateShortAnswer(curAns);
-                        if (!validation.isValid && validation.warning) {
-                          return (
-                            <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 flex items-center gap-1.5">
-                              <span>⚠️</span>
-                              <span>{validation.warning}</span>
-                            </div>
-                          );
-                        }
-                        return null;
-                      })()}
-
-                      {/* Phiếu tô trắc nghiệm 4 cột chuẩn Bộ GD&ĐT */}
-                      {!isSubmitted && (
-                        <div className="pt-2 border-t border-slate-200 mt-2">
-                          <p className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1">
-                            <span>📱</span> Tô nhanh trực tuyến (Phiếu trắc nghiệm chuẩn Bộ 100%):
-                          </p>
-                          {(() => {
-                            const ans = answers[idx] || "";
-                            const cols = ["", "", "", ""];
-                            const ansChars = ans.trim().replace(".", ",").split("");
-                            for (let i = 0; i < Math.min(4, ansChars.length); i++) {
-                              cols[i] = ansChars[i];
-                            }
-
-                            const updateCol = (colIdx: number, val: string) => {
-                              const newCols = [...cols];
-                              
-                              // Automatically enforce only one active comma (either in Column 2 or Column 3)
-                              if (colIdx === 1 && val === ",") {
-                                if (newCols[2] === ",") newCols[2] = "";
-                              }
-                              if (colIdx === 2 && val === ",") {
-                                if (newCols[1] === ",") newCols[1] = "";
-                              }
-
-                              if (newCols[colIdx] === val) {
-                                newCols[colIdx] = "";
-                              } else {
-                                newCols[colIdx] = val;
-                              }
-                              
-                              const joined = newCols.join("").trim();
-                              // Convert all commas to period decimal points
-                              const newAns = joined.replace(/,/g, ".");
-                              setAnswers({ ...answers, [idx]: newAns });
-                            };
-
-                            return (
-                              <div className="grid grid-cols-4 gap-2 bg-white p-3 rounded-xl border border-slate-200 max-w-[280px]">
-                                {/* Row of visual box labels */}
-                                {cols.map((char, colIdx) => (
-                                  <div key={colIdx} className="bg-slate-50 border border-slate-350 rounded h-8 flex items-center justify-center font-black text-sm text-slate-800 font-mono shadow-3xs">
-                                    {char}
-                                  </div>
-                                ))}
-
-                                {/* Column 1 bubbles (- and 0-9) */}
-                                <div className="flex flex-col items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => updateCol(0, "-")}
-                                    className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
-                                      cols[0] === "-"
-                                        ? "bg-slate-900 border-slate-900 text-white shadow-xs"
-                                        : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
-                                    }`}
-                                  >
-                                    -
-                                  </button>
-                                  {Array.from({ length: 10 }, (_, i) => String(i)).map((num) => (
-                                    <button
-                                      key={num}
-                                      type="button"
-                                      onClick={() => updateCol(0, num)}
-                                      className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
-                                        cols[0] === num
-                                          ? "bg-slate-900 border-slate-900 text-white shadow-xs"
-                                          : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
-                                      }`}
-                                    >
-                                      {num}
-                                    </button>
-                                  ))}
-                                </div>
-
-                                {/* Column 2 bubbles (, and 0-9) */}
-                                <div className="flex flex-col items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => updateCol(1, ",")}
-                                    className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
-                                      cols[1] === ","
-                                        ? "bg-slate-900 border-slate-900 text-white shadow-xs"
-                                        : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
-                                    }`}
-                                  >
-                                    ,
-                                  </button>
-                                  {Array.from({ length: 10 }, (_, i) => String(i)).map((num) => (
-                                    <button
-                                      key={num}
-                                      type="button"
-                                      onClick={() => updateCol(1, num)}
-                                      className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
-                                        cols[1] === num
-                                          ? "bg-slate-900 border-slate-900 text-white shadow-xs"
-                                          : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
-                                      }`}
-                                    >
-                                      {num}
-                                    </button>
-                                  ))}
-                                </div>
-
-                                {/* Column 3 bubbles (, and 0-9) */}
-                                <div className="flex flex-col items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => updateCol(2, ",")}
-                                    className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
-                                      cols[2] === ","
-                                        ? "bg-slate-900 border-slate-900 text-white shadow-xs"
-                                        : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
-                                    }`}
-                                  >
-                                    ,
-                                  </button>
-                                  {Array.from({ length: 10 }, (_, i) => String(i)).map((num) => (
-                                    <button
-                                      key={num}
-                                      type="button"
-                                      onClick={() => updateCol(2, num)}
-                                      className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
-                                        cols[2] === num
-                                          ? "bg-slate-900 border-slate-900 text-white shadow-xs"
-                                          : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
-                                      }`}
-                                    >
-                                      {num}
-                                    </button>
-                                  ))}
-                                </div>
-
-                                {/* Column 4 bubbles (0-9 only) */}
-                                <div className="flex flex-col items-center gap-1 pt-6.5">
-                                  {Array.from({ length: 10 }, (_, i) => String(i)).map((num) => (
-                                    <button
-                                      key={num}
-                                      type="button"
-                                      onClick={() => updateCol(3, num)}
-                                      className={`w-5.5 h-5.5 rounded-full text-[10px] font-black border flex items-center justify-center cursor-pointer transition-all ${
-                                        cols[3] === num
-                                          ? "bg-slate-900 border-slate-900 text-white shadow-xs"
-                                          : "border-slate-300 hover:border-slate-400 bg-white text-slate-600"
-                                      }`}
-                                    >
-                                      {num}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      )}
-                    </div>
-
-                    {isSubmitted && (
-                      <div className="mt-2 text-sm flex items-center gap-2 flex-wrap p-3 rounded-lg bg-emerald-50/70 border border-emerald-200">
-                        <span className="text-emerald-900 font-bold">Đáp án chuẩn:</span>
-                        <div className="font-mono font-bold text-base text-emerald-700 bg-white px-3 py-1 rounded border border-emerald-300">
-                          <MathView inline content={sanitizeAndPolishMath(q.correctAnswer || q.correct || '')} />
-                        </div>
-                        {isCorrectQuestion ? (
-                          <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1">
-                            <CheckCircle2 className="w-4 h-4" /> Chính xác
-                          </span>
-                        ) : (
-                          <span className="text-xs font-semibold text-red-600 flex items-center gap-1">
-                            <XCircle className="w-4 h-4" /> Chưa chính xác
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* ESSAY */}
-                {isEssay && (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
-                        <span>Nhập bài giải trực tiếp (nếu gõ phím):</span>
-                        <span className="text-slate-400 font-normal">Hỗ trợ gõ text / ký hiệu toán</span>
-                      </label>
-                      <textarea 
-                        disabled={isSubmitted}
-                        value={answers[idx] || ''}
-                        onChange={(e) => setAnswers({...answers, [idx]: e.target.value})}
-                        placeholder="Em có thể gõ các bước giải tự luận tại đây..."
-                        className="w-full p-4 rounded-xl border border-slate-300 bg-white text-slate-800 min-h-[140px] focus:ring-2 focus:ring-emerald-500 outline-none font-sans text-sm"
-                      />
-                    </div>
-
-                    {/* Camera / Upload photos of paper work */}
-                    <div className="p-4 bg-slate-50 border border-dashed border-slate-300 rounded-xl space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                            <Camera className="w-4 h-4 text-emerald-600" />
-                            Chụp ảnh bài làm trên giấy:
-                          </p>
-                          <p className="text-[11px] text-slate-500">
-                            Khuyến khích học sinh chụp rõ chữ, có thể chụp nhiều trang/ảnh
-                          </p>
-                        </div>
-                        {!isSubmitted && (
-                          <label className="cursor-pointer px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors">
-                            <Camera className="w-3.5 h-3.5" />
-                            <span>📷 Chụp / Tải ảnh bài làm</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              multiple
-                              className="hidden"
-                              onChange={(e) => handleImageUpload(idx, e.target.files)}
-                            />
-                          </label>
-                        )}
-                      </div>
-
-                      {/* Preview Thumbnail Grid */}
-                      {essayImages[idx] && essayImages[idx].length > 0 && (
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
-                          {essayImages[idx].map((imgUrl, imgIdx) => (
-                            <div key={imgIdx} className="relative group border border-slate-200 rounded-lg overflow-hidden bg-white shadow-2xs aspect-3/4 flex items-center justify-center">
-                              <img
-                                src={imgUrl}
-                                alt={`Ảnh bài làm trang ${imgIdx + 1}`}
-                                className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform"
-                                onClick={() => setPreviewingImage(imgUrl)}
-                              />
-                              <div className="absolute top-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded font-bold">
-                                Ảnh {imgIdx + 1}
-                              </div>
-                              {!isSubmitted && (
-                                <button
-                                  type="button"
-                                  onClick={() => removeEssayImage(idx, imgIdx)}
-                                  className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-1 shadow hover:bg-red-700 transition-colors"
-                                  title="Xóa ảnh này để chụp lại nếu bị mờ"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {isSubmitted && (
-                      <div className="mt-4 p-4 bg-purple-50/80 rounded-xl border border-purple-200 space-y-2">
-                        <span className="text-purple-900 font-bold block text-sm flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-purple-600" />
-                          Hướng dẫn chấm / Đáp án chuẩn tự luận:
-                        </span>
-                        <div className="text-slate-800 text-sm">
-                          <MathView content={sanitizeAndPolishMath(q.correctAnswer || q.explanation || q.correct || '')} />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-                
-                {/* EXPLANATION */}
-                {isSubmitted && q.explanation && !isEssay && (
-                   <div className="mt-4 p-4 bg-slate-100 rounded-lg border border-slate-200">
-                     <span className="text-slate-500 font-semibold block mb-2">Giải thích:</span>
-                     <MathView content={sanitizeAndPolishMath(q.explanation || '')} />
-                   </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
       </main>
 
       {/* Floating Calculator Button and Modal */}

@@ -203,7 +203,7 @@ export function Worksheets() {
   // BBT & Đồ thị & Hình 3D & Thống kê Visualizer State
   const [activeVisualizer, setActiveVisualizer] = useState<{
     qIndex: number;
-    tab: "bbt" | "graph" | "geometry3d" | "statistics";
+    tab: "bbt" | "graph" | "geometry3d" | "statistics" | "ai_sim";
     target: "content" | "solution";
   } | null>(null);
   const [isDocVisualizerOpen, setIsDocVisualizerOpen] = useState(false);
@@ -2142,6 +2142,26 @@ export function Worksheets() {
 
                                 <button
                                   type="button"
+                                  onClick={() => {
+                                    if (activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "ai_sim" && activeVisualizer?.target === "content") {
+                                      setActiveVisualizer(null);
+                                    } else {
+                                      setActiveVisualizer({ qIndex: idx, tab: "ai_sim", target: "content" });
+                                    }
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded-md border shadow-2xs transition-colors cursor-pointer ${
+                                    activeVisualizer?.qIndex === idx && activeVisualizer?.tab === "ai_sim" && activeVisualizer?.target === "content"
+                                      ? "bg-purple-600 text-white border-purple-700"
+                                      : "bg-purple-50 hover:bg-purple-100 text-purple-800 border-purple-300"
+                                  }`}
+                                  title="AI Vẽ hình mô phỏng sinh động từ đề bài (Flat Design SVG)"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                                  <span>✨ AI Mô phỏng</span>
+                                </button>
+
+                                <button
+                                  type="button"
                                   onClick={() => setEditingQuestion({ question: q, index: idx })}
                                   className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 shadow-2xs transition-colors cursor-pointer"
                                   title="Chỉnh sửa chi tiết nội dung, phương án và lời giải câu hỏi"
@@ -2417,6 +2437,15 @@ export function Worksheets() {
                                       >
                                         <BarChart3 className="w-3 h-3" />
                                         <span>Mở Thống kê</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveVisualizer({ qIndex: idx, tab: "ai_sim", target: "solution" })}
+                                        className="text-purple-700 hover:text-purple-900 font-semibold px-2 py-0.5 rounded bg-purple-100/70 border border-purple-200 cursor-pointer flex items-center gap-1 shadow-2xs"
+                                        title="Mở Module AI Mô phỏng để vẽ hình vào lời giải"
+                                      >
+                                        <Sparkles className="w-3 h-3 text-purple-600" />
+                                        <span>Mở AI Mô phỏng</span>
                                       </button>
                                     </div>
                                   </div>

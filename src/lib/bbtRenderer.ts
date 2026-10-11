@@ -112,9 +112,11 @@ export function generateBbtSvg(data: BBTData): string {
     intervals.some(i => i.sign !== undefined && i.sign !== '')
   );
 
+  const hasFunctionRow = points.some(p => (p.yVal !== undefined && p.yVal !== '') || (p.yLeftVal !== undefined && p.yLeftVal !== '') || (p.yRightVal !== undefined && p.yRightVal !== ''));
+
   const rowXHeight = 38;
   const rowYPrimeHeight = hasDerivativeRow ? 38 : 0;
-  const rowYHeight = 130;
+  const rowYHeight = hasFunctionRow ? 130 : 0;
   const totalHeight = rowXHeight + rowYPrimeHeight + rowYHeight;
 
   const usableWidth = contentWidth - 2 * paddingX;
@@ -153,17 +155,20 @@ export function generateBbtSvg(data: BBTData): string {
   svgParts.push(`<line x1="${leftLabelWidth}" y1="0" x2="${leftLabelWidth}" y2="${totalHeight}" stroke="#111827" stroke-width="1.3" />`);
   // Vách ngang 1 (dưới hàng x)
   svgParts.push(`<line x1="0" y1="${rowXHeight}" x2="${totalWidth}" y2="${rowXHeight}" stroke="#111827" stroke-width="1.3" />`);
-  // Vách ngang 2 (dưới hàng y' nếu có hàng đạo hàm)
-  if (hasDerivativeRow) {
+  // Vách ngang 2 (dưới hàng y' nếu có hàng đạo hàm VÀ có hàng hàm số y)
+  if (hasDerivativeRow && hasFunctionRow) {
     svgParts.push(`<line x1="0" y1="${rowXHeight + rowYPrimeHeight}" x2="${totalWidth}" y2="${rowXHeight + rowYPrimeHeight}" stroke="#111827" stroke-width="1.3" />`);
   }
 
   // 3. CỘT NHÃN TRÁI CHUẨN SGK: x, y', y (Font Times New Roman nghiêng chuẩn toán)
   svgParts.push(`<text x="${leftLabelWidth / 2}" y="25" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="18" font-style="italic" fill="#111827">x</text>`);
   if (hasDerivativeRow) {
-    svgParts.push(`<text x="${leftLabelWidth / 2}" y="${rowXHeight + 25}" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="18" font-style="italic" fill="#111827">y'</text>`);
+    const primeLabel = (data.functionName && data.functionName.includes("f'")) ? "f'(x)" : (data.domainNote && data.domainNote.includes("f'(x)")) ? "f'(x)" : "y'";
+    svgParts.push(`<text x="${leftLabelWidth / 2}" y="${rowXHeight + 25}" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="18" font-style="italic" fill="#111827">${primeLabel}</text>`);
   }
-  svgParts.push(`<text x="${leftLabelWidth / 2}" y="${rowXHeight + rowYPrimeHeight + rowYHeight / 2 + 5}" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="18" font-style="italic" fill="#111827">y</text>`);
+  if (hasFunctionRow) {
+    svgParts.push(`<text x="${leftLabelWidth / 2}" y="${rowXHeight + rowYPrimeHeight + rowYHeight / 2 + 5}" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="18" font-style="italic" fill="#111827">y</text>`);
+  }
 
   // 4. HÀNG X: CÁC ĐIỂM MỐC
   points.forEach((pt, idx) => {
@@ -203,115 +208,112 @@ export function generateBbtSvg(data: BBTData): string {
     }
   });
 
-  // 8. HÀNG Y: MŨI TÊN BIẾN THIÊN (TÍNH TOÁN KHOẢNG CÁCH CHÍNH XÁC, KHÔNG CẮT CHỮ)
-  for (let i = 0; i < numPoints - 1; i++) {
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    const inter = intervals[i];
+  // 8. HÀNG Y: MŨI TÊN BIẾN THIÊN (CHỈ VẼ KHI CÓ HÀNG HÀM SỐ Y)
+  if (hasFunctionRow) {
+    for (let i = 0; i < numPoints - 1; i++) {
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const inter = intervals[i];
 
-    if (inter?.isExcludedDomain) continue;
+      if (inter?.isExcludedDomain) continue;
 
-    const startX = getPointX(i);
-    const endX = getPointX(i + 1);
+      const startX = getPointX(i);
+      const endX = getPointX(i + 1);
 
-    // Xác định chiều biến thiên của khoảng:
-    const sign = inter?.sign?.trim();
-    const trend = inter?.trend;
-    const isDecreasing = sign === '-' || trend === 'decreasing' || /searrow|\\searrow|↘|downarrow|\\downarrow/i.test(String(sign || ''));
-    const isIncreasing = sign === '+' || trend === 'increasing' || /nearrow|\\nearrow|↗|uparrow|\\uparrow/i.test(String(sign || ''));
+      // Xác định chiều biến thiên của khoảng:
+      const sign = inter?.sign?.trim();
+      const trend = inter?.trend;
+      const isDecreasing = sign === '-' || trend === 'decreasing' || /searrow|\\searrow|↘|downarrow|\\downarrow/i.test(String(sign || ''));
+      const isIncreasing = sign === '+' || trend === 'increasing' || /nearrow|\\nearrow|↗|uparrow|\\uparrow/i.test(String(sign || ''));
 
-    let pos1 = p1.isAsymptote ? (p1.yRightPosition || (isDecreasing ? 'top' : 'bottom')) : (p1.yPosition || (isDecreasing ? 'top' : 'bottom'));
-    let pos2 = p2.isAsymptote ? (p2.yLeftPosition || (isDecreasing ? 'bottom' : 'top')) : (p2.yPosition || (isDecreasing ? 'bottom' : 'top'));
+      let pos1 = p1.isAsymptote ? (p1.yRightPosition || (isDecreasing ? 'top' : 'bottom')) : (p1.yPosition || (isDecreasing ? 'top' : 'bottom'));
+      let pos2 = p2.isAsymptote ? (p2.yLeftPosition || (isDecreasing ? 'bottom' : 'top')) : (p2.yPosition || (isDecreasing ? 'bottom' : 'top'));
 
-    // BẮT BUỘC KHÔNG ĐỂ ĐƯỜNG NẰM NGANG KHI HÀM SỐ BIẾN THIÊN:
-    if (isDecreasing) {
-      // Khi đạo hàm y' mang dấu "-" (nghịch biến): BẮT BUỘC điểm bắt đầu ở tầng trên (top) dốc chéo xuống tầng dưới (bottom)
-      pos1 = 'top';
-      pos2 = 'bottom';
-    } else if (isIncreasing) {
-      // Khi đạo hàm y' mang dấu "+" (đồng biến): BẮT BUỘC điểm bắt đầu ở tầng dưới (bottom) dốc chéo lên tầng trên (top)
-      pos1 = 'bottom';
-      pos2 = 'top';
-    } else if (pos1 === pos2) {
-      // Nếu 2 vị trí trùng nhau, so sánh giá trị y nếu có hoặc ép dốc nhẹ tránh đường nằm ngang tuyệt đối
-      const val1 = parseFloat(cleanMathText(p1.yVal).replace('+', ''));
-      const val2 = parseFloat(cleanMathText(p2.yVal).replace('+', ''));
-      if (!isNaN(val1) && !isNaN(val2)) {
-        if (val1 > val2) {
-          pos1 = 'top';
-          pos2 = 'bottom';
-        } else if (val1 < val2) {
-          pos1 = 'bottom';
-          pos2 = 'top';
-        }
-      } else if (cleanMathText(p1.yVal).includes('-∞') || cleanMathText(p2.yVal).includes('+∞')) {
-        pos1 = 'bottom';
-        pos2 = 'top';
-      } else if (cleanMathText(p1.yVal).includes('+∞') || cleanMathText(p2.yVal).includes('-∞')) {
+      // BẮT BUỘC KHÔNG ĐỂ ĐƯỜNG NẰM NGANG KHI HÀM SỐ BIẾN THIÊN:
+      if (isDecreasing) {
         pos1 = 'top';
         pos2 = 'bottom';
+      } else if (isIncreasing) {
+        pos1 = 'bottom';
+        pos2 = 'top';
+      } else if (pos1 === pos2) {
+        const val1 = parseFloat(cleanMathText(p1.yVal).replace('+', ''));
+        const val2 = parseFloat(cleanMathText(p2.yVal).replace('+', ''));
+        if (!isNaN(val1) && !isNaN(val2)) {
+          if (val1 > val2) {
+            pos1 = 'top';
+            pos2 = 'bottom';
+          } else if (val1 < val2) {
+            pos1 = 'bottom';
+            pos2 = 'top';
+          }
+        } else if (cleanMathText(p1.yVal).includes('-∞') || cleanMathText(p2.yVal).includes('+∞')) {
+          pos1 = 'bottom';
+          pos2 = 'top';
+        } else if (cleanMathText(p1.yVal).includes('+∞') || cleanMathText(p2.yVal).includes('-∞')) {
+          pos1 = 'top';
+          pos2 = 'bottom';
+        } else {
+          pos1 = 'middle';
+          pos2 = 'bottom';
+        }
+      }
+
+      const y1 = getYPosValue(pos1);
+      const y2 = getYPosValue(pos2);
+
+      let x1 = startX;
+      if (p1.isAsymptote) {
+        const rightW = getTextWidthEstimate(p1.yRightVal);
+        x1 = startX + 6 + rightW + 8;
       } else {
-        pos1 = 'middle';
-        pos2 = 'bottom';
+        const w = getTextWidthEstimate(p1.yVal);
+        x1 = startX + w / 2 + 8;
+      }
+
+      let x2 = endX;
+      if (p2.isAsymptote) {
+        const leftW = getTextWidthEstimate(p2.yLeftVal);
+        x2 = endX - 6 - leftW - 8;
+      } else {
+        const w = getTextWidthEstimate(p2.yVal);
+        x2 = endX - w / 2 - 8;
+      }
+
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist > 18) {
+        const sx = x1.toFixed(1);
+        const sy = (y1 + (dy < 0 ? -1 : 1)).toFixed(1);
+        const ex = x2.toFixed(1);
+        const ey = (y2 + (dy < 0 ? 1 : -1)).toFixed(1);
+
+        svgParts.push(`<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}" stroke="#0f172a" stroke-width="1.5" marker-end="url(#bbt-arrow-marker)" stroke-linecap="round" />`);
       }
     }
 
-    const y1 = getYPosValue(pos1);
-    const y2 = getYPosValue(pos2);
+    // 9. HÀNG Y: CÁC GIÁ TRỊ ĐẦU MÚT MŨI TÊN (CĂN CHUẨN, KHÔNG ĐÈ LÊN MŨI TÊN)
+    points.forEach((pt, idx) => {
+      const xPos = getPointX(idx);
 
-    // Tính toán vùng biên của giá trị điểm xuất phát
-    let x1 = startX;
-    if (p1.isAsymptote) {
-      const rightW = getTextWidthEstimate(p1.yRightVal);
-      x1 = startX + 6 + rightW + 8;
-    } else {
-      const w = getTextWidthEstimate(p1.yVal);
-      x1 = startX + w / 2 + 8;
-    }
+      if (pt.isAsymptote) {
+        const yLeft = getYPosValue(pt.yLeftPosition || 'top');
+        const yRight = getYPosValue(pt.yRightPosition || 'bottom');
 
-    // Tính toán vùng biên của giá trị điểm kết thúc
-    let x2 = endX;
-    if (p2.isAsymptote) {
-      const leftW = getTextWidthEstimate(p2.yLeftVal);
-      x2 = endX - 6 - leftW - 8;
-    } else {
-      const w = getTextWidthEstimate(p2.yVal);
-      x2 = endX - w / 2 - 8;
-    }
-
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const dist = Math.hypot(dx, dy);
-
-    if (dist > 18) {
-      const sx = x1.toFixed(1);
-      const sy = (y1 + (dy < 0 ? -1 : 1)).toFixed(1);
-      const ex = x2.toFixed(1);
-      const ey = (y2 + (dy < 0 ? 1 : -1)).toFixed(1);
-
-      svgParts.push(`<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}" stroke="#0f172a" stroke-width="1.5" marker-end="url(#bbt-arrow-marker)" stroke-linecap="round" />`);
-    }
+        if (pt.yLeftVal) {
+          svgParts.push(`<text x="${xPos - 6}" y="${yLeft}" text-anchor="end" font-family="'Times New Roman', Times, serif" font-size="15" fill="#111827">${cleanMathText(pt.yLeftVal)}</text>`);
+        }
+        if (pt.yRightVal) {
+          svgParts.push(`<text x="${xPos + 6}" y="${yRight}" text-anchor="start" font-family="'Times New Roman', Times, serif" font-size="15" fill="#111827">${cleanMathText(pt.yRightVal)}</text>`);
+        }
+      } else if (pt.yVal) {
+        const yCoord = getYPosValue(pt.yPosition);
+        svgParts.push(`<text x="${xPos}" y="${yCoord}" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="15" fill="#111827">${cleanMathText(pt.yVal)}</text>`);
+      }
+    });
   }
-
-  // 9. HÀNG Y: CÁC GIÁ TRỊ ĐẦU MÚT MŨI TÊN (CĂN CHUẨN, KHÔNG ĐÈ LÊN MŨI TÊN)
-  points.forEach((pt, idx) => {
-    const xPos = getPointX(idx);
-
-    if (pt.isAsymptote) {
-      const yLeft = getYPosValue(pt.yLeftPosition || 'top');
-      const yRight = getYPosValue(pt.yRightPosition || 'bottom');
-
-      if (pt.yLeftVal) {
-        svgParts.push(`<text x="${xPos - 6}" y="${yLeft}" text-anchor="end" font-family="'Times New Roman', Times, serif" font-size="15" fill="#111827">${cleanMathText(pt.yLeftVal)}</text>`);
-      }
-      if (pt.yRightVal) {
-        svgParts.push(`<text x="${xPos + 6}" y="${yRight}" text-anchor="start" font-family="'Times New Roman', Times, serif" font-size="15" fill="#111827">${cleanMathText(pt.yRightVal)}</text>`);
-      }
-    } else if (pt.yVal) {
-      const yCoord = getYPosValue(pt.yPosition);
-      svgParts.push(`<text x="${xPos}" y="${yCoord}" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="15" fill="#111827">${cleanMathText(pt.yVal)}</text>`);
-    }
-  });
 
   return `<svg width="${totalWidth}" height="${totalHeight}" viewBox="0 0 ${totalWidth} ${totalHeight}" xmlns="http://www.w3.org/2000/svg" class="max-w-full h-auto mx-auto my-3 drop-shadow-sm bg-white rounded-lg">
     ${svgParts.join('\n    ')}
@@ -325,6 +327,16 @@ export function generateBbtSvg(data: BBTData): string {
  */
 export function unflattenMarkdownTables(text: string): string {
   if (!text || (!text.includes('|') && !text.includes('\\n'))) return text;
+
+  // Chỉ xử lý nếu văn bản thực sự chứa cấu trúc bảng Markdown / BBT (hàng phân cách |---| hoặc hàng BBT có ít nhất 2 cột)
+  const hasMarkdownTable = /\|[ \t]*:?-{2,}:?[ \t]*\|/.test(text) ||
+    /(?:^|\n)[ \t]*\|[ \t]*\$?[xt]\$?[ \t]*\|(?:[^\n|]+\|){2,}/i.test(text) ||
+    /\|\s*(?:y['’′]|f['’′]|f\([a-z]\))\s*\|(?:[^\n|]+\|){2,}/i.test(text);
+
+  if (!hasMarkdownTable) {
+    return text;
+  }
+
   let s = text
     .replace(/\\r\\n/g, '\n')
     .replace(/\\n/g, '\n')
@@ -341,7 +353,9 @@ export function unflattenMarkdownTables(text: string): string {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
-      if (line.includes('|')) {
+      // Chỉ nhận diện là dòng bảng khi có ít nhất 2 dấu gạch đứng | hoặc chứa hàng phân cách |---|
+      const isTableRow = (line.startsWith('|') && (line.match(/\|/g) || []).length >= 2) || /\|[ \t]*:?-{2,}:?[ \t]*\|/.test(line);
+      if (isTableRow) {
         inTable = true;
         tableBuffer.push(line);
       } else if (inTable && (line === '' || /^(?:Câu|Bài|Giá trị|Đáp án|##|\d+[\.\)])/i.test(line))) {
@@ -362,7 +376,8 @@ export function unflattenMarkdownTables(text: string): string {
   }
 
   // 1. Tách văn bản đứng trước bảng nếu bị dính liền trên 1 dòng:
-  s = s.replace(/([^\n|])\s*(\|(?:\s*\$?[xt]\$?|\s*[xt]\s*)\s*\|)/gi, '$1\n\n$2');
+  // Đảm bảo phải có ít nhất 2 cột sau | x |, TUYỆT ĐỐI KHÔNG match trị tuyệt đối |x|
+  s = s.replace(/([^\n|])\s*(\|(?:\s*\$?[xt]\$?|\s*[xt]\s*)\s*\|(?=[^\n|]+\|))/gi, '$1\n\n$2');
 
   // 1.1 Xóa các dòng trống hoặc khoảng trắng thừa giữa các hàng bảng để đảm bảo các hàng nối liền nhau
   s = s.replace(/(\|[^\n]+\|)[ \t]*\n\s*\n[ \t]*(\|)/g, '$1\n$2');
@@ -377,12 +392,13 @@ export function unflattenMarkdownTables(text: string): string {
   s = s.replace(/(\|)[ \t]+(\|\s*\$?(?:y|f\s*\([a-z]\)|g\s*\([a-z]\))\$?[\s|])/gi, '$1\n$2');
 
   // 5. Tách văn bản đứng sau bảng nếu dính liền với hàng cuối:
-  s = s.replace(/(\|\s*)([^\n|]+)$/gm, (_match, pipe, rest) => {
+  // Chỉ tách khi dòng này thực sự là một hàng bảng (bắt đầu bằng | và có ít nhất 2 cột)
+  s = s.replace(/(^[ \t]*\|[^\n|]+\|[^\n|]*\|[ \t]*)(\S[^\n|]*)$/gm, (_match, tablePart, rest) => {
     const trimmedRest = rest.trim();
     if (trimmedRest && !trimmedRest.startsWith('|')) {
-      return `${pipe.trim()}\n\n${trimmedRest}`;
+      return `${tablePart.trim()}\n\n${trimmedRest}`;
     }
-    return `${pipe}${rest}`;
+    return _match;
   });
 
   // Đảm bảo không còn dòng trắng nào giữa các hàng markdown table
@@ -479,8 +495,12 @@ export function parseMarkdownBbtTable(tableMarkdown: string): BBTData | null {
     if (hasDerivative && rowCells.length >= 3) {
       yPrimeCells = rowCells[1].slice(1);
       yCells = rowCells[2].slice(1);
+    } else if (hasDerivative && rowCells.length === 2) {
+      // 2-row table: Bảng xét dấu đạo hàm (x và f'(x))
+      yPrimeCells = rowCells[1].slice(1);
+      yCells = [];
     } else {
-      // 2-row table (Toán 10 parabol, hàm số đồng biến/nghịch biến đơn giản)
+      // 2-row table: Toán 10 parabol, hàm số đồng biến/nghịch biến (x và y)
       yCells = rowCells[1].slice(1);
     }
 
@@ -623,7 +643,7 @@ export function parseMarkdownBbtTable(tableMarkdown: string): BBTData | null {
 
         let yLeftVal: string | undefined;
         let yRightVal: string | undefined;
-        let cleanYVal = yValRaw;
+        let cleanYVal = yValRaw ? cleanMathText(yValRaw) : '';
 
         if (isAsym) {
           const parts = yValRaw.split(/\|\||\\\|/).map(s => s.trim());
@@ -637,17 +657,19 @@ export function parseMarkdownBbtTable(tableMarkdown: string): BBTData | null {
         }
 
         let yPos: 'top' | 'bottom' | 'middle' = 'middle';
-        if (cleanYVal.includes('-\\infty') || cleanYVal.includes('-∞')) {
-          yPos = 'bottom';
-        } else if (cleanYVal.includes('+\\infty') || cleanYVal.includes('+∞') || cleanYVal.includes('∞')) {
-          yPos = 'top';
+        if (cleanYVal) {
+          if (cleanYVal.includes('-\\infty') || cleanYVal.includes('-∞')) {
+            yPos = 'bottom';
+          } else if (cleanYVal.includes('+\\infty') || cleanYVal.includes('+∞') || cleanYVal.includes('∞')) {
+            yPos = 'top';
+          }
         }
 
         points.push({
           x: xVal,
           yPrime: isAsym ? '||' : (yP === '0' ? '0' : undefined),
           isAsymptote: isAsym,
-          yVal: isAsym ? undefined : cleanYVal,
+          yVal: isAsym || !cleanYVal ? undefined : cleanYVal,
           yPosition: yPos,
           yLeftVal,
           yLeftPosition: yLeftVal?.includes('-') ? 'bottom' : 'top',
@@ -706,9 +728,11 @@ export function parseMarkdownBbtTable(tableMarkdown: string): BBTData | null {
     }
 
     return {
-      functionName: '',
+      functionName: hasDerivative ? (row2Header.includes("f'") ? "f'(x)" : "y'") : 'y = f(x)',
+      domainNote: hasDerivative && yCells.length === 0 ? 'Bảng xét dấu đạo hàm' : 'Bảng biến thiên',
       points,
-      intervals
+      intervals,
+      showDerivative: hasDerivative
     };
   } catch (e) {
     return null;
@@ -1787,8 +1811,8 @@ export function autoEnrichTextWithVisuals(text: string): string {
     let b = block;
 
     // A. BỔ SUNG BẢNG BIẾN THIÊN / BẢNG XÉT DẤU
-    const hasBbtText = /(?:bảng\s*biến\s*thiên|bảng\s*xét\s*dấu|chiều\s*biến\s*thiên)/i.test(b);
-    const hasVisualAlready = b.includes('svg-wrapper') || b.includes('<img') || b.includes('| $x$ |') || b.includes('\\begin{tikzpicture}');
+    const hasBbtText = /(?:bảng\s*biến\s*thiên|bảng\s*xét\s*dấu|chiều\s*biến\s*thiên|\bBBT\b)/i.test(b);
+    const hasVisualAlready = b.includes('svg-wrapper') || b.includes('<img') || b.includes('<svg') || b.includes('\\begin{tikzpicture}');
 
     if (hasBbtText && !hasVisualAlready) {
       let bbt: BBTData | null = null;

@@ -388,9 +388,10 @@ export function normalizeCasesBody(body: string): string {
     return token;
   });
 
-  // 1. Chuẩn hóa double-backslashes, dấu gạch đứng (|) và ngắt dòng thành ký hiệu phân tách duy nhất
+  // 1. Chuẩn hóa double-backslashes, dấu gạch đứng kép (||) và ngắt dòng thành ký hiệu phân tách duy nhất
+  // Bảo vệ tuyệt đối dấu gạch đứng đơn của trị tuyệt đối |x| hoặc \mid
   s = s.replace(/\\\\+/g, ' ___SPLIT___ ');
-  s = s.replace(/\|+/g, ' ___SPLIT___ ');
+  s = s.replace(/\|{2,}/g, ' ___SPLIT___ ');
 
   // 2. Phân tách nếu hai điều kiện cách nhau bởi dấu phẩy, chấm phẩy hoặc ngắt dòng
   s = s.replace(/,\s*(?=[a-zA-Z0-9\-\+\{\(\\]|___COMPOUND_INEQ_)/g, ' ___SPLIT___ ');
@@ -1327,7 +1328,11 @@ export const normalizeLogicAndSetSymbols = (text: string): string => {
   s = s.replace(/([A-Z0-9\)])\s*\\(subset|supset|subseteq|supseteq)([A-Z0-9\(])/g, '$1 \\$2 $3');
 
   // 5. Phục hồi ký hiệu thuộc (\in, \notin) và tập hợp số:
-  s = s.replace(/([a-zA-Z0-9])\s*\\in\s*(mathbb[A-Z]|[A-Z])/g, '$1 \\in \\$2');
+  s = s.replace(/([a-zA-Z0-9])\s*\\in\s*(?:\\mathbb\{([A-Z])\}|\\mathbb([A-Z])|([RZNQ]))\b/g, (_m, varName, b1, b2, b3) => {
+    const setL = b1 || b2 || b3;
+    return `${varName} \\in \\mathbb{${setL}}`;
+  });
+  s = s.replace(/(?<=\\in\s*)\\([RZNQ])\b/g, '\\mathbb{$1}');
   s = s.replace(/\\mathbb([A-Z])/g, '\\mathbb{$1}');
   s = s.replace(/(?<!\\)\bnotin\b/g, '\\notin');
 
@@ -1402,19 +1407,20 @@ export const normalizeSetNotation = (text: string): string => {
     let result = "";
     let i = 0;
     while (i < inner.length) {
-      const match = inner.slice(i).match(/(?:([A-Za-z]\s*(?:\\(?:cap|cup|setminus)\s*[A-Za-z]\s*)*=\s*))?(\{)/);
+      const match = inner.slice(i).match(/(?:([A-Za-z]\s*(?:\\(?:cap|cup|setminus)\s*[A-Za-z]\s*)*=\s*))?(\\?\{)/);
       if (!match || match.index === undefined) {
         result += inner.slice(i);
         break;
       }
       const startIdx = i + match.index;
       const name = match[1] || "";
+      const openBrace = match[2];
       const braceStart = startIdx + name.length;
 
       const before = inner.slice(0, braceStart);
       if (/(?:\\[a-zA-Z]+_?|[_^])\s*$/.test(before) && !/\\[a-zA-Z]+$/.test(before.replace(/\\(setminus|cup|cap|subset|supset|subseteq|supseteq|in|notin)$/, ""))) {
-        result += inner.slice(i, braceStart + 1);
-        i = braceStart + 1;
+        result += inner.slice(i, braceStart + openBrace.length);
+        i = braceStart + openBrace.length;
         continue;
       }
 
@@ -1425,6 +1431,18 @@ export const normalizeSetNotation = (text: string): string => {
       while (j < inner.length) {
         const ch = inner[j];
         if (ch === "\\") {
+          if (j + 1 < inner.length && (inner[j + 1] === "{" || inner[j + 1] === "}")) {
+            if (inner[j + 1] === "{") depth++;
+            else if (inner[j + 1] === "}") {
+              depth--;
+              if (depth === 0) {
+                endIdx = j + 2;
+                break;
+              }
+            }
+            j += 2;
+            continue;
+          }
           j += 2;
           continue;
         }
@@ -1440,11 +1458,12 @@ export const normalizeSetNotation = (text: string): string => {
       }
 
       if (endIdx !== -1) {
-        let setBody = inner.slice(braceStart + 1, endIdx - 1).trim();
+        let setBody = inner.slice(braceStart, endIdx);
+        setBody = setBody.replace(/^\\?\{/, "").replace(/\\?\}$/, "").trim();
         const isSet = !!name || /\\in|\\mid|[;]|\b[a-zA-Z]\s*(=|<|>|\\le|\\ge)|\\emptyset|\b\d+\s*,\s*\d+\b/.test(setBody);
         if (isSet) {
-          // Chuẩn hóa dấu phân cách | thành \mid sau miền xác định (không chạm vào trị tuyệt đối |x|)
-          setBody = setBody.replace(/(?<=\\in\s*(?:\\mathbb\{[A-Z]\}|[A-Z]))\s*\|\s*/g, " \\mid ");
+          // Chuẩn hóa dấu phân cách | thành \mid sau miền xác định (bảo vệ tuyệt đối trị tuyệt đối |x|)
+          setBody = setBody.replace(/(?<=\\in\s*(?:\\mathbb\{[A-Z]\}|[A-Z]))\s*(?:\\mid|\|(?=[^|]))\s*/g, " \\mid ");
           result += inner.slice(i, startIdx);
           result += `${name}\\{${setBody}\\}`;
           i = endIdx;
@@ -1452,13 +1471,13 @@ export const normalizeSetNotation = (text: string): string => {
         }
       }
 
-      result += inner.slice(i, braceStart + 1);
-      i = braceStart + 1;
+      result += inner.slice(i, braceStart + openBrace.length);
+      i = braceStart + openBrace.length;
     }
 
     // Tự động phục hồi ngoặc nhọn nếu đề bài bị thiếu (A = x \in Z \mid ... -> A = \{x \in Z \mid ...\})
-    result = result.replace(/(^|[^\\{])\b([A-Z]\s*=\s*)([a-zA-Z]\s*\\in\s*(?:\\mathbb\{[A-Z]\}|[A-Z])\s*(?:\\mid|\|)\s*[^$}]+)/g, (_m, pre, n, body) => {
-      const cleanBody = body.replace(/(?<=\\in\s*(?:\\mathbb\{[A-Z]\}|[A-Z]))\s*\|\s*/g, " \\mid ").trim();
+    result = result.replace(/(^|[^\\{])\b([A-Z]\s*=\s*)([a-zA-Z]\s*\\in\s*(?:\\mathbb\{[A-Z]\}|[A-Z])\s*(?:\\mid|\|(?=[^|]))\s*[^$}]+)/g, (_m, pre, n, body) => {
+      const cleanBody = body.replace(/(?<=\\in\s*(?:\\mathbb\{[A-Z]\}|[A-Z]))\s*(?:\\mid|\|(?=[^|]))\s*/g, " \\mid ").trim();
       return `${pre}${n}\\{${cleanBody}\\}`;
     });
 
@@ -1475,15 +1494,17 @@ export const normalizeSetNotation = (text: string): string => {
   let result = "";
   let i = 0;
   while (i < s.length) {
-    const match = s.slice(i).match(/(?:(?<![a-zA-Z0-9\$\\\_\^])([A-Za-z]\s*(?:\\(?:cap|cup|setminus)\s*[A-Za-z]\s*)*=\s*))?(\\?\{)/);
+    const match = s.slice(i).match(/(?:(?<![a-zA-Z0-9\\\_\^])(\$?)([A-Za-z]\s*(?:\\(?:cap|cup|setminus)\s*[A-Za-z]\s*)*=\s*))?(\\?\{)/);
     if (!match || match.index === undefined) {
       result += s.slice(i);
       break;
     }
     const startIdx = i + match.index;
-    const name = match[1] || "";
-    const openBrace = match[2];
-    const braceStart = startIdx + name.length;
+    const leadDollar = match[1] || "";
+    const name = match[2] || "";
+    const openBrace = match[3];
+    const nameWithDollar = leadDollar + name;
+    const braceStart = startIdx + nameWithDollar.length;
 
     const before = s.slice(0, braceStart);
     if (/(?:\\[a-zA-Z]+_?|[_^])\s*$/.test(before) && !/\\[a-zA-Z]+$/.test(before.replace(/\\(setminus|cup|cap|subset|supset|subseteq|supseteq|in|notin)$/, ""))) {
@@ -1531,7 +1552,7 @@ export const normalizeSetNotation = (text: string): string => {
 
       const isSet = !!name || /\\in|\\mid|[;]|\b[a-zA-Z]\s*(=|<|>|\\le|\\ge)|\\emptyset|\b\d+\s*,\s*\d+\b/.test(setBody);
       if (isSet) {
-        setBody = setBody.replace(/(?<=\\in\s*(?:\\mathbb\{[A-Z]\}|[A-Z]))\s*\|\s*/g, " \\mid ");
+        setBody = setBody.replace(/(?<=\\in\s*(?:\\mathbb\{[A-Z]\}|[A-Z]))\s*(?:\\mid|\|(?=[^|]))\s*/g, " \\mid ");
         result += s.slice(i, startIdx);
         result += `$${name}\\{${setBody}\\}$`;
         i = endIdx;
@@ -1544,13 +1565,13 @@ export const normalizeSetNotation = (text: string): string => {
   }
 
   // Tự động bọc tập hợp trần trụi không có ngoặc nhọn ngoài math: A = x \in Z \mid ...
-  result = result.replace(/(?<![a-zA-Z0-9\$\\])\b([A-Z]\s*=\s*)([a-zA-Z]\s*\\in\s*(?:\\mathbb\{[A-Z]\}|[A-Z])\s*(?:\\mid|\|)\s*[^,$\.\n]+)/g, (_m, n, body) => {
-    const cleanBody = body.replace(/(?<=\\in\s*(?:\\mathbb\{[A-Z]\}|[A-Z]))\s*\|\s*/g, " \\mid ").trim();
+  result = result.replace(/(?<![a-zA-Z0-9\$\\])\b([A-Z]\s*=\s*)([a-zA-Z]\s*\\in\s*(?:\\mathbb\{[A-Z]\}|[A-Z])\s*(?:\\mid|\|(?=[^|]))\s*[^,$\.\n]+)/g, (_m, n, body) => {
+    const cleanBody = body.replace(/(?<=\\in\s*(?:\\mathbb\{[A-Z]\}|[A-Z]))\s*(?:\\mid|\|(?=[^|]))\s*/g, " \\mid ").trim();
     return `$${n}\\{${cleanBody}\\}$`;
   });
 
-  // Dọn dẹp dấu $ rách bị dán trước ngoặc nhọn: ví dụ: =$ {1; 2} hoặc =${0; 1}
-  result = result.replace(/(?<=[=+\-*\/])\s*\$\s*\\?\{/g, ' \\{');
+  // Dọn dẹp dấu $ rách bị dán trước ngoặc nhọn mà thiếu đóng
+  result = result.replace(/(?<=[=+\-*\/])\s*\$\s*\\?\{([^$]+?)\$\s*\\?\}/g, ' $\\{$1\\}$');
 
   // Khôi phục đệ quy toàn bộ token toán tránh rò rỉ token
   let prevIter = '';
@@ -2127,7 +2148,11 @@ export function formatMathContent(raw?: string | null): string {
   str = normalizeTrigSolutions(str);
 
   // 1.8 Tự động chuyển đổi các biểu thức hệ dạng { bpt1 \ bpt2 \ ... } hoặc { bpt1 \\ bpt2 } hoặc \left\{ bpt1 \ bpt2 sang \begin{cases} ... \end{cases}
-  str = str.replace(/\\?\{\s*([^{}]+?(?:[<>=]|\\ge|\\le|\\leq|\\geq|\\neq)[^{}]+?(?:\\\\|\\|\n|,)[^{}]+?(?:[<>=]|\\ge|\\le|\\leq|\\geq|\\neq)[^{}]+?)\s*\\?\}/g, (_match, body) => {
+  str = str.replace(/\\?\{\s*([^{}]+?(?:[<>=]|\\ge|\\le|\\leq|\\geq|\\neq)[^{}]+?(?:\\\\|\\|\n|,)[^{}]+?(?:[<>=]|\\ge|\\le|\\leq|\\geq|\\neq)[^{}]+?)\s*\\?\}/g, (match, body) => {
+    // Không bao giờ chuyển đổi tập hợp toán học {x \in ... | ...} thành cases
+    if (/\\in|\\mid|\b(?:x|y|z)\s*\\in|\\mathbb|\\cap|\\cup|\\setminus/.test(body)) {
+      return match;
+    }
     return `\\begin{cases}\n${normalizeCasesBody(body)}\n\\end{cases}`;
   });
 
@@ -2187,10 +2212,16 @@ export function cleanOptionText(opt: any): string {
   text = text.replace(/<\/?[^>]+(>|$)/g, "");
 
   // 1. Loại bỏ nhãn phương án ở đầu (A., B., C., D., a., b., c., d., - A., **A.**, etc.)
-  text = text
-    .replace(/^[\s\-*•]*([A-Da-d])[\.\:\)\s]+/, '')
-    .replace(/^\s*\**([A-Da-d])[\.\:\)]\**\s*/, '')
-    .trim();
+  // Bảo vệ tuyệt đối tên tập hợp hoặc biến toán học (như A \cap B, A \cup B, A \setminus B, A =, B =, A \subset B)
+  const isMathStart = /^[\s\-*•]*([A-Da-d])\s*(?:\\(?:cap|cup|setminus|subset|supset|subseteq|supseteq|in|notin)|=|[+*\/<>]|\()/i.test(text);
+  if (!isMathStart) {
+    text = text
+      .replace(/^[\s\-*•]*\(?(?:\*{0,2})([A-Da-d])(?:\*{0,2})\)?[\.\:\)](?:\*{0,2})\s*/, '')
+      .trim();
+  } else {
+    // Nếu có tiền tố nhãn phương án trước biểu thức toán (vd: "A. A \cap B"), chỉ bóc nhãn "A. "
+    text = text.replace(/^[\s\-*•]*\(?(?:\*{0,2})[A-Da-d](?:\*{0,2})\)?[\.\:\)](?:\*{0,2})\s+(?=[A-Da-d]\s*(?:\\|=|[+*\/<>]))/i, '').trim();
+  }
 
   // 2. Loại bỏ hoàn toàn dấu sao (*) hoặc gạch dưới (_) đánh dấu phương án đúng ở đầu hoặc cuối phương án
   // Kể cả khi dấu sao nằm ngay trong hoặc ngoài cặp dấu $...$ (vd: *[-2; 3]*, *$[-2; 3]*$, * $[-2; 3] *)
@@ -2278,38 +2309,34 @@ export function cleanQuestionStem(content: any, options?: any[], tfStatements?: 
   text = text.replace(/<div\s+class=["']grid[\s\S]*?<\/div>/gi, '');
 
   // 2. Tách và xóa sạch các phương án A. ... B. ... C. ... D. bị dính liền vào cuối thân câu hỏi
-  // Chỉ xóa khi thực sự có chuỗi phương án trắc nghiệm ở đuôi đề bài (sau dấu hỏi, hai chấm, hoặc dòng riêng)
-  // TUYỆT ĐỐI không xóa nhầm các điểm hình học trong câu dẫn như "tại A.", "điểm B.", "tọa độ A."
-  const geoWordPattern = /(?:tại|điểm|đỉnh|gọi|qua|với|từ|trên|của|cho|và|thuộc|đến|cạnh|đường|mặt\s*phẳng|chiếu\s*lên|tọa\s*độ|tâm|trọng\s*tâm|trực\s*tâm|bán\s*kính|vectơ|vector|tam\s*giác(?:\s+[a-zA-Z\.]+)?|tứ\s*diện(?:\s+[a-zA-Z\.]+)?|hình\s*chóp(?:\s+[a-zA-Z\.]+)?|đoạn\s*thẳng)\s*$/i;
+  // CHỈ THỰC HIỆN KHI CÓ MẢNG OPTIONS HỢP LỆ (>= 2 phương án) - tức câu trắc nghiệm nhiều lựa chọn Phần I!
+  // TUYỆT ĐỐI KHÔNG can thiệp vào câu hỏi Trả lời ngắn (Phần III - ví dụ Câu 21, Câu 22), Tự luận (Phần IV),
+  // hoặc các bài toán hình học/tọa độ không gian chứa các điểm A, B, C, D!
+  if (Array.isArray(options) && options.length >= 2) {
+    const geoWordPattern = /(?:tại|điểm|đỉnh|gọi|qua|với|từ|trên|của|cho|và|thuộc|đến|cạnh|đường|mặt\s*phẳng|chiếu\s*lên|tọa\s*độ|tâm|trọng\s*tâm|trực\s*tâm|bán\s*kính|vectơ|vector|tam\s*giác(?:\s+[a-zA-Z\.]+)?|tứ\s*diện(?:\s+[a-zA-Z\.]+)?|hình\s*chóp(?:\s+[a-zA-Z\.]+)?|đoạn\s*thẳng|tam\s*giác|tứ\s*giác|hình\s*thoi|hình\s*vuông|hình\s*chữ\s*nhật|hình\s*hộp|hình\s*lăng\s*trụ|ba\s*điểm|bốn\s*điểm|các\s*điểm)\s*$/i;
 
-  const aMatches = [...text.matchAll(/(?:(?:\r?\n)+\s*|[.:;?!]\s*|\$|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?A(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/gi)];
-  if (aMatches.length > 0) {
-    for (let i = aMatches.length - 1; i >= 0; i--) {
-      const m = aMatches[i];
-      const aIdx = m.index! + m[0].indexOf('A');
-      const beforeA = text.substring(0, aIdx).trim();
+    const aMatches = [...text.matchAll(/(?:(?:\r?\n)+\s*|[.:;?!]\s*)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?A(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/gi)];
+    if (aMatches.length > 0) {
+      for (let i = aMatches.length - 1; i >= 0; i--) {
+        const m = aMatches[i];
+        const aIdx = m.index! + m[0].indexOf('A');
+        const beforeA = text.substring(0, aIdx).trim();
 
-      // Check geoWordPattern FIRST to avoid treating geometric point "A." or "điểm A." as start of options
-      if (geoWordPattern.test(beforeA)) continue;
+        // Check geoWordPattern FIRST to avoid treating geometric point "A." or "điểm A." as start of options
+        if (geoWordPattern.test(beforeA)) continue;
 
-      const afterA = text.substring(aIdx);
-      const hasB = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?B(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
-      const hasC = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?C(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
-      const hasD = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?D(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
+        const afterA = text.substring(aIdx);
+        const hasB = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?B(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
+        const hasC = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?C(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
+        const hasD = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?D(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
 
-      if (hasB && (hasC || hasD)) {
-        const candidateStem = text.substring(0, m.index).trim();
-        if (candidateStem.length >= 3) {
-          text = candidateStem;
-          break;
-        }
-      }
+        const opt0 = String(options[0] || '').trim().replace(/^\$|\$$/g, '').slice(0, 8);
+        const matchesOption0 = opt0 && afterA.includes(opt0);
 
-      if (options && options.length >= 2 && options[0]) {
-        const opt0 = String(options[0]).trim().replace(/^\$|\$$/g, '').slice(0, 10);
-        if (opt0 && afterA.includes(opt0)) {
+        if ((hasB && (hasC || hasD)) || matchesOption0) {
           const candidateStem = text.substring(0, m.index).trim();
-          if (candidateStem.length >= 3) {
+          // Đảm bảo đề bài sau khi cắt còn tối thiểu 15 ký tự và không rỗng
+          if (candidateStem.length >= 15) {
             text = candidateStem;
             break;
           }
@@ -2319,10 +2346,10 @@ export function cleanQuestionStem(content: any, options?: any[], tfStatements?: 
   }
 
   // If the question has separate tfStatements array (True/False question)
-  if (tfStatements && tfStatements.length >= 2) {
+  if (Array.isArray(tfStatements) && tfStatements.length >= 2) {
     // Remove duplicate trailing sub-statements: a) ... b) ... c) ... d) ... from stem
     const candidateStem = text.replace(/(?:\r?\n|\s)*(?:[-*]\s*)?(?:\*{0,2}|<b>)?\(?a[\.:\)](?:\*{0,2}|<\/b>)?\s+[\s\S]*$/i, '').trim();
-    if (candidateStem.length >= 3) {
+    if (candidateStem.length >= 15) {
       text = candidateStem;
     }
   }
@@ -2339,8 +2366,9 @@ export function cleanQuestionStem(content: any, options?: any[], tfStatements?: 
     return raw ? `\n\n${raw}\n\n` : '';
   });
 
-  // Fallback: If cleaned becomes empty, preserve original text (sanitized) to ensure question content is never lost!
-  if (!cleaned.trim() && rawStr.trim()) {
+  // Fallback an toàn tuyệt đối: Nếu cleaned bị rỗng hoặc ngắn bất thường (< 10 ký tự) trong khi đề gốc dài,
+  // bảo toàn 100% nội dung gốc của câu hỏi để câu hỏi (đặc biệt câu 21, 22) không bao giờ bị mất!
+  if ((!cleaned.trim() || cleaned.trim().length < 10) && rawStr.trim().length >= 10) {
     return sanitizeExamQuestion(rawStr.trim());
   }
 

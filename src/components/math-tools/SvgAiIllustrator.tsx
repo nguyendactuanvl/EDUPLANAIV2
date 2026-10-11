@@ -31,7 +31,12 @@ const PRESETS: PresetItem[] = [
   }
 ];
 
-export function SvgAiIllustrator() {
+export interface SvgAiIllustratorProps {
+  initialPrompt?: string;
+  onInsertSnippet?: (snippet: string) => void;
+}
+
+export function SvgAiIllustrator({ initialPrompt, onInsertSnippet }: SvgAiIllustratorProps = {}) {
   const [selectedModel, setSelectedModel] = useState("gemini-3.8-flash");
   const [prompt, setPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -48,9 +53,12 @@ export function SvgAiIllustrator() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    // Set default prompt to first preset
-    setPrompt(PRESETS[0].prompt);
-  }, []);
+    if (initialPrompt && initialPrompt.trim()) {
+      setPrompt(initialPrompt.trim());
+    } else {
+      setPrompt(PRESETS[0].prompt);
+    }
+  }, [initialPrompt]);
 
   const handleCopySvg = () => {
     if (!svgContent) return;
@@ -140,11 +148,6 @@ Nhiệm vụ của bạn là đọc đề bài (qua văn bản hoặc hình ản
    - Không được thêm bất cứ văn bản markdown nào (không bọc trong \`\`\`xml hoặc \`\`\`svg), không kèm lời giải thích nào khác.`;
 
   const handleGenerate = async () => {
-    const targetKey = (localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim();
-    if (!targetKey) {
-      setErrorMessage("Bạn chưa cấu hình Gemini API Key chung cho ứng dụng. Vui lòng nhấn vào biểu tượng bánh răng 'Cài đặt' ở góc dưới bên trái màn hình (dưới cùng của Sidebar) để nhập API Key của bạn.");
-      return;
-    }
     if (!prompt.trim() && !fileBase64) {
       setErrorMessage("Vui lòng nhập văn bản đề bài hoặc tải ảnh/PDF đề bài!");
       return;
@@ -153,6 +156,51 @@ Nhiệm vụ của bạn là đọc đề bài (qua văn bản hoặc hình ản
     setErrorMessage(null);
     setIsGenerating(true);
     setSvgContent("");
+
+    const targetKey = (localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim();
+
+    // 1. Thử dùng API proxy /api/generate-math-simulation trước nếu không có targetKey thủ công
+    if (!targetKey && !fileBase64) {
+      try {
+        const res = await apiFetch("/api/generate-math-simulation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt, subject: "Toán", targetFormat: "svg" })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.svg) {
+            setSvgContent(data.svg);
+            setIsGenerating(false);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("apiFetch simulation failed, trying direct:", e);
+      }
+    }
+
+    if (!targetKey) {
+      // Thử apiFetch kể cả khi có file
+      try {
+        const res = await apiFetch("/api/generate-math-simulation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: prompt || "Vẽ mô phỏng hình học", subject: "Toán", targetFormat: "svg" })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.svg) {
+            setSvgContent(data.svg);
+            setIsGenerating(false);
+            return;
+          }
+        }
+      } catch (err) {}
+      setErrorMessage("Bạn chưa cấu hình Gemini API Key chung cho ứng dụng. Vui lòng nhấn vào biểu tượng bánh răng 'Cài đặt' ở góc dưới bên trái màn hình (dưới cùng của Sidebar) để nhập API Key của bạn.");
+      setIsGenerating(false);
+      return;
+    }
 
     try {
       const parts: any[] = [];
@@ -462,6 +510,25 @@ Nhiệm vụ của bạn là đọc đề bài (qua văn bản hoặc hình ản
                     <Download className="w-3.5 h-3.5" />
                     <span>Lưu ảnh (PNG)</span>
                   </button>
+
+                  {onInsertSnippet && (
+                    <button
+                      onClick={() => {
+                        try {
+                          const base64 = typeof btoa !== "undefined"
+                            ? btoa(encodeURIComponent(svgContent))
+                            : Buffer.from(encodeURIComponent(svgContent)).toString("base64");
+                          const snippet = `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n`;
+                          onInsertSnippet(snippet);
+                        } catch (e) {}
+                      }}
+                      className="text-xs text-white font-bold flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 px-3.5 py-1.5 rounded-xl shadow-md transition cursor-pointer"
+                      title="Chèn trực tiếp hình mô phỏng vào câu hỏi / lời giải"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Chèn vào bài</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>

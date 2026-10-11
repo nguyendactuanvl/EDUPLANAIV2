@@ -173,6 +173,10 @@ export function normalizeMathText(text: any): string {
   t = t.replace(/(?<!\\)\bcirc\b/g, '\\circ');
   t = t.replace(/(?<!\\)\bleq\b/g, '\\leq');
   t = t.replace(/(?<!\\)\bgeq\b/g, '\\geq');
+  t = t.replace(/(?<!\\)\b(setminus|emptyset|varnothing)\b/g, '\\$1');
+  t = t.replace(/(?<!\\)\bmid\b(?=\s*[^a-zA-Z])/g, '\\mid');
+  t = t.replace(/(?<=[a-zA-Z0-9\$\s])\bin\s+(?=\\mathbb|[RZNQ]\b)/g, '\\in ');
+  t = t.replace(/(?<=\\in\s*)\\?([RZNQ])\b/g, '\\mathbb{$1}');
 
   // Chuẩn hóa dấu + và - đứng độc lập trong mô tả bảng biến thiên (vd: từ + sang -)
   t = t.replace(/(\btừ\s*)([+\-])(\s*sang\s*)([+\-])/gi, '$1$$$2$$$3$$$4$$');

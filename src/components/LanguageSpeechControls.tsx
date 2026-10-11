@@ -13,7 +13,8 @@ interface LanguageSpeechControlsProps {
   compact?: boolean;
 }
 
-export function LanguageSpeechControls({
+
+export const LanguageSpeechControls: React.FC<LanguageSpeechControlsProps> = React.memo(({
   content,
   questions,
   onContentChange,
@@ -21,7 +22,7 @@ export function LanguageSpeechControls({
   subject = 'Toán',
   className = '',
   compact = false
-}: LanguageSpeechControlsProps) {
+}) => {
   const [currentLang, setCurrentLang] = useState<'vi' | 'en'>('vi');
   const [isTranslating, setIsTranslating] = useState(false);
   const [originalContentCache, setOriginalContentCache] = useState<Record<string, string>>({});
@@ -384,4 +385,4 @@ export function LanguageSpeechControls({
       )}
     </div>
   );
-}
+});

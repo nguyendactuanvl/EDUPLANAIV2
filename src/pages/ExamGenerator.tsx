@@ -39,6 +39,7 @@ import { HeaderConfigModal } from "../components/HeaderConfigModal";
 import { HeaderConfig, getHeaderConfig, saveHeaderConfig } from "../lib/headerConfig";
 import { QuestionVisualizerPanel } from "../components/math-tools/QuestionVisualizerPanel";
 import { GeoGebraDrawer } from "../components/math-tools/GeoGebraDrawer";
+import { AiSimulationDrawerModal } from "../components/math-tools/AiSimulationDrawerModal";
 import { ScientificCalculatorModal } from "../components/math-tools/ScientificCalculatorModal";
 import { LanguageSpeechControls } from "../components/LanguageSpeechControls";
 
@@ -144,6 +145,7 @@ const MultiPointInput = ({ count, value, onChange, disabled }: { count: number, 
 export function ExamGenerator() {
   const [showCalculator, setShowCalculator] = useState(false);
   const [geoGebraTarget, setGeoGebraTarget] = useState<{ qIndex: number; target: "content" | "solution" } | null>(null);
+  const [aiSimTarget, setAiSimTarget] = useState<{ qIndex: number; prompt: string; target: "content" | "solution" } | null>(null);
 
   const [activeTab, setActiveTab] = useState<"matrix" | "exam" | "shuffle" | "banks" | "results">("matrix");
   const [examResults, setExamResults] = useState<any[]>([]);
@@ -1420,9 +1422,9 @@ const [examName, setExamName] = useState("");
             topic: q.topic || 'Chủ đề bóc tách',
             subtopic: q.subtopic || 'Nội dung kiến thức',
             level: q.level || 'Thông hiểu',
-            content: embedBbtSvgsInText(embedTikzSvgsInText(q.content || (q as any).question || '')),
-            solution: embedBbtSvgsInText(embedTikzSvgsInText((q.solution || q.explanation || "").trim())),
-            explanation: embedBbtSvgsInText(embedTikzSvgsInText((q.solution || q.explanation || "").trim()))
+            content: autoEnrichTextWithVisuals(q.content || (q as any).question || ''),
+            solution: autoEnrichTextWithVisuals((q.solution || q.explanation || "").trim()),
+            explanation: autoEnrichTextWithVisuals((q.solution || q.explanation || "").trim())
           }));
 
           setQuestions(prev => [...prev, ...formatted]);
@@ -3422,6 +3424,15 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                               title="Vẽ hình minh họa bằng GeoGebra và chèn vào câu hỏi"
                             >
                               <span>📐 GeoGebra</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setAiSimTarget({ qIndex: idx, prompt: q.content || (q as any).question || '', target: "content" })}
+                              className="text-[11px] px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-800 rounded border border-purple-300 flex items-center gap-1 cursor-pointer transition-colors font-semibold shadow-2xs"
+                              title="AI Vẽ hình mô phỏng sinh động từ đề bài (Flat Design SVG)"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                              <span>AI Mô phỏng</span>
                             </button>
                             <button
                               type="button"
@@ -6343,6 +6354,37 @@ Lời giải: Tiệm cận ngang là $y = 1$ nên ý c sai.`);
             setToastMessage(`Đã chèn hình vẽ GeoGebra thành công vào câu hỏi số ${idx + 1}!`);
           }}
           onClose={() => setGeoGebraTarget(null)}
+        />
+      )}
+
+      {/* AI Simulation Drawer Modal */}
+      {aiSimTarget !== null && (
+        <AiSimulationDrawerModal
+          isOpen={aiSimTarget !== null}
+          onClose={() => setAiSimTarget(null)}
+          questionNumber={aiSimTarget.qIndex + 1}
+          initialPrompt={aiSimTarget.prompt}
+          defaultTarget={aiSimTarget.target}
+          onInsertSnippet={(target, snippet) => {
+            const idx = aiSimTarget.qIndex;
+            setQuestions(prev => {
+              const next = [...prev];
+              if (target === "content") {
+                next[idx] = {
+                  ...next[idx],
+                  content: (next[idx].content || '') + snippet
+                };
+              } else {
+                next[idx] = {
+                  ...next[idx],
+                  solution: (next[idx].solution || '') + snippet
+                };
+              }
+              return next;
+            });
+            setAiSimTarget(null);
+            setToastMessage(`Đã chèn hình vẽ mô phỏng thành công vào câu hỏi số ${idx + 1}!`);
+          }}
         />
       )}
     </div>

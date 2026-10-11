@@ -23,12 +23,13 @@ import { InteractivePlot } from "./InteractivePlot";
 import { Geometry3DViewer } from "./Geometry3DViewer";
 import { FunctionPlotData, Point2D, AsymptoteLine, InequalityConstraint, PolygonVertex } from "./types";
 import { MarkdownRenderer } from "../MarkdownRenderer";
+import { SvgAiIllustrator } from "./SvgAiIllustrator";
 
 export interface QuestionVisualizerPanelProps {
   questionNumber?: number;
   questionContent?: string;
   solutionContent?: string;
-  defaultTab?: "bbt" | "graph" | "geometry3d" | "statistics";
+  defaultTab?: "bbt" | "graph" | "geometry3d" | "statistics" | "ai_sim";
   defaultTarget?: "content" | "solution";
   onInsertSnippet: (target: "content" | "solution", snippet: string) => void;
   onClose: () => void;
@@ -110,7 +111,7 @@ export const QuestionVisualizerPanel: React.FC<QuestionVisualizerPanelProps> = (
   onInsertSnippet,
   onClose
 }) => {
-  const [activeTab, setActiveTab] = useState<"bbt" | "graph" | "geometry3d" | "statistics">(defaultTab);
+  const [activeTab, setActiveTab] = useState<"bbt" | "graph" | "geometry3d" | "statistics" | "ai_sim">(defaultTab);
   const [targetField, setTargetField] = useState<"content" | "solution">(defaultTarget);
   const [insertFormat, setInsertFormat] = useState<"svg" | "table">("svg");
 
@@ -1040,6 +1041,18 @@ export const QuestionVisualizerPanel: React.FC<QuestionVisualizerPanelProps> = (
               <BarChart3 className="w-3.5 h-3.5" />
               <span>Biểu đồ Thống kê</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("ai_sim")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                activeTab === "ai_sim"
+                  ? "bg-purple-600 text-white shadow-2xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>AI Vẽ mô phỏng</span>
+            </button>
           </div>
 
           <button
@@ -1812,6 +1825,32 @@ export const QuestionVisualizerPanel: React.FC<QuestionVisualizerPanelProps> = (
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* TAB 5: AI VẼ HÌNH MÔ PHỎNG THỰC TẾ (FLAT DESIGN SVG) */}
+      {/* ======================================================== */}
+      {activeTab === "ai_sim" && (
+        <div className="mt-4 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+          <div className="mb-3 pb-3 border-b border-slate-200 flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-purple-600 animate-pulse"></span>
+              <h4 className="font-bold text-sm text-slate-800">
+                AI Vẽ Hình Mô Phỏng Vector SVG Từ Đề Bài
+              </h4>
+            </div>
+            <div className="text-xs text-slate-500">
+              Chèn vào: <strong className="text-purple-700">{targetField === "content" ? "Đề bài câu hỏi" : "Lời giải chi tiết"}</strong>
+            </div>
+          </div>
+          <SvgAiIllustrator
+            initialPrompt={questionContent || solutionContent || ""}
+            onInsertSnippet={(snippet) => {
+              onInsertSnippet(targetField, snippet);
+              showToast(`Đã chèn hình mô phỏng thành công vào ${targetField === "content" ? "Đề bài" : "Lời giải"}!`);
+            }}
+          />
         </div>
       )}
     </div>

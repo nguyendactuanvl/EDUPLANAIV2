@@ -4,7 +4,8 @@ import { ScientificCalculatorModal } from './math-tools/ScientificCalculatorModa
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { apiFetch } from '../lib/apiFetch';
 import { QuestionVisualizerPanel } from './math-tools/QuestionVisualizerPanel';
-import { TrendingUp, BarChart2, Box, BarChart3, Calculator, ImagePlus, Link2, Wand2 } from 'lucide-react';
+import { AiSimulationDrawerModal } from './math-tools/AiSimulationDrawerModal';
+import { TrendingUp, BarChart2, Box, BarChart3, Calculator, ImagePlus, Link2, Wand2, Sparkles } from 'lucide-react';
 import { run1ClickMathFix } from './math-tools/MathFormulaFixer';
 
 export interface QuestionData {
@@ -66,6 +67,7 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
   } | null>(null);
   const [showGeoGebra, setShowGeoGebra] = useState(false);
   const [showCalculator, setShowCalculator] = useState(false);
+  const [showAiSimModal, setShowAiSimModal] = useState(false);
 
   const handleInsertSnippet = (target: 'content' | 'solution', snippet: string) => {
     if (target === 'content') {
@@ -399,6 +401,15 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
               </button>
               <button
                 type="button"
+                onClick={() => setShowAiSimModal(true)}
+                className="px-2.5 py-1 text-xs font-bold rounded-lg border shadow-2xs flex items-center gap-1 cursor-pointer transition-colors bg-purple-50 hover:bg-purple-100 text-purple-800 border-purple-300"
+                title="AI Vẽ hình mô phỏng sinh động từ đề bài (Flat Design SVG)"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                <span>AI Mô phỏng</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setShowCalculator(true)}
                 className="px-2.5 py-1 text-xs font-bold rounded-lg border shadow-2xs flex items-center gap-1 cursor-pointer transition-colors bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-300"
                 title="Mở máy tính Casio fx-580VN X"
@@ -494,6 +505,21 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
                 onClose={() => setActiveVisualizer(null)}
               />
             </div>
+          )}
+
+          {/* AI Simulation Drawer Modal */}
+          {showAiSimModal && (
+            <AiSimulationDrawerModal
+              isOpen={showAiSimModal}
+              onClose={() => setShowAiSimModal(false)}
+              questionNumber={questionNumber}
+              initialPrompt={content || ''}
+              defaultTarget="content"
+              onInsertSnippet={(target, snippet) => {
+                handleInsertSnippet(target, snippet);
+                setShowAiSimModal(false);
+              }}
+            />
           )}
 
           {activeTab === 'edit' ? (

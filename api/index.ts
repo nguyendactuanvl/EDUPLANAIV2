@@ -3646,6 +3646,57 @@ YÊU CẦU TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C�
 });
 
 // Endpoint Tạo & Chỉnh sửa ảnh (Nano Banana 2.1 / Imagen 3)
+app.post("/api/generate-math-simulation", async (req, res) => {
+  try {
+    const { prompt, questionText, grade, subject = "Toán", targetFormat = "svg" } = req.body || {};
+    const inputContent = (prompt || questionText || "").trim();
+    if (!inputContent) {
+      return res.status(400).json({ error: "Vui lòng cung cấp nội dung đề bài hoặc mô tả hình vẽ." });
+    }
+
+    const systemPrompt = `Bạn là chuyên gia thiết kế đồ họa hình học và mô phỏng trực quan môn Toán học phổ thông (SGK GDPT 2018).
+Nhiệm vụ của bạn là đọc đề bài toán học và dựng một hình vẽ mô phỏng vector SVG hoàn chỉnh:
+1. Thẩm mỹ & Sư phạm:
+   - Sử dụng phong cách thiết kế phẳng (Flat Design) hiện đại, nét vẽ sắc nét, dễ nhìn trên cả nền trắng và nền sáng để chèn vào đề thi, phiếu học tập, sách in và máy chiếu.
+   - Thể hiện trực quan đối tượng thực tế (ngọn hải đăng, con thuyền, máy bay, toà nhà, quả đồi, dòng sông, cái thang, cây cối, xe cộ, quả bóng...) hoặc đối tượng hình học (tam giác, hình chóp, khối lăng trụ, parabol, đường tròn, góc, vectơ, mặt phẳng).
+   - Mô hình hóa rõ ràng tam giác hình học hoặc hệ trục tương ứng: đường cao, các góc (ví dụ: góc hạ 30°, góc nâng 45°, ký hiệu góc vuông), đường chân trời, nét đứt cho đường đo đạc/gióng.
+   - Ghi chú đầy đủ tên đỉnh (A, B, C, H...), độ dài (ví dụ: 80m, h = ?), và độ lớn góc bằng thẻ <text> rõ ràng, font serif hoặc sans-serif sắc nét, độ tương phản cao.
+2. Quy chuẩn kỹ thuật:
+   - Chỉ trả về duy nhất thẻ <svg viewBox="0 0 600 400" xmlns="http://www.w3.org/2000/svg">...</svg>.
+   - Không được thêm bất cứ văn bản markdown nào (không bọc trong \`\`\`xml hoặc \`\`\`svg), không kèm lời giải thích nào khác.`;
+
+    const userMessage = `Hãy tạo hình vẽ vector SVG mô phỏng sư phạm cho bài toán sau:\n${inputContent}\nLớp: ${grade || "Toán THPT"}.`;
+
+    const response = await generateWithFallback(req, {
+      contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${userMessage}` }] }],
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      generationConfig: { temperature: 0.15 }
+    });
+
+    let rawSvg = (response && response.text) ? response.text : "";
+    rawSvg = rawSvg.replace(/```xml/gi, "").replace(/```svg/gi, "").replace(/```/g, "").trim();
+
+    const svgMatch = rawSvg.match(/<svg[\s\S]*?<\/svg>/i);
+    if (!svgMatch) {
+      return res.status(500).json({ error: "Mô hình AI chưa trả về định dạng thẻ SVG hợp lệ. Vui lòng bấm tạo lại!" });
+    }
+
+    const svgContent = svgMatch[0];
+    const base64Svg = Buffer.from(svgContent, 'utf-8').toString('base64');
+    const snippet = `\n\n<svg-wrapper data-svg="${base64Svg}"></svg-wrapper>\n\n`;
+
+    return res.json({
+      success: true,
+      svg: svgContent,
+      base64Svg,
+      snippet
+    });
+  } catch (err: any) {
+    console.error("Lỗi generate-math-simulation:", err);
+    handleAiError(err, req, res);
+  }
+});
+
 app.post("/api/generate-image", async (req, res) => {
   try {
     const { prompt, negativePrompt, aspectRatio = "1:1", style = "photorealistic", sourceImage } = req.body || {};
