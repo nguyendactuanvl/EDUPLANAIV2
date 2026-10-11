@@ -6,7 +6,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { 
   BookOpen, Download, AlertCircle, Edit3, Eye, Printer, Share2, Copy, CheckCircle2, 
   ExternalLink, Upload, FileText, Palette, LayoutTemplate, GitFork, Sparkles, Zap, Image as ImageIcon, Sliders, Check,
-  TrendingUp, BarChart2, Plus, Box, BarChart3, School, User, Wand2, Users, BarChart, Loader2, FileSpreadsheet
+  TrendingUp, BarChart2, Plus, Box, BarChart3, School, User, Wand2, Users, BarChart, Loader2, FileSpreadsheet, Trash2, RefreshCw
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { 
