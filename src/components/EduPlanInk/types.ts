@@ -20,6 +20,7 @@ export type ShapeType =
   // 3D Spatial Shapes (Hình không gian)
   | 'tetrahedron'         // Hình chóp tam giác / Tứ diện
   | 'pyramid_square'      // Hình chóp tứ giác S.ABCD
+  | 'frustum'             // Hình chóp cụt 3D
   | 'cuboid'              // Hình hộp chữ nhật / Khối lập phương 3D
   | 'prism_triangular'    // Hình lăng trụ tam giác
   | 'cone'                // Hình nón
@@ -70,7 +71,7 @@ export interface TextNote {
   isMath?: boolean;
 }
 
-export type Shape3DKind = 'cube' | 'pyramid' | 'prism' | 'sphere' | 'cone' | 'cylinder' | 'tetrahedron';
+export type Shape3DKind = 'cube' | 'pyramid' | 'tetrahedron' | 'frustum' | 'prism' | 'sphere' | 'cone' | 'cylinder';
 
 export interface Interactive3DObject {
   id: string;

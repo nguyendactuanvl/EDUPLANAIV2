@@ -120,6 +120,33 @@ export function get3DMeshData(kind: string): {
     return { vertices, faces, labels };
   }
 
+  if (kind === 'frustum') {
+    // Truncated Pyramid ABCD.A'B'C'D' (Hình chóp cụt tứ giác)
+    const vertices: Point3D[] = [
+      { x: -0.55, y: -0.7, z: -0.55 }, // 0: A'
+      { x: 0.55, y: -0.7, z: -0.55 },  // 1: B'
+      { x: 0.55, y: -0.7, z: 0.55 },   // 2: C'
+      { x: -0.55, y: -0.7, z: 0.55 },  // 3: D'
+      { x: -1.1, y: 0.9, z: -1.1 },    // 4: A
+      { x: 1.1, y: 0.9, z: -1.1 },     // 5: B
+      { x: 1.1, y: 0.9, z: 1.1 },      // 6: C
+      { x: -1.1, y: 0.9, z: 1.1 },     // 7: D
+    ];
+    const faces: Face3D[] = [
+      { vertices: [0, 1, 2, 3] }, // Top base A'B'C'D'
+      { vertices: [7, 6, 5, 4] }, // Bottom base DCBA
+      { vertices: [7, 6, 2, 3] }, // Front Side CDD'C'
+      { vertices: [1, 0, 4, 5] }, // Back Side A'B'BA
+      { vertices: [5, 6, 2, 1] }, // Right Side BCC'B'
+      { vertices: [0, 4, 7, 3] }, // Left Side A'ADD'
+    ];
+    const labels = [
+      { index: 0, name: "A'" }, { index: 1, name: "B'" }, { index: 2, name: "C'" }, { index: 3, name: "D'" },
+      { index: 4, name: 'A' }, { index: 5, name: 'B' }, { index: 6, name: 'C' }, { index: 7, name: 'D' }
+    ];
+    return { vertices, faces, labels };
+  }
+
   if (kind === 'prism') {
     // Triangular Prism ABC.A'B'C'
     const vertices: Point3D[] = [

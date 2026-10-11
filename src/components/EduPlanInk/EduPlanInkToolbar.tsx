@@ -100,6 +100,7 @@ export const EduPlanInkToolbar: React.FC<EduPlanInkToolbarProps> = ({
   const shapes3D = [
     { type: 'tetrahedron', label: 'Tứ diện S.ABC' },
     { type: 'pyramid_square', label: 'Chóp tứ giác S.ABCD' },
+    { type: 'frustum', label: 'Hình chóp cụt 3D' },
     { type: 'cuboid', label: 'Hình hộp 3D' },
     { type: 'prism_triangular', label: 'Lăng trụ tam giác' },
     { type: 'cone', label: 'Hình nón' },

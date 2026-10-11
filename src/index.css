@@ -195,3 +195,99 @@ mjx-container svg * {
   }
 }
 
+/* --- DARK MODE GLOBAL THEME & NIGHT MODE STYLING --- */
+html, body {
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+html.dark, .dark {
+  color-scheme: dark;
+}
+
+/* Global Dark Mode Background Overrides */
+html.dark body,
+.dark .bg-slate-100,
+.dark .bg-slate-50,
+.dark .bg-gray-50,
+.dark .bg-gray-100 {
+  background-color: #0b1329 !important; /* Deep dark blue slate */
+  color: #f1f5f9 !important;
+}
+
+.dark .bg-white {
+  background-color: #111c38 !important; /* Dark card background */
+  color: #f8fafc !important;
+  border-color: #1e293b !important;
+}
+
+.dark .bg-slate-50\/50,
+.dark .bg-slate-100\/50,
+.dark .bg-slate-100\/80 {
+  background-color: #0f172a !important;
+}
+
+/* Text Colors */
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .text-slate-700,
+.dark .text-gray-900,
+.dark .text-gray-800,
+.dark .text-gray-700 {
+  color: #f8fafc !important;
+}
+
+.dark .text-slate-600,
+.dark .text-slate-500,
+.dark .text-gray-600,
+.dark .text-gray-500 {
+  color: #94a3b8 !important;
+}
+
+/* Borders */
+.dark .border-slate-200,
+.dark .border-slate-300,
+.dark .border-slate-100,
+.dark .border-gray-200,
+.dark .border-gray-300 {
+  border-color: #1e293b !important;
+}
+
+/* Form Controls: Inputs, Selects, Textareas */
+.dark input[type="text"],
+.dark input[type="number"],
+.dark input[type="search"],
+.dark input[type="email"],
+.dark input[type="password"],
+.dark input[type="url"],
+.dark textarea,
+.dark select {
+  background-color: #0b1329 !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #64748b !important;
+}
+
+.dark .choice-label {
+  color: #f8fafc !important;
+}
+
+/* Markdown Tables & MathJax in Dark Mode */
+.dark .markdown-body table th {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+
+.dark .markdown-body table td,
+.dark .markdown-body table th {
+  border-color: #334155 !important;
+}
+
+.dark mjx-container svg * {
+  fill: #f8fafc !important;
+  stroke: #f8fafc !important;
+}
+

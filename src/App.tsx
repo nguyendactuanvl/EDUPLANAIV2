@@ -3,12 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { Analytics } from '@vercel/analytics/react';
-import { Menu, Sparkles, Key, AlertCircle, HelpCircle } from "lucide-react";
+import { Menu, Sparkles, Key, AlertCircle, HelpCircle, Sun, Moon } from "lucide-react";
 import React, { useState, Suspense, useEffect } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SettingsModal } from "./components/SettingsModal";
 import { UserGuideModal } from "./components/UserGuideModal";
+import { getInitialTheme, applyTheme, ThemeMode } from "./lib/theme";
 
 function safeLazy<T extends React.ComponentType<any>>(
   factory: () => Promise<any>,
@@ -82,11 +83,28 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [guideSectionId, setGuideSectionId] = useState<string | undefined>(undefined);
   const [retryStatus, setRetryStatus] = useState<{ attempt: number, maxRetries: number, message?: string } | null>(null);
+
+  // Theme State
+  const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
+  };
 
   useEffect(() => {
     const handleShowModal = () => setIsSettingsOpen(true);
-    const handleShowGuide = () => setIsGuideOpen(true);
+    const handleShowGuide = (e: any) => {
+      if (e?.detail?.sectionId) {
+        setGuideSectionId(e.detail.sectionId);
+      }
+      setIsGuideOpen(true);
+    };
     const handleRetryStatus = (e: any) => {
       setRetryStatus(e.detail);
       setTimeout(() => setRetryStatus(null), 14000);
@@ -177,18 +195,27 @@ export default function App() {
             setIsGuideOpen(true);
             setIsSidebarOpen(false);
           }}
+          isDarkMode={theme === 'dark'}
+          onToggleTheme={toggleTheme}
         />
       </div>
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden h-screen">
         {/* Mobile Header */}
-        <header className="lg:hidden flex items-center justify-between p-4 bg-white border-b border-slate-200 shrink-0 shadow-sm z-10 relative">
-          <div className="flex items-center gap-2 text-emerald-600">
+        <header className="lg:hidden flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0 shadow-sm z-10 relative">
+          <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
              <Sparkles className="h-6 w-6" />
              <span className="font-bold text-lg hidden sm:inline">EduPlan AI</span>
              <span className="font-bold text-lg sm:hidden">EduPlan</span>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={toggleTheme}
+              className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-md text-xs transition-colors"
+              title="Chuyển giao diện Sáng/Tối"
+            >
+              {theme === 'dark' ? <Moon className="h-4 w-4 text-indigo-400" /> : <Sun className="h-4 w-4 text-amber-500" />}
+            </button>
             <button 
               onClick={() => setIsGuideOpen(true)}
               className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 text-slate-700 border border-slate-200 rounded-md text-xs font-medium hover:bg-slate-200 transition-colors"
@@ -232,7 +259,7 @@ export default function App() {
         </div>
       </main>
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
-      <UserGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
+      <UserGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} initialSectionId={guideSectionId} />
       <Analytics />
     </div>
   );

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Shuffle, Printer, Settings2, Users, Upload } from "lucide-react";
 import { Student } from "../types";
+import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
 
 export function ClassMap() {
   const [rows, setRows] = useState(4);
@@ -198,6 +199,7 @@ export function ClassMap() {
 
   return (
     <div className="p-4 lg:p-8 max-w-6xl mx-auto h-full flex flex-col">
+      <FeatureQuickGuideBanner sectionId="classmap_gamification" />
       <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Sơ đồ lớp học</h2>

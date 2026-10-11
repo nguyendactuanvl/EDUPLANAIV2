@@ -403,6 +403,55 @@ export const EduPlanInkBoard: React.FC = () => {
         ctx.fillText('B', B.x + 6, B.y - 4);
         ctx.fillText('C', C.x + 6, C.y + 14);
         ctx.fillText('D', D.x - 14, D.y + 14);
+      } else if (type === 'frustum') {
+        // Hình chóp cụt ABCD.A'B'C'D'
+        const minX = Math.min(p1.x, p2.x);
+        const maxX = Math.max(p1.x, p2.x);
+        const minY = Math.min(p1.y, p2.y);
+        const maxY = Math.max(p1.y, p2.y);
+        const w = Math.max(70, maxX - minX);
+        const h = Math.max(70, maxY - minY);
+
+        // Top base A'B'C'D'
+        const A2 = { x: minX + w * 0.3, y: minY + h * 0.15 };
+        const B2 = { x: minX + w * 0.75, y: minY + h * 0.15 };
+        const C2 = { x: minX + w * 0.6, y: minY + h * 0.4 };
+        const D2 = { x: minX + w * 0.15, y: minY + h * 0.4 };
+
+        // Bottom base ABCD
+        const A1 = { x: minX + w * 0.2, y: minY + h * 0.65 };
+        const B1 = { x: minX + w * 0.95, y: minY + h * 0.65 };
+        const C1 = { x: minX + w * 0.75, y: maxY };
+        const D1 = { x: minX, y: maxY };
+
+        // Solid edges
+        ctx.moveTo(A2.x, A2.y); ctx.lineTo(B2.x, B2.y); ctx.lineTo(C2.x, C2.y); ctx.lineTo(D2.x, D2.y); ctx.lineTo(A2.x, A2.y);
+        ctx.moveTo(B1.x, B1.y); ctx.lineTo(C1.x, C1.y); ctx.lineTo(D1.x, D1.y);
+        ctx.moveTo(B2.x, B2.y); ctx.lineTo(B1.x, B1.y);
+        ctx.moveTo(C2.x, C2.y); ctx.lineTo(C1.x, C1.y);
+        ctx.moveTo(D2.x, D2.y); ctx.lineTo(D1.x, D1.y);
+        ctx.stroke();
+
+        // Dashed hidden edges A1-A2, A1-B1, A1-D1
+        ctx.beginPath();
+        ctx.setLineDash([5, 5]);
+        ctx.moveTo(A2.x, A2.y); ctx.lineTo(A1.x, A1.y);
+        ctx.moveTo(A1.x, A1.y); ctx.lineTo(B1.x, B1.y);
+        ctx.moveTo(A1.x, A1.y); ctx.lineTo(D1.x, D1.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.font = '12px sans-serif';
+        ctx.fillStyle = stroke.color;
+        ctx.fillText("A'", A2.x - 12, A2.y - 4);
+        ctx.fillText("B'", B2.x + 4, B2.y - 4);
+        ctx.fillText("C'", C2.x + 6, C2.y + 4);
+        ctx.fillText("D'", D2.x - 14, D2.y + 4);
+
+        ctx.fillText('A', A1.x - 12, A1.y - 4);
+        ctx.fillText('B', B1.x + 6, B1.y - 4);
+        ctx.fillText('C', C1.x + 6, C1.y + 14);
+        ctx.fillText('D', D1.x - 14, D1.y + 14);
       } else if (type === 'cuboid') {
         // Hình hộp 3D / Lập phương
         const minX = Math.min(p1.x, p2.x);

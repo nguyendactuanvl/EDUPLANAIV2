@@ -19,6 +19,7 @@ const SHAPE_3D_ITEMS: {
   { kind: 'cube', name: 'Hình lập phương / Hình hộp', description: '6 mặt vuông/chữ nhật, cạnh khuất nét đứt', badge: 'Hình 11/12' },
   { kind: 'pyramid', name: 'Hình chóp tứ giác S.ABCD', description: 'Chóp đều đáy ABCD, các cạnh khuất nét đứt', badge: 'Hình học 11' },
   { kind: 'tetrahedron', name: 'Tứ diện S.ABC (Chóp tam giác)', description: '4 mặt tam giác, cạnh khuất AC nét đứt', badge: 'Hình học 11' },
+  { kind: 'frustum', name: 'Hình chóp cụt ABCD.A\'B\'C\'D\'', description: 'Chóp cụt 2 đáy song song, các cạnh bên & cạnh khuất nét đứt', badge: 'Hình học 11' },
   { kind: 'prism', name: 'Hình lăng trụ tam giác', description: '2 đáy tam giác, 3 mặt bên chữ nhật', badge: 'Hình học 11' },
   { kind: 'cone', name: 'Hình nón 3D', description: 'Đỉnh S, đáy elip nét đứt nửa sau & chiều cao SO', badge: 'Nón-Trụ-Cầu' },
   { kind: 'cylinder', name: 'Hình trụ 3D', description: '2 đáy elip song song, đường sinh 2 bên', badge: 'Nón-Trụ-Cầu' },

@@ -31,6 +31,12 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
   initialSectionId
 }) => {
   const [selectedId, setSelectedId] = useState<string>(initialSectionId || GUIDE_SECTIONS[0].id);
+
+  useEffect(() => {
+    if (initialSectionId && isOpen) {
+      setSelectedId(initialSectionId);
+    }
+  }, [initialSectionId, isOpen]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Tất cả');
   const [isPlayingInline, setIsPlayingInline] = useState<boolean>(false);

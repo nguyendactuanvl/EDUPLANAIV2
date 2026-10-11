@@ -14,6 +14,7 @@ import {
   syncSubmissionsToSheet, 
   getCachedToken 
 } from "../lib/googleAuth";
+import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
 
 // Types for Exam Configuration
 interface Part1Key {
@@ -1231,6 +1232,7 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
 
   return (
     <div id="moduleDeOnlinePDF" className="max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 font-sans">
+      <FeatureQuickGuideBanner sectionId="pdf_exam_converter" />
       
       {/* HEADER SECTION */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-200 pb-5 mb-6">

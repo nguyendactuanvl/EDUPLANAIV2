@@ -28,6 +28,7 @@ import {
 } from '../lib/examConfig';
 import { OnlineExamConfigModal } from "../components/OnlineExamConfigModal";
 import { SAMPLE_MATH_QUESTIONS, SAMPLE_MATH_QUESTIONS_10, SAMPLE_MATH_QUESTIONS_11, SAMPLE_MATH_EXAM_NAME, SAMPLE_MATH_DURATION } from '../data/sampleMathExam';
+import { FeatureQuickGuideBanner } from '../components/FeatureQuickGuideBanner';
 import { parseRawExamText, formatAiQuestionsToParsed } from '../lib/examParser';
 import { attachCroppedFiguresToQuestions } from '../lib/cropUtils';
 import { UploadTeacherExamModal } from "../components/UploadTeacherExamModal";
@@ -1882,6 +1883,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                     {activeTab === "matrix" && (
             <div className="flex flex-col lg:flex-row gap-6 items-start">
               <div className="flex-1 space-y-6 w-full">
+                <FeatureQuickGuideBanner sectionId="exam_generator" />
               
                 <div className="flex flex-col md:flex-row md:items-center justify-between bg-blue-50/50 p-4 rounded-xl border border-blue-100 gap-4">
                    <div className="flex-1">

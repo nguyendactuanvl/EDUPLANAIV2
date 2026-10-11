@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { Upload, Plus, Save, Trash2, Award, FileText, Loader2, FileImage, Search, Edit3, Download, Printer, Trophy } from "lucide-react";
 import { Student } from "../types";
 import { parseApiResponse } from "../lib/utils";
+import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
 
 export function HomeroomManagement() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -338,6 +339,7 @@ export function HomeroomManagement() {
 
   return (
     <div className="p-4 lg:p-8 max-w-6xl mx-auto h-full flex flex-col">
+      <FeatureQuickGuideBanner sectionId="homeroom" />
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-slate-800">Quản lý Lớp Chủ nhiệm</h2>
         <p className="text-slate-500">Danh sách học sinh, Ban cán sự và Thi đua</p>

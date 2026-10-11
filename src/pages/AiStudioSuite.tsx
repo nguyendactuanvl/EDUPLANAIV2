@@ -9,6 +9,7 @@ import {
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { Math3D2DLibrary } from "../components/Math3D2DLibrary";
 import { cn } from "../lib/utils";
+import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
 
 type TabType = "chatbot" | "image_gen" | "img2video" | "txt2video" | "science" | "math_models";
 
@@ -1004,6 +1005,9 @@ export function AiStudioSuite() {
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans">
       {/* Top Header Banner */}
       <header className="bg-slate-950/80 border-b border-slate-800 backdrop-blur-md sticky top-0 z-20 px-6 py-4">
+        <div className="max-w-7xl mx-auto mb-2">
+          <FeatureQuickGuideBanner sectionId="ai_studio" />
+        </div>
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-gradient-to-tr from-emerald-500 to-teal-400 rounded-xl shadow-lg shadow-emerald-500/20">

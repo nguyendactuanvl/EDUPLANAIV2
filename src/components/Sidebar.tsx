@@ -1,7 +1,7 @@
 import { 
   Trophy, BookOpen, Calendar, FileText, Settings, Sparkles, Clock, 
   ClipboardList, FileEdit, FileCheck, Users, ShieldCheck, CalendarDays, 
-  Key, Calculator, HelpCircle, PlayCircle, PenTool, ScanLine
+  Key, Calculator, HelpCircle, PlayCircle, PenTool, ScanLine, Sun, Moon
 } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -10,9 +10,18 @@ interface SidebarProps {
   setActiveTab: (tab: string) => void;
   onOpenSettings?: () => void;
   onOpenGuide?: () => void;
+  isDarkMode?: boolean;
+  onToggleTheme?: () => void;
 }
 
-export function Sidebar({ activeTab, setActiveTab, onOpenSettings, onOpenGuide }: SidebarProps) {
+export function Sidebar({ 
+  activeTab, 
+  setActiveTab, 
+  onOpenSettings, 
+  onOpenGuide,
+  isDarkMode = false,
+  onToggleTheme
+}: SidebarProps) {
   const navGroups = [
     {
       title: "Chuyên môn & Soạn giảng",
@@ -108,13 +117,35 @@ export function Sidebar({ activeTab, setActiveTab, onOpenSettings, onOpenGuide }
         ))}
       </nav>
 
-      <div className="p-6 border-t border-slate-800">
+      <div className="p-4 border-t border-slate-800 space-y-3">
+        {/* Dark/Light Mode Switch Button */}
+        <button
+          onClick={onToggleTheme}
+          className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-200 border border-slate-700/70 transition-all cursor-pointer group"
+          title="Chuyển đổi giao diện Ban đêm (Tối) / Ban ngày (Sáng)"
+        >
+          <div className="flex items-center gap-2.5">
+            {isDarkMode ? (
+              <Moon className="w-4 h-4 text-indigo-400 group-hover:rotate-12 transition-transform" />
+            ) : (
+              <Sun className="w-4 h-4 text-amber-400 group-hover:rotate-45 transition-transform" />
+            )}
+            <span className="text-xs font-semibold">
+              {isDarkMode ? "Giao diện Ban đêm (Tối)" : "Giao diện Ban ngày (Sáng)"}
+            </span>
+          </div>
+
+          <div className={`w-8 h-4 rounded-full p-0.5 transition-colors flex items-center ${isDarkMode ? 'bg-indigo-600 justify-end' : 'bg-slate-600 justify-start'}`}>
+            <div className="w-3 h-3 rounded-full bg-white shadow-xs" />
+          </div>
+        </button>
+
         <button 
           onClick={onOpenSettings}
-          className="flex items-center gap-3 text-sm font-medium text-emerald-400 hover:text-emerald-300 transition-colors w-full text-left cursor-pointer"
+          className="flex items-center gap-3 text-xs font-medium text-emerald-400 hover:text-emerald-300 transition-colors w-full text-left cursor-pointer pt-1"
         >
-          <Key className="h-5 w-5" />
-          Nhập mã API key của bạn ở đây
+          <Key className="h-4 w-4 shrink-0" />
+          <span className="truncate">Nhập mã API key ở đây</span>
         </button>
       </div>
     </div>

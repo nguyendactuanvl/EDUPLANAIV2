@@ -27,6 +27,7 @@ import { printElement, ensureMathRendered } from '../lib/print';
 import { saveExamToCloud, saveExamToWebhook } from '../lib/cloudExamStore';
 import { KNTT_CURRICULUM, getKnttCurriculum } from "../data/knttCurriculum";
 import { LanguageSpeechControls } from "../components/LanguageSpeechControls";
+import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
 
 export type LayoutStyle = 'a4_print' | 'infographic' | 'poster' | 'mindmap';
 
@@ -1027,6 +1028,7 @@ export function Worksheets() {
       {/* Left Sidebar - Settings */}
       <div className="w-full lg:w-[400px] lg:border-r border-b lg:border-b-0 border-slate-200 bg-white flex flex-col h-auto lg:h-full shrink-0">
         <div className="p-4 border-b border-slate-200 bg-slate-50/50">
+          <FeatureQuickGuideBanner sectionId="worksheet_generator" />
           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
             <BookOpen className="w-5 h-5 text-emerald-600" />
             Phiếu học tập

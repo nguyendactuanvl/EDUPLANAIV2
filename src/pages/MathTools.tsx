@@ -16,6 +16,7 @@ import { ScientificCalculatorModal } from "../components/math-tools/ScientificCa
 import { SvgAiIllustrator } from "../components/math-tools/SvgAiIllustrator";
 import { Advanced3DSimulator } from "../components/math-tools/Advanced3DSimulator";
 import { MathFormulaFixer } from "../components/math-tools/MathFormulaFixer";
+import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
 
 
 // ==========================================
@@ -785,6 +786,9 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
 
       {/* Top Header */}
       <header className="bg-white border-b border-slate-200 px-4 sm:px-6 py-4 sticky top-0 z-20 shadow-2xs">
+        <div className="max-w-7xl mx-auto mb-2">
+          <FeatureQuickGuideBanner sectionId={mainSubsystem === 'statistics' ? 'statistics_grouped' : 'kshs_graphing'} />
+        </div>
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shadow-md shadow-emerald-500/20">

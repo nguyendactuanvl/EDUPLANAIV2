@@ -7,6 +7,7 @@ import { fullPlan } from "../data/mockData";
 import { Download, Upload, Sparkles, Plus, Loader2 } from "lucide-react";
 import { cn, parseApiResponse } from "../lib/utils";
 import { printElement } from '../lib/print';
+import { FeatureQuickGuideBanner } from '../components/FeatureQuickGuideBanner';
 
 
 export function EducationalPlan() {
@@ -158,6 +159,7 @@ export function EducationalPlan() {
   return (
     <div className="flex-1 bg-slate-50 min-h-screen">
       <div className="bg-white px-4 lg:px-8 py-4 lg:py-6 border-b border-slate-200">
+        <FeatureQuickGuideBanner sectionId="khgd" />
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
             <div className="flex-1">
             <h2 className="text-2xl font-bold text-slate-800">Kế hoạch giáo dục</h2>

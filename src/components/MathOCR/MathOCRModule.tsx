@@ -7,6 +7,7 @@ import {
 import { MathView } from '../MathView';
 import { MathOCRCropModal } from './MathOCRCropModal';
 import { ToastMessage } from './types';
+import { FeatureQuickGuideBanner } from '../FeatureQuickGuideBanner';
 
 // Load PDF.JS dynamically
 const loadPdfJS = async () => {
@@ -302,6 +303,7 @@ export const MathOCRModule: React.FC = () => {
 
       {/* Header Banner */}
       <div className="max-w-7xl mx-auto mb-8">
+        <FeatureQuickGuideBanner sectionId="math_ocr" />
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-emerald-400">

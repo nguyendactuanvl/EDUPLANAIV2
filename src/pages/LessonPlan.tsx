@@ -17,6 +17,7 @@ import { TextbookManager } from '../components/TextbookManager';
 import { Textbook } from '../lib/textbooks';
 import { printElement } from '../lib/print';
 import { parseApiResponse, rescueCodeAndNestedText } from '../lib/utils';
+import { FeatureQuickGuideBanner } from '../components/FeatureQuickGuideBanner';
 
 
 export function LessonPlan() {
@@ -288,6 +289,7 @@ export function LessonPlan() {
   return (
     <div className="flex-1 bg-slate-50 min-h-screen p-4 lg:p-8 flex flex-col lg:flex-row gap-4 lg:gap-8 overflow-y-auto">
       <div className="w-full lg:w-1/3 bg-white p-4 lg:p-6 rounded-xl border border-slate-200 shadow-sm self-start flex flex-col gap-6 shrink-0">
+        <FeatureQuickGuideBanner sectionId="khdh" />
         <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
           <BookOpen className="h-5 w-5 text-emerald-600" />
           Soạn Kế hoạch Bài dạy

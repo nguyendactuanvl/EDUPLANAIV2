@@ -14,6 +14,7 @@ import { ImageCropperModal } from '../components/ImageCropperModal';
 import { QuestionVisualizerPanel } from '../components/math-tools/QuestionVisualizerPanel';
 import { autoEnrichTextWithVisuals } from '../lib/bbtRenderer';
 import mammoth from 'mammoth';
+import { FeatureQuickGuideBanner } from '../components/FeatureQuickGuideBanner';
 
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -444,6 +445,7 @@ export function PdfToWord() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 p-4 lg:p-8">
+      <FeatureQuickGuideBanner sectionId="pdf2word" />
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 lg:p-8">
         <div className="text-center mb-8">
           <h2 className="text-2xl font-bold text-slate-800 flex items-center justify-center gap-2 mb-2">

@@ -2,6 +2,7 @@ import { apiFetch } from '../lib/apiFetch';
 import { parseApiResponse } from '../lib/utils';
 import React, { useState, useEffect } from "react";
 import { Calendar, Plus, Upload, CheckSquare, Trash2, Loader2, FileImage, Moon } from "lucide-react";
+import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
 
 export function WeeklyTimetable() {
   const [todos, setTodos] = useState<{id: number, text: string, done: boolean}[]>([
@@ -128,6 +129,7 @@ export function WeeklyTimetable() {
 
   return (
     <div className="p-4 lg:p-8 max-w-7xl mx-auto h-full flex flex-col">
+      <FeatureQuickGuideBanner sectionId="timetable" />
       <div className="mb-6 flex justify-between items-end">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Thời khóa biểu & Công việc Tuần</h2>

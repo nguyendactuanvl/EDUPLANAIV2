@@ -26,6 +26,7 @@ import { printElement } from '../lib/print';
 import { saveToHistory, getHistory } from '../lib/history';
 import { parseApiResponse } from '../lib/utils';
 import { HistoryItem } from '../types';
+import { FeatureQuickGuideBanner } from '../components/FeatureQuickGuideBanner';
 
 // Utility to convert file to base64
 const fileToBase64 = (file: File): Promise<string> => {
@@ -469,6 +470,7 @@ export function ExerciseSolver() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 lg:p-8">
+        <FeatureQuickGuideBanner sectionId="exercise_solver" />
         <h2 className="text-2xl font-bold text-slate-800 mb-6 text-center">Trợ lý Giải Bài Tập Thông Minh</h2>
         
         {historyItems.length > 0 && (

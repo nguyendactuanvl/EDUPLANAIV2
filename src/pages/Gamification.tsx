@@ -4,6 +4,7 @@ import { Trophy, Star, MinusCircle, Play, Users, Medal, Crown, Filter, History, 
 import { Student } from "../types";
 import { parseApiResponse } from "../lib/utils";
 import confetti from "canvas-confetti";
+import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
 
 interface ScoreRecord {
   id: string;
@@ -353,6 +354,7 @@ export function Gamification() {
 
   return (
     <div className="p-4 lg:p-8 max-w-6xl mx-auto h-full flex flex-col">
+      <FeatureQuickGuideBanner sectionId="classmap_gamification" />
       <div className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Thi đua & Gọi tên (GVBM)</h2>

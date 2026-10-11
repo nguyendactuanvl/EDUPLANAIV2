@@ -6,6 +6,7 @@ import { Trash2, Download, Eye, Clock, BookOpen } from "lucide-react";
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { cn } from "../lib/utils";
 import { printElement } from '../lib/print';
+import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
 
 
 export function HistoryPage() {
@@ -103,6 +104,7 @@ export function HistoryPage() {
       {/* Sidebar / List */}
       <div className="w-full lg:w-1/3 lg:border-r border-b lg:border-b-0 border-slate-200 bg-white flex flex-col h-auto lg:h-full shrink-0">
         <div className="p-4 border-b border-slate-200">
+          <FeatureQuickGuideBanner sectionId="history" />
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
               <Clock className="w-5 h-5 text-emerald-600" />

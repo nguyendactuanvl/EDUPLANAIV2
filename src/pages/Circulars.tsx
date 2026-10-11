@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { FileText, ShieldCheck, AlertCircle, Plus, Trash2, Link } from "lucide-react";
 import { printElement } from '../lib/print';
+import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
 
 export interface Circular {
   id: string;
@@ -78,6 +79,7 @@ export function Circulars() {
   return (
     <div className="flex-1 bg-slate-50 min-h-screen p-4 lg:p-8">
       <div className="max-w-4xl mx-auto">
+        <FeatureQuickGuideBanner sectionId="circulars" />
         <div className="mb-8 flex justify-between items-end">
           <div>
             <h2 className="text-2xl font-bold text-slate-800">Bộ lọc thông tư & Văn bản</h2>
