@@ -1,5 +1,5 @@
 import { apiFetch } from '../lib/apiFetch';
-import { GDPT_2018_SUBJECTS } from '../lib/subjects';
+import { useSubjects } from '../lib/subjects';
 import { exportHtmlToWord } from '../lib/exportUtils';
 import React, { useState, useRef } from "react";
 import { KHGDRow } from "../types";
@@ -17,6 +17,7 @@ export function EducationalPlan() {
   const [selectedGrade, setSelectedGrade] = useState<number>(10);
   const exportRef = useRef<HTMLDivElement>(null);
   const [subject, setSubject] = useState("Toán");
+  const { subjects } = useSubjects();
   
   const [topic, setTopic] = useState("Đại số tổ hợp");
   const [uploadedFiles, setUploadedFiles] = useState<{data: string, type: string, name: string}[]>([]);
@@ -169,7 +170,7 @@ export function EducationalPlan() {
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Môn học</label>
                 <select value={subject} onChange={(e) => setSubject(e.target.value)} className="w-48 px-3 py-1.5 border border-slate-300 rounded-md text-sm bg-white">
-                {GDPT_2018_SUBJECTS.map(sub => (<option key={sub} value={sub}>{sub}</option>))}
+                {subjects.map(sub => (<option key={sub} value={sub}>{sub}</option>))}
                 </select>
               </div>
               <div>

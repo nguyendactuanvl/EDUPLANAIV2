@@ -1,5 +1,5 @@
 import { apiFetch } from '../lib/apiFetch';
-import { GDPT_2018_SUBJECTS } from '../lib/subjects';
+import { useSubjects } from '../lib/subjects';
 import LZString from 'lz-string';
 import { exportHtmlToWord, exportElementToImage } from "../lib/exportUtils";
 import React, { useState, useRef, useEffect } from "react";
@@ -144,6 +144,7 @@ export function Worksheets() {
   const [selectedGrade, setSelectedGrade] = useState<number>(11);
   const [customLessonName, setCustomLessonName] = useState("CHỦ ĐỀ: CẤP SỐ CỘNG");
   const [subject, setSubject] = useState("Toán");
+  const { subjects } = useSubjects();
   const [worksheetType, setWorksheetType] = useState("Kết hợp trắc nghiệm và tự luận");
   const [layoutStyle, setLayoutStyle] = useState<LayoutStyle>('a4_print');
 
@@ -646,8 +647,6 @@ export function Worksheets() {
   };
   
   const exportRef = useRef<HTMLDivElement>(null);
-
-  const subjects = GDPT_2018_SUBJECTS;
   const worksheetTypes = [
     "Đề 3 phần (12 câu TN nhiều lựa chọn; 4 câu Đ/S; 6 câu TL ngắn)",
     "Đề 4 phần (12 câu TN; 2 câu Đ/S; 4 câu TL ngắn; 3 câu Tự luận)",

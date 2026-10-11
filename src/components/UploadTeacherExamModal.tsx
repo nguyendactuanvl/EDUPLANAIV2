@@ -43,7 +43,7 @@ import {
 } from '../lib/examParser';
 import { saveExamToCloud } from '../lib/cloudExamStore';
 import { apiFetch } from '../lib/apiFetch';
-import { GDPT_2018_SUBJECTS } from '../lib/subjects';
+import { useSubjects } from '../lib/subjects';
 import { formatMathContent, sanitizeShortAnswerInput, validateShortAnswer, sanitizeExamQuestion } from '../lib/utils';
 import { attachCroppedFiguresToQuestions } from '../lib/cropUtils';
 import { SimilarExamsModal } from './SimilarExamsModal';
@@ -109,6 +109,7 @@ export function UploadTeacherExamModal({
   const [examType, setExamType] = useState<string>("Đề kiểm tra giữa kỳ 1");
   const [examTitle, setExamTitle] = useState("Đề kiểm tra trắc nghiệm online");
   const [subject, setSubject] = useState(defaultSubject);
+  const { subjects } = useSubjects();
   const [grade, setGrade] = useState(defaultGrade);
   const [duration, setDuration] = useState<number>(45);
   const [durationInput, setDurationInput] = useState<string>("45");
@@ -867,7 +868,7 @@ export function UploadTeacherExamModal({
                       }}
                       className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-800 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none shadow-2xs"
                     >
-                      {GDPT_2018_SUBJECTS.map(s => (
+                      {subjects.map(s => (
                         <option key={s} value={s}>{s}</option>
                       ))}
                     </select>

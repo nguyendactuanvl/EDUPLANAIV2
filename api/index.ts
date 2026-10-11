@@ -1546,8 +1546,26 @@ app.all("/api/upgrade-lesson-plan", async (req, res) => {
   }
   
   try {
-    const { lesson, subject, templateMode = 'uploaded', customTemplateInstructions = '' } = req.body || {};
+    const { lesson, subject, templateMode = 'uploaded', customTemplateInstructions = '', includeInclusiveEducation = true } = req.body || {};
     const files = resolveFiles(req.body);
+
+    const inclusiveEducationBlock = includeInclusiveEducation !== false ? `
+ĐIỀU CHỈNH KẾ HOẠCH DẠY HỌC CHO HỌC SINH KHUYẾT TẬT HÒA NHẬP (BẮT BUỘC BỔ SUNG THÀNH MỤC IV HOẶC MỤC RIÊNG CUỐI GIÁO ÁN CHO MỌI MÔN HỌC/HOẠT ĐỘNG):
+Bám sát Thông tư 03/2018/TT-BGDĐT và Công văn 5512/BGDĐT-GDTrH, hãy bổ sung mục này với cấu trúc chuẩn:
+1. **MỤC TIÊU ĐIỀU CHỈNH:**
+   - Kiến thức: [Yêu cầu cần đạt cốt lõi tối thiểu mà HS khuyết tật cần nhận biết/thực hiện được trong môn ${subject || "môn học"}]
+   - Năng lực: [Năng lực đặc thù môn ${subject || "học"} cơ bản, năng lực sử dụng công cụ hỗ trợ, năng lực tự chủ/hợp tác]
+   - Phẩm chất: [Tự tin, kiên trì, hòa nhập cùng bạn bè]
+2. **NỘI DUNG ĐIỀU CHỈNH CHI TIẾT THEO TIẾN TRÌNH:**
+   Bảng gồm 4 cột: | Hoạt động | YCCĐ & Nhiệm vụ của cả lớp | Điều chỉnh cho HS hòa nhập | Biện pháp & Công cụ hỗ trợ |
+   - Hoạt động 1: Khởi động (Nhiệm vụ thu gọn, trực quan, tăng thời gian)
+   - Hoạt động 2: Hình thành kiến thức mới (Giảm tải biến đổi/lý thuyết phức tạp, dùng mô hình trực quan/thẻ màu/máy tính hoặc công cụ phù hợp môn học)
+   - Hoạt động 3: Luyện tập (Bài tập mức độ Nhận biết - Thông hiểu đơn giản, rút gọn)
+   - Hoạt động 4: Vận dụng (Nhiệm vụ gắn thực tiễn đơn giản, vừa sức)
+3. **ĐÁNH GIÁ SỰ TIẾN BỘ & KIỂM TRA ĐỊNH KỲ:**
+   - Đánh giá thường xuyên: [Quan sát quá trình, động viên khích lệ, chấm điểm dựa trên mức độ cố gắng và tiến bộ so với chính bản thân HS]
+   - Bài kiểm tra định kỳ: [Đề xuất cấu trúc đề rút gọn, tăng 30% - 50% thời gian làm bài, giảm bớt các câu hỏi vận dụng cao]
+` : '';
 
     let templateDirective = '';
     if (templateMode === 'uploaded') {
@@ -1584,6 +1602,7 @@ HƯỚNG DẪN CHI TIẾT:
        * Bước 4: Kết luận, nhận định (GV chốt kiến thức, ghi rõ bảng tổng kết kiến thức hoặc nội dung cần ghi chép vào vở).
 4. **Nổi bật Năng lực số và Năng lực AI**: Khi nhắc đến bất kỳ phần mềm, công cụ thiết bị số, Năng lực số hoặc công cụ AI nào (đặc biệt là những cái bạn vừa bổ sung), BẮT BUỘC định dạng bằng Markdown in đậm chuẩn: **[Tên công cụ / NLS / AI]** (TUYỆT ĐỐI CẤM dùng mã HTML inline như <mark style="..."> hay <span>).
 ${templateDirective}
+${inclusiveEducationBlock}
 ${MATH_FORMATTING_RULES}
 6. TUYỆT ĐỐI KHÔNG sử dụng thẻ HTML \`<br>\` hoặc \`<br/>\`. Sử dụng dấu xuống dòng chuẩn Markdown.
 7. Soạn chi tiết đầy đủ 100%, không tóm tắt, không dùng dấu ba chấm (...).`;
@@ -1711,8 +1730,28 @@ app.all(["/api/generate-lesson-plan", "/api/generate-lesson-plan-file"], async (
     const aiComp = req.body.aiComp || req.body.aiCompetence || "";
     const stem = req.body.stem || "";
     const textbook = req.body.textbook || "Kết nối tri thức với cuộc sống";
+    const includeInclusiveEducation = req.body.includeInclusiveEducation !== false;
     const maxOutputTokens = 8192;
     const files = resolveFiles(req.body);
+
+    const inclusiveEducationBlock = includeInclusiveEducation !== false ? `
+
+IV. ĐIỀU CHỈNH KẾ HOẠCH DẠY HỌC CHO HỌC SINH KHUYẾT TẬT HÒA NHẬP (BẮT BUỘC BỔ SUNG THÀNH MỤC IV HOẶC MỤC RIÊNG CUỐI GIÁO ÁN CHO MỌI MÔN HỌC/HOẠT ĐỘNG):
+Bám sát Thông tư 03/2018/TT-BGDĐT và Công văn 5512/BGDĐT-GDTrH, hãy bổ sung mục này với cấu trúc chuẩn:
+1. **MỤC TIÊU ĐIỀU CHỈNH:**
+   - Kiến thức: [Yêu cầu cần đạt cốt lõi tối thiểu mà HS khuyết tật cần nhận biết/thực hiện được trong môn ${subject}]
+   - Năng lực: [Năng lực đặc thù môn ${subject} cơ bản, năng lực sử dụng công cụ hỗ trợ, năng lực tự chủ/hợp tác]
+   - Phẩm chất: [Tự tin, kiên trì, hòa nhập cùng bạn bè]
+2. **NỘI DUNG ĐIỀU CHỈNH CHI TIẾT THEO TIẾN TRÌNH:**
+   Bảng gồm 4 cột: | Hoạt động | YCCĐ & Nhiệm vụ của cả lớp | Điều chỉnh cho HS hòa nhập | Biện pháp & Công cụ hỗ trợ |
+   - Hoạt động 1: Khởi động (Nhiệm vụ thu gọn, trực quan, tăng thời gian)
+   - Hoạt động 2: Hình thành kiến thức mới (Giảm tải biến đổi/lý thuyết phức tạp, dùng mô hình trực quan/thẻ màu/máy tính hoặc công cụ phù hợp môn học)
+   - Hoạt động 3: Luyện tập (Bài tập mức độ Nhận biết - Thông hiểu đơn giản, rút gọn)
+   - Hoạt động 4: Vận dụng (Nhiệm vụ gắn thực tiễn đơn giản, vừa sức)
+3. **ĐÁNH GIÁ SỰ TIẾN BỘ & KIỂM TRA ĐỊNH KỲ:**
+   - Đánh giá thường xuyên: [Quan sát quá trình, động viên khích lệ, chấm điểm dựa trên mức độ cố gắng và tiến bộ so với chính bản thân HS]
+   - Bài kiểm tra định kỳ: [Đề xuất cấu trúc đề rút gọn, tăng 30% - 50% thời gian làm bài, giảm bớt các câu hỏi vận dụng cao]
+` : '';
 
     const lessonPlanSystemInstruction = `Bạn là Chuyên gia Sư phạm cao cấp, Chuyên viên Vụ Giáo dục Trung học (Bộ GD&ĐT), và Giáo viên giỏi cốt cán chuyên sâu về đổi mới phương pháp dạy học theo Chương trình Giáo dục phổ thông 2018.
 Nhiệm vụ của bạn là biên soạn một KẾ HOẠCH BÀI DẠY (GIÁO ÁN) hoàn chỉnh, mẫu mực, chuẩn mực sư phạm 100% theo đúng quy định Công văn 5512/BGDĐT-GDTrH và bám sát bộ sách giáo khoa "${textbook}".
@@ -1832,6 +1871,7 @@ LƯU Ý ĐẶC BIỆT:
 - ĐỐI VỚI MÔN TOÁN (Đặc biệt các bài học về Hàm số, Đạo hàm, Khảo sát hàm số, Tính đơn điệu, Cực trị, Bất phương trình, Hình học):
   + Ở Hoạt động 2 (Hình thành kiến thức mới) và Hoạt động 3 (Luyện tập), BẮT BUỘC chèn BẢNG BIẾN THIÊN dạng Markdown Table chuẩn hoặc khối TikZ/SVG đồ thị hàm số chuẩn SGK vào phần Sản phẩm của học sinh và phần Chuyển giao nhiệm vụ.
   + Tuyệt đối không để trống bảng biến thiên hoặc hình vẽ đồ thị.
+${inclusiveEducationBlock}
 ${MATH_FORMATTING_RULES}`;
 
     let contents: any = prompt;

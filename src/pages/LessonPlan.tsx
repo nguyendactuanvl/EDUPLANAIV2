@@ -1,5 +1,5 @@
 import { apiFetch } from '../lib/apiFetch';
-import { GDPT_2018_SUBJECTS } from '../lib/subjects';
+import { useSubjects } from '../lib/subjects';
 import { exportHtmlToWord } from '../lib/exportUtils';
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Sparkles, Save, BookOpen, Download, AlertCircle, Upload, Edit3, Eye, Presentation, TrendingUp, BarChart2, X, Box, BarChart3, Wand2 } from "lucide-react";
@@ -24,10 +24,12 @@ export function LessonPlan() {
   const [activeTab, setActiveTab] = useState<"system" | "upload" | "upgrade">("system");
   const [selectedGrade, setSelectedGrade] = useState<number>(10);
   const [selectedLessonId, setSelectedLessonId] = useState<string>("");
+  const { subjects } = useSubjects();
   
   const [customLessonName, setCustomLessonName] = useState("");
   const [customPeriods, setCustomPeriods] = useState<number>(2);
   const [subject, setSubject] = useState("Toán");
+  const [includeInclusiveEducation, setIncludeInclusiveEducation] = useState(true);
   const [uploadedFiles, setUploadedFiles] = useState<{data: string, type: string, name: string}[]>([]);
   
   // Options for upgrade template mode
@@ -186,7 +188,8 @@ export function LessonPlan() {
           grade: selectedLesson.grade || selectedGrade,
           periods: selectedLesson.periods || customPeriods || 2,
           subject: subject,
-          textbook: selectedTextbook?.name || "Kết nối tri thức với cuộc sống"
+          textbook: selectedTextbook?.name || "Kết nối tri thức với cuộc sống",
+          includeInclusiveEducation
         };
       } else if (customLessonName.trim()) {
         displayName = customLessonName.trim();
@@ -199,7 +202,8 @@ export function LessonPlan() {
           grade: selectedGrade,
           periods: customPeriods || 2,
           subject: subject,
-          textbook: selectedTextbook?.name || "Kết nối tri thức với cuộc sống"
+          textbook: selectedTextbook?.name || "Kết nối tri thức với cuộc sống",
+          includeInclusiveEducation
         };
       } else {
         setError("Vui lòng chọn bài học từ danh sách hoặc nhập tên bài học cần soạn.");
@@ -218,7 +222,8 @@ export function LessonPlan() {
         grade: selectedGrade,
         periods: customPeriods || 2,
         textbook: selectedTextbook?.name || "Kết nối tri thức với cuộc sống",
-        files: uploadedFiles
+        files: uploadedFiles,
+        includeInclusiveEducation
       };
     } else if (activeTab === "upgrade") {
       if (!customLessonName.trim() && uploadedFiles.length === 0) {
@@ -234,7 +239,8 @@ export function LessonPlan() {
         periods: customPeriods || 2,
         files: uploadedFiles,
         templateMode: upgradeTemplateMode,
-        customTemplateInstructions: customTemplateInstructions
+        customTemplateInstructions: customTemplateInstructions,
+        includeInclusiveEducation
       };
     }
 
@@ -304,7 +310,7 @@ export function LessonPlan() {
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
           >
-            {GDPT_2018_SUBJECTS.map(sub => (<option key={sub} value={sub}>{sub}</option>))}
+            {subjects.map(sub => (<option key={sub} value={sub}>{sub}</option>))}
           </select>
         </div>
         
@@ -441,7 +447,7 @@ export function LessonPlan() {
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
               >
-                {GDPT_2018_SUBJECTS.map(sub => (<option key={sub} value={sub}>{sub}</option>))}
+                {subjects.map(sub => (<option key={sub} value={sub}>{sub}</option>))}
               </select>
             </div>
             <div>
@@ -565,6 +571,20 @@ export function LessonPlan() {
             <p>{error}</p>
           </div>
         )}
+
+        <div className="p-3 bg-indigo-50/80 border border-indigo-200 rounded-xl space-y-1.5">
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input 
+              type="checkbox" 
+              checked={includeInclusiveEducation} 
+              onChange={(e) => setIncludeInclusiveEducation(e.target.checked)}
+              className="mt-0.5 w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+            />
+            <span className="text-xs font-semibold text-indigo-950 leading-tight">
+              Tích hợp mục "Điều chỉnh KHDH cho HS khuyết tật hòa nhập" (TT 03/2018 & CV 5512) cho mọi môn học/hoạt động
+            </span>
+          </label>
+        </div>
 
         <button 
           onClick={handleDemoClick}
