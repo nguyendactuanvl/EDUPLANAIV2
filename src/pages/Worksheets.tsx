@@ -6,9 +6,17 @@ import React, { useState, useRef, useEffect } from "react";
 import { 
   BookOpen, Download, AlertCircle, Edit3, Eye, Printer, Share2, Copy, CheckCircle2, 
   ExternalLink, Upload, FileText, Palette, LayoutTemplate, GitFork, Sparkles, Zap, Image as ImageIcon, Sliders, Check,
-  TrendingUp, BarChart2, Plus, Box, BarChart3, School, User, Wand2
+  TrendingUp, BarChart2, Plus, Box, BarChart3, School, User, Wand2, Users, BarChart, Loader2, FileSpreadsheet
 } from "lucide-react";
-import { MarkdownRenderer } from "../components/MarkdownRenderer";
+import * as XLSX from "xlsx";
+import { 
+  googleSignIn, 
+  googleSignOut, 
+  initAuth, 
+  createGoogleSheet, 
+  syncSubmissionsToSheet, 
+  getCachedToken 
+} from "../lib/googleAuth";
 import { MathView } from "../components/MathView";
 import { run1ClickMathFix } from "../components/math-tools/MathFormulaFixer";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -459,6 +467,179 @@ export function Worksheets() {
   const [shareLink, setShareLink] = useState("");
   const [isUploadExamModalOpen, setIsUploadExamModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Google Auth & Room History States
+  const [googleUser, setGoogleUser] = useState<any>(null);
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [isSyncingSheet, setIsSyncingSheet] = useState(false);
+  const [examsHistory, setExamsHistory] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem("eduplan_worksheet_exams_history");
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [selectedRoomForResults, setSelectedRoomForResults] = useState<string | null>(null);
+  const [selectedRoomResultsData, setSelectedRoomResultsData] = useState<any | null>(null);
+  const [isLoadingResults, setIsLoadingResults] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = initAuth((user, token) => {
+      setGoogleUser(user);
+      setGoogleToken(token || null);
+    });
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  const handleGoogleLogin = async () => {
+    try {
+      const res = await googleSignIn();
+      if (res) {
+        setGoogleUser(res.user);
+        setGoogleToken(res.accessToken);
+        alert(`Đăng nhập Google thành công: ${res.user.displayName}`);
+      }
+    } catch (err: any) {
+      alert("Lỗi đăng nhập Google: " + err.message);
+    }
+  };
+
+  const handleGoogleLogout = async () => {
+    if (confirm("Bạn có chắc chắn muốn đăng xuất tài khoản Google không?")) {
+      await googleSignOut();
+      setGoogleUser(null);
+      setGoogleToken(null);
+    }
+  };
+
+  const handleCreateAndLinkSheet = async () => {
+    if (!selectedRoomResultsData) return;
+    const code = selectedRoomForResults;
+    if (!code) return;
+
+    setIsSyncingSheet(true);
+    try {
+      const sheet = await createGoogleSheet(selectedRoomResultsData.examTitle || code);
+      const updatedData = {
+        ...selectedRoomResultsData,
+        linkedSheetId: sheet.id,
+        linkedSheetUrl: sheet.url
+      };
+
+      const saveRes = await fetch("/api/exams/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...updatedData, customId: code })
+      });
+
+      if (!saveRes.ok) {
+        throw new Error("Không thể cập nhật liên kết tệp Trang tính lên máy chủ.");
+      }
+
+      const subs = updatedData.submissions || [];
+      if (subs.length > 0) {
+        await syncSubmissionsToSheet(sheet.id, updatedData.examTitle || code, subs);
+      }
+
+      setSelectedRoomResultsData(updatedData);
+
+      const updatedHistory = examsHistory.map((h: any) => {
+        if (h.code === code) {
+          return { ...h, linkedSheetId: sheet.id, linkedSheetUrl: sheet.url };
+        }
+        return h;
+      });
+      setExamsHistory(updatedHistory);
+      localStorage.setItem("eduplan_worksheet_exams_history", JSON.stringify(updatedHistory));
+
+      alert("🚀 Đã khởi tạo và liên kết Google Sheet thành công! Bảng điểm đã được đồng bộ hóa.");
+    } catch (err: any) {
+      alert("Lỗi tạo/liên kết Trang tính: " + err.message);
+    } finally {
+      setIsSyncingSheet(false);
+    }
+  };
+
+  const handleSyncExistingSheet = async () => {
+    if (!selectedRoomResultsData) return;
+    const code = selectedRoomForResults;
+    if (!code) return;
+    const sheetId = selectedRoomResultsData.linkedSheetId;
+    if (!sheetId) return;
+
+    setIsSyncingSheet(true);
+    try {
+      const subs = selectedRoomResultsData.submissions || [];
+      await syncSubmissionsToSheet(sheetId, selectedRoomResultsData.examTitle || code, subs);
+      alert("⚡ Đã đồng bộ hóa dữ liệu bảng điểm mới nhất lên Google Sheets thành công!");
+    } catch (err: any) {
+      alert("Lỗi đồng bộ Trang tính: " + err.message);
+    } finally {
+      setIsSyncingSheet(false);
+    }
+  };
+
+  const handleLoadRoomResults = async (code: string) => {
+    setSelectedRoomForResults(code);
+    setIsLoadingResults(true);
+    try {
+      const res = await fetch(`/api/exams/share?examId=${code}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedRoomResultsData(data);
+      } else {
+        throw new Error("Không thể tải kết quả từ máy chủ.");
+      }
+    } catch (err: any) {
+      const cached = localStorage.getItem(`examCache_${code}`);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          setSelectedRoomResultsData({
+            examTitle: parsed.examData?.examName || `Phòng thi ${code}`,
+            submissions: parsed.submissions || []
+          });
+        } catch (e) {
+          alert("Lỗi tải kết quả phòng thi: " + err.message);
+        }
+      } else {
+        alert("Lỗi tải kết quả phòng thi: " + err.message);
+      }
+    } finally {
+      setIsLoadingResults(false);
+    }
+  };
+
+  const handleExportResultsToExcel = () => {
+    if (!selectedRoomResultsData || !selectedRoomResultsData.submissions) return;
+    const excelRows = selectedRoomResultsData.submissions.map((sub: any, idx: number) => ({
+      "STT": idx + 1,
+      "Họ và tên": sub.studentName,
+      "Lớp": sub.studentClass,
+      "Điểm số": sub.totalScore,
+      "Thời gian nộp": new Date(sub.submittedAt || Date.now()).toLocaleString('vi-VN')
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(excelRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Kết quả phòng thi");
+    XLSX.writeFile(workbook, `BangDiem_${selectedRoomForResults}.xlsx`);
+  };
+
+  const handleDeleteRoomFromHistory = (code: string) => {
+    if (confirm(`Bạn có chắc muốn xóa phòng thi ${code} khỏi lịch sử?`)) {
+      const updated = examsHistory.filter(r => r.code !== code);
+      setExamsHistory(updated);
+      localStorage.setItem("eduplan_worksheet_exams_history", JSON.stringify(updated));
+      if (selectedRoomForResults === code) {
+        setSelectedRoomForResults(null);
+        setSelectedRoomResultsData(null);
+      }
+    }
+  };
   
   const exportRef = useRef<HTMLDivElement>(null);
 
@@ -634,6 +815,24 @@ export function Worksheets() {
       }
       
       setShareLink(finalLink);
+
+      // Save room to history
+      const roomCode = examId || Math.random().toString(36).substring(2, 8).toUpperCase();
+      const newRoom = {
+        code: roomCode,
+        examTitle: payload.examData.examName,
+        subject: subject,
+        grade: selectedGrade,
+        duration: 45,
+        createdAt: new Date().toISOString(),
+        shareLink: finalLink,
+        linkedSheetId: null,
+        linkedSheetUrl: null
+      };
+      const updatedHistory = [newRoom, ...examsHistory.filter(h => h.code !== newRoom.code)];
+      setExamsHistory(updatedHistory);
+      localStorage.setItem("eduplan_worksheet_exams_history", JSON.stringify(updatedHistory));
+      localStorage.setItem(`examCache_${roomCode}`, JSON.stringify(payload));
       
       // Cập nhật danh sách câu hỏi để giáo viên kiểm tra lời giải chi tiết trực quan
       const formattedQuestions = (examData.questions || []).map((q: any, idx: number) => {
@@ -1572,6 +1771,180 @@ export function Worksheets() {
               </p>
             </div>
           )}
+
+          {/* TEACHER EXAMS HISTORY & RESULTS DASHBOARD FOR WORKSHEETS */}
+          <div className="mt-6 p-4 bg-white rounded-xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <FileText className="w-4 h-4 text-emerald-600" />
+                Quản lý Phòng thi Online / Phiếu bài tập ({examsHistory.length})
+              </span>
+            </div>
+
+            {examsHistory.length === 0 ? (
+              <div className="p-6 border border-dashed border-slate-200 rounded-xl text-center text-slate-400">
+                <AlertCircle className="w-8 h-8 mx-auto text-slate-300 mb-1" />
+                <p className="text-xs font-semibold">Chưa có phòng thi trực tuyến nào được tạo từ phiếu học tập này.</p>
+                <p className="text-[10px] text-slate-400 mt-1">Bấm nút "Tạo Link Làm Online" để khởi tạo phòng thi trực tuyến cho học sinh.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {examsHistory.map((room) => (
+                  <div 
+                    key={room.code}
+                    className={`p-3 border rounded-xl flex flex-col gap-2 transition-all ${
+                      selectedRoomForResults === room.code 
+                        ? "bg-emerald-50/50 border-emerald-300 shadow-xs" 
+                        : "bg-slate-50/50 border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 line-clamp-1">{room.examTitle}</span>
+                        <span className="text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded">Mã phòng: {room.code}</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-slate-100">
+                      <button
+                        onClick={() => handleLoadRoomResults(room.code)}
+                        className="py-1 px-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <BarChart className="w-3 h-3" /> Kết quả
+                      </button>
+                      <button
+                        onClick={() => {
+                          const link = room.shareLink || `${window.location.origin}/?examId=${room.code}`;
+                          navigator.clipboard.writeText(link);
+                          alert("Đã copy link học sinh cho phòng: " + room.code);
+                        }}
+                        className="py-1 px-2 bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <Copy className="w-3 h-3" /> Link
+                      </button>
+                      <button
+                        onClick={() => handleDeleteRoomFromHistory(room.code)}
+                        className="py-1 px-2 bg-rose-50 hover:bg-rose-100 text-rose-600 text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <Trash2 className="w-3 h-3" /> Xóa
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Submissions Results & Google Sheets Integration Dashboard */}
+            {selectedRoomForResults && (
+              <div className="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <Users className="w-4 h-4 text-indigo-600" />
+                      Báo cáo điểm số phòng: <span className="font-mono text-indigo-600">{selectedRoomForResults}</span>
+                    </h4>
+                    <p className="text-[10px] text-slate-500">{selectedRoomResultsData?.examTitle}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleExportResultsToExcel}
+                      disabled={isLoadingResults || !selectedRoomResultsData?.submissions?.length}
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg flex items-center gap-1 disabled:opacity-50"
+                    >
+                      <Download className="w-3 h-3" /> Excel
+                    </button>
+                    <button
+                      onClick={() => handleLoadRoomResults(selectedRoomForResults)}
+                      disabled={isLoadingResults}
+                      className="px-2.5 py-1 border border-slate-200 hover:bg-slate-100 text-slate-700 text-[11px] font-bold rounded-lg flex items-center gap-1"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isLoadingResults ? "animate-spin" : ""}`} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Google Sheet Integration Box */}
+                <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                      <span className="text-xs font-bold text-slate-800">Tích hợp Google Sheets Giáo viên</span>
+                    </div>
+                    {googleUser ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-bold">{googleUser.displayName || googleUser.email}</span>
+                        <button onClick={handleGoogleLogout} className="text-[10px] text-rose-500 font-bold hover:underline">Đăng xuất</button>
+                      </div>
+                    ) : (
+                      <button onClick={handleGoogleLogin} className="px-2.5 py-1 bg-slate-900 text-white text-[10px] font-bold rounded-lg">🔑 Đăng nhập Google</button>
+                    )}
+                  </div>
+
+                  {googleUser && (
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                      {selectedRoomResultsData?.linkedSheetUrl ? (
+                        <div className="text-emerald-700 font-bold flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <a href={selectedRoomResultsData.linkedSheetUrl} target="_blank" rel="noreferrer" className="underline hover:text-indigo-600">
+                            Mở Google Sheet liên kết ↗
+                          </a>
+                        </div>
+                      ) : (
+                        <span className="text-amber-600">⚠️ Chưa liên kết tệp Google Sheets cá nhân.</span>
+                      )}
+
+                      <div>
+                        {selectedRoomResultsData?.linkedSheetId ? (
+                          <button
+                            onClick={handleSyncExistingSheet}
+                            disabled={isSyncingSheet}
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded disabled:opacity-50"
+                          >
+                            {isSyncingSheet ? "Đang đồng bộ..." : "⚡ Đồng bộ Trang tính"}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={handleCreateAndLinkSheet}
+                            disabled={isSyncingSheet}
+                            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded disabled:opacity-50"
+                          >
+                            {isSyncingSheet ? "Đang tạo..." : "🚀 Tạo & Liên kết Google Sheet mới"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Submissions list */}
+                {isLoadingResults ? (
+                  <div className="py-6 text-center text-slate-400">
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto text-indigo-600 mb-1" />
+                    <p className="text-[11px]">Đang tải bài nộp...</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {(!selectedRoomResultsData?.submissions || selectedRoomResultsData.submissions.length === 0) ? (
+                      <p className="text-center text-[11px] text-slate-400 py-4">Chưa có học sinh nộp bài.</p>
+                    ) : (
+                      <div className="max-h-60 overflow-y-auto space-y-1.5">
+                        {selectedRoomResultsData.submissions.map((sub: any, sIdx: number) => (
+                          <div key={sIdx} className="bg-white p-2.5 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
+                            <div>
+                              <p className="font-bold text-slate-800">{sub.studentName} <span className="font-normal text-slate-500">(Lớp {sub.studentClass})</span></p>
+                              <p className="text-[10px] text-slate-400">{new Date(sub.submittedAt || Date.now()).toLocaleString('vi-VN')}</p>
+                            </div>
+                            <div className="text-right">
+                              <span className="font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-sm">{sub.totalScore}đ</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {error && (
             <div className="mt-3 p-3 bg-red-50 text-red-700 rounded-lg text-sm flex items-start gap-2">
