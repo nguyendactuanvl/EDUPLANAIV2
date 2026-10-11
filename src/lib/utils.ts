@@ -2289,23 +2289,30 @@ export function cleanQuestionStem(content: any, options?: any[], tfStatements?: 
       const aIdx = m.index! + m[0].indexOf('A');
       const beforeA = text.substring(0, aIdx).trim();
 
+      // Check geoWordPattern FIRST to avoid treating geometric point "A." or "điểm A." as start of options
+      if (geoWordPattern.test(beforeA)) continue;
+
       const afterA = text.substring(aIdx);
       const hasB = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?B(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
       const hasC = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?C(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
       const hasD = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?D(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
 
       if (hasB && (hasC || hasD)) {
-        text = text.substring(0, m.index).trim();
-        break;
+        const candidateStem = text.substring(0, m.index).trim();
+        if (candidateStem.length >= 3) {
+          text = candidateStem;
+          break;
+        }
       }
-
-      if (geoWordPattern.test(beforeA)) continue;
 
       if (options && options.length >= 2 && options[0]) {
         const opt0 = String(options[0]).trim().replace(/^\$|\$$/g, '').slice(0, 10);
         if (opt0 && afterA.includes(opt0)) {
-          text = text.substring(0, m.index).trim();
-          break;
+          const candidateStem = text.substring(0, m.index).trim();
+          if (candidateStem.length >= 3) {
+            text = candidateStem;
+            break;
+          }
         }
       }
     }
@@ -2314,7 +2321,10 @@ export function cleanQuestionStem(content: any, options?: any[], tfStatements?: 
   // If the question has separate tfStatements array (True/False question)
   if (tfStatements && tfStatements.length >= 2) {
     // Remove duplicate trailing sub-statements: a) ... b) ... c) ... d) ... from stem
-    text = text.replace(/(?:\r?\n|\s)*(?:[-*]\s*)?(?:\*{0,2}|<b>)?\(?a[\.:\)](?:\*{0,2}|<\/b>)?\s+[\s\S]*$/i, '');
+    const candidateStem = text.replace(/(?:\r?\n|\s)*(?:[-*]\s*)?(?:\*{0,2}|<b>)?\(?a[\.:\)](?:\*{0,2}|<\/b>)?\s+[\s\S]*$/i, '').trim();
+    if (candidateStem.length >= 3) {
+      text = candidateStem;
+    }
   }
   
   // Xóa sạch các dấu gạch nối, gạch ngang sót lại ở đuôi câu hỏi (như "?-", ":-", ".-")
@@ -2328,6 +2338,11 @@ export function cleanQuestionStem(content: any, options?: any[], tfStatements?: 
     const raw = visualTokens[Number(idx)];
     return raw ? `\n\n${raw}\n\n` : '';
   });
+
+  // Fallback: If cleaned becomes empty, preserve original text (sanitized) to ensure question content is never lost!
+  if (!cleaned.trim() && rawStr.trim()) {
+    return sanitizeExamQuestion(rawStr.trim());
+  }
 
   return cleaned.trim();
 }

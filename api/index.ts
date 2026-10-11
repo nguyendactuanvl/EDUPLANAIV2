@@ -1941,26 +1941,43 @@ app.all("/api/generate-interactive-worksheet", async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ message: 'Method not allowed' });
     
   return keepAliveExecute(req, res, async () => {
-    const { lesson, subject, grade, type } = req.body;
+    const { 
+      lesson, 
+      subject, 
+      grade, 
+      type,
+      numPartI = 12,
+      numPartII = 4,
+      numPartIII = 6,
+      numPartIV = 2,
+      realWorldPercent = 40,
+      hasParametric = true,
+      additionalNotes = ''
+    } = req.body || {};
+
+    const totalRequired = (numPartI || 0) + (numPartII || 0) + (numPartIII || 0) + (numPartIV || 0);
+    const totalCount = totalRequired > 0 ? totalRequired : 24;
        
     const promptText = `Bạn là một giáo viên xuất sắc môn ${subject || "Toán"} (chuẩn Chương trình GDPT 2018, bộ sách giáo khoa Kết nối tri thức với cuộc sống áp dụng từ năm học 2026-2027). Hãy tạo một Phiếu bài tập (Worksheet) tương tác thật chuyên nghiệp cho học sinh Lớp ${grade}, môn ${subject || "Toán"}, bài học/chủ đề: "${lesson}". Hình thức: ${type || "Kết hợp trắc nghiệm, đúng/sai, trả lời ngắn, tự luận"}.
        
     RÀNG BUỘC PHẠM VI NỘI DUNG VÀ CHỦ ĐỀ (BẮT BUỘC 100%):
     - TẤT CẢ CÁC CÂU HỎI trong phiếu bài tập BẮT BUỘC phải tập trung chính xác và 100% nằm trong phạm vi kiến thức, bài học/chủ đề: "${lesson}".
-    - TUYỆT ĐỐI KHÔNG BỊA RA HOẶC TỰ Ý CHÈN THÊM bất kỳ câu hỏi nào thuộc bài học khác, chương học khác hay khối lớp khác ngoài chủ đề "${lesson}" (trừ khi giáo viên có ghi yêu cầu mở rộng riêng).
+    - TUYỆT ĐỐI KHÔNG BỊA RA HOẶC TỰ Ý CHÈN THÊM bất kỳ câu hỏi nào thuộc bài học khác, chương học khác hay khối lớp khác ngoài chủ đề "${lesson}".
     - Tuân thủ 100% thuật ngữ, ký hiệu, mạch kiến thức theo đúng SGK Kết nối tri thức với cuộc sống áp dụng từ năm học 2026-2027.
 
-    YÊU CẦU CỤ THỂ:
-    1. Đưa ra khoảng 5-10 câu hỏi phân hóa từ cơ bản đến vận dụng. TUYỆT ĐỐI KHÔNG ĐƯỢC tóm tắt hoặc sinh placeholder như "(Các câu tương tự...)". Bắt buộc sinh đủ 100% các câu hỏi hoàn chỉnh.
-    2. Các câu hỏi có thể thuộc 4 loại hình:
-       - mc: Trắc nghiệm 4 lựa chọn (chỉ viết nội dung câu hỏi vào "content", 4 phương án vào mảng "options", TUYỆT ĐỐI KHÔNG lặp lại các phương án A, B, C, D trong "content").
-       - tf: Trắc nghiệm Đúng/Sai (Mỗi câu BẮT BUỘC gồm ĐÚNG 4 ý a, b, c, d trên các dòng riêng biệt, mảng "tfStatements" BẮT BUỘC có đúng 4 phần tử có thuộc tính statement và correct).
-       - sa: Trả lời ngắn (kết quả là 1 số cụ thể có độ dài tối đa 4 ký tự trong "correctAnswer". ĐẶC BIỆT CHỦ ĐỀ TẬP HỢP: Tuyệt đối không ra đề dạng tìm tập hợp hay viết khoảng/đoạn; bắt buộc hỏi số phần tử nguyên, tính biểu thức T = a+b hoặc độ dài khoảng để đáp số là một con số).
-       - essay: Tự luận (nội dung đề bài và hướng dẫn chấm cụ thể)
+    YÊU CẦU ĐẶC BIỆT CỤ THỂ VỀ CẤU TRÚC VÀ SỐ LƯỢNG CÂU HỎI BẮT BUỘC (TỔNG CHÍNH XÁC ĐỦ ${totalCount} CÂU):
+    BẮT BUỘC phải sinh đúng 100% chính xác các phần sau vào mảng "questions" (TUYỆT ĐỐI KHÔNG ĐƯỢC TÓM TẮT hay dùng placeholder "..."):
+    ${numPartI > 0 ? `1. PHẦN I (mc): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartI} CÂU Trắc nghiệm 4 lựa chọn (loại "mc") - mỗi câu gồm "content", 4 phương án vào mảng "options", "correctOptionIndex".` : ''}
+    ${numPartII > 0 ? `2. PHẦN II (tf): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartII} CÂU Trắc nghiệm Đúng/Sai (loại "tf") - mỗi câu BẮT BUỘC có mảng "tfStatements" gồm ĐÚNG 4 đối tượng [{ "statement": "...", "correct": true/false }].` : ''}
+    ${numPartIII > 0 ? `3. PHẦN III (sa): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartIII} CÂU Trắc nghiệm Trả lời ngắn (loại "sa") - "correctAnswer" là 1 số cụ thể có độ dài tối đa 4 ký tự.` : ''}
+    ${numPartIV > 0 ? `4. PHẦN IV (essay): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartIV} CÂU Tự luận (loại "essay") - bài tập tự luận có hướng dẫn chấm.` : ''}
+
+    - Tỷ lệ thực tế: Khoảng ${realWorldPercent}%. ${hasParametric ? 'Có tham số m.' : 'Khôi có tham số.'} ${additionalNotes ? `Ghi chú riêng: ${additionalNotes}` : ''}
+
     ${MATH_FORMATTING_RULES}
-    3. BẮT BUỘC KÈM TRƯỜNG "solution": Lời giải chi tiết từng bước biến đổi, kèm lý do chọn đáp án, viết bằng công thức LaTeX chuẩn cho TẤT CẢ các câu hỏi (mc, tf, sa, essay).
-    4. BẮT BUỘC SỬA LỖI CHÍNH TẢ tiếng Việt thật cẩn thận.
-    5. BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CẤU TRÚC SAU:
+    5. BẮT BUỘC KÈM TRƯỜNG "solution": Lời giải chi tiết từng bước biến đổi, kèm lý do chọn đáp án, viết bằng công thức LaTeX chuẩn cho TẤT CẢ các câu hỏi (mc, tf, sa, essay).
+    6. BẮT BUỘC SỬA LỖI CHÍNH TẢ tiếng Việt thật cẩn thận.
+    7. BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CẤU TRÚC SAU (MẢNG "questions" PHẢI CÓ ĐỦ CHÍNH XÁC ${totalCount} PHẦN TỬ CÂU HỎI):
     {
       "examName": "Phiếu bài tập: ${lesson}",
       "questions": [
@@ -1968,8 +1985,8 @@ app.all("/api/generate-interactive-worksheet", async (req, res) => {
           "type": "mc",
           "content": "Nội dung câu hỏi...",
           "options": ["Đáp án 1", "Đáp án 2", "Đáp án 3", "Đáp án 4"],
-          "correctOptionIndex": 0, // Vị trí đáp án đúng (0, 1, 2, 3)
-          "solution": "Lời giải chi tiết từng bước biến đổi, kèm lý do chọn đáp án..."
+          "correctOptionIndex": 0,
+          "solution": "Lời giải chi tiết từng bước..."
         },
         {
           "type": "tf",
@@ -1980,19 +1997,19 @@ app.all("/api/generate-interactive-worksheet", async (req, res) => {
             { "statement": "Ý c...", "correct": true },
             { "statement": "Ý d...", "correct": false }
           ],
-          "solution": "Lời giải chi tiết từng bước biến đổi cho 4 ý..."
+          "solution": "Lời giải chi tiết..."
         },
         {
           "type": "sa",
           "content": "Nội dung câu trả lời ngắn...",
-          "correctAnswer": "Giá trị/Từ khóa đúng (ngắn gọn)",
-          "solution": "Lời giải chi tiết từng bước biến đổi..."
+          "correctAnswer": "25",
+          "solution": "Lời giải chi tiết..."
         },
         {
           "type": "essay",
           "content": "Nội dung tự luận...",
-          "correctAnswer": "Hướng dẫn chấm/Đáp án gợi ý chi tiết",
-          "solution": "Lời giải chi tiết từng bước biến đổi..."
+          "correctAnswer": "Hướng dẫn chấm chi tiết",
+          "solution": "Lời giải chi tiết..."
         }
       ]
     }
@@ -2001,7 +2018,9 @@ app.all("/api/generate-interactive-worksheet", async (req, res) => {
     const response = await generateWithFallback(req, {
       contents: promptText,
       config: {
-        responseMimeType: "application/json"
+        responseMimeType: "application/json",
+        maxOutputTokens: 16384,
+        temperature: 0.3
       }
     });
 
@@ -2235,58 +2254,64 @@ app.all("/api/generate-worksheet-stream", async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ message: 'Method not allowed' });
 
   const {
-    grade,
-    subject,
-    lesson,
-    numPartI = 6,
-    numPartII = 2,
-    numPartIII = 2,
+    grade = 11,
+    subject = "Toán",
+    lesson = "",
+    numPartI = 12,
+    numPartII = 4,
+    numPartIII = 6,
     numPartIV = 2,
-    realWorldPercent = 30,
-    hasParametric = false,
-    additionalNotes,
-    answerMode
+    realWorldPercent = 40,
+    hasParametric = true,
+    additionalNotes = "",
+    answerMode = "full"
   } = req.body || {};
 
-  let exercisePrompt = `Cấu trúc các phần bài tập:`;
-  if (numPartI > 0) exercisePrompt += `\n- PHẦN I: TRẮC NGHIỆM LỰA CHỌN: đúng ${numPartI} câu.`;
-  if (numPartII > 0) exercisePrompt += `\n- PHẦN II: TRẮC NGHIỆM ĐÚNG/SAI: đúng ${numPartII} câu (mỗi câu 4 ý a, b, c, d).`;
-  if (numPartIII > 0) exercisePrompt += `\n- PHẦN III: TRẮC NGHIỆM TRẢ LỜI NGẮN: đúng ${numPartIII} câu.`;
-  if (numPartIV > 0) exercisePrompt += `\n- PHẦN IV: TỰ LUẬN RÈN LUYỆN: đúng ${numPartIV} câu.`;
+  const totalCount = (numPartI || 0) + (numPartII || 0) + (numPartIII || 0) + (numPartIV || 0);
 
-  exercisePrompt += `\n- Thực tế: ${realWorldPercent}%. ${hasParametric ? 'Có tham số m.' : 'Không chứa tham số.'}`;
-  if (additionalNotes) exercisePrompt += `\n- Ghi chú riêng: ${additionalNotes}`;
+  let exercisePrompt = `CẤU TRÚC VÀ SỐ LƯỢNG CÂU HỎI BẮT BUỘC SINH ĐỦ 100% (TỔNG CHÍNH XÁC ĐỦ ${totalCount} CÂU, TUYỆT ĐỐI KHÔNG ĐƯỢC TÓM TẮT KHÔNG DÙNG PLACEHOLDER '...'):`;
+  if (numPartI > 0) exercisePrompt += `\n- PHẦN I: TRẮC NGHIỆM LỰA CHỌN A,B,C,D: BẮT BUỘC sinh đủ chính xác ${numPartI} câu độc lập (đánh số từ **Câu 1:** đến **Câu ${numPartI}:**, mỗi câu 4 phương án A, B, C, D).`;
+  if (numPartII > 0) exercisePrompt += `\n- PHẦN II: TRẮC NGHIỆM ĐÚNG/SAI: BẮT BUỘC sinh đủ chính xác ${numPartII} câu (đánh số từ **Câu 1:** đến **Câu ${numPartII}:**, mỗi câu gồm đề dẫn và ĐÚNG 4 ý a, b, c, d).`;
+  if (numPartIII > 0) exercisePrompt += `\n- PHẦN III: TRẮC NGHIỆM TRẢ LỜI NGẮN: BẮT BUỘC sinh đủ chính xác ${numPartIII} câu (đánh số từ **Câu 1:** đến **Câu ${numPartIII}:**, đáp số là 1 con số cụ thể).`;
+  if (numPartIV > 0) exercisePrompt += `\n- PHẦN IV: BÀI TẬP TỰ LUẬN RÈN LUYỆN: BẮT BUỘC sinh đủ chính xác ${numPartIV} câu (đánh số từ **Câu 1:** đến **Câu ${numPartIV}:**).`;
 
-  let answerPrompt = 'Cung cấp Bảng đáp án nhanh. Hướng dẫn giải súc tích gói trong thẻ <details class="solution-box"><summary>👉 BẤM ĐỂ XEM ĐÁP ÁN VÀ LỜI GIẢI CHI TIẾT</summary>...</details>.';
-  if (answerMode === 'none') answerPrompt = 'Không kèm đáp án hay lời giải.';
+  exercisePrompt += `\n- Tỷ lệ thực tế: ${realWorldPercent}%. ${hasParametric ? 'Có bài toán chứa tham số m.' : 'Không chứa tham số.'}`;
+  if (additionalNotes) exercisePrompt += `\n- Ghi chú riêng từ giáo viên: ${additionalNotes}`;
+
+  let answerPrompt = 'Cung cấp Bảng đáp án nhanh và Hướng dẫn giải chi tiết gói trong thẻ HTML <details class="solution-box"><summary>👉 BẤM ĐỂ XEM ĐÁP ÁN VÀ LỜI GIẢI CHI TIẾT</summary>...</details>.';
+  if (answerMode === 'none') answerPrompt = 'TUYỆT ĐỐI KHÔNG kèm đáp án hay lời giải.';
   else if (answerMode === 'summary') answerPrompt = 'Chỉ kèm bảng đáp án nhanh ở cuối.';
 
   const prompt = `Bạn là chuyên gia sư phạm bộ môn ${subject || "Toán"} Việt Nam (Chương trình GDPT 2018, SGK Kết nối tri thức với cuộc sống áp dụng từ năm học 2026-2027).
 Hãy tạo ngay PHIẾU HỌC TẬP A4 Chuẩn in ấn cho học sinh Lớp ${grade}, môn ${subject || "Toán"}, bài học/chủ đề: "${lesson}".
 
-YÊU CẦU QUAN TRỌNG VỀ PHẠM VI NỘI DUNG VÀ CHỦ ĐỀ (BẮT BUỘC 100%):
+YÊU CẦU QUAN TRỌNG VỀ CẤU TRÚC VÀ PHẠM VI NỘI DUNG (BẮT BUỘC 100%):
 0. PHẠM VI CHỦ ĐỀ CHÍNH XÁC: Tất cả các câu hỏi trong phiếu BẮT BUỘC phải tập trung 100% vào bài học/chủ đề: "${lesson}". TUYỆT ĐỐI KHÔNG BỊA RA HOẶC CHÈN THÊM bất kỳ câu hỏi nào ngoài bài học đã chọn.
-1. Xuất trực tiếp nội dung phiếu học tập Markdown, không viết câu chào hay mở đầu.
-2. ĐỒNG BỘ TIÊU ĐỀ: TUYỆT ĐỐI KHÔNG tự ý chèn thêm tiêu đề bài học hay header thừa ở đầu văn bản (như "# BÀI 1: GÓC LƯỢNG GIÁC" hay "# PHIẾU HỌC TẬP"), vì hệ thống đã có sẵn khung tiêu đề chuẩn chính quy bên trên. Bắt đầu ngay bằng mục Tóm tắt kiến thức / Lý thuyết trọng tâm.
-3. ĐÁNH SỐ CÂU HỎI CHUẨN ĐỀ THI:
+1. SỐ LƯỢNG CÂU HỎI BẮT BUỘC (TỔNG ${totalCount} CÂU): Bạn PHẢI sinh đầy đủ 100% chính xác từng câu từ Câu 1 đến câu cuối cùng của từng Phần. TUYỆT ĐỐI KHÔNG ĐƯỢC TÓM TẮT THÀNH 5 HAY 8 CÂU.
+2. Xuất trực tiếp nội dung phiếu học tập Markdown, không viết câu chào hay mở đầu.
+3. ĐỒNG BỘ TIÊU ĐỀ: TUYỆT ĐỐI KHÔNG tự ý chèn thêm tiêu đề bài học hay header thừa ở đầu văn bản (như "# BÀI 1: GÓC LƯỢNG GIÁC" hay "# PHIẾU HỌC TẬP"), vì hệ thống đã có sẵn khung tiêu đề chuẩn chính quy bên trên. Bắt đầu ngay bằng mục Tóm tắt kiến thức / Lý thuyết trọng tâm.
+4. ĐÁNH SỐ CÂU HỎI CHUẨN ĐỀ THI:
    - TUYỆT ĐỐI KHÔNG dùng dấu gạch đầu dòng '-' hoặc bullet '•', '*' để mở đầu các câu hỏi.
    - TẤT CẢ các câu hỏi BẮT BUỘC phải đánh số thứ tự rõ ràng (**Câu 1:**, **Câu 2:**, ...):
      + PHẦN I: **Câu 1:** [Đề bài] \n A. [Phương án] \n B. [Phương án] \n C. [Phương án] \n D. [Phương án] \n\n **Câu 2:** ...
      + PHẦN II: **Câu 1:** [Mệnh đề dẫn] \n a) ... \n b) ... \n c) ... \n d) ... \n\n **Câu 2:** ...
      + PHẦN III: **Câu 1:** [Đề bài] \n\n **Câu 2:** [Đề bài] ...
      + PHẦN IV: **Câu 1:** [Đề bài] \n\n **Câu 2:** [Đề bài] ...
-4. QUY TẮC CÔNG THỨC TOÁN & TÁCH CHỮ TIẾNG VIỆT KHỎI DẤU $:
+5. QUY TẮC CÔNG THỨC TOÁN & TÁCH CHỮ TIẾNG VIỆT KHỎI DẤU $:
    - TUYỆT ĐỐI KHÔNG để chữ tiếng Việt bị nhốt bên trong dấu $ (Ví dụ: phải viết chuẩn 'Dãy số $(u_n)$ là một cấp số cộng $\\Rightarrow u_{n+1} = u_n + d$ ($d$: công sai).', '$u_n = u_1 + (n-1)d$ với $n \\ge 2$.', '$u_k = \\frac{u_{k-1} + u_{k+1}}{2}$ với $k \\ge 2$.').
    - LUÔN CÓ KHOẢNG TRẮNG GIỮA TỪ TIẾNG VIỆT VÀ DẤU $: viết 'hàm số $y = f(x)$ có', 'tại điểm $x = 1$', 'A. $x = 0$', TUYỆT ĐỐI KHÔNG viết dính 'hàm số$y = f(x)$có'.
    - Sử dụng cú pháp LaTeX chuẩn: \\frac thay cho \\dfrac, \\ge thay cho \\geq, \\le thay cho \\leq.
-5. PHẦN II (TRẮC NGHIỆM ĐÚNG / SAI):
+6. PHẦN II (TRẮC NGHIỆM ĐÚNG / SAI):
    - Với từng ý a), b), c), d), bắt buộc viết câu phát biểu hoàn chỉnh, TUYỆT ĐỐI giữ nguyên vẹn chữ cái đầu tiên (ví dụ: 'a) Công thức số hạng tổng quát của cấp số cộng...', 'b) Dãy số $(u_n)$ có công sai...').
-6. ${exercisePrompt}
-7. ${answerPrompt}`;
+7. ${exercisePrompt}
+8. ${answerPrompt}`;
 
   await generateWithFallbackStream(req, res, {
     contents: prompt,
-    config: { temperature: 0.7 }
+    config: { 
+      temperature: 0.7,
+      maxOutputTokens: 16384
+    }
   });
 });
 

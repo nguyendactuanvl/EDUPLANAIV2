@@ -1377,7 +1377,13 @@ const [examName, setExamName] = useState("");
       sampleQuestions = SAMPLE_MATH_QUESTIONS_11 as Question[];
       examTitleName = "ĐỀ KIỂM TRA ĐỊNH KỲ TOÁN HỌC LỚP 11 - KHUNG CHUẨN 2025";
     }
-    setQuestions(sampleQuestions);
+    const enriched = sampleQuestions.map((q: any) => ({
+      ...q,
+      content: autoEnrichTextWithVisuals(q.content || (q as any).question || (q as any).text || ''),
+      solution: autoEnrichTextWithVisuals(q.solution || q.explanation || ''),
+      explanation: autoEnrichTextWithVisuals(q.solution || q.explanation || '')
+    }));
+    setQuestions(enriched);
     setExamName(examTitleName);
     setDuration(SAMPLE_MATH_DURATION);
     setActiveTab("exam");
@@ -1438,7 +1444,13 @@ const [examName, setExamName] = useState("");
     }
     setError(null);
     const currentMaxId = questions.reduce((max, q) => Math.max(max, q.id || 0), 0);
-    const reindexed = parsed.map((q, idx) => ({ ...q, id: currentMaxId + idx + 1 }));
+    const reindexed = parsed.map((q, idx) => ({
+      ...q,
+      id: currentMaxId + idx + 1,
+      content: autoEnrichTextWithVisuals(q.content || (q as any).question || (q as any).text || ''),
+      solution: autoEnrichTextWithVisuals(q.solution || q.explanation || ''),
+      explanation: autoEnrichTextWithVisuals(q.solution || q.explanation || '')
+    }));
     setQuestions(prev => [...prev, ...reindexed]);
     setShowImportTextModal(false);
     setImportRawText("");

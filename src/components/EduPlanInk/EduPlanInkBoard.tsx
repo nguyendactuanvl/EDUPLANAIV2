@@ -899,6 +899,12 @@ export const EduPlanInkBoard: React.FC = () => {
             color: currentColor,
             size: strokeSize,
             opacity: activeTool === 'highlighter' ? 0.35 : 1,
+            lineStyle: lineStyle,
+            shapeData: (activeTool === 'shape' && shapeType !== 'auto' && currentPoints.current.length > 1) ? {
+              type: shapeType,
+              p1: currentPoints.current[0],
+              p2: currentPoints.current[currentPoints.current.length - 1]
+            } : undefined,
             points: currentPoints.current
           };
           renderSingleStroke(ctx, tempStroke);
@@ -1368,25 +1374,40 @@ export const EduPlanInkBoard: React.FC = () => {
   // Add / Edit / Delete Text Note & Math Formula
   const MATH_SYMBOLS = [
     { label: 'Phân số', symbol: '\\frac{a}{b}' },
-    { label: 'Căn', symbol: '\\sqrt{x}' },
-    { label: 'Mũ', symbol: 'x^2' },
-    { label: 'Chỉ số', symbol: 'x_1' },
-    { label: 'Tích phân', symbol: '\\int_a^b' },
-    { label: 'Giới hạn', symbol: '\\lim_{x \\to 0}' },
-    { label: 'Tổng', symbol: '\\sum_{i=1}^n' },
-    { label: 'Véctơ', symbol: '\\vec{v}' },
+    { label: 'Căn bậc 2', symbol: '\\sqrt{x}' },
+    { label: 'Căn bậc n', symbol: '\\sqrt[n]{x}' },
+    { label: 'Mũ (Lũy thừa)', symbol: 'x^2' },
+    { label: 'Chỉ số dưới', symbol: 'x_1' },
+    { label: 'Véctơ AB', symbol: '\\vec{AB}' },
+    { label: 'Góc', symbol: '\\widehat{ABC}' },
+    { label: 'Vuông góc ⊥', symbol: '\\perp' },
+    { label: 'Song song ∥', symbol: '\\parallel' },
+    { label: 'Tích phân', symbol: '\\int_{a}^{b} f(x)dx' },
+    { label: 'Giới hạn', symbol: '\\lim_{x \\to x_0}' },
+    { label: 'Tổng ∑', symbol: '\\sum_{i=1}^{n}' },
+    { label: 'Tập ℝ', symbol: '\\mathbb{R}' },
+    { label: 'Tập ℤ', symbol: '\\mathbb{Z}' },
+    { label: 'Tập ℕ', symbol: '\\mathbb{N}' },
+    { label: 'Logarithm', symbol: '\\log_a b' },
+    { label: 'Logarit tự nhiên', symbol: '\\ln x' },
     { label: 'π', symbol: '\\pi' },
     { label: 'α', symbol: '\\alpha' },
     { label: 'β', symbol: '\\beta' },
+    { label: 'θ', symbol: '\\theta' },
     { label: 'Δ', symbol: '\\Delta' },
+    { label: '∞', symbol: '\\infty' },
     { label: '≤', symbol: '\\le' },
     { label: '≥', symbol: '\\ge' },
+    { label: '≠', symbol: '\\neq' },
     { label: '∈', symbol: '\\in' },
+    { label: '∉', symbol: '\\notin' },
+    { label: '⊂', symbol: '\\subset' },
     { label: '⇒', symbol: '\\Rightarrow' },
     { label: '⇔', symbol: '\\Leftrightarrow' },
     { label: 'sin', symbol: '\\sin x' },
     { label: 'cos', symbol: '\\cos x' },
     { label: 'tan', symbol: '\\tan x' },
+    { label: 'cot', symbol: '\\cot x' },
   ];
 
   const handleInsertSymbol = (sym: string) => {

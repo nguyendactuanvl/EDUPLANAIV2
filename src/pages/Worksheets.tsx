@@ -143,11 +143,11 @@ export function Worksheets() {
   const [selectedLessonId, setSelectedLessonId] = useState<string>("g11_s1_c2_l2");
   const [additionalNotes, setAdditionalNotes] = useState<string>("");
 
-  // Four custom part counts
-  const [numPartI, setNumPartI] = useState<number>(12); // Trắc nghiệm 4 lựa chọn (0-12)
-  const [numPartII, setNumPartII] = useState<number>(2); // Trắc nghiệm Đúng - Sai (0-6)
-  const [numPartIII, setNumPartIII] = useState<number>(4); // Trắc nghiệm Trả lời ngắn (0-6)
-  const [numPartIV, setNumPartIV] = useState<number>(2); // Tự luận (0-4)
+  // Four custom part counts (Default GDPT 2018: 12 TN ABCD + 4 Đ/S + 6 TL Ngắn + 2 Tự Luận)
+  const [numPartI, setNumPartI] = useState<number>(12); // Trắc nghiệm 4 lựa chọn A,B,C,D
+  const [numPartII, setNumPartII] = useState<number>(4); // Trắc nghiệm Đúng - Sai
+  const [numPartIII, setNumPartIII] = useState<number>(6); // Trắc nghiệm Trả lời ngắn
+  const [numPartIV, setNumPartIV] = useState<number>(2); // Tự luận rèn luyện
 
   const [realWorldPercent, setRealWorldPercent] = useState<number>(40); // 0% - 100%
   const [hasParametric, setHasParametric] = useState<boolean>(true); // Có tham số
@@ -1286,12 +1286,75 @@ export function Worksheets() {
             {/* Advanced Exercise & Answer Settings - New 4 Parts Selector */}
             <div className="pt-2 border-t border-slate-200/80">
               <div className="bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 space-y-3.5">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  <Sliders className="w-3.5 h-3.5 text-slate-600" />
-                  <span>Cấu trúc 4 Phần Câu Hỏi</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 uppercase tracking-wider">
+                    <Sliders className="w-3.5 h-3.5 text-slate-600" />
+                    <span>Cấu trúc 4 Phần Cấu hình Số câu</span>
+                  </div>
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                    Tổng: {numPartI + numPartII + numPartIII + numPartIV} câu
+                  </span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 text-xs font-medium text-slate-700">
+                {/* Quick Structure Presets */}
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold text-slate-600 block">⚡ Mẫu cấu trúc nhanh BGD 2025:</span>
+                  <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => { setNumPartI(12); setNumPartII(4); setNumPartIII(6); setNumPartIV(0); }}
+                      className={cn(
+                        "p-1.5 rounded-lg border text-left font-medium transition-all",
+                        (numPartI === 12 && numPartII === 4 && numPartIII === 6 && numPartIV === 0)
+                          ? "bg-emerald-600 text-white border-emerald-700 font-bold shadow-xs"
+                          : "bg-white text-slate-700 border-slate-200 hover:border-emerald-400"
+                      )}
+                    >
+                      🎯 3 Phần BGD (12 TN + 4 ĐS + 6 TLN)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => { setNumPartI(12); setNumPartII(4); setNumPartIII(6); setNumPartIV(2); }}
+                      className={cn(
+                        "p-1.5 rounded-lg border text-left font-medium transition-all",
+                        (numPartI === 12 && numPartII === 4 && numPartIII === 6 && numPartIV === 2)
+                          ? "bg-emerald-600 text-white border-emerald-700 font-bold shadow-xs"
+                          : "bg-white text-slate-700 border-slate-200 hover:border-emerald-400"
+                      )}
+                    >
+                      ⭐ 4 Phần Đầy đủ (+ 2 Tự luận)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => { setNumPartI(20); setNumPartII(0); setNumPartIII(0); setNumPartIV(0); }}
+                      className={cn(
+                        "p-1.5 rounded-lg border text-left font-medium transition-all",
+                        (numPartI === 20 && numPartII === 0 && numPartIII === 0 && numPartIV === 0)
+                          ? "bg-indigo-600 text-white border-indigo-700 font-bold shadow-xs"
+                          : "bg-white text-slate-700 border-slate-200 hover:border-indigo-400"
+                      )}
+                    >
+                      📝 Chỉ Trắc nghiệm (20 câu ABCD)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => { setNumPartI(0); setNumPartII(0); setNumPartIII(0); setNumPartIV(4); }}
+                      className={cn(
+                        "p-1.5 rounded-lg border text-left font-medium transition-all",
+                        (numPartI === 0 && numPartII === 0 && numPartIII === 0 && numPartIV === 4)
+                          ? "bg-indigo-600 text-white border-indigo-700 font-bold shadow-xs"
+                          : "bg-white text-slate-700 border-slate-200 hover:border-indigo-400"
+                      )}
+                    >
+                      ✍️ Chỉ Tự luận (4 Bài Tự luận)
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs font-medium text-slate-700 pt-1">
                   <div className="bg-white p-2 border border-slate-200 rounded-lg">
                     <label className="block text-[11px] font-bold text-slate-600 mb-1">
                       Phần I: Trắc nghiệm (A,B,C,D)
@@ -1301,7 +1364,7 @@ export function Worksheets() {
                       value={numPartI}
                       onChange={(e) => setNumPartI(Number(e.target.value))}
                     >
-                      {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(n => (
+                      {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 15, 18, 20, 24, 30, 40].map(n => (
                         <option key={n} value={n}>{n} câu</option>
                       ))}
                     </select>
@@ -1316,7 +1379,7 @@ export function Worksheets() {
                       value={numPartII}
                       onChange={(e) => setNumPartII(Number(e.target.value))}
                     >
-                      {[0, 1, 2, 3, 4, 5, 6].map(n => (
+                      {[0, 1, 2, 3, 4, 5, 6, 8, 10].map(n => (
                         <option key={n} value={n}>{n} câu</option>
                       ))}
                     </select>
@@ -1331,7 +1394,7 @@ export function Worksheets() {
                       value={numPartIII}
                       onChange={(e) => setNumPartIII(Number(e.target.value))}
                     >
-                      {[0, 1, 2, 3, 4, 5, 6].map(n => (
+                      {[0, 1, 2, 3, 4, 5, 6, 8, 10].map(n => (
                         <option key={n} value={n}>{n} câu</option>
                       ))}
                     </select>
@@ -1346,7 +1409,7 @@ export function Worksheets() {
                       value={numPartIV}
                       onChange={(e) => setNumPartIV(Number(e.target.value))}
                     >
-                      {[0, 1, 2, 3, 4].map(n => (
+                      {[0, 1, 2, 3, 4, 5, 6, 8].map(n => (
                         <option key={n} value={n}>{n} bài</option>
                       ))}
                     </select>
