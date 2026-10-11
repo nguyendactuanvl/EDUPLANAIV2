@@ -1,7 +1,7 @@
 import { 
   Trophy, BookOpen, Calendar, FileText, Settings, Sparkles, Clock, 
   ClipboardList, FileEdit, FileCheck, Users, ShieldCheck, CalendarDays, 
-  Key, Calculator, HelpCircle, PlayCircle 
+  Key, Calculator, HelpCircle, PlayCircle, PenTool, ScanLine
 } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -17,6 +17,8 @@ export function Sidebar({ activeTab, setActiveTab, onOpenSettings, onOpenGuide }
     {
       title: "Chuyên môn & Soạn giảng",
       items: [
+        { id: "math_ocr", label: "Math OCR & LaTeX (Word)", icon: ScanLine },
+        { id: "ink", label: "EduPlan AI Ink (Bảng vẽ)", icon: PenTool },
         { id: "math_tools", label: "Công cụ Toán học", icon: Calculator },
         { id: "de_online_pdf", label: "Đề online từ file PDF của GV", icon: FileText },
         { id: "khgd", label: "Kế hoạch giáo dục", icon: Calendar },
@@ -56,7 +58,7 @@ export function Sidebar({ activeTab, setActiveTab, onOpenSettings, onOpenGuide }
         </div>
         <p className="text-xs text-slate-400 mt-2 leading-relaxed">
           Ứng dụng đa năng cho GV<br/>
-          (Đăng ký app: LH Zalo 0835606162)
+          (LH Zalo 0835606162)
         </p>
       </div>
 

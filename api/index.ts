@@ -31,7 +31,8 @@ const MATH_FORMATTING_RULES = `QUY TẮC ĐỊNH DẠNG TOÁN HỌC VÀ VĂN B�
    - CÁC TOÁN TỬ SO SÁNH: BẮT BUỘC viết \\le, \\ge, \\neq (ví dụ: $x \\le 3$, $|x| \\le 3$, $-2 \\le x < 3$).
    - Giữ nguyên vẹn font tiếng Việt UTF-8 chuẩn.
 
-2. BẢNG BIẾN THIÊN (BBT):
+2. BẢNG BIẾN THIÊN (BBT) VÀ BẢNG XÉT DẤU:
+   - BẮT BUỘC: Khi sinh câu hỏi có cụm từ "bảng biến thiên" hoặc "bảng xét dấu" (ví dụ: "Cho hàm số $y = f(x)$ có bảng biến thiên như sau:" hoặc "có bảng xét dấu đạo hàm như sau:"), BẮT BUỘC PHẢI CHÈN BẢNG BIẾN THIÊN / BẢNG XÉT DẤU dạng Markdown Table chuẩn ngay dưới câu hỏi đó. CẤM VIẾT "có bảng biến thiên/bảng xét dấu như sau:" rồi bỏ trống không có bảng!
    - Tuyệt đối KHÔNG để khung rỗng hoặc để trống.
    - Khi câu hỏi hoặc bài giải cần bảng biến thiên, BẮT BUỘC vẽ bảng biến thiên trực quan bằng Markdown Table chuẩn, mỗi hàng BẮT BUỘC xuống dòng riêng biệt (có ký tự \\n):
      | $x$ | $-\\infty$ | | $x_0$ | | $+\\infty$ |
@@ -49,7 +50,7 @@ const MATH_FORMATTING_RULES = `QUY TẮC ĐỊNH DẠNG TOÁN HỌC VÀ VĂN B�
    - TUYỆT ĐỐI KHÔNG chèn dòng trống \\n\\n rác bên trong khối $$\\begin{array}...\\end{array}$$.
 
 3. HÌNH VẼ ĐỒ THỊ:
-   - Nếu câu hỏi trích dẫn hình vẽ mà không có URL ảnh thực tế: BẮT BUỘC phải mô tả rõ đặc điểm đồ thị bằng lời trong đề (ví dụ: "Đồ thị đi qua điểm $A(0; -1)$, đỉnh $I(1; -2)$, cắt trục hoành tại...") HOẶC sinh kèm mã SVG đồ thị nội tuyến, KHÔNG để thẻ img/div trống rỗng.
+   - BẮT BUỘC: Khi sinh câu hỏi có cụm từ "có đồ thị như hình vẽ bên" hoặc "đường cong trong hình vẽ bên là đồ thị của hàm số...", BẮT BUỘC chèn mô tả đặc điểm đồ thị bằng lời trong đề (ví dụ: "Đồ thị đi qua điểm $A(0; -1)$, đỉnh $I(1; -2)$, cắt trục hoành tại...") HOẶC sinh kèm mã TikZ / SVG đồ thị nội tuyến. CẤM VIẾT "có đồ thị như hình vẽ bên" rồi bỏ trống không có hình/mô tả!
 
 4. CẤM TUYỆT ĐỐI SINH MÃ HTML INLINE PHỨC TẠP:
    - CẤM TUYỆT ĐỐI sinh mã HTML inline phức tạp (<mark style="...">, <span>, <div style="...">).
@@ -2526,6 +2527,59 @@ app.all("/api/extract-file-text", async (req, res) => {
   }
 });
 
+app.all("/api/translate-academic", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: 'Method not allowed' });
+  }
+
+  return keepAliveExecute(req, res, async () => {
+    const { text, targetLang = 'en', subject = 'Toán' } = req.body || {};
+
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return res.status(400).json({ error: "Nội dung cần dịch không được để trống." });
+    }
+
+    const langName = targetLang === 'en' ? 'Tiếng Anh chuyên ngành' : 'Tiếng Việt chuẩn GDPT';
+
+    const prompt = `Bạn là một chuyên gia dịch thuật và biên soạn giáo trình quốc tế thuộc bộ môn ${subject}.
+Nhiệm vụ của bạn là chuyển đổi toàn bộ văn bản / đề thi / phiếu học tập sau sang ${langName} theo đúng thuật ngữ chuyên môn chính xác nhất của môn ${subject}.
+
+QUY TẮC BẮT BUỘC (GIỮ NGUYÊN BẢN CẤU TRÚC VÀ CÔNG THỨC TOÁN):
+1. GIỮ NGUYÊN 100% CẤU TRÚC:
+   - Các tiêu đề (PHẦN I, PHẦN II, Câu 1, Câu 2, Question 1, Part I, Part II,...), thứ tự câu hỏi, danh sách các phương án A., B., C., D., a), b), c), d).
+   - Thẻ hình ảnh (<svg-wrapper...>, <img...>, ![](...) ), khối TikZ (\`\`\`tikz ... \`\`\`), bảng biểu Markdown Table.
+2. THUẬT NGỮ CHUYÊN NGÀNH CHUẨN XÁC THEO MÔN HỌC (${subject}):
+   - Toán học: "Cấp số cộng" -> "Arithmetic Progression", "Bảng biến thiên" -> "Table of Variation", "Cực trị" -> "Extrema", "Hàm số" -> "Function", "Đạo hàm" -> "Derivative", "Tiệm cận" -> "Asymptote", "Tập xác định" -> "Domain", "Tập giá trị" -> "Range".
+   - Vật lý: "Chuyển động thẳng biến đổi đều" -> "Uniformly accelerated linear motion", "Cơ học" -> "Mechanics", "Điện từ" -> "Electromagnetism".
+   - Hóa học: "Phản ứng oxy hóa - khử" -> "Oxidation-reduction reaction", "Đồng đẳng" -> "Homologous series".
+   - Sinh học: "Quang hợp" -> "Photosynthesis", "Di truyền" -> "Genetics".
+   - Tin học: "Thuật toán" -> "Algorithm", "Mảng" -> "Array", "Biến" -> "Variable".
+3. CÔNG THỨC TOÁN VÀ KÝ HIỆU LATEX ($...$, $$...$$):
+   - GIỮ NGUYÊN TOÀN BỘ các công thức $...$, $$...$$, ký hiệu LaTeX, phương trình, số liệu. Không sửa đổi mã LaTeX bên trong dấu $.
+
+Chỉ trả về nội dung đã chuyển ngữ hoàn chỉnh dưới dạng Markdown, không viết thêm lời dẫn.
+
+${MATH_FORMATTING_RULES}
+
+VĂN BẢN CẦN DỊCH:
+${text}`;
+
+    const response = await generateWithFallback(req, {
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: { temperature: 0.1 }
+    });
+
+    const translatedText = response.text || "";
+    return { translatedText };
+  });
+});
+
 app.all("/api/parse-exam", async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -3764,6 +3818,175 @@ app.post("/api/science-solve", async (req, res) => {
 
   } catch (error: any) {
     console.error("Lỗi Science AI:", error);
+    return handleAiError(error, req, res);
+  }
+});
+
+// Endpoint EduPlan AI MathOCR: Nhận dạng ảnh/PDF công thức Toán, hình vẽ & bảng biểu chuyển sang LaTeX
+app.post("/api/math-ocr", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  try {
+    const { imageBase64, mimeType = 'image/png', mode = 'full_doc', promptHint = '' } = req.body || {};
+
+    if (!imageBase64) {
+      return res.status(400).json({ error: "Không tìm thấy dữ liệu hình ảnh để thực hiện Math OCR." });
+    }
+
+    const cleanData = typeof imageBase64 === 'string' ? imageBase64.replace(/^data:image\/\w+;base64,/, '').trim() : '';
+
+    if (!cleanData) {
+      return res.status(400).json({ error: "Dữ liệu hình ảnh không hợp lệ." });
+    }
+
+    const systemInstruction = `You are an expert Math OCR tool equivalent to Mathpix Snip. Convert all text, formulas, equations, geometric figures, and tables in the image into precise LaTeX format.
+
+CRITICAL FORMATTING RULES FOR MATHTYPE & WORD:
+1. DELIMITERS:
+   - Inline math MUST be enclosed in single dollar signs ($...$).
+   - Standalone / display equations MUST be enclosed in double dollar signs ($$...$$).
+2. VARIABLES & GEOMETRY:
+   - Ensure variables, points, angles, and vectors are clearly delimited (e.g., $x$, $y$, $\\vec{AB}$, $\\widehat{ABC}$, $\\Delta ABC$, $S_{ABCD}$).
+   - For multi-character variables or sub/superscripts, group correctly using \${...}\$ so MathType in Word converts them smoothly with Alt + \\ (Toggle TeX).
+3. TABLES & MATRICES:
+   - Format all tables or matrices using LaTeX array/tabular environment: \\begin{array}{...} ... \\end{array} or \\begin{tabular}{...} ... \\end{tabular}.
+4. CLEANUP:
+   - Do NOT output markdown code block backticks (\`\`\`latex ... \`\`\`), conversational intros, or trailing explanations.
+   - Output ONLY the clean, ready-to-use LaTeX document/content.
+   - Remove spurious OCR noise, garbage characters, or unsupported TeX commands.`;
+
+    const userTextPrompt = promptHint 
+      ? `Gợi ý/Nhiệm vụ cụ thể: ${promptHint}. Trích xuất toàn bộ công thức toán, văn bản và bảng biểu từ ảnh này thành mã LaTeX chuẩn.`
+      : "Extract all math formulas, text, equations, and tables from this image into clean, precise LaTeX format.";
+
+    const response = await generateWithFallback(req, {
+      contents: [{
+        role: "user",
+        parts: [
+          {
+            inlineData: {
+              data: cleanData,
+              mimeType: mimeType || 'image/png'
+            }
+          },
+          { text: userTextPrompt }
+        ]
+      }],
+      config: {
+        systemInstruction,
+        temperature: 0.1
+      }
+    });
+
+    if (!response || !response.text) {
+      throw new Error("Không nhận được kết quả nhận dạng từ AI Math OCR.");
+    }
+
+    let latexOutput = response.text.trim();
+    if (latexOutput.startsWith("```")) {
+      latexOutput = latexOutput.replace(/^```[a-zA-Z]*\n?/, '').replace(/\n?```$/, '').trim();
+    }
+
+    return res.json({
+      success: true,
+      latex: latexOutput,
+      mode,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error: any) {
+    console.error("Lỗi Math OCR:", error);
+    return handleAiError(error, req, res);
+  }
+});
+
+// Endpoint Dịch thuật Chuyên ngành GDPT (Tiếng Việt ⇆ Tiếng Anh academic)
+app.post("/api/translate-academic", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  try {
+    const { text, questions, targetLang = 'en', subject = 'Toán' } = req.body || {};
+
+    if (!text && (!questions || !Array.isArray(questions) || questions.length === 0)) {
+      return res.status(400).json({ error: "Không có nội dung để chuyển ngữ." });
+    }
+
+    const langName = targetLang === 'en' ? 'Tiếng Anh chuyên ngành' : 'Tiếng Việt chuẩn GDPT';
+    
+    if (questions && Array.isArray(questions) && questions.length > 0) {
+      const promptText = `Bạn là chuyên gia dịch thuật tài liệu giáo dục và đề thi THPT môn ${subject}.
+Nhiệm vụ: Dịch toàn bộ danh sách câu hỏi đề thi sau sang ${langName}.
+
+YÊU CẦU QUAN TRỌNG:
+1. Dịch chính xác thuật ngữ chuyên ngành môn ${subject} (Ví dụ: "Hàm số" -> "Function", "Đạo hàm" -> "Derivative", "Bảng biến thiên" -> "Variation table", "Đồng biến" -> "Increasing", "Nghịch biến" -> "Decreasing", "Cực đại" -> "Local maximum", "Cực tiểu" -> "Local minimum", "Tiệm cận" -> "Asymptote", "Đúng/Sai" -> "True/False", "Trả lời ngắn" -> "Short answer").
+2. GIỮ NGUYÊN 100% CÁC CÔNG THỨC TOÁN LATEX BỌC TRONG DẤU $...$ HOẶC $$...$$. TUYỆT ĐỐI KHÔNG SỬA, KHÔNG MẤT DẤU $ VÀ KHÔNG DỊCH TÊN BIẾN.
+3. GIỮ NGUYÊN BẢNG MARKDOWN (NẾU CÓ BẢNG BIẾN THIÊN).
+4. Giữ nguyên cấu trúc mảng JSON các câu hỏi.
+
+Danh sách câu hỏi gốc:
+${JSON.stringify(questions, null, 2)}
+
+BẮT BUỘC TRẢ VỀ DUY NHẤT 1 MẢNG JSON CÁC CÂU HỎI ĐÃ DỊCH CÓ CẤU TRÚC GIỐNG HỆT ĐẦU VÀO:
+[
+  {
+    "id": 1,
+    "type": "mc",
+    "content": "Nội dung câu hỏi đã dịch...",
+    "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
+    "tfStatements": [...],
+    "correctAnswer": "...",
+    "explanation": "..."
+  }
+]`;
+
+      const response = await generateWithFallback(req, {
+        contents: [{ role: "user", parts: [{ text: promptText }] }],
+        config: {
+          responseMimeType: "application/json",
+          temperature: 0.2
+        }
+      });
+
+      if (response && response.text) {
+        const parsed = safeJsonParse(response.text.trim());
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return res.json({ success: true, translatedQuestions: parsed });
+        }
+      }
+    }
+
+    // Default text translation
+    const promptText = `Bạn là chuyên gia dịch thuật tài liệu giáo dục và đề thi môn ${subject}.
+Nhiệm vụ: Dịch văn bản / đề thi / phiếu học tập dưới đây sang ${langName}.
+
+YÊU CẦU BẮT BUỘC:
+1. Dịch chuẩn xác thuật ngữ chuyên ngành giáo dục môn ${subject}.
+2. "Câu 1", "Câu 2"... dịch thành "Question 1", "Question 2"... (nếu sang tiếng Anh) hoặc ngược lại.
+3. GIỮ NGUYÊN 100% CÔNG THỨC TOÁN LATEX BỌC TRONG DẤU $...$ HOẶC $$...$$. CẤM LÀM MẤT HOẶC BIẾN DẠNG CÔNG THỨC TOÁN.
+4. GIỮ NGUYÊN CÁC BẢNG MARKDOWN VÀ ĐỊNH DẠNG VĂN BẢN.
+
+Văn bản gốc:
+${text}
+
+Hãy trả về duy nhất văn bản đã dịch hoàn chỉnh, không thêm bớt bình luận.`;
+
+    const response = await generateWithFallback(req, {
+      contents: [{ role: "user", parts: [{ text: promptText }] }]
+    });
+
+    const translatedText = response?.text?.trim() || text;
+    return res.json({ success: true, translatedText });
+
+  } catch (error: any) {
+    console.error("Lỗi dịch thuật chuyên ngành:", error);
     return handleAiError(error, req, res);
   }
 });

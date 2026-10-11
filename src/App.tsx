@@ -71,6 +71,8 @@ const Gamification = safeLazy(() => import('./pages/Gamification'), "Gamificatio
 const MathTools = safeLazy(() => import('./pages/MathTools'), "MathTools");
 const DeOnlinePdf = safeLazy(() => import('./pages/DeOnlinePdf'), "DeOnlinePdf");
 const AiStudioSuite = safeLazy(() => import('./pages/AiStudioSuite'), "AiStudioSuite");
+const EduPlanInkPage = safeLazy(() => import('./pages/EduPlanInkPage'), "EduPlanInkPage");
+const MathOCRPage = safeLazy(() => import('./pages/MathOCRPage'), "MathOCRPage");
 
 
 
@@ -208,6 +210,8 @@ export default function App() {
         <div className="flex-1 overflow-y-auto relative w-full h-full">
           <ErrorBoundary key={activeTab}>
             <Suspense fallback={<div className="flex items-center justify-center h-full text-slate-500">Đang tải...</div>}>
+              {activeTab === "math_ocr" && <MathOCRPage />}
+              {activeTab === "ink" && <EduPlanInkPage />}
               {activeTab === "ai_studio" && <AiStudioSuite />}
               {activeTab === "khgd" && <EducationalPlan />}
               {activeTab === "khdh" && <LessonPlan />}

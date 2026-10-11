@@ -26,6 +26,7 @@ import { parseRawExamText } from '../lib/examParser';
 import { printElement, ensureMathRendered } from '../lib/print';
 import { saveExamToCloud, saveExamToWebhook } from '../lib/cloudExamStore';
 import { KNTT_CURRICULUM, getKnttCurriculum } from "../data/knttCurriculum";
+import { LanguageSpeechControls } from "../components/LanguageSpeechControls";
 
 export type LayoutStyle = 'a4_print' | 'infographic' | 'poster' | 'mindmap';
 
@@ -251,7 +252,13 @@ export function Worksheets() {
       const item = { ...next[qIndex] };
       if (target === "content") {
         const cur = item.content || item.question || "";
-        item.content = cur ? `${cur}\n\n${snippet}` : snippet;
+        const optRegex = /(\n\s*(?:\*{0,2}|[-*]\s*)?(?:[Aa][\.\:\)]|[Aa]\)))/i;
+        if (optRegex.test(cur)) {
+          item.content = cur.replace(optRegex, `\n\n${snippet}\n\n$1`);
+        } else {
+          item.content = cur ? `${cur}\n\n${snippet}` : snippet;
+        }
+        item.question = item.content;
       } else {
         const cur = item.solution || item.explanation || "";
         item.solution = cur ? `${cur}\n\n${snippet}` : snippet;
@@ -261,15 +268,24 @@ export function Worksheets() {
       return next;
     });
 
-    // Đồng bộ vào suggestion văn bản
+    // Đồng bộ vào suggestion văn bản (Chỉ tác động trong phần Đề bài, trước phương án A)
     setSuggestion(prev => {
       if (!prev) return prev;
       const qNum = qIndex + 1;
+      const solutionBoxIndex = prev.search(/(?:<details\s*class=["']solution-box["']|---\s*HƯỚNG\s*DẪN\s*CHẤM|---\s*BẢNG\s*ĐÁP\s*ÁN|##\s*Hướng\s*dẫn\s*giải|##\s*Lời\s*giải\s*chi\s*tiết)/i);
+      let qBody = solutionBoxIndex !== -1 ? prev.substring(0, solutionBoxIndex) : prev;
+      const qSol = solutionBoxIndex !== -1 ? prev.substring(solutionBoxIndex) : '';
+
       const qRegex = new RegExp(`((?:\\*\\*)?(?:Câu|Bài)\\s*${qNum}[:\\.][\\s\\S]*?)(?=(?:\\*\\*)?(?:Câu|Bài)\\s*${qNum + 1}[:\\.]|---|#|$)`, 'i');
-      if (qRegex.test(prev)) {
-        return prev.replace(qRegex, (match) => {
+      if (qRegex.test(qBody)) {
+        qBody = qBody.replace(qRegex, (match) => {
+          const optRegex = /(\n\s*(?:\*{0,2}|[-*]\s*)?(?:[Aa][\.\:\)]|[Aa]\)))/i;
+          if (optRegex.test(match)) {
+            return match.replace(optRegex, `\n\n${snippet}\n\n$1`);
+          }
           return `${match.trimEnd()}\n\n${snippet}\n\n`;
         });
+        return qBody + qSol;
       }
       return `${prev.trimEnd()}\n\n${snippet}\n\n`;
     });
@@ -1532,6 +1548,12 @@ export function Worksheets() {
           <div className="flex flex-wrap items-center gap-2">
             {(suggestion || worksheetQuestions.length > 0) && (
               <>
+                <LanguageSpeechControls
+                  content={suggestion}
+                  onContentChange={(translatedContent) => setSuggestion(translatedContent)}
+                  subject={subject}
+                />
+
                 <button
                   type="button"
                   onClick={() => {

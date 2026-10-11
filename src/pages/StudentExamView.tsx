@@ -9,6 +9,7 @@ import { apiFetch } from '../lib/apiFetch';
 import LZString from 'lz-string';
 import { fixMath, cleanMath, cleanQuestionStem, cleanOptionText, formatMathContent, sanitizeShortAnswerInput, validateShortAnswer, compareShortAnswers, sanitizeAndPolishMath, sanitizeExamQuestion } from "../lib/utils";
 import { fetchExamFromCloud, SYSTEM_EXAM_WEBHOOK } from "../lib/cloudExamStore";
+import { LanguageSpeechControls } from "../components/LanguageSpeechControls";
 
 export function StudentExamView({ examId, examRawData }: { examId?: string, examRawData?: string }) {
   const [loading, setLoading] = useState(Boolean(examId || examRawData));
@@ -130,6 +131,9 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
   const isBeforeStart = startTimeStr ? nowTimestamp < new Date(startTimeStr).getTime() : false;
   const isAfterEnd = endTimeStr ? nowTimestamp > new Date(endTimeStr).getTime() : false;
 
+  const [translatedQuestions, setTranslatedQuestions] = useState<any[] | null>(null);
+  const [examLanguage, setExamLanguage] = useState<'vi' | 'en'>('vi');
+
   const currentExam = React.useMemo(() => {
     if (!examData) return null;
     if (Array.isArray(examData.codes) && examData.codes.length > 0) {
@@ -140,6 +144,22 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
     }
     return null;
   }, [examData, selectedCode]);
+
+  useEffect(() => {
+    setTranslatedQuestions(null);
+    setExamLanguage('vi');
+  }, [selectedCode, examData]);
+
+  const displayQuestions = translatedQuestions || currentExam?.questions || [];
+
+  const allExamText = React.useMemo(() => {
+    if (!displayQuestions || displayQuestions.length === 0) return '';
+    return displayQuestions.map((q: any, idx: number) => {
+      const qStem = q.content || q.question || '';
+      const qOpts = Array.isArray(q.options) ? q.options.map((o: string, i: number) => `${String.fromCharCode(65 + i)}. ${o}`).join('  ') : '';
+      return `${examLanguage === 'en' ? 'Question' : 'Câu'} ${idx + 1}: ${qStem}\n${qOpts}`;
+    }).join('\n\n');
+  }, [displayQuestions, examLanguage]);
 
   if (loading) {
     return (
@@ -796,28 +816,40 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
             </div>
             <p className="text-xs text-slate-500">Học sinh: {studentInfo.name} - Lớp: {studentInfo.class} (Mã đề: {currentExam?.code || selectedCode || "101"})</p>
           </div>
-          {isStarted && !isSubmitted && (
-            timeLeft !== null ? (
-              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold border text-sm ${
-                timeLeft <= 300 
-                  ? 'bg-rose-50 text-rose-700 border-rose-200 animate-pulse' 
-                  : 'bg-amber-50 text-amber-700 border-amber-200'
-              }`}>
-                <Clock className="w-4 h-4" />
-                <span>{Math.floor(timeLeft / 60).toString().padStart(2, '0')}:{(timeLeft % 60).toString().padStart(2, '0')}</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-lg font-semibold border border-emerald-200 text-xs sm:text-sm">
-                <Clock className="w-4 h-4" />
-                <span>Không giới hạn</span>
-              </div>
-            )
-          )}
-          {!isSubmitted && (
-            <button onClick={handleSubmit} className="px-5 py-2 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 text-sm shadow-sm">
-              Nộp Bài
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            <LanguageSpeechControls
+              content={allExamText}
+              questions={currentExam?.questions || []}
+              onQuestionsChange={(newQuestions, newLang) => {
+                setTranslatedQuestions(newQuestions);
+                setExamLanguage(newLang);
+              }}
+              subject={examData?.subject || "Toán"}
+            />
+
+            {isStarted && !isSubmitted && (
+              timeLeft !== null ? (
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold border text-sm ${
+                  timeLeft <= 300 
+                    ? 'bg-rose-50 text-rose-700 border-rose-200 animate-pulse' 
+                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                }`}>
+                  <Clock className="w-4 h-4" />
+                  <span>{Math.floor(timeLeft / 60).toString().padStart(2, '0')}:{(timeLeft % 60).toString().padStart(2, '0')}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-lg font-semibold border border-emerald-200 text-xs sm:text-sm">
+                  <Clock className="w-4 h-4" />
+                  <span>Không giới hạn</span>
+                </div>
+              )
+            )}
+            {!isSubmitted && (
+              <button onClick={handleSubmit} className="px-5 py-2 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 text-sm shadow-sm">
+                Nộp Bài
+              </button>
+            )}
+          </div>
         </div>
       </header>
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
@@ -866,7 +898,7 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
           </div>
         )}
         
-        {currentExam.questions.map((q: any, idx: number) => {
+        {displayQuestions.map((q: any, idx: number) => {
           
           let isCorrectQuestion = false;
           let showRedBorder = false;
@@ -920,25 +952,35 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
             ? (cleanQuestionStem(rawStem, question.options, question.tfStatements) || rawStem)
             : rawStem;
 
-          const trimmedStem = stemWithoutOptions.replace(/^(?:Câu|Bài)\s*\d+[\s\.\:\-–—\(\)\[\]A-Za-zÀ-ỹ]*[:\.]\s*/i, '').trim();
+          const trimmedStem = stemWithoutOptions.replace(/^(?:Câu|Bài|Question)\s*\d+[\s\.\:\-–—\(\)\[\]A-Za-zÀ-ỹ]*[:\.]\s*/i, '').trim();
           const rawStemContent = trimmedStem || stemWithoutOptions || question.question || question.content || '';
           const questionContent = sanitizeExamQuestion(rawStemContent);
 
           return (
             <div key={idx} className={`bg-white p-6 rounded-xl shadow-sm border ${isSubmitted && showRedBorder ? 'border-red-200' : isSubmitted ? 'border-emerald-200' : 'border-slate-200'}`}>
               <div className="flex items-center gap-2 mb-2">
-                <span className="font-bold text-slate-900 text-lg">Câu {idx + 1}:</span>
+                <span className="font-bold text-slate-900 text-lg">
+                  {examLanguage === 'en' ? `Question ${idx + 1}:` : `Câu ${idx + 1}:`}
+                </span>
                 {isEssay && (
-                  <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-purple-100 text-purple-700">Tự luận</span>
+                  <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-purple-100 text-purple-700">
+                    {examLanguage === 'en' ? 'Essay' : 'Tự luận'}
+                  </span>
                 )}
                 {isSA && (
-                  <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-indigo-100 text-indigo-700">Trả lời ngắn</span>
+                  <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-indigo-100 text-indigo-700">
+                    {examLanguage === 'en' ? 'Short Answer' : 'Trả lời ngắn'}
+                  </span>
                 )}
                 {isTF && (
-                  <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-emerald-100 text-emerald-700">Đúng / Sai</span>
+                  <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-emerald-100 text-emerald-700">
+                    {examLanguage === 'en' ? 'True / False' : 'Đúng / Sai'}
+                  </span>
                 )}
                 {isMC && (
-                  <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-700">Trắc nghiệm</span>
+                  <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-700">
+                    {examLanguage === 'en' ? 'Multiple Choice' : 'Trắc nghiệm'}
+                  </span>
                 )}
               </div>
 

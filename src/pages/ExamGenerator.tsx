@@ -39,6 +39,7 @@ import { HeaderConfig, getHeaderConfig, saveHeaderConfig } from "../lib/headerCo
 import { QuestionVisualizerPanel } from "../components/math-tools/QuestionVisualizerPanel";
 import { GeoGebraDrawer } from "../components/math-tools/GeoGebraDrawer";
 import { ScientificCalculatorModal } from "../components/math-tools/ScientificCalculatorModal";
+import { LanguageSpeechControls } from "../components/LanguageSpeechControls";
 
 import {
   mixExam,
@@ -2597,6 +2598,11 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                     </div>
 
                     <div className="flex flex-wrap gap-2 items-center w-full lg:w-auto justify-end">
+                      <LanguageSpeechControls
+                        content={questions.map((q, idx) => `Câu ${idx + 1}: ${q.content || ''}\n${q.options ? q.options.map((opt, oIdx) => `${String.fromCharCode(65 + oIdx)}. ${opt}`).join('\n') : ''}`).join('\n\n')}
+                        subject={subject}
+                      />
+
                       {/* Nút tùy chỉnh tiêu đề (Trường, GV, Năm học 2026-2027) */}
                       <button
                         type="button"
