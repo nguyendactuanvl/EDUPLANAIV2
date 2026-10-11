@@ -14,6 +14,8 @@ interface EduPlanInkToolbarProps {
   onChangeColor: (color: string) => void;
   strokeSize: number;
   onChangeSize: (size: number) => void;
+  lineStyle?: 'solid' | 'dashed';
+  onChangeLineStyle?: (style: 'solid' | 'dashed') => void;
   shapeType: ShapeType;
   onChangeShapeType: (shape: ShapeType) => void;
   
@@ -58,6 +60,8 @@ export const EduPlanInkToolbar: React.FC<EduPlanInkToolbarProps> = ({
   onChangeColor,
   strokeSize,
   onChangeSize,
+  lineStyle = 'solid',
+  onChangeLineStyle,
   shapeType,
   onChangeShapeType,
   penOnlyTouch,
@@ -183,7 +187,7 @@ export const EduPlanInkToolbar: React.FC<EduPlanInkToolbarProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 border-r border-slate-700 pr-3">
                 <span className="text-xs font-semibold text-slate-400">Nét ({strokeSize}px):</span>
                 <input
                   type="range"
@@ -191,41 +195,89 @@ export const EduPlanInkToolbar: React.FC<EduPlanInkToolbarProps> = ({
                   max="24"
                   value={strokeSize}
                   onChange={(e) => onChangeSize(Number(e.target.value))}
-                  className="w-24 accent-emerald-500 cursor-pointer"
+                  className="w-20 accent-emerald-500 cursor-pointer"
                 />
               </div>
+
+              {onChangeLineStyle && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-slate-400">Kiểu nét:</span>
+                  <button
+                    onClick={() => onChangeLineStyle('solid')}
+                    className={`px-2 py-1 text-xs rounded-lg font-medium transition-colors ${
+                      lineStyle === 'solid' ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
+                    title="Nét liền"
+                  >
+                    — Nét liền
+                  </button>
+                  <button
+                    onClick={() => onChangeLineStyle('dashed')}
+                    className={`px-2 py-1 text-xs rounded-lg font-medium transition-colors ${
+                      lineStyle === 'dashed' ? 'bg-amber-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
+                    title="Nét đứt (đoạn thẳng đứt)"
+                  >
+                    - - Nét đứt
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
           {/* Shape options popover */}
           {showShapeMenu && (
             <div className="flex flex-col gap-2 max-w-xl">
-              <div className="flex items-center gap-2 border-b border-slate-700/80 pb-1.5">
-                <span className="text-xs font-semibold text-slate-400">Loại hình:</span>
-                <button
-                  onClick={() => setShapeCategory('2d')}
-                  className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-colors ${
-                    shapeCategory === '2d' ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  📐 Hình phẳng (2D)
-                </button>
-                <button
-                  onClick={() => setShapeCategory('3d')}
-                  className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-colors ${
-                    shapeCategory === '3d' ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  📦 Hình không gian (3D)
-                </button>
-                <button
-                  onClick={() => setShapeCategory('graph')}
-                  className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-colors ${
-                    shapeCategory === 'graph' ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  📈 Đồ thị hàm số (Cấp 2 & 3)
-                </button>
+              <div className="flex items-center justify-between gap-2 border-b border-slate-700/80 pb-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-400">Loại hình:</span>
+                  <button
+                    onClick={() => setShapeCategory('2d')}
+                    className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-colors ${
+                      shapeCategory === '2d' ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    📐 Hình phẳng (2D)
+                  </button>
+                  <button
+                    onClick={() => setShapeCategory('3d')}
+                    className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-colors ${
+                      shapeCategory === '3d' ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    📦 Hình không gian (3D)
+                  </button>
+                  <button
+                    onClick={() => setShapeCategory('graph')}
+                    className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-colors ${
+                      shapeCategory === 'graph' ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    📈 Đồ thị hàm số (Cấp 2 & 3)
+                  </button>
+                </div>
+
+                {onChangeLineStyle && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[11px] font-semibold text-slate-400">Nét:</span>
+                    <button
+                      onClick={() => onChangeLineStyle('solid')}
+                      className={`px-2 py-0.5 text-[11px] rounded font-medium transition-colors ${
+                        lineStyle === 'solid' ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-800 text-slate-300'
+                      }`}
+                    >
+                      — Liền
+                    </button>
+                    <button
+                      onClick={() => onChangeLineStyle('dashed')}
+                      className={`px-2 py-0.5 text-[11px] rounded font-medium transition-colors ${
+                        lineStyle === 'dashed' ? 'bg-amber-600 text-white font-bold' : 'bg-slate-800 text-slate-300'
+                      }`}
+                    >
+                      - - Đứt
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-1.5 flex-wrap">

@@ -51,6 +51,7 @@ export interface Stroke {
   opacity: number;
   points: Point[];
   shapeType?: ShapeType;
+  lineStyle?: 'solid' | 'dashed';
   // For pre-calculated smooth shape or svg path
   isRecognizedShape?: boolean;
   shapeData?: {

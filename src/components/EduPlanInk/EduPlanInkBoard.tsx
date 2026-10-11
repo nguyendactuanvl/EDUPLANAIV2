@@ -43,6 +43,7 @@ export const EduPlanInkBoard: React.FC = () => {
   const [activeTool, setActiveTool] = useState<InkTool>('pen');
   const [currentColor, setCurrentColor] = useState<string>('#ffffff'); // Default white for green board
   const [strokeSize, setStrokeSize] = useState<number>(4);
+  const [lineStyle, setLineStyle] = useState<'solid' | 'dashed'>('solid');
   const [shapeType, setShapeType] = useState<ShapeType>('auto');
   const [penOnlyTouch, setPenOnlyTouch] = useState<boolean>(true); // Palm Rejection default ON
 
@@ -79,6 +80,7 @@ export const EduPlanInkBoard: React.FC = () => {
     y: number;
     text: string;
     isMath: boolean;
+    editingId?: string;
   }>({
     isOpen: false,
     x: 0,
@@ -273,6 +275,9 @@ export const EduPlanInkBoard: React.FC = () => {
       ctx.globalAlpha = stroke.opacity;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
+      if (stroke.lineStyle === 'dashed') {
+        ctx.setLineDash([8, 6]);
+      }
 
       const { type, p1, p2, p3 } = stroke.shapeData;
       ctx.beginPath();
@@ -782,6 +787,25 @@ export const EduPlanInkBoard: React.FC = () => {
 
     if (!stroke.points || stroke.points.length < 2) return;
 
+    if (stroke.lineStyle === 'dashed') {
+      ctx.save();
+      ctx.strokeStyle = stroke.color;
+      ctx.lineWidth = stroke.size;
+      ctx.globalAlpha = stroke.opacity;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.setLineDash([8, 6]);
+      ctx.beginPath();
+      ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+      for (let i = 1; i < stroke.points.length; i++) {
+        ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+      return;
+    }
+
     // Use perfect-freehand stroke algorithm
     const outlinePoints = getStroke(
       stroke.points.map(p => [p.x, p.y, p.pressure || 0.5]),
@@ -1157,6 +1181,7 @@ export const EduPlanInkBoard: React.FC = () => {
       size: strokeSize,
       opacity: activeTool === 'highlighter' ? 0.35 : 1,
       points: points,
+      lineStyle: lineStyle,
       shapeData: recognizedShapeData || undefined
     };
 
@@ -1340,26 +1365,84 @@ export const EduPlanInkBoard: React.FC = () => {
     pdf.save(`EduPlan_AI_Ink_BaiGiang_TongHop.pdf`);
   };
 
-  // Add Text / Math Note
+  // Add / Edit / Delete Text Note & Math Formula
+  const MATH_SYMBOLS = [
+    { label: 'Phân số', symbol: '\\frac{a}{b}' },
+    { label: 'Căn', symbol: '\\sqrt{x}' },
+    { label: 'Mũ', symbol: 'x^2' },
+    { label: 'Chỉ số', symbol: 'x_1' },
+    { label: 'Tích phân', symbol: '\\int_a^b' },
+    { label: 'Giới hạn', symbol: '\\lim_{x \\to 0}' },
+    { label: 'Tổng', symbol: '\\sum_{i=1}^n' },
+    { label: 'Véctơ', symbol: '\\vec{v}' },
+    { label: 'π', symbol: '\\pi' },
+    { label: 'α', symbol: '\\alpha' },
+    { label: 'β', symbol: '\\beta' },
+    { label: 'Δ', symbol: '\\Delta' },
+    { label: '≤', symbol: '\\le' },
+    { label: '≥', symbol: '\\ge' },
+    { label: '∈', symbol: '\\in' },
+    { label: '⇒', symbol: '\\Rightarrow' },
+    { label: '⇔', symbol: '\\Leftrightarrow' },
+    { label: 'sin', symbol: '\\sin x' },
+    { label: 'cos', symbol: '\\cos x' },
+    { label: 'tan', symbol: '\\tan x' },
+  ];
+
+  const handleInsertSymbol = (sym: string) => {
+    const isFormula = textModalState.text.includes('$');
+    if (isFormula) {
+      setTextModalState(prev => ({ ...prev, text: prev.text + ' ' + sym }));
+    } else {
+      setTextModalState(prev => ({ ...prev, text: prev.text ? `${prev.text} $${sym}$` : `$${sym}$` }));
+    }
+  };
+
   const handleAddTextNote = () => {
     if (!textModalState.text.trim()) return;
-    const newNote: TextNote = {
-      id: `text-${Date.now()}`,
-      x: textModalState.x,
-      y: textModalState.y,
-      text: textModalState.text,
-      color: currentColor,
-      fontSize: 18,
-      isMath: textModalState.isMath
-    };
 
+    const isMathDetected = textModalState.text.includes('$') || textModalState.isMath;
+
+    if (textModalState.editingId) {
+      const updatedPages = [...pages];
+      updatedPages[currentPageIndex] = {
+        ...currentPage,
+        texts: currentPage.texts.map(t => t.id === textModalState.editingId ? {
+          ...t,
+          text: textModalState.text,
+          isMath: isMathDetected
+        } : t)
+      };
+      setPages(updatedPages);
+    } else {
+      const newNote: TextNote = {
+        id: `text-${Date.now()}`,
+        x: textModalState.x,
+        y: textModalState.y,
+        text: textModalState.text,
+        color: currentColor,
+        fontSize: 18,
+        isMath: isMathDetected
+      };
+
+      const updatedPages = [...pages];
+      updatedPages[currentPageIndex] = {
+        ...currentPage,
+        texts: [...currentPage.texts, newNote]
+      };
+      setPages(updatedPages);
+    }
+
+    setTextModalState({ isOpen: false, x: 0, y: 0, text: '', isMath: false });
+  };
+
+  const handleDeleteTextNote = (id: string) => {
     const updatedPages = [...pages];
     updatedPages[currentPageIndex] = {
       ...currentPage,
-      texts: [...currentPage.texts, newNote]
+      texts: currentPage.texts.filter((t) => t.id !== id)
     };
     setPages(updatedPages);
-    setTextModalState({ isOpen: false, x: 0, y: 0, text: '', isMath: false });
   };
 
   return (
@@ -1385,14 +1468,35 @@ export const EduPlanInkBoard: React.FC = () => {
         {currentPage.texts.map((note) => (
           <div
             key={note.id}
-            className="absolute p-2 bg-slate-900/80 backdrop-blur rounded-lg border border-slate-700/80 text-white shadow-xl pointer-events-auto cursor-move"
+            onClick={() => {
+              setTextModalState({
+                isOpen: true,
+                x: note.x,
+                y: note.y,
+                text: note.text,
+                isMath: !!note.isMath,
+                editingId: note.id
+              });
+            }}
+            className="absolute p-2 bg-slate-900/80 backdrop-blur rounded-lg border border-slate-700/80 text-white shadow-xl pointer-events-auto cursor-pointer hover:border-emerald-500 transition-all group"
             style={{
               left: `${note.x * scale + panX}px`,
               top: `${note.y * scale + panY}px`,
               color: note.color
             }}
+            title="Nhấn vào đây để chỉnh sửa hoặc xóa công thức"
           >
             {note.isMath ? <MathView content={note.text} /> : <div>{note.text}</div>}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteTextNote(note.id);
+              }}
+              className="absolute -top-2 -right-2 w-5 h-5 bg-rose-600 hover:bg-rose-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs font-bold shadow-md"
+              title="Xóa công thức"
+            >
+              ×
+            </button>
           </div>
         ))}
       </div>
@@ -1420,6 +1524,8 @@ export const EduPlanInkBoard: React.FC = () => {
         onChangeColor={setCurrentColor}
         strokeSize={strokeSize}
         onChangeSize={setStrokeSize}
+        lineStyle={lineStyle}
+        onChangeLineStyle={setLineStyle}
         shapeType={shapeType}
         onChangeShapeType={setShapeType}
         penOnlyTouch={penOnlyTouch}
@@ -1496,21 +1602,43 @@ export const EduPlanInkBoard: React.FC = () => {
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                  Nội dung (Nhập $công_thức$ để viết Toán)
+                  Nội dung (Gõ $công_thức$ hoặc dùng phím chèn nhanh bên dưới)
                 </label>
                 <textarea
                   value={textModalState.text}
                   onChange={(e) => setTextModalState({ ...textModalState, text: e.target.value })}
-                  placeholder="Ví dụ: Định lý Py-ta-go: $a^2 + b^2 = c^2$"
+                  placeholder="Ví dụ: Định lý Py-ta-go: $a^2 + b^2 = c^2$ hoặc $\frac{-b \pm \sqrt{\Delta}}{2a}$"
                   rows={3}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
                 />
+
+                {/* Quick Math Symbols Toolbar */}
+                <div className="mt-2.5">
+                  <span className="text-[11px] font-semibold text-emerald-400 block mb-1.5">
+                    ⚡ Chèn nhanh ký hiệu Toán học:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto custom-scrollbar p-1.5 bg-slate-850 rounded-xl border border-slate-800">
+                    {MATH_SYMBOLS.map((s, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleInsertSymbol(s.symbol)}
+                        className="px-2 py-1 bg-slate-800 hover:bg-emerald-600/30 hover:border-emerald-500/50 text-slate-200 hover:text-emerald-300 border border-slate-700/80 rounded-lg text-xs font-medium transition-all"
+                        title={`Chèn ${s.label}`}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               {textModalState.text && (
-                <div className="p-3 bg-slate-800/80 rounded-xl border border-slate-700">
-                  <span className="text-xs text-slate-400 block mb-1 font-semibold">Xem trước:</span>
-                  <MathView content={textModalState.text} />
+                <div className="p-3 bg-slate-800/90 rounded-xl border border-slate-700/90">
+                  <span className="text-xs text-emerald-400 block mb-1 font-semibold">Xem trước công thức chuẩn KaTeX:</span>
+                  <div className="p-2 bg-slate-900/90 rounded-lg border border-slate-800 text-white min-h-[40px] flex items-center">
+                    <MathView content={textModalState.text} />
+                  </div>
                 </div>
               )}
 
