@@ -3,6 +3,7 @@ import { GDPT_2018_SUBJECTS } from '../lib/subjects';
 import LZString from 'lz-string';
 import { exportHtmlToWord, exportElementToImage } from "../lib/exportUtils";
 import React, { useState, useRef, useEffect } from "react";
+import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
 import { 
   BookOpen, Download, AlertCircle, Edit3, Eye, Printer, Share2, Copy, CheckCircle2, 
   ExternalLink, Upload, FileText, Palette, LayoutTemplate, GitFork, Sparkles, Zap, Image as ImageIcon, Sliders, Check,
@@ -27,7 +28,7 @@ import { HeaderConfig, getHeaderConfig, saveHeaderConfig } from "../lib/headerCo
 import { QuestionVisualizerPanel } from "../components/math-tools/QuestionVisualizerPanel";
 import { analyzeFunctionToBbt, generateBbtSvg, convertBbtTableToSvg, autoEnrichTextWithVisuals } from "../lib/bbtRenderer";
 import { getTikzSvg, embedTikzSvgsInText } from "../components/TikzRenderer";
-import { saveToHistory, getHistory } from '../lib/history';
+import { saveToHistory, getHistory, deleteFromHistory } from '../lib/history';
 import { HistoryItem } from '../types';
 import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMath, cleanQuestionStem, cleanOptionText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections, sanitizeExamQuestion, sanitizeAndPolishMath, normalizeArrayAndTableEnvironments } from "../lib/utils";
 import { parseRawExamText } from '../lib/examParser';
@@ -36,6 +37,7 @@ import { saveExamToCloud, saveExamToWebhook } from '../lib/cloudExamStore';
 import { KNTT_CURRICULUM, getKnttCurriculum } from "../data/knttCurriculum";
 import { LanguageSpeechControls } from "../components/LanguageSpeechControls";
 import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
+import { MarkdownRenderer } from "../components/MarkdownRenderer";
 
 export type LayoutStyle = 'a4_print' | 'infographic' | 'poster' | 'mindmap';
 
@@ -200,6 +202,7 @@ export function Worksheets() {
   const [streamProgress, setStreamProgress] = useState<{ percentage: number; text: string } | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string>("");
   
   // Tùy chọn Lời giải chi tiết & Hiển thị
   const [includeDetailedSolution, setIncludeDetailedSolution] = useState<boolean>(true);
@@ -207,6 +210,7 @@ export function Worksheets() {
   const [openSolutions, setOpenSolutions] = useState<Record<string | number, boolean>>({});
   const [worksheetQuestions, setWorksheetQuestions] = useState<any[]>([]);
   const [viewMode, setViewMode] = useState<'document' | 'questions'>('document');
+  const [resultsViewTab, setResultsViewTab] = useState<'table' | 'analytics'>('table');
 
   // BBT & Đồ thị & Hình 3D & Thống kê Visualizer State
   const [activeVisualizer, setActiveVisualizer] = useState<{
@@ -746,13 +750,19 @@ export function Worksheets() {
         ]
       };
       
-      // 3. Save to server to obtain short examId
-      let examId = '';
+      // 3. Generate 6-char fallback PIN and save to server/cloud store
+      const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+      let fallbackCode = '';
+      for (let i = 0; i < 6; i++) {
+        fallbackCode += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+
+      let examId = fallbackCode;
       try {
         const shareRes = await apiFetch('/api/exams/share', {
           method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(payload),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...payload, customId: fallbackCode }),
           redirect: 'follow',
         });
         if (shareRes.ok) {
@@ -770,26 +780,23 @@ export function Worksheets() {
         console.warn("Share to api failed:", e);
       }
 
-      // Sync to cloud store & Webhook
-      if (examId) {
-        try {
-          await saveExamToCloud(examId, payload);
-        } catch (e) {}
-      }
+      // Sync to cloud store & Webhook unconditionally
+      try {
+        await saveExamToCloud(examId, payload);
+      } catch (e) {}
+
       try {
         await saveExamToWebhook({
           action: "saveExam",
-          examId: examId || undefined,
+          examId: examId,
           ...payload
         });
       } catch (e) {}
 
-      // Standalone backup full URL with compressed payload
+      // Standalone backup full URL with compressed payload and examId hash fallback
       const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(payload));
-      const fullUrl = `${window.location.origin}/?examData=${compressed}`;
-      
-      // The short base link (around 45 chars)
-      const baseShortUrl = examId ? `${window.location.origin}/?examId=${examId}` : fullUrl;
+      const cleanPinUrl = `${window.location.origin}/?examId=${examId}`;
+      const baseShortUrl = compressed ? `${cleanPinUrl}#d=${compressed}` : cleanPinUrl;
 
       // 4. Try shortening with URL shorteners (/api/shorten)
       let finalLink = '';
@@ -797,12 +804,12 @@ export function Worksheets() {
         const shortRes = await apiFetch('/api/shorten', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: baseShortUrl })
+          body: JSON.stringify({ url: cleanPinUrl })
         });
         if (shortRes.ok) {
           const shortJson = await shortRes.json();
           if (shortJson.shortUrl && shortJson.shortUrl.startsWith('http')) {
-            finalLink = shortJson.shortUrl;
+            finalLink = compressed ? `${shortJson.shortUrl}#d=${compressed}` : shortJson.shortUrl;
           }
         }
       } catch (e) {
@@ -817,7 +824,7 @@ export function Worksheets() {
       setShareLink(finalLink);
 
       // Save room to history
-      const roomCode = examId || Math.random().toString(36).substring(2, 8).toUpperCase();
+      const roomCode = examId;
       const newRoom = {
         code: roomCode,
         examTitle: payload.examData.examName,
@@ -1238,15 +1245,36 @@ export function Worksheets() {
         </div>
 
         {historyItems.length > 0 && (
-          <div className="p-4 border-b border-slate-200 bg-white">
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Lịch sử đã tạo
-            </label>
+          <div className="p-4 border-b border-slate-200 bg-white space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="block text-sm font-medium text-slate-700">
+                Lịch sử đã tạo ({historyItems.length})
+              </label>
+              {selectedHistoryId && (
+                <button
+                  onClick={() => {
+                    if (confirm("Bạn có chắc muốn xóa phiếu học tập này khỏi lịch sử?")) {
+                      deleteFromHistory(selectedHistoryId);
+                      const updated = getHistory().filter(item => item.type === 'PHT');
+                      setHistoryItems(updated);
+                      setSelectedHistoryId("");
+                      setToastMessage("Đã xóa phiếu học tập khỏi lịch sử!");
+                    }
+                  }}
+                  className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold rounded flex items-center gap-1 cursor-pointer"
+                >
+                  <Trash2 className="w-3 h-3" /> Xóa phiếu
+                </button>
+              )}
+            </div>
             <select
               className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+              value={selectedHistoryId}
               onChange={(e) => {
-                if (e.target.value) {
-                  const item = historyItems.find(h => h.id === e.target.value);
+                const val = e.target.value;
+                setSelectedHistoryId(val);
+                if (val) {
+                  const item = historyItems.find(h => h.id === val);
                   if (item) {
                     setSuggestion(item.content);
                     setCustomLessonName(item.lessonName);
@@ -1915,30 +1943,108 @@ export function Worksheets() {
                   )}
                 </div>
 
-                {/* Submissions list */}
+                {/* Submissions list & Analytics with Recharts */}
                 {isLoadingResults ? (
                   <div className="py-6 text-center text-slate-400">
                     <Loader2 className="w-6 h-6 animate-spin mx-auto text-indigo-600 mb-1" />
                     <p className="text-[11px]">Đang tải bài nộp...</p>
                   </div>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {(!selectedRoomResultsData?.submissions || selectedRoomResultsData.submissions.length === 0) ? (
                       <p className="text-center text-[11px] text-slate-400 py-4">Chưa có học sinh nộp bài.</p>
                     ) : (
-                      <div className="max-h-60 overflow-y-auto space-y-1.5">
-                        {selectedRoomResultsData.submissions.map((sub: any, sIdx: number) => (
-                          <div key={sIdx} className="bg-white p-2.5 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
-                            <div>
-                              <p className="font-bold text-slate-800">{sub.studentName} <span className="font-normal text-slate-500">(Lớp {sub.studentClass})</span></p>
-                              <p className="text-[10px] text-slate-400">{new Date(sub.submittedAt || Date.now()).toLocaleString('vi-VN')}</p>
+                      <>
+                        {/* Summary Stats Cards */}
+                        {(() => {
+                          const subs = selectedRoomResultsData.submissions;
+                          const scores = subs.map((s: any) => Number(s.totalScore) || 0);
+                          const avg = (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2);
+                          const max = Math.max(...scores).toFixed(2);
+                          const min = Math.min(...scores).toFixed(2);
+                          return (
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                              <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                                <span className="text-[10px] text-slate-400 font-bold block">Tổng số HS</span>
+                                <span className="text-base font-black text-slate-800">{subs.length} em</span>
+                              </div>
+                              <div className="bg-blue-50/50 p-2.5 rounded-xl border border-blue-100">
+                                <span className="text-[10px] text-blue-600 font-bold block">Điểm trung bình</span>
+                                <span className="text-base font-black text-blue-800">{avg}đ</span>
+                              </div>
+                              <div className="bg-emerald-50/50 p-2.5 rounded-xl border border-emerald-100">
+                                <span className="text-[10px] text-emerald-600 font-bold block">Điểm cao nhất</span>
+                                <span className="text-base font-black text-emerald-800">{max}đ</span>
+                              </div>
+                              <div className="bg-rose-50/50 p-2.5 rounded-xl border border-rose-100">
+                                <span className="text-[10px] text-rose-600 font-bold block">Điểm thấp nhất</span>
+                                <span className="text-base font-black text-rose-800">{min}đ</span>
+                              </div>
                             </div>
-                            <div className="text-right">
-                              <span className="font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-sm">{sub.totalScore}đ</span>
+                          );
+                        })()}
+
+                        {/* Tabs */}
+                        <div className="flex border-b border-slate-200 text-xs font-bold">
+                          <button
+                            onClick={() => setResultsViewTab('table')}
+                            className={`px-3 py-1.5 border-b-2 transition-all cursor-pointer ${resultsViewTab === 'table' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                          >
+                            📋 Danh sách học sinh ({selectedRoomResultsData.submissions.length})
+                          </button>
+                          <button
+                            onClick={() => setResultsViewTab('analytics')}
+                            className={`px-3 py-1.5 border-b-2 transition-all cursor-pointer ${resultsViewTab === 'analytics' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                          >
+                            📊 Biểu đồ thống kê (Recharts)
+                          </button>
+                        </div>
+
+                        {resultsViewTab === 'table' ? (
+                          <div className="max-h-60 overflow-y-auto space-y-1.5">
+                            {selectedRoomResultsData.submissions.map((sub: any, sIdx: number) => (
+                              <div key={sIdx} className="bg-white p-2.5 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
+                                <div>
+                                  <p className="font-bold text-slate-800">{sub.studentName} <span className="font-normal text-slate-500">(Lớp {sub.studentClass})</span></p>
+                                  <p className="text-[10px] text-slate-400">{new Date(sub.submittedAt || Date.now()).toLocaleString('vi-VN')}</p>
+                                </div>
+                                <div className="text-right">
+                                  <span className="font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-sm">{sub.totalScore}đ</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
+                            <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                              <BarChart2 className="w-4 h-4 text-indigo-600" /> Phổ điểm học sinh (Recharts)
+                            </p>
+                            <div className="h-52 w-full">
+                              {(() => {
+                                const scores = selectedRoomResultsData.submissions.map((s: any) => Number(s.totalScore) || 0);
+                                const distribution = [
+                                  { range: '0 - <2', count: scores.filter(s => s >= 0 && s < 2).length },
+                                  { range: '2 - <4', count: scores.filter(s => s >= 2 && s < 4).length },
+                                  { range: '4 - <6', count: scores.filter(s => s >= 4 && s < 6).length },
+                                  { range: '6 - <8', count: scores.filter(s => s >= 6 && s < 8).length },
+                                  { range: '8 - 10', count: scores.filter(s => s >= 8 && s <= 10).length },
+                                ];
+                                return (
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <RechartsBarChart data={distribution}>
+                                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                      <XAxis dataKey="range" tick={{ fontSize: 10 }} stroke="#64748b" />
+                                      <YAxis allowDecimals={false} tick={{ fontSize: 10 }} stroke="#64748b" />
+                                      <Tooltip contentStyle={{ fontSize: '11px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                                      <Bar dataKey="count" name="Số học sinh" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                                    </RechartsBarChart>
+                                  </ResponsiveContainer>
+                                );
+                              })()}
                             </div>
                           </div>
-                        ))}
-                      </div>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
