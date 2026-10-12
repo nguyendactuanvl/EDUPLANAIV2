@@ -222,20 +222,11 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
 
       // Clean short PIN url
       const publicBase = window.location.origin;
-      const cleanPinUrl = `${publicBase}/?pin=${examId}`;
-      let finalUrl = cleanPinUrl;
-
-      // Fallback hash for offline/static resilience if not too long
-      try {
-        const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(dataToShare));
-        if (compressed && compressed.length < 1800) {
-          finalUrl = `${cleanPinUrl}#d=${compressed}`;
-        }
-      } catch (e) {}
+      const finalUrl = `${publicBase}/?pin=${examId}`;
 
       // Generate QR Code
       try {
-        const qrData = await QRCode.toDataURL(cleanPinUrl, {
+        const qrData = await QRCode.toDataURL(finalUrl, {
           width: 280,
           margin: 2,
           errorCorrectionLevel: 'M',

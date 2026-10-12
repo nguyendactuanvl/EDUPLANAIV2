@@ -4240,7 +4240,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                                         localStorage.setItem(`examCache_${examId}`, JSON.stringify(singleData));
                                     } catch (e) {}
 
-                                    const finalUrl = `${publicBase}/?pin=${examId}#d=${compressed}`;
+                                    const finalUrl = `${publicBase}/?pin=${examId}`;
 
                                     await navigator.clipboard.writeText(finalUrl);
                                     alert(`Đã copy link thi trực tiếp cho Mã đề ${exam.code} (Mã PIN: ${examId})!\nLink này mở mượt trên mọi thiết bị và Zalo.`);
@@ -4303,7 +4303,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                                 // Dual-sync to persistent Cloud KV with hex chunking and local cache
                                 await saveExamToCloud(examId, singleData);
 
-                                const finalUrl = `${publicBase}/?pin=${examId}#d=${compressed}`;
+                                const finalUrl = `${publicBase}/?pin=${examId}`;
                                 const zaloMsg = getZaloShareMessage(finalUrl, examId, `${examName} (Mã đề ${exam.code})`);
                                 await navigator.clipboard.writeText(zaloMsg);
                                 alert(`Đã copy tin nhắn Zalo kèm Mã PIN & Hướng dẫn cho Mã đề ${exam.code}!`);

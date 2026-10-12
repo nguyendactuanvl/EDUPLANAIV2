@@ -635,8 +635,11 @@ export function Worksheets() {
   };
 
   const handleDeleteRoomFromHistory = (code: string) => {
+    console.log("Delete room called for:", code);
     if (confirm(`Bạn có chắc muốn xóa phòng thi ${code} khỏi lịch sử?`)) {
+      console.log("Confirmed delete for:", code);
       const updated = examsHistory.filter(r => r.code !== code);
+      console.log("Updated history count:", updated.length);
       setExamsHistory(updated);
       localStorage.setItem("eduplan_worksheet_exams_history", JSON.stringify(updated));
       if (selectedRoomForResults === code) {
@@ -792,35 +795,10 @@ export function Worksheets() {
         });
       } catch (e) {}
 
-      // Standalone backup full URL with compressed payload and examId hash fallback
-      const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(payload));
-      const cleanPinUrl = `${window.location.origin}/?examId=${examId}`;
-      const baseShortUrl = compressed ? `${cleanPinUrl}#d=${compressed}` : cleanPinUrl;
-
-      // 4. Try shortening with URL shorteners (/api/shorten)
-      let finalLink = '';
-      try {
-        const shortRes = await apiFetch('/api/shorten', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: cleanPinUrl })
-        });
-        if (shortRes.ok) {
-          const shortJson = await shortRes.json();
-          if (shortJson.shortUrl && shortJson.shortUrl.startsWith('http')) {
-            finalLink = compressed ? `${shortJson.shortUrl}#d=${compressed}` : shortJson.shortUrl;
-          }
-        }
-      } catch (e) {
-        console.warn("Shorten service error:", e);
-      }
-
-      // If URL shortener returned a link, use it; otherwise use baseShortUrl (examId link)
-      if (!finalLink) {
-        finalLink = baseShortUrl;
-      }
-      
-      setShareLink(finalLink);
+       // Standalone link using just the examId (cloud backend handles data fetching)
+       const finalLink = `${window.location.origin}/?examId=${examId}`;
+       
+       setShareLink(finalLink);
 
       // Save room to history
       const roomCode = examId;

@@ -671,18 +671,8 @@ export function UploadTeacherExamModal({
       // 4. Save to distributed cloud KV store + localStorage
       await saveExamToCloud(examId, payload);
 
-      // 5. Build clean direct link and fallback hash
-      const cleanPinUrl = `${window.location.origin}/?pin=${examId}`;
-      let finalUrl = cleanPinUrl;
-      try {
-        const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(payload));
-        // Only append hash if reasonably sized (< 1800 chars) to prevent chat apps truncating the URL
-        if (compressed && compressed.length < 1800) {
-          finalUrl = `${cleanPinUrl}#d=${compressed}`;
-        }
-      } catch (compErr) {
-        console.warn("Compression warning:", compErr);
-      }
+      // 5. Build clean direct link
+      const finalUrl = `${window.location.origin}/?pin=${examId}`;
 
       setSharePin(examId);
       setShareLink(finalUrl);

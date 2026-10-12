@@ -633,34 +633,56 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
   };
 
   useEffect(() => {
+    let loaded = false;
     if (examRawData) {
       try {
         const decompressed = LZString.decompressFromEncodedURIComponent(examRawData);
         if (decompressed) {
           const data = JSON.parse(decompressed);
-          setExamData(data);
-          if (data.codes && data.codes.length > 0) {
-            const randomCode = data.codes[Math.floor(Math.random() * data.codes.length)].code;
-            setSelectedCode(randomCode);
-          } else {
-            setSelectedCode("101");
+          if (data && (data.examData || data.codes || data.questions)) {
+            setExamData(data);
+            if (data.codes && data.codes.length > 0) {
+              const randomCode = data.codes[Math.floor(Math.random() * data.codes.length)].code;
+              setSelectedCode(randomCode);
+            } else {
+              setSelectedCode("101");
+            }
+            setLoading(false);
+            loaded = true;
+            return;
           }
-          setLoading(false);
-          return;
-        } else {
-          throw new Error("Dữ liệu đề thi không hợp lệ.");
         }
       } catch (e: any) {
-        setError("Lỗi tải đề thi: " + (e.message || ""));
-        setLoading(false);
-        return;
+        console.warn("Decompress hash exam data failed, trying fallback:", e);
+      }
+
+      if (!loaded) {
+        try {
+          const decompressedBase64 = LZString.decompress(examRawData);
+          if (decompressedBase64) {
+            const data = JSON.parse(decompressedBase64);
+            if (data && (data.examData || data.codes || data.questions)) {
+              setExamData(data);
+              if (data.codes && data.codes.length > 0) {
+                const randomCode = data.codes[Math.floor(Math.random() * data.codes.length)].code;
+                setSelectedCode(randomCode);
+              } else {
+                setSelectedCode("101");
+              }
+              setLoading(false);
+              loaded = true;
+              return;
+            }
+          }
+        } catch (e) {}
       }
     }
     
-    if (examId) {
+    if (examId && !loaded) {
       fetchExamById(examId);
-    } else {
+    } else if (!loaded && !examId) {
       setLoading(false);
+      setError("Không tìm thấy thông tin bài thi hoặc mã phòng thi.");
     }
   }, [examId, examRawData]);
 
