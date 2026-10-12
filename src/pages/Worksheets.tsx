@@ -7,8 +7,9 @@ import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveCon
 import { 
   BookOpen, Download, AlertCircle, Edit3, Eye, Printer, Share2, Copy, CheckCircle2, 
   ExternalLink, Upload, FileText, Palette, LayoutTemplate, GitFork, Sparkles, Zap, Image as ImageIcon, Sliders, Check,
-  TrendingUp, BarChart2, Plus, Box, BarChart3, School, User, Wand2, Users, BarChart, Loader2, FileSpreadsheet, Trash2, RefreshCw
+  TrendingUp, BarChart2, Plus, Box, BarChart3, School, User, Wand2, Users, BarChart, Loader2, FileSpreadsheet, Trash2, RefreshCw, X
 } from "lucide-react";
+import { StudentExamView } from "./StudentExamView";
 import * as XLSX from "xlsx";
 import { 
   googleSignIn, 
@@ -488,6 +489,7 @@ export function Worksheets() {
   const [selectedRoomForResults, setSelectedRoomForResults] = useState<string | null>(null);
   const [selectedRoomResultsData, setSelectedRoomResultsData] = useState<any | null>(null);
   const [isLoadingResults, setIsLoadingResults] = useState(false);
+  const [previewRoomCode, setPreviewRoomCode] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = initAuth((user, token) => {
@@ -635,13 +637,13 @@ export function Worksheets() {
   };
 
   const handleDeleteRoomFromHistory = (code: string) => {
-    console.log("Delete room called for:", code);
-    if (confirm(`Bạn có chắc muốn xóa phòng thi ${code} khỏi lịch sử?`)) {
-      console.log("Confirmed delete for:", code);
-      const updated = examsHistory.filter(r => r.code !== code);
-      console.log("Updated history count:", updated.length);
-      setExamsHistory(updated);
-      localStorage.setItem("eduplan_worksheet_exams_history", JSON.stringify(updated));
+    if (window.confirm(`Bạn có chắc muốn xóa phòng thi ${code} khỏi lịch sử?`)) {
+      setExamsHistory(prev => {
+        const updated = prev.filter(r => r.code !== code);
+        localStorage.setItem("eduplan_worksheet_exams_history", JSON.stringify(updated));
+        return updated;
+      });
+      
       if (selectedRoomForResults === code) {
         setSelectedRoomForResults(null);
         setSelectedRoomResultsData(null);
@@ -1809,10 +1811,17 @@ export function Worksheets() {
                         <span className="text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded">Mã phòng: {room.code}</span>
                       </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-slate-100">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-2 border-t border-slate-100">
+                      <button
+                        onClick={() => setPreviewRoomCode(room.code)}
+                        className="py-1 px-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1 transition-colors"
+                        title="Xem trước giao diện làm bài của học sinh"
+                      >
+                        <Eye className="w-3 h-3" /> Xem trước
+                      </button>
                       <button
                         onClick={() => handleLoadRoomResults(room.code)}
-                        className="py-1 px-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1"
+                        className="py-1 px-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1 transition-colors"
                       >
                         <BarChart className="w-3 h-3" /> Kết quả
                       </button>
@@ -1822,13 +1831,16 @@ export function Worksheets() {
                           navigator.clipboard.writeText(link);
                           alert("Đã copy link học sinh cho phòng: " + room.code);
                         }}
-                        className="py-1 px-2 bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1"
+                        className="py-1 px-2 bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1 transition-colors"
                       >
                         <Copy className="w-3 h-3" /> Link
                       </button>
                       <button
-                        onClick={() => handleDeleteRoomFromHistory(room.code)}
-                        className="py-1 px-2 bg-rose-50 hover:bg-rose-100 text-rose-600 text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteRoomFromHistory(room.code);
+                        }}
+                        className="py-1 px-2 bg-rose-50 hover:bg-rose-100 text-rose-600 text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1 transition-colors"
                       >
                         <Trash2 className="w-3 h-3" /> Xóa
                       </button>
@@ -3350,6 +3362,42 @@ export function Worksheets() {
             showToast("Đã lưu cập nhật câu hỏi!");
           }}
         />
+      )}
+
+      {/* Student Exam View Modal Preview */}
+      {previewRoomCode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-2 sm:p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-5xl h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200">
+            <div className="p-3 px-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <Eye className="w-5 h-5 text-emerald-400" />
+                <span className="font-semibold text-sm sm:text-base">
+                  Xem trước giao diện học sinh (Mã phòng: <span className="font-mono text-emerald-300">{previewRoomCode}</span>)
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.open(`/?examId=${previewRoomCode}`, '_blank')}
+                  className="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg text-slate-200 flex items-center gap-1.5 transition-colors"
+                  title="Mở trong tab mới"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Mở Tab Mới</span>
+                </button>
+                <button
+                  onClick={() => setPreviewRoomCode(null)}
+                  className="p-1.5 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-colors"
+                  title="Đóng"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto bg-slate-100 p-2 sm:p-4">
+              <StudentExamView examId={previewRoomCode} />
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Floating Toast Notification */}

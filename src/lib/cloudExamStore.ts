@@ -100,6 +100,19 @@ function hexToStr(hex: string): string {
   return str;
 }
 
+// Helper for retrying fetch requests
+async function fetchWithRetry(url: string, options: RequestInit, retries = 2, backoff = 1000): Promise<Response> {
+  try {
+    return await fetch(url, options);
+  } catch (err) {
+    if (retries > 0) {
+      await new Promise(resolve => setTimeout(resolve, backoff));
+      return fetchWithRetry(url, options, retries - 1, backoff * 2);
+    }
+    throw err;
+  }
+}
+
 /**
  * Saves exam data persistently across:
  * 1. Client localStorage
@@ -134,7 +147,7 @@ export async function saveExamToCloud(examId: string, data: any): Promise<boolea
     const count = Math.ceil(hex.length / CHUNK_SIZE);
 
     // Save count
-    await fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${cleanId}_C/${count}`, {
+    await fetchWithRetry(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${cleanId}_C/${count}`, {
       method: 'POST'
     });
 
@@ -143,7 +156,7 @@ export async function saveExamToCloud(examId: string, data: any): Promise<boolea
     for (let i = 0; i < count; i++) {
       const chunk = hex.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
       chunkPromises.push(
-        fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${cleanId}_${i}/${chunk}`, {
+        fetchWithRetry(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${cleanId}_${i}/${chunk}`, {
           method: 'POST'
         })
       );
@@ -151,7 +164,7 @@ export async function saveExamToCloud(examId: string, data: any): Promise<boolea
     await Promise.all(chunkPromises);
     return true;
   } catch (err) {
-    console.warn('Cloud KV upload error:', err);
+    console.error('Cloud KV upload error after retries:', err);
     return false;
   }
 }
