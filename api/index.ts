@@ -1089,13 +1089,14 @@ QUY TẮC BẮT BUỘC VỀ TOÁN HỌC VÀ KỸ THUẬT:
 ${MATH_FORMATTING_RULES}
 - Mọi công thức, ký hiệu toán, biến số đơn lẻ (như $x, y, z, m, a, b, c, \\alpha, \\beta, \\pi, \\in, \\le, \\ge, -\\infty, +\\infty...$) BẮT BUỘC đặt trong cặp dấu đô la $...$ hoặc $$...$$. CẤM viết LaTeX trần.
 - LUÔN DÙNG \\frac THAY CHO \\dfrac (CẤM dùng \\dfrac).
-- BẢNG BIẾN THIÊN (BBT): Tuyệt đối KHÔNG để khung rỗng. Khi câu hỏi cần BBT, BẮT BUỘC vẽ bảng biến thiên trực quan bằng Markdown Table chuẩn, mỗi hàng BẮT BUỘC xuống dòng riêng biệt (có ký tự \n giữa các hàng):
+- BẢNG BIẾN THIÊN (BBT): Tuyệt đối KHÔNG để khung rỗng. Khi câu hỏi cần BBT, BẮT BUỘC 100% vẽ bảng biến thiên trực quan bằng Markdown Table chuẩn ngay trong câu hỏi đề bài, mỗi hàng BẮT BUỘC xuống dòng riêng biệt (có ký tự \n giữa các hàng):
   | $x$ | $-\\infty$ | | $x_0$ | | $+\\infty$ |
   |---|---|---|---|---|---|
   | $y'$ | | $+$ | $0$ | $-$ | |
   | $y$ | $-\\infty$ | $\\nearrow$ | $y_{CĐ}$ | $\\searrow$ | $-\\infty$ |
   Nếu có tiệm cận đứng hoặc điểm gián đoạn (như hàm phân thức bậc nhất/bậc nhất): dùng vạch đôi $\\|$ ở hàng $y'$ và phân tách 2 giới hạn ở hàng $y$ bằng $\\|$ (ví dụ: $2 \\searrow -\\infty \\| +\\infty \\searrow 2$). TUYỆT ĐỐI KHÔNG viết bảng biến thiên dính liền trên 1 dòng.
-- HÌNH VẼ ĐỒ THỊ: Nếu trích dẫn đồ thị mà không có URL ảnh thực tế, BẮT BUỘC mô tả rõ đặc điểm đồ thị bằng lời trong đề (ví dụ: "Đồ thị đi qua điểm A(0; -1), đỉnh I(1; -2)...") hoặc sinh kèm mã SVG đồ thị nội tuyến, KHÔNG để thẻ img/div trống rỗng.
+- HÌNH VẼ ĐỒ THỊ: Nếu trích dẫn đồ thị mà không có URL ảnh thực tế, BẮT BUỘC 100% mô tả rõ đặc điểm đồ thị bằng lời trong đề (ví dụ: "Đồ thị đi qua điểm A(0; -1), đỉnh I(1; -2)...") hoặc sinh kèm mã SVG đồ thị nội tuyến, KHÔNG để thẻ img/div trống rỗng.
+- LỜI GIẢI CHI TIẾT ('solution' / 'explanation'): Lời giải KHÔNG CẦN lặp lại BẢNG BIẾN THIÊN hay HÌNH VẼ ĐỒ THỊ (để nội dung lời giải gọn gàng, tiết kiệm diện tích, tập trung vào lập luận toán học từng bước chính xác), trừ khi đề bài yêu cầu cụ thể việc vẽ lại.
 - CẤM TUYỆT ĐỐI sinh mã HTML inline phức tạp (<mark style="...">, <span>). Chỉ dùng Markdown chuẩn (**in đậm**, *in nghiêng*).
 - Ký hiệu vô cùng/vô cực BẮT BUỘC viết chuẩn LaTeX là \\infty (ví dụ: $(-\\infty; -1)$, $(-1; +\\infty)$, $[0; +\\infty)$, $(-\\infty; +\\infty)$). Tuyệt đối KHÔNG viết thiếu dấu gạch chéo ngược thành -infty, +infty, in fty.
 - TUYỆT ĐỐI KHÔNG lặp lại các chữ A, B, C, D vào nội dung của câu hỏi hoặc phương án (hệ thống sẽ tự động gán nhãn A, B, C, D).
@@ -2074,8 +2075,8 @@ YÊU CẦU:
 2. TẠO RA MỘT ĐỀ BÀI HOẶC BỘ BÀI TẬP TƯƠNG TỰ (cùng cấu trúc, độ khó, và dạng bài nhưng thay đổi số liệu, ngữ cảnh hoặc cách hỏi).
 3. CUNG CẤP LỜI GIẢI CHI TIẾT cho ĐỀ TƯƠNG TỰ vừa tạo.
 4. [BẢNG BIẾN THIÊN (BBT) & HÌNH VẼ]:
-- Nếu tài liệu gốc có bảng biến thiên (BBT): BẮT BUỘC vẽ bảng biến thiên trực quan cho cả Đề bài tương tự và Lời giải chi tiết bằng Markdown Table chuẩn SGK có đầy đủ các hàng $x$, $y'$, $y$ kèm mũi tên $\\nearrow, \\searrow$, các dấu $+$, $-$, giá trị $0$, các điểm cực trị $y_{CĐ}, y_{CT}$, giới hạn $-\\infty, +\\infty$.
-- Điền đầy đủ số liệu và biểu thức biến thiên, tuyệt đối không để trống.
+- 100% ĐỀ BÀI TƯƠNG TỰ BẮT BUỘC có BẢNG BIẾN THIÊN (bằng Markdown Table chuẩn) hoặc HÌNH VẼ ĐỒ THỊ khi câu hỏi liên quan đến BBT / đồ thị hàm số.
+- LỜI GIẢI CHI TIẾT: KHÔNG CẦN lặp lại BẢNG BIẾN THIÊN hay HÌNH VẼ ĐỒ THỊ (chỉ cần tập trung giải thích các bước tính toán, suy luận toán học chuẩn xác 100%).
 
 Định dạng đầu ra rõ ràng:
 ## Đề bài tương tự

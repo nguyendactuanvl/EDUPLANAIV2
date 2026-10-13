@@ -408,8 +408,8 @@ export function Worksheets() {
         let content = q.content || q.question || '';
         let solution = q.solution || q.explanation || '';
 
-        const enrichedContent = autoEnrichTextWithVisuals(content);
-        const enrichedSolution = autoEnrichTextWithVisuals(solution);
+        const enrichedContent = autoEnrichTextWithVisuals(content, false);
+        const enrichedSolution = autoEnrichTextWithVisuals(solution, true);
 
         if (enrichedContent !== content || enrichedSolution !== solution) {
           count++;

@@ -1781,7 +1781,12 @@ export function generateSyntheticGraphSvg(block: string): string | null {
  * Tự động quét và hoàn thiện 1-click tất cả BBT & Đồ thị trong văn bản/câu hỏi
  * Đảm bảo 100% không bị thiếu BBT hoặc đồ thị và gắn TRỰC TIẾP vào đề bài câu hỏi tương ứng (trước phương án A)
  */
-export function autoEnrichTextWithVisuals(text: string): string {
+/**
+ * Tự động quét và hoàn thiện 1-click tất cả BBT & Đồ thị trong văn bản/câu hỏi.
+ * - Với ĐỀ BÀI (isSolution = false): Đảm bảo 100% không bị thiếu BBT hoặc đồ thị, gắn TRỰC TIẾP vào đề bài câu hỏi tương ứng.
+ * - Với LỜI GIẢI (isSolution = true): Không tự động tạo thêm BBT/đồ thị mới (để lời giải ngắn gọn, tập trung vào lập luận toán học).
+ */
+export function autoEnrichTextWithVisuals(text: string, isSolution: boolean = false): string {
   if (!text) return '';
   let updated = text;
 
@@ -1795,6 +1800,11 @@ export function autoEnrichTextWithVisuals(text: string): string {
 
   // 2. Chuyển đổi Bảng biến thiên Markdown table thành SVG wrapper
   updated = embedBbtSvgsInText(updated);
+
+  // Nếu là Lời giải chi tiết -> Không tự động sinh thêm BBT/đồ thị tổng hợp, giữ nguyên lời giải toán học sắc nét
+  if (isSolution) {
+    return updated;
+  }
 
   // 3. Tách biệt ĐỀ BÀI (Question Body) và ĐÁP ÁN / LỜI GIẢI CHI TIẾT (Solution Box)
   // để đảm bảo chèn BBT/Đồ thị DƯỚI ĐỀ BÀI CÂU HỎI TƯƠNG ỨNG, KHÔNG dồn vào phần đáp án lời giải

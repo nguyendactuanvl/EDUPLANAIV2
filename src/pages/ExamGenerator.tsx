@@ -1381,9 +1381,9 @@ const [examName, setExamName] = useState("");
     }
     const enriched = sampleQuestions.map((q: any) => ({
       ...q,
-      content: autoEnrichTextWithVisuals(q.content || (q as any).question || (q as any).text || ''),
-      solution: autoEnrichTextWithVisuals(q.solution || q.explanation || ''),
-      explanation: autoEnrichTextWithVisuals(q.solution || q.explanation || '')
+      content: autoEnrichTextWithVisuals(q.content || (q as any).question || (q as any).text || '', false),
+      solution: autoEnrichTextWithVisuals(q.solution || q.explanation || '', true),
+      explanation: autoEnrichTextWithVisuals(q.solution || q.explanation || '', true)
     }));
     setQuestions(enriched);
     setExamName(examTitleName);
@@ -1422,9 +1422,9 @@ const [examName, setExamName] = useState("");
             topic: q.topic || 'Chủ đề bóc tách',
             subtopic: q.subtopic || 'Nội dung kiến thức',
             level: q.level || 'Thông hiểu',
-            content: autoEnrichTextWithVisuals(q.content || (q as any).question || ''),
-            solution: autoEnrichTextWithVisuals((q.solution || q.explanation || "").trim()),
-            explanation: autoEnrichTextWithVisuals((q.solution || q.explanation || "").trim())
+            content: autoEnrichTextWithVisuals(q.content || (q as any).question || '', false),
+            solution: autoEnrichTextWithVisuals((q.solution || q.explanation || "").trim(), true),
+            explanation: autoEnrichTextWithVisuals((q.solution || q.explanation || "").trim(), true)
           }));
 
           setQuestions(prev => [...prev, ...formatted]);
@@ -1449,9 +1449,9 @@ const [examName, setExamName] = useState("");
     const reindexed = parsed.map((q, idx) => ({
       ...q,
       id: currentMaxId + idx + 1,
-      content: autoEnrichTextWithVisuals(q.content || (q as any).question || (q as any).text || ''),
-      solution: autoEnrichTextWithVisuals(q.solution || q.explanation || ''),
-      explanation: autoEnrichTextWithVisuals(q.solution || q.explanation || '')
+      content: autoEnrichTextWithVisuals(q.content || (q as any).question || (q as any).text || '', false),
+      solution: autoEnrichTextWithVisuals(q.solution || q.explanation || '', true),
+      explanation: autoEnrichTextWithVisuals(q.solution || q.explanation || '', true)
     }));
     setQuestions(prev => [...prev, ...reindexed]);
     setShowImportTextModal(false);
@@ -1689,9 +1689,9 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
           topic: q.topic || 'Chủ đề trọng tâm',
           subtopic: q.subtopic || 'Nội dung kiến thức',
           level: q.level || 'Thông hiểu',
-          content: autoEnrichTextWithVisuals(q.content || (q as any).question || (q as any).text || ''),
-          solution: autoEnrichTextWithVisuals((q.solution || q.explanation || "").trim()),
-          explanation: autoEnrichTextWithVisuals((q.solution || q.explanation || "").trim())
+          content: autoEnrichTextWithVisuals(q.content || (q as any).question || (q as any).text || '', false),
+          solution: autoEnrichTextWithVisuals((q.solution || q.explanation || "").trim(), true),
+          explanation: autoEnrichTextWithVisuals((q.solution || q.explanation || "").trim(), true)
         }));
 
         // Nếu có ảnh / file đính kèm (matrixBase64), tự động crop và nhúng ảnh vào câu hỏi
@@ -1734,8 +1734,8 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
     if (questions.length === 0) return;
     let count = 0;
     const updated = questions.map((q: any) => {
-      const newContent = autoEnrichTextWithVisuals(q.content || q.question || '');
-      const newSol = autoEnrichTextWithVisuals(q.solution || q.explanation || '');
+      const newContent = autoEnrichTextWithVisuals(q.content || q.question || '', false);
+      const newSol = autoEnrichTextWithVisuals(q.solution || q.explanation || '', true);
       if (newContent !== (q.content || '') || newSol !== (q.solution || '')) count++;
       return {
         ...q,
@@ -1753,9 +1753,9 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
     if (questions.length === 0) return;
     const processedQuestions = questions.map((q: any) => ({
       ...q,
-      content: autoEnrichTextWithVisuals(q.content || q.question || q.text || ''),
-      solution: autoEnrichTextWithVisuals(q.solution || q.explanation || ''),
-      explanation: autoEnrichTextWithVisuals(q.solution || q.explanation || '')
+      content: autoEnrichTextWithVisuals(q.content || q.question || q.text || '', false),
+      solution: autoEnrichTextWithVisuals(q.solution || q.explanation || '', true),
+      explanation: autoEnrichTextWithVisuals(q.solution || q.explanation || '', true)
     }));
     const mixed = mixExam(processedQuestions as any[], {
       numCodes: Math.min(Math.max(1, numCodes), 24),
