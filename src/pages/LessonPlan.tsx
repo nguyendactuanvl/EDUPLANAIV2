@@ -21,7 +21,7 @@ import { FeatureQuickGuideBanner } from '../components/FeatureQuickGuideBanner';
 
 
 export function LessonPlan() {
-  const [activeTab, setActiveTab] = useState<"system" | "upload" | "upgrade">("system");
+  const [activeTab, setActiveTab] = useState<"system" | "upload" | "upgrade" | "inclusive">("system");
   const [selectedGrade, setSelectedGrade] = useState<number>(10);
   const [selectedLessonId, setSelectedLessonId] = useState<string>("");
   const { subjects } = useSubjects();
@@ -29,7 +29,8 @@ export function LessonPlan() {
   const [customLessonName, setCustomLessonName] = useState("");
   const [customPeriods, setCustomPeriods] = useState<number>(2);
   const [subject, setSubject] = useState("Toán");
-  const [includeInclusiveEducation, setIncludeInclusiveEducation] = useState(true);
+  const [includeInclusiveEducation, setIncludeInclusiveEducation] = useState(false);
+  const [disabilityType, setDisabilityType] = useState("Khuyết tật trí tuệ nhẹ / Chậm phát triển / Vận động / Tăng động / Ngôn ngữ / Khiếm thị / Khiếm thính");
   const [uploadedFiles, setUploadedFiles] = useState<{data: string, type: string, name: string}[]>([]);
   
   const [upgradeTemplateMode, setUpgradeTemplateMode] = useState<"system" | "uploaded" | "custom">("uploaded");
@@ -242,6 +243,24 @@ export function LessonPlan() {
         customTemplateInstructions: customTemplateInstructions,
         includeInclusiveEducation
       };
+    } else if (activeTab === "inclusive") {
+      const activeLesson = selectedLesson?.lesson || customLessonName.trim();
+      if (!activeLesson) {
+        setError("Vui lòng chọn bài học từ danh sách hoặc nhập tên bài học cần soạn kế hoạch hòa nhập.");
+        return;
+      }
+      endpoint = '/api/generate-inclusive-plan';
+      displayName = `KHDH Hòa nhập: ${activeLesson}`;
+      payload = {
+        lesson: activeLesson,
+        subject: subject,
+        grade: selectedGrade,
+        periods: customPeriods || selectedLesson?.periods || 2,
+        disabilityType: disabilityType,
+        textbook: selectedTextbook?.name || "Kết nối tri thức với cuộc sống",
+        requirement: selectedLesson?.requirement || "",
+        files: uploadedFiles
+      };
     }
 
     await executePlanGeneration(payload, endpoint, displayName);
@@ -363,24 +382,31 @@ export function LessonPlan() {
           </select>
         </div>
         
-        <div className="flex bg-slate-100 p-1 rounded-lg">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 bg-slate-100 p-1 rounded-lg">
           <button 
-            className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === 'system' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+            className={`py-2 text-xs font-medium rounded-md transition-colors ${activeTab === 'system' ? 'bg-white shadow-sm text-slate-800 font-bold' : 'text-slate-500 hover:text-slate-700'}`}
             onClick={() => setActiveTab('system')}
           >
             Hệ thống
           </button>
           <button 
-            className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === 'upload' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+            className={`py-2 text-xs font-medium rounded-md transition-colors ${activeTab === 'upload' ? 'bg-white shadow-sm text-slate-800 font-bold' : 'text-slate-500 hover:text-slate-700'}`}
             onClick={() => setActiveTab('upload')}
           >
             Tải Kế hoạch
           </button>
           <button 
-            className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === 'upgrade' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+            className={`py-2 text-xs font-medium rounded-md transition-colors ${activeTab === 'upgrade' ? 'bg-white shadow-sm text-slate-800 font-bold' : 'text-slate-500 hover:text-slate-700'}`}
             onClick={() => setActiveTab('upgrade')}
           >
-            Nâng cấp Giáo án
+            Nâng cấp
+          </button>
+          <button 
+            className={`py-2 text-xs font-medium rounded-md transition-colors ${activeTab === 'inclusive' ? 'bg-indigo-600 text-white shadow-sm font-bold' : 'text-slate-500 hover:text-slate-700'}`}
+            onClick={() => setActiveTab('inclusive')}
+            title="Soạn riêng Kế hoạch bài dạy / Phụ lục điều chỉnh cho Học sinh khuyết tật hòa nhập (TT 03/2018)"
+          >
+            ♿ KHDH Hòa nhập
           </button>
         </div>
 
@@ -624,6 +650,86 @@ export function LessonPlan() {
             </div>
           </div>
         )}
+
+        {activeTab === 'inclusive' && (
+          <div className="space-y-4 p-3.5 bg-indigo-50/70 border border-indigo-200/90 rounded-xl">
+            <div className="flex items-center gap-2 text-indigo-950 font-bold text-sm">
+              <BookOpen className="w-4.5 h-4.5 text-indigo-600" />
+              <span>Soạn Hồ sơ / KHDH Hòa nhập riêng</span>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Tạo riêng Kế hoạch Dạy học Điều chỉnh cho Học sinh Khuyết tật Hòa nhập (mục tiêu cốt lõi, tiến trình 4 cột, công cụ hỗ trợ và đề kiểm tra mẫu theo Thông tư 03/2018/TT-BGDĐT).
+            </p>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Cấp học</label>
+              <select 
+                className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500"
+                value={selectedGrade}
+                onChange={(e) => setSelectedGrade(Number(e.target.value))}
+              >
+                {[1,2,3,4,5,6,7,8,9,10,11,12].map(g => (
+                  <option key={g} value={g}>Lớp {g}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Bài học cần hòa nhập</label>
+              {availableLessons.length > 0 ? (
+                <select 
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white mb-2 focus:ring-2 focus:ring-indigo-500"
+                  value={selectedLessonId}
+                  onChange={(e) => setSelectedLessonId(e.target.value)}
+                >
+                  {availableLessons.map(lesson => (
+                    <option key={lesson.id} value={lesson.id}>
+                      Bài {lesson.stt}: {lesson.lesson}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+              <input 
+                type="text" 
+                placeholder="Hoặc nhập tên bài học (VD: Bài 1: Mệnh đề, Hàm số...)"
+                className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500"
+                value={customLessonName}
+                onChange={(e) => setCustomLessonName(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Dạng khuyết tật / Nhu cầu hỗ trợ hòa nhập</label>
+              <textarea 
+                rows={2}
+                className="w-full p-2 border border-slate-300 rounded-lg text-xs bg-white text-slate-800 focus:ring-2 focus:ring-indigo-500 font-medium"
+                value={disabilityType}
+                onChange={(e) => setDisabilityType(e.target.value)}
+                placeholder="VD: Khuyết tật trí tuệ nhẹ, chậm phát triển, tăng động, giảm chú ý, khiếm thị, khiếm thính..."
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Số tiết</label>
+                <input 
+                  type="number" 
+                  min={1} 
+                  max={10} 
+                  value={customPeriods || selectedLesson?.periods || 2}
+                  onChange={(e) => setCustomPeriods(Number(e.target.value) || 1)}
+                  className="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-sm bg-white text-center font-bold text-slate-800"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Bộ sách</label>
+                <span className="block px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 truncate">
+                  {selectedTextbook?.name || "Kết nối tri thức"}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
         
         {error && (
           <div className="flex items-start gap-2 p-3 bg-red-50 text-red-700 rounded-lg text-sm">
@@ -632,35 +738,43 @@ export function LessonPlan() {
           </div>
         )}
 
-        <div className="p-3 bg-indigo-50/80 border border-indigo-200 rounded-xl space-y-1.5">
-          <label className="flex items-start gap-2.5 cursor-pointer">
-            <input 
-              type="checkbox" 
-              checked={includeInclusiveEducation} 
-              onChange={(e) => setIncludeInclusiveEducation(e.target.checked)}
-              className="mt-0.5 w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
-            />
-            <span className="text-xs font-semibold text-indigo-950 leading-tight">
-              Tích hợp mục "Điều chỉnh KHDH cho HS khuyết tật hòa nhập" (TT 03/2018 & CV 5512) cho mọi môn học/hoạt động
-            </span>
-          </label>
-        </div>
+        {activeTab !== 'inclusive' && (
+          <div className="p-3 bg-indigo-50/80 border border-indigo-200 rounded-xl space-y-1.5">
+            <label className="flex items-start gap-2.5 cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={includeInclusiveEducation} 
+                onChange={(e) => setIncludeInclusiveEducation(e.target.checked)}
+                className="mt-0.5 w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+              />
+              <span className="text-xs font-semibold text-indigo-950 leading-tight">
+                Kèm thêm mục "Điều chỉnh KHDH cho HS khuyết tật hòa nhập" vào cuối giáo án đầy đủ
+              </span>
+            </label>
+          </div>
+        )}
 
-        <button 
-          onClick={handleDemoClick}
-          disabled={isLoading}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white font-medium rounded-lg hover:bg-purple-700 transition-colors mt-2 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          <Sparkles className="h-5 w-5" />
-          Demo Soạn Giáo án BPT/HPT
-        </button>
+        {activeTab !== 'inclusive' && (
+          <button 
+            onClick={handleDemoClick}
+            disabled={isLoading}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white font-medium rounded-lg hover:bg-purple-700 transition-colors mt-2 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <Sparkles className="h-5 w-5" />
+            Demo Soạn Giáo án BPT/HPT
+          </button>
+        )}
         <button 
           onClick={generateLessonPlan}
           disabled={isLoading}
-          className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-70 disabled:cursor-not-allowed mt-2 shadow-sm cursor-pointer"
+          className={`w-full flex items-center justify-center gap-2 px-4 py-3 text-white font-medium rounded-lg transition-colors disabled:opacity-70 disabled:cursor-not-allowed mt-2 shadow-sm cursor-pointer ${
+            activeTab === 'inclusive' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-emerald-600 hover:bg-emerald-700'
+          }`}
         >
           <Sparkles className={`h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} />
-          {isLoading ? (activeTab === 'upgrade' ? "Đang nâng cấp..." : "AI đang soạn bài...") : (activeTab === 'upgrade' ? "Nâng cấp Giáo án (Thêm NLS & AI)" : "Soạn Giáo án chuẩn công văn 5512")}
+          {isLoading 
+            ? (activeTab === 'inclusive' ? "AI đang soạn KHDH hòa nhập..." : activeTab === 'upgrade' ? "Đang nâng cấp..." : "AI đang soạn bài...") 
+            : (activeTab === 'inclusive' ? "Soạn KHDH Hòa nhập riêng (TT 03/2018)" : activeTab === 'upgrade' ? "Nâng cấp Giáo án (Thêm NLS & AI)" : "Soạn Giáo án chuẩn công văn 5512")}
         </button>
       </div>
 

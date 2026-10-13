@@ -1730,13 +1730,13 @@ app.all(["/api/generate-lesson-plan", "/api/generate-lesson-plan-file"], async (
     const aiComp = req.body.aiComp || req.body.aiCompetence || "";
     const stem = req.body.stem || "";
     const textbook = req.body.textbook || "Kết nối tri thức với cuộc sống";
-    const includeInclusiveEducation = req.body.includeInclusiveEducation !== false;
+    const includeInclusiveEducation = req.body.includeInclusiveEducation === true;
     const maxOutputTokens = 16384;
     const files = resolveFiles(req.body);
 
-    const inclusiveEducationBlock = includeInclusiveEducation !== false ? `
+    const inclusiveEducationBlock = includeInclusiveEducation ? `
 
-IV. ĐIỀU CHỈNH KẾ HOẠCH DẠY HỌC CHO HỌC SINH KHUYẾT TẬT HÒA NHẬP (BẮT BUỘC BỔ SUNG THÀNH MỤC IV HOẶC MỤC RIÊNG CUỐI GIÁO ÁN CHO MỌI MÔN HỌC/HOẠT ĐỘNG):
+IV. ĐIỀU CHỈNH KẾ HOẠCH DẠY HỌC CHO HỌC SINH KHUYẾT TẬT HÒA NHẬP (MỤC BỔ SUNG CHO MÔN HỌC/HOẠT ĐỘNG):
 Bám sát Thông tư 03/2018/TT-BGDĐT và Công văn 5512/BGDĐT-GDTrH, hãy bổ sung mục này với cấu trúc chuẩn:
 1. **MỤC TIÊU ĐIỀU CHỈNH:**
    - Kiến thức: [Yêu cầu cần đạt cốt lõi tối thiểu mà HS khuyết tật cần nhận biết/thực hiện được trong môn ${subject}]
@@ -1895,6 +1895,97 @@ ${MATH_FORMATTING_RULES}`;
         systemInstruction: lessonPlanSystemInstruction,
         temperature: 0.5,
         maxOutputTokens: maxOutputTokens
+      }
+    });
+
+    return { result: response.text };
+  });
+});
+
+// Endpoint soạn riêng Kế hoạch Giáo dục Hòa nhập (Học sinh khuyết tật)
+app.all("/api/generate-inclusive-plan", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  return keepAliveExecute(req, res, async () => {
+    const lesson = req.body.lesson || req.body.name || "Bài học";
+    const subject = req.body.subject || "Toán";
+    const grade = req.body.grade || "10";
+    const periods = Number(req.body.periods) || 2;
+    const requirement = req.body.requirement || "";
+    const disabilityType = req.body.disabilityType || "Khuyết tật trí tuệ nhẹ / Khuyết tật vận động / Ngôn ngữ / Tăng động / Khiếm thị / Khiếm thính";
+    const textbook = req.body.textbook || "Kết nối tri thức với cuộc sống";
+    const files = resolveFiles(req.body);
+
+    const prompt = `Bạn là Chuyên gia Giáo dục Đặc biệt và Chuyên viên Tư vấn Giáo dục Hòa nhập (Bộ GD&ĐT).
+Nhiệm vụ: Hãy biên soạn một KẾ HOẠCH ĐIỀU CHỈNH DẠY HỌC DÀNH RIÊNG CHO HỌC SINH KHUYẾT TẬT HÒA NHẬP chuẩn Thông tư 03/2018/TT-BGDĐT và Công văn 5512/BGDĐT-GDTrH cho bài học sau:
+
+THÔNG TIN BÀI DẠY:
+- Môn học: ${subject} | Lớp: ${grade}
+- Tên bài học: ${lesson}
+- Thời lượng: ${periods} tiết
+- Bộ sách: ${textbook}
+${requirement ? `- Yêu cầu cần đạt chung: ${requirement}` : ''}
+${disabilityType ? `- Dạng khuyết tật / Nhu cầu hỗ trợ hòa nhập: ${disabilityType}` : ''}
+
+CẤU TRÚC BẮT BUỘC (BIÊN SOẠN HOÀN CHỈNH, MẪU MỰC SƯ PHẠM HÒA NHẬP, KHÔNG TÓM TẮT):
+
+# KẾ HOẠCH ĐIỀU CHỈNH DẠY HỌC CHO HỌC SINH KHUYẾT TẬT HÒA NHẬP
+**Môn học:** ${subject} | **Lớp:** ${grade} | **Bài dạy:** ${lesson} (${periods} tiết)  
+**Bộ sách:** ${textbook} | **Đối tượng hòa nhập:** ${disabilityType}
+
+---
+
+## I. MỤC TIÊU ĐIỀU CHỈNH
+1. **Kiến thức cốt lõi:** Yêu cầu tối thiểu cần nhận biết/thực hiện được trong môn ${subject} bài ${lesson}.
+2. **Năng lực đặc thù & công cụ hỗ trợ:** Năng lực cơ bản, năng lực sử dụng công cụ hỗ trợ (máy tính, thẻ màu, mô hình, chữ phóng to, phần mềm...).
+3. **Phẩm chất hòa nhập:** Tự tin, kiên trì, tích cực tham gia hoạt động cùng bạn bè.
+
+## II. THIẾT BỊ DẠY HỌC VÀ CÔNG CỤ HỖ TRỢ ĐẶC THÙ
+- Các thiết bị trực quan, đồ dùng trợ giảng, học liệu điều chỉnh rút gọn, phần mềm công nghệ hoặc dụng cụ hỗ trợ riêng cho học sinh khuyết tật.
+
+## III. NỘI DUNG VÀ TIẾN TRÌNG ĐIỀU CHỈNH DẠY HỌC CHI TIẾT
+Biên soạn BẢNG ĐIỀU CHỈNH TIẾN TRÌNH 4 CỘT chuẩn mực lần lượt từ Tiết 1 đến Tiết ${periods}:
+
+| Tiết & Hoạt động | YCCĐ & Nhiệm vụ chung của cả lớp | Điều chỉnh cho Học sinh Hòa nhập | Biện pháp & Công cụ hỗ trợ đặc thù |
+| :--- | :--- | :--- | :--- |
+| **TIẾT 1 - HĐ 1: Khởi động** | [Nhiệm vụ chung] | [Mục tiêu & Nhiệm vụ thu gọn, trực quan, tăng thời gian] | [Thẻ câu hỏi trực quan, trợ giảng, gợi mở] |
+| **TIẾT 1 - HĐ 2: Hình thành kiến thức** | [Nhiệm vụ chung] | [Giảm tải lý thuyết biến đổi phức tạp, tập trung thực hành trực quan] | [Dùng mô hình, máy tính, bảng nhóm phụ] |
+| **TIẾT 1 - HĐ 3: Luyện tập** | [Bài tập chung] | [Bài tập mức độ Nhận biết - Thông hiểu đơn giản, rút gọn 50%] | [Phiếu bài tập in chữ to/hướng dẫn từng bước] |
+| **TIẾT 1 - HĐ 4: Vận dụng** | [Vận dụng chung] | [Nhiệm vụ thực tiễn đơn giản gắn với đời sống] | [Khuyến khích hợp tác nhóm nhỏ, bạn đồng hành] |
+
+(Tiếp tục lập bảng chi tiết đầy đủ cho tất cả các tiết còn lại từ Tiết 2 đến Tiết ${periods}).
+
+## IV. ĐÁNH GIÁ SỰ TIẾN BỘ & ĐỀ KIỂM TRA ĐIỀU CHỈNH MẪU
+1. **Đánh giá thường xuyên:** Phương pháp quan sát, động viên khích lệ, chấm điểm theo sự nỗ lực tiến bộ cá nhân.
+2. **Đề kiểm tra định kỳ điều chỉnh mẫu dành cho Học sinh Hòa nhập:**
+   - Đề xuất cấu trúc đề rút gọn (tăng 30% - 50% thời gian làm bài, giảm bớt các câu vận dụng cao).
+   - Đưa ra 3-5 câu hỏi kiểm tra mẫu phù hợp mức độ đạt được của HS hòa nhập.
+
+${MATH_FORMATTING_RULES}`;
+
+    let contents: any = prompt;
+    if (files && files.length > 0) {
+      contents = [
+        {
+          role: "user",
+          parts: [
+            ...(await processFilesForAI(files)),
+            { text: prompt }
+          ]
+        }
+      ];
+    }
+
+    const response = await generateWithFallback(req, {
+      contents: contents,
+      config: {
+        temperature: 0.5,
+        maxOutputTokens: 16384
       }
     });
 
