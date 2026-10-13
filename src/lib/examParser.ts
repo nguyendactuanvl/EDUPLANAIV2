@@ -337,10 +337,10 @@ export async function parseExamWithAI(params: {
   }
 
   const payload: any = {};
-  // Chỉ gửi rawText nếu do người dùng nhập trực tiếp HOẶC khi không có fileData
+  // Gửi cả rawText nếu có để AI đối chiếu chính xác 100% tất cả các câu hỏi
   if (params.rawText && params.rawText.trim()) {
     payload.rawText = params.rawText.trim();
-  } else if (!params.fileData && workingText && workingText.trim()) {
+  } else if (workingText && workingText.trim()) {
     payload.rawText = workingText.trim();
   }
 
@@ -515,6 +515,32 @@ export async function parseExamWithAI(params: {
 
   if (!rawList || rawList.length === 0) {
     throw new Error("Không thể bóc tách danh sách câu hỏi từ phản hồi của máy chủ. Vui lòng kiểm tra lại cấu trúc file hoặc dán trực tiếp nội dung văn bản.");
+  }
+
+  // Nếu AI trả về số lượng câu quá ít (ví dụ chỉ lấy mẫu 3-4 câu của từng phần) nhưng workingText có nhiều câu hơn:
+  if (workingText && workingText.trim().length > 50) {
+    try {
+      const localParsed = parseRawExamText(workingText);
+      if (localParsed && localParsed.length > rawList.length && localParsed.length >= 5) {
+        console.log(`[parseExamWithAI] AI trả về ${rawList.length} câu, bộ bóc tách văn bản nhận diện được ${localParsed.length} câu. Tiến hành hợp nhất đầy đủ đề thi.`);
+        const mergedList = localParsed.map((lq, idx) => {
+          const aiMatch = rawList.find((aq: any) => aq.id === idx + 1 || aq.id === lq.id);
+          if (aiMatch) {
+            return {
+              ...lq,
+              solution: aiMatch.solution || aiMatch.explanation || lq.solution,
+              explanation: aiMatch.explanation || aiMatch.solution || lq.explanation,
+              hasFigure: aiMatch.hasFigure ?? lq.hasFigure,
+              figureBox: aiMatch.figureBox ?? lq.figureBox
+            };
+          }
+          return lq;
+        });
+        rawList = mergedList;
+      }
+    } catch (mergeErr) {
+      console.warn("[parseExamWithAI] Warning merging localParsed:", mergeErr);
+    }
   }
 
   // Fallback: If AI did not detect duration from file, inspect rawText

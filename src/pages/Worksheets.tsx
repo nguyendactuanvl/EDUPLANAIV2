@@ -638,17 +638,18 @@ export function Worksheets() {
     XLSX.writeFile(workbook, `BangDiem_${selectedRoomForResults}.xlsx`);
   };
 
-  const handleDeleteRoomFromHistory = (code: string) => {
+  const handleDeleteRoomFromHistory = async (code: string) => {
     let confirmed = true;
     try {
       if (typeof window !== 'undefined' && window.confirm) {
-        confirmed = window.confirm(`Bạn có chắc muốn xóa phòng thi ${code} khỏi lịch sử?`);
+        confirmed = window.confirm(`Bạn có chắc muốn xóa phòng thi / phiếu online ${code} khỏi lịch sử?`);
       }
     } catch (e) {
       confirmed = true;
     }
 
     if (confirmed) {
+      // 1. Update local state & localStorage immediately
       setExamsHistory(prev => {
         const updated = prev.filter(r => r.code !== code);
         try {
@@ -678,7 +679,50 @@ export function Worksheets() {
         setSelectedRoomResultsData(null);
       }
 
-      showToast(`Đã xóa phòng thi ${code} khỏi lịch sử!`);
+      // 2. Call backend DELETE endpoint to free server & cloud store
+      try {
+        await fetch(`/api/exams/${code}`, { method: 'DELETE' });
+      } catch (err) {
+        console.warn("Lỗi gửi yêu cầu xóa tới máy chủ:", err);
+      }
+
+      showToast(`Đã xóa phiếu online ${code} thành công!`);
+    }
+  };
+
+  const handleDeleteSubmission = async (subIndex: number) => {
+    if (!selectedRoomResultsData) return;
+    const code = selectedRoomForResults;
+    if (!code) return;
+
+    const student = selectedRoomResultsData.submissions?.[subIndex];
+    if (!student) return;
+
+    if (!confirm(`Bạn có chắc chắn muốn xóa bài làm của học sinh ${student.studentName} (Lớp ${student.studentClass})?`)) {
+      return;
+    }
+
+    const updatedSubmissions = selectedRoomResultsData.submissions.filter((_: any, i: number) => i !== subIndex);
+    const updatedData = {
+      ...selectedRoomResultsData,
+      submissions: updatedSubmissions
+    };
+
+    try {
+      const saveRes = await fetch("/api/exams/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...updatedData, customId: code })
+      });
+
+      if (!saveRes.ok) {
+        throw new Error("Không thể cập nhật danh sách bài làm lên máy chủ.");
+      }
+
+      setSelectedRoomResultsData(updatedData);
+      showToast("Đã xóa kết quả bài làm của học sinh!");
+    } catch (err: any) {
+      alert("Lỗi khi xóa bài làm: " + err.message);
     }
   };
   
@@ -2063,8 +2107,15 @@ export function Worksheets() {
                                   <p className="font-bold text-slate-800">{sub.studentName} <span className="font-normal text-slate-500">(Lớp {sub.studentClass})</span></p>
                                   <p className="text-[10px] text-slate-400">{new Date(sub.submittedAt || Date.now()).toLocaleString('vi-VN')}</p>
                                 </div>
-                                <div className="text-right">
+                                <div className="flex items-center gap-2">
                                   <span className="font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-sm">{sub.totalScore}đ</span>
+                                  <button
+                                    onClick={() => handleDeleteSubmission(sIdx)}
+                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                                    title="Xóa bài làm của học sinh này"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
                                 </div>
                               </div>
                             ))}

@@ -2803,13 +2803,16 @@ app.all("/api/parse-exam", async (req, res) => {
 
     const promptText = `Bạn là chuyên gia bóc tách đề thi môn Toán và khoa học tự nhiên chuẩn cấu trúc GDPT 2018. Hãy phân tích tài liệu đề thi được cung cấp (Word, PDF, Text) và tự động nhận diện chính xác từng câu hỏi thuộc các phần của đề thi:
 
-[CỰC KỲ QUAN TRỌNG: BẮT BUỘC BÓC TÁCH TOÀN BỘ ĐỀ THI - TUYỆT ĐỐI KHÔNG ĐƯỢC DỪNG LẠI Ở 12 CÂU CỦA PHẦN I]:
-- Quét tiếp toàn bộ tài liệu từ đầu đến cuối đề thi để trích xuất đầy đủ 100% tất cả các phần:
-  + PHẦN I: Trắc nghiệm nhiều lựa chọn (Câu 1 đến Câu 12).
-  + PHẦN II: Trắc nghiệm Đúng/Sai (Câu 1, 2... của Phần II hoặc Câu 13, 14...). Mỗi câu BẮT BUỘC có 4 ý a), b), c), d) kèm trạng thái Đúng hoặc Sai trong mảng "tfStatements".
-  + PHẦN III: Trắc nghiệm trả lời ngắn / điền số (Câu 1, 2, 3, 4...). Lưu nội dung câu hỏi và ô đáp án số ngắn trong "correctAnswer" (ví dụ: "4", "13", "273", "-5", "1/2"...).
-  + PHẦN IV: Tự luận (nếu có tiêu đề "PHẦN IV. Tự luận" hoặc bài toán tự luận): Đánh dấu type: "ESSAY". Bóc tách trọn vẹn nội dung câu hỏi (Câu 1, 2, 3...) kèm hướng dẫn chấm / đáp án chi tiết nếu có trong "correctAnswer" hoặc "explanation".
-- ĐẢM BẢO DANH SÁCH CÂU HỎI NHẬN VỀ ĐẦY ĐỦ CẢ ĐỀ THI (Ví dụ: 18 câu gồm 12 câu Phần I + 2 câu Đúng/Sai Phần II + 4 câu Điền số Phần III + các câu Tự luận Phần IV nếu có). TUYỆT ĐỐI KHÔNG BỎ SÓT HOẶC CẮT BỚT BẤT KỲ CÂU NÀO.
+[CỰC KỲ QUAN TRỌNG: BẮT BUỘC BÓC TÁCH TOÀN BỘ ĐỀ THI - TUYỆT ĐỐI KHÔNG ĐƯỢC DỪNG LẠI HOẶC CHỈ LẤY 1 CÂU MỖI PHẦN]:
+- Quét tiếp toàn bộ tài liệu từ đầu đến cuối đề thi để trích xuất đầy đủ 100% tất cả các câu hỏi của tất cả các phần:
+- TUYỆT ĐỐI KHÔNG ĐƯỢC CHỈ LẤY 1 CÂU MỖI PHẦN! ĐÂY LÀ NHIỆM VỤ BÓC TÁCH TOÀN BỘ ĐỀ THI THẬT, KHÔNG PHẢI VÍ DỤ MINH HỌA!
+- Nếu đề thi có bao nhiêu câu hỏi ở các trang (ví dụ: 12 câu Phần I, 4 câu Phần II, 6 câu Phần III, 2 câu Phần IV...), mảng "questions" BẮT BUỘC PHẢI CHỨA ĐỦ 100% TẤT CẢ CÁC CÂU HỎI (ở ví dụ trên là ĐỦ 24 CÂU từ Câu 1 đến Câu 24).
+- Các phần của đề thi:
+  + PHẦN I: Trắc nghiệm nhiều lựa chọn (bóc tách tất cả các câu của Phần I, ví dụ Câu 1 đến Câu 12).
+  + PHẦN II: Trắc nghiệm Đúng/Sai (bóc tách tất cả các câu của Phần II, ví dụ Câu 1 đến Câu 4). Mỗi câu BẮT BUỘC có 4 ý a), b), c), d) kèm trạng thái Đúng hoặc Sai trong mảng "tfStatements".
+  + PHẦN III: Trắc nghiệm trả lời ngắn / điền số (bóc tách tất cả các câu của Phần III, ví dụ Câu 1 đến Câu 6). Lưu nội dung câu hỏi và ô đáp án số ngắn trong "correctAnswer" (ví dụ: "4", "13", "273", "-5", "1/2"...).
+  + PHẦN IV: Tự luận (nếu có): Đánh dấu type: "ESSAY". Bóc tách trọn vẹn toàn bộ các câu hỏi tự luận kèm hướng dẫn chấm / đáp án chi tiết nếu có trong "correctAnswer" hoặc "explanation".
+- ĐẢM BẢO DANH SÁCH CÂU HỎI NHẬN VỀ ĐẦY ĐỦ CẢ ĐỀ THI. TUYỆT ĐỐI KHÔNG BỎ SÓT HOẶC CẮT BỚT BẤT KỲ CÂU NÀO.
 
 QUY TẮC NHẬN DIỆN THỜI GIAN LÀM BÀI & TIÊU ĐỀ ĐỀ THI:
 + Tự động quét phần tiêu đề / đầu trang / ghi chú đề thi để tìm thời gian làm bài, ví dụ:
@@ -3204,6 +3207,41 @@ app.get("/api/exams/:id", async (req, res) => {
   }
 });
 
+// Delete shared exam / worksheet endpoint
+app.delete("/api/exams/:id", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  const rawId = (req.params.id || '').trim().toUpperCase();
+  if (!rawId) {
+    return res.status(400).json({ error: "Mã phòng không hợp lệ" });
+  }
+
+  try {
+    sharedExamsStore.delete(rawId);
+    sharedExamsStore.delete(rawId.toLowerCase());
+    sharedExamsStore.delete(rawId.toUpperCase());
+    sharedExamsStore.delete(`${rawId}_PDF`);
+    sharedExamsStore.delete(`${rawId.toLowerCase()}_PDF`);
+    sharedExamsStore.delete(`${rawId.toUpperCase()}_PDF`);
+
+    saveExamsToDisk();
+
+    // Mark as deleted or empty in Cloud KV
+    try {
+      await saveToCloudKV(rawId, { deleted: true, examTitle: "(Đã xóa)" });
+    } catch (e) {}
+
+    res.json({ success: true, message: `Đã xóa phòng ${rawId}` });
+  } catch (err: any) {
+    console.error("Lỗi xóa phòng thi trên server:", err);
+    res.status(500).json({ error: "Lỗi xóa phòng thi" });
+  }
+});
+
 // Submit student response endpoint
 app.post("/api/exams/:id/submit", async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -3437,15 +3475,22 @@ app.all('/api/generate-similar-exams', async (req, res) => {
     }));
 
     const promptText = `Bạn là chuyên gia khảo thí và giáo viên ra đề thi Quốc gia môn ${subject}.
-Dưới đây là một Đề thi gốc gồm ${simplifiedBase.length} câu hỏi:
+Dưới đây là một Đề thi gốc gồm CHÍNH XÁC ${simplifiedBase.length} câu hỏi (được đánh số thứ tự từ Câu 1 đến Câu ${simplifiedBase.length}):
 ${JSON.stringify(simplifiedBase, null, 2)}
 
 NHIỆM VỤ CỦA BẠN:
 Phát triển ĐỦ 4 ĐỀ THI TƯƠNG ĐƯƠNG / ĐỒNG DẠNG HOÀN CHỈNH theo chuẩn mã đề 4 chữ số mới:
-- Đề 1: Mã 1001
-- Đề 2: Mã 1002
-- Đề 3: Mã 1003
-- Đề 4: Mã 1004
+- Đề 1: Mã 1001 (chuẩn theo đề gốc kèm lời giải chi tiết từng bước)
+- Đề 2: Mã 1002 (đồng dạng, thay đổi số liệu, đảo phương án, lời giải chi tiết)
+- Đề 3: Mã 1003 (đồng dạng, thay đổi số liệu, đảo phương án, lời giải chi tiết)
+- Đề 4: Mã 1004 (đồng dạng, thay đổi số liệu, đảo phương án, lời giải chi tiết)
+
+[QUY TẮC SỐ LƯỢNG CÂU HỎI - BẮT BUỘC TUÂN THỦ 100%]:
+1. Đề gốc có CHÍNH XÁC ${simplifiedBase.length} câu hỏi.
+2. MỖI MÃ ĐỀ (Mã 1001, Mã 1002, Mã 1003, Mã 1004) BẮT BUỘC PHẢI CÓ ĐỦ CHÍNH XÁC ${simplifiedBase.length} CÂU HỎI (mảng 'questions' của mỗi mã đề BẮT BUỘC có đúng ${simplifiedBase.length} câu).
+3. TUYỆT ĐỐI KHÔNG ĐƯỢC CHỈ LẤY 1 CÂU MỖI PHẦN! ĐÂY LÀ ĐỀ THI ĐỒNG DẠNG ĐẦY ĐỦ 100%, KHÔNG PHẢI VÍ DỤ MINH HỌA!
+4. TUYỆT ĐỐI KHÔNG ĐƯỢC TỰ Ý RÚT GỌN HOẶC BỎ BỚT BẤT KỲ CÂU NÀO!
+5. Câu số k của mỗi mã đề (từ Câu 1 đến Câu ${simplifiedBase.length}) BẮT BUỘC tương ứng đồng dạng 1-1 với Câu số k của đề gốc (${simplifiedBase.length} câu).
 
 NGUYÊN TẮC RA ĐỀ ĐỒNG DẠNG (BẮT BUỘC TUÂN THỦ 100%):
 1. Câu số n của cả 4 đề (Mã 1001, Mã 1002, Mã 1003, Mã 1004) BẮT BUỘC kiểm tra cùng một đơn vị kiến thức, mô hình bài toán, phương pháp giải và cấp độ nhận thức như Câu số n của đề gốc.
@@ -3468,22 +3513,22 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
     {
       "code": "1001",
       "examName": "${examTitle} - MÃ ĐỀ 1001",
-      "questions": [ ...mảng các câu hỏi của Mã 1001... ]
+      "questions": [ ...đầy đủ ${simplifiedBase.length} câu hỏi của Mã 1001... ]
     },
     {
       "code": "1002",
       "examName": "${examTitle} - MÃ ĐỀ 1002",
-      "questions": [ ...mảng các câu hỏi của Mã 1002... ]
+      "questions": [ ...đầy đủ ${simplifiedBase.length} câu hỏi của Mã 1002... ]
     },
     {
       "code": "1003",
       "examName": "${examTitle} - MÃ ĐỀ 1003",
-      "questions": [ ...mảng các câu hỏi của Mã 1003... ]
+      "questions": [ ...đầy đủ ${simplifiedBase.length} câu hỏi của Mã 1003... ]
     },
     {
       "code": "1004",
       "examName": "${examTitle} - MÃ ĐỀ 1004",
-      "questions": [ ...mảng các câu hỏi của Mã 1004... ]
+      "questions": [ ...đầy đủ ${simplifiedBase.length} câu hỏi của Mã 1004... ]
     }
   ]
 }`;
@@ -3522,7 +3567,7 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
     // Filter valid exams returned by AI
     const validAiExams = parsedData.exams.filter((e: any) => e && Array.isArray(e.questions) && e.questions.length > 0);
 
-    // Fallback algorithmic generation to ensure all 4 codes are always present
+    // Baseline algorithmic generation to guarantee all 4 codes ALWAYS have all original questions
     const targetCodes = ['1001', '1002', '1003', '1004'];
     const algorithmicAll = generateServerAlgorithmicVariants(simplifiedBase, examTitle);
 
@@ -3530,19 +3575,43 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
     for (let i = 0; i < 4; i++) {
       const targetCode = targetCodes[i];
       const existing = validAiExams.find((e: any) => String(e.code) === targetCode) || validAiExams[i];
+      const baselineExam = algorithmicAll[i];
 
-      if (existing && Array.isArray(existing.questions) && existing.questions.length >= Math.min(3, simplifiedBase.length)) {
+      if (existing && Array.isArray(existing.questions) && existing.questions.length === simplifiedBase.length) {
+        // AI returned exact full question count
         finalExams.push({
           code: targetCode,
           examName: existing.examName || `${examTitle} - MÃ ĐỀ ${targetCode}`,
           questions: existing.questions.map((q: any, qIdx: number) => ({
             ...q,
             id: q.id || qIdx + 1,
-            solution: q.solution || q.explanation || `Lời giải chi tiết câu ${qIdx + 1}.`
+            solution: q.solution || q.explanation || baselineExam.questions[qIdx]?.solution || `Lời giải chi tiết câu ${qIdx + 1}.`
           }))
         });
+      } else if (existing && Array.isArray(existing.questions) && existing.questions.length > 0) {
+        // AI returned partial questions (e.g. only 4 questions or skipped some questions):
+        // Merge AI variants with baseline algorithmic questions so NO QUESTION IS EVER DROPPED!
+        const mergedQuestions = simplifiedBase.map((baseQ: any, qIdx: number) => {
+          const aiQ = existing.questions.find((q: any) => q.id === qIdx + 1) || 
+                      (existing.questions.length === simplifiedBase.length ? existing.questions[qIdx] : null);
+          if (aiQ && aiQ.content && (aiQ.type === baseQ.type || !aiQ.type)) {
+            return {
+              ...baseQ,
+              ...aiQ,
+              id: qIdx + 1,
+              type: baseQ.type,
+              solution: aiQ.solution || aiQ.explanation || baselineExam.questions[qIdx]?.solution || `Lời giải chi tiết câu ${qIdx + 1}.`
+            };
+          }
+          return baselineExam.questions[qIdx];
+        });
+        finalExams.push({
+          code: targetCode,
+          examName: existing.examName || `${examTitle} - MÃ ĐỀ ${targetCode}`,
+          questions: mergedQuestions
+        });
       } else {
-        finalExams.push(algorithmicAll[i]);
+        finalExams.push(baselineExam);
       }
     }
 

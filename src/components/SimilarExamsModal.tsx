@@ -198,7 +198,7 @@ export function SimilarExamsModal({
           correctAnswer: q.correctAnswer,
           tfStatements: q.tfStatements,
           level: q.level || 'Thông hiểu',
-          solution: (q.explanation || '').trim()
+          solution: (q.solution || q.explanation || '').trim()
         }));
         setActiveQuestions(qs);
         setActiveExamTitle(file.name.replace(/\.[^/.]+$/, ''));
@@ -493,18 +493,44 @@ export function SimilarExamsModal({
 
       if (response.ok) {
         const data = await response.json();
-        if (data && Array.isArray(data.exams) && data.exams.length === 4) {
-          setSimilarExams(data.exams);
-          setActiveTab('1001');
-          return;
-        } else if (data && Array.isArray(data.exams) && data.exams.length > 0) {
-          // If fewer than 4 exams returned, augment with algorithmic variants
+        if (data && Array.isArray(data.exams) && data.exams.length > 0) {
           const algorithmic = generateAlgorithmicVariants(activeQuestions);
-          const merged = ['1001', '1002', '1003', '1004'].map((code, idx) => {
-            const found = data.exams.find((e: any) => String(e.code) === code);
-            return (found && Array.isArray(found.questions) && found.questions.length > 0) ? found : algorithmic[idx];
+          const targetCodes = ['1001', '1002', '1003', '1004'];
+          const sanitized = targetCodes.map((code, idx) => {
+            const found = data.exams.find((e: any) => String(e.code) === code) || data.exams[idx];
+            const defaultExam = algorithmic[idx];
+            if (!found || !Array.isArray(found.questions) || found.questions.length === 0) {
+              return defaultExam;
+            }
+            if (found.questions.length === activeQuestions.length) {
+              return {
+                ...found,
+                code,
+                examName: found.examName || `${activeExamTitle} - MÃ ĐỀ ${code}`
+              };
+            }
+            // Hợp nhất câu hỏi nếu AI chỉ trả về một số câu, đảm bảo đề luôn đủ 100% số lượng câu của đề gốc
+            const mergedQuestions = activeQuestions.map((baseQ, qIdx) => {
+              const matchedQ = found.questions.find((q: any) => q.id === qIdx + 1) ||
+                               (found.questions.length === activeQuestions.length ? found.questions[qIdx] : null);
+              if (matchedQ && matchedQ.content) {
+                return {
+                  ...baseQ,
+                  ...matchedQ,
+                  id: qIdx + 1,
+                  type: baseQ.type,
+                  solution: matchedQ.solution || matchedQ.explanation || defaultExam.questions[qIdx].solution
+                };
+              }
+              return defaultExam.questions[qIdx];
+            });
+            return {
+              code,
+              examName: found.examName || `${activeExamTitle} - MÃ ĐỀ ${code}`,
+              questions: mergedQuestions
+            };
           });
-          setSimilarExams(merged);
+          setSimilarExams(sanitized);
           setActiveTab('1001');
           return;
         }
