@@ -1,14 +1,15 @@
 import { MathView } from "../components/MathView";
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Loader2, FileText, Trophy, CheckCircle2, XCircle, Clock, Copy, Camera, X, Image as ImageIcon, Calculator } from 'lucide-react';
+import { Loader2, FileText, Trophy, CheckCircle2, XCircle, Clock, Copy, Camera, X, Image as ImageIcon, Calculator, BarChart3, RefreshCw, Download, ExternalLink, Eye, UserCheck, Award, Search } from 'lucide-react';
 import { ScientificCalculatorModal } from '../components/math-tools/ScientificCalculatorModal';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { apiFetch } from '../lib/apiFetch';
 import LZString from 'lz-string';
+import * as XLSX from 'xlsx';
 import { fixMath, cleanMath, cleanQuestionStem, cleanOptionText, formatMathContent, sanitizeShortAnswerInput, validateShortAnswer, compareShortAnswers, sanitizeAndPolishMath, sanitizeExamQuestion } from "../lib/utils";
-import { fetchExamFromCloud, SYSTEM_EXAM_WEBHOOK } from "../lib/cloudExamStore";
+import { fetchExamFromCloud, saveExamToCloud, SYSTEM_EXAM_WEBHOOK } from "../lib/cloudExamStore";
 import { LanguageSpeechControls } from "../components/LanguageSpeechControls";
 
 const EMPTY_ESSAY_IMAGES: string[] = [];
@@ -605,6 +606,113 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
   const [timeSpent, setTimeSpent] = useState<number>(0);
   const [showCalculator, setShowCalculator] = useState(false);
 
+  // Teacher Live Results Dashboard States
+  const [showTeacherModal, setShowTeacherModal] = useState(false);
+  const [teacherSubmissions, setTeacherSubmissions] = useState<any[]>([]);
+  const [isTeacherLoading, setIsTeacherLoading] = useState(false);
+  const [teacherSearchQuery, setTeacherSearchQuery] = useState("");
+  const [selectedSubDetail, setSelectedSubDetail] = useState<any | null>(null);
+
+  const loadTeacherSubmissions = useCallback(async () => {
+    setIsTeacherLoading(true);
+    const activeCode = (examId || selectedCode || examData?.id || examData?.code || 'online_exam').trim();
+    let mergedList: any[] = [];
+
+    // A. LocalStorage
+    try {
+      const local = JSON.parse(localStorage.getItem('eduplan_exam_results') || '[]');
+      if (Array.isArray(local)) {
+        local.forEach((item: any) => {
+          if (!activeCode || String(item.examId || '').toLowerCase() === activeCode.toLowerCase() || (item.examName && examData?.examName && String(item.examName).includes(examData.examName))) {
+            mergedList.push(item);
+          }
+        });
+      }
+    } catch (e) {}
+
+    // B. Backend Express API (/api/exams/:id?fresh=true)
+    if (activeCode) {
+      try {
+        const res = await fetch(`/api/exams/${encodeURIComponent(activeCode)}?fresh=true`);
+        if (res.ok) {
+          const freshData = await res.json();
+          if (freshData && Array.isArray(freshData.submissions)) {
+            freshData.submissions.forEach((s: any) => {
+              const isDup = mergedList.some((m: any) =>
+                m.studentName === s.studentName &&
+                m.studentClass === s.studentClass &&
+                Math.abs(new Date(m.timestamp || m.submittedAt || 0).getTime() - new Date(s.timestamp || s.submittedAt || 0).getTime()) < 3 * 60 * 1000
+              );
+              if (!isDup) mergedList.push(s);
+            });
+          }
+        }
+      } catch (e) {}
+
+      // C. Distributed Cloud KV
+      try {
+        const cloudExam = await fetchExamFromCloud(activeCode);
+        if (cloudExam && Array.isArray(cloudExam.submissions)) {
+          cloudExam.submissions.forEach((s: any) => {
+            const isDup = mergedList.some((m: any) =>
+              m.studentName === s.studentName &&
+              m.studentClass === s.studentClass &&
+              Math.abs(new Date(m.timestamp || m.submittedAt || 0).getTime() - new Date(s.timestamp || s.submittedAt || 0).getTime()) < 3 * 60 * 1000
+            );
+            if (!isDup) mergedList.push(s);
+          });
+        }
+      } catch (e) {}
+    }
+
+    // D. Google Sheets Webhook
+    try {
+      const sheetRes = await fetch(SYSTEM_EXAM_WEBHOOK);
+      if (sheetRes.ok) {
+        const sheetData = await sheetRes.json();
+        if (Array.isArray(sheetData)) {
+          sheetData.forEach((s: any) => {
+            if (s && String(s.examId || '').toLowerCase() === activeCode.toLowerCase()) {
+              const isDup = mergedList.some((m: any) =>
+                m.studentName === s.studentName &&
+                m.studentClass === s.studentClass &&
+                Math.abs(new Date(m.timestamp || m.submittedAt || 0).getTime() - new Date(s.timestamp || s.submittedAt || 0).getTime()) < 3 * 60 * 1000
+              );
+              if (!isDup) mergedList.push(s);
+            }
+          });
+        }
+      }
+    } catch (e) {}
+
+    mergedList.sort((a, b) => new Date(b.timestamp || b.submittedAt || 0).getTime() - new Date(a.timestamp || a.submittedAt || 0).getTime());
+    setTeacherSubmissions(mergedList);
+    setIsTeacherLoading(false);
+  }, [examId, selectedCode, examData]);
+
+  const exportTeacherExcel = () => {
+    if (!teacherSubmissions || teacherSubmissions.length === 0) {
+      alert("Chưa có lượt nộp bài nào để xuất Excel.");
+      return;
+    }
+    const rows = teacherSubmissions.map((sub: any, idx: number) => ({
+      "STT": idx + 1,
+      "Họ và tên học sinh": sub.studentName || sub.name || "Ẩn danh",
+      "Lớp": sub.studentClass || sub.className || "",
+      "Thời gian nộp": sub.timestamp ? new Date(sub.timestamp).toLocaleString('vi-VN') : (sub.submittedAt ? new Date(sub.submittedAt).toLocaleString('vi-VN') : ""),
+      "Điểm số": sub.score ?? sub.totalScore ?? 0,
+      "Thời gian làm bài": sub.timeSpent || "",
+      "Số câu đúng": sub.correctCount ?? sub.correct ?? 0,
+      "Tổng số câu": sub.totalQuestions || ""
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Ket_Qua_Hoc_Sinh");
+    const activeCode = (examId || selectedCode || 'online').trim();
+    XLSX.writeFile(workbook, `Ket_Qua_Thi_Online_${activeCode}.xlsx`);
+  };
+
   const fetchExamById = async (id: string) => {
     const cleanId = id.trim();
     if (!cleanId) return;
@@ -1128,41 +1236,75 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
       submittedAt: new Date().toISOString()
     };
     
+    const currentExamId = (currentExam?.code || examId || selectedCode || examData?.id || 'online_exam').trim().toUpperCase();
+    const formattedTimeSpent = `${Math.floor(timeSpent / 60)} phút ${timeSpent % 60} giây`;
+    const calculatedScore = Number(finalScore.toFixed(2));
+    const uploadedEssayImages: string[] = Object.values(essayImages).flat();
+
+    const submitPayload = {
+      examId: currentExamId,
+      examName: examTitle,
+      examType: examType || 'Đề kiểm tra',
+      duration: isUnlimited ? 'Không giới hạn' : `${examDuration} phút`,
+      studentName: studentInfo.name || 'Học sinh ẩn danh',
+      className: studentInfo.class || '',
+      studentClass: studentInfo.class || '',
+      score: calculatedScore,
+      totalScore: calculatedScore,
+      correctCount: fullCorrectCount,
+      totalQuestions: currentExam.questions.length,
+      timeSpent: formattedTimeSpent,
+      timestamp: new Date().toISOString(),
+      submittedAt: new Date().toISOString(),
+      detailedAnswers: JSON.stringify(detailedAnswers),
+      essayImages: JSON.stringify(uploadedEssayImages || []),
+      ...resultToSave
+    };
+
+    // 1. Save to Student's LocalStorage & Room Cache
     try {
       const existingResults = JSON.parse(localStorage.getItem('eduplan_exam_results') || '[]');
-      existingResults.push(resultToSave);
+      existingResults.push(submitPayload);
       localStorage.setItem('eduplan_exam_results', JSON.stringify(existingResults));
     } catch(e) {
-      console.error("Lỗi lưu kết quả:", e);
+      console.error("Lỗi lưu kết quả local:", e);
     }
 
-    // Tự động gửi điểm qua Webhook trung tâm
+    // 2. Submit to Backend Express Server API (/api/exams/:id/submit)
     try {
-      const formattedTimeSpent = `${Math.floor(timeSpent / 60)} phút ${timeSpent % 60} giây`;
-      const currentExamId = currentExam.id || currentExam.code || examId || 'online_exam';
-      const calculatedScore = Number(finalScore.toFixed(2));
-      const uploadedEssayImages: string[] = Object.values(essayImages).flat();
+      apiFetch(`/api/exams/${encodeURIComponent(currentExamId)}/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(submitPayload)
+      }).catch(err => console.warn("Lỗi gửi API server:", err));
+    } catch (e) {}
 
-      const submitPayload = {
-        examId: currentExamId,
-        examName: examTitle,
-        examType: examType || 'Đề kiểm tra',
-        duration: isUnlimited ? 'Không giới hạn' : `${examDuration} phút`,
-        studentName: studentInfo.name || 'Học sinh ẩn danh',
-        className: studentInfo.class || '',
-        studentClass: studentInfo.class || '',
-        score: calculatedScore,
-        correctCount: fullCorrectCount,
-        totalQuestions: currentExam.questions.length,
-        timeSpent: formattedTimeSpent,
-        // BẮT BUỘC ÉP KIỂU CHUỖI JSON ĐỂ SHEET LƯU AN TOÀN VÀO CỘT H
-        detailedAnswers: JSON.stringify(detailedAnswers),
-        essayImages: JSON.stringify(uploadedEssayImages || [])
-      };
+    // 3. Direct sync to Cloud KV (distributed resilient persistence)
+    (async () => {
+      try {
+        const cloudExam = await fetchExamFromCloud(currentExamId);
+        if (cloudExam) {
+          cloudExam.submissions = cloudExam.submissions || [];
+          const isDup = cloudExam.submissions.some((s: any) =>
+            s.studentName === submitPayload.studentName &&
+            s.studentClass === submitPayload.studentClass &&
+            Math.abs(new Date(s.timestamp || s.submittedAt || Date.now()).getTime() - Date.now()) < 3 * 60 * 1000
+          );
+          if (!isDup) {
+            cloudExam.submissions.push(submitPayload);
+            await saveExamToCloud(currentExamId, cloudExam);
+          }
+        }
+      } catch (e) {
+        console.warn("Lỗi lưu trực tiếp Cloud KV:", e);
+      }
+    })();
 
+    // 4. Send to Webhook (Google Sheets)
+    try {
       fetch(SYSTEM_EXAM_WEBHOOK, {
         method: 'POST',
-        mode: 'no-cors', // Tránh chặn CORS trên trình duyệt
+        mode: 'no-cors',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(submitPayload)
       }).catch(err => {
@@ -1190,9 +1332,21 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
           )}
 
           <h1 className="text-2xl font-bold text-slate-800 mb-2">{examTitle}</h1>
-          <p className="text-slate-500 mb-5 text-sm">
+          <p className="text-slate-500 mb-4 text-sm">
             Thời lượng: <strong className="text-emerald-700 font-semibold">{isUnlimited ? "Không giới hạn thời gian" : `${examDuration} phút`}</strong>
           </p>
+
+          <button
+            type="button"
+            onClick={() => {
+              setShowTeacherModal(true);
+              loadTeacherSubmissions();
+            }}
+            className="w-full mb-5 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium text-xs rounded-xl flex items-center justify-center gap-2 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer shadow-2xs"
+          >
+            <BarChart3 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <span>📊 Xem báo cáo kết quả phòng thi (Dành cho Giáo viên)</span>
+          </button>
 
           {/* Schedule Warnings */}
           {isBeforeStart && startTimeStr && (
@@ -1515,6 +1669,264 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
         ))}
 
       </main>
+
+      {/* Teacher Live Results Dashboard Modal */}
+      {showTeacherModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
+            {/* Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/60 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-xl">
+                  <BarChart3 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 dark:text-white text-base sm:text-lg flex items-center gap-2">
+                    Báo cáo kết quả bài làm trực tiếp
+                    <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 rounded-full text-xs font-mono font-bold">
+                      {examId || selectedCode || "ONLINE"}
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {examTitle} • Đồng bộ realtime từ Máy chủ, Cloud KV & Google Sheets
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={loadTeacherSubmissions}
+                  disabled={isTeacherLoading}
+                  className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Làm mới dữ liệu từ server & Cloud KV"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isTeacherLoading ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">{isTeacherLoading ? "Đang tải..." : "Làm mới"}</span>
+                </button>
+
+                <button
+                  onClick={exportTeacherExcel}
+                  disabled={teacherSubmissions.length === 0}
+                  className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                  title="Xuất kết quả bài làm ra file Excel"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Xuất Excel</span>
+                </button>
+
+                <button
+                  onClick={() => window.open(SYSTEM_EXAM_WEBHOOK, '_blank')}
+                  className="p-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 text-slate-700 dark:text-slate-200 rounded-xl text-xs transition-colors cursor-pointer"
+                  title="Xem Google Sheet"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </button>
+
+                <button
+                  onClick={() => setShowTeacherModal(false)}
+                  className="p-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 text-slate-700 dark:text-slate-200 rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Content Body */}
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50/50 dark:bg-slate-900/50">
+              {/* Stat Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs">
+                  <div className="text-slate-500 dark:text-slate-400 text-xs font-medium">Tổng lượt nộp bài</div>
+                  <div className="text-2xl font-bold text-slate-900 dark:text-white mt-1">
+                    {teacherSubmissions.length} <span className="text-xs font-normal text-slate-400">học sinh</span>
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs">
+                  <div className="text-slate-500 dark:text-slate-400 text-xs font-medium">Điểm trung bình</div>
+                  <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+                    {teacherSubmissions.length > 0
+                      ? (teacherSubmissions.reduce((acc, s) => acc + (Number(s.score ?? s.totalScore) || 0), 0) / teacherSubmissions.length).toFixed(1)
+                      : "0.0"} <span className="text-xs font-normal text-slate-400">/ 10</span>
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs">
+                  <div className="text-slate-500 dark:text-slate-400 text-xs font-medium">Điểm Cao nhất / Thấp nhất</div>
+                  <div className="text-xl font-bold text-indigo-600 dark:text-indigo-400 mt-1">
+                    {teacherSubmissions.length > 0
+                      ? `${Math.max(...teacherSubmissions.map(s => Number(s.score ?? s.totalScore) || 0)).toFixed(1)} / ${Math.min(...teacherSubmissions.map(s => Number(s.score ?? s.totalScore) || 0)).toFixed(1)}`
+                      : "0 / 0"}
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs">
+                  <div className="text-slate-500 dark:text-slate-400 text-xs font-medium">Tỷ lệ Đạt (≥ 5.0)</div>
+                  <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">
+                    {teacherSubmissions.length > 0
+                      ? `${Math.round((teacherSubmissions.filter(s => (Number(s.score ?? s.totalScore) || 0) >= 5.0).length / teacherSubmissions.length) * 100)}%`
+                      : "0%"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Search & Table */}
+              <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-2xs">
+                <div className="p-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-800/50">
+                  <div className="relative flex-1 max-w-md">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={teacherSearchQuery}
+                      onChange={(e) => setTeacherSearchQuery(e.target.value)}
+                      placeholder="Tìm kiếm theo tên học sinh hoặc lớp..."
+                      className="w-full pl-9 pr-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 dark:text-slate-200"
+                    />
+                  </div>
+                  <span className="text-xs text-slate-500">
+                    Hiển thị {teacherSubmissions.filter(s => {
+                      const q = teacherSearchQuery.toLowerCase().trim();
+                      if (!q) return true;
+                      return String(s.studentName || '').toLowerCase().includes(q) || String(s.studentClass || '').toLowerCase().includes(q);
+                    }).length} kết quả
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto max-h-96">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 font-semibold">
+                        <th className="py-2.5 px-3">STT</th>
+                        <th className="py-2.5 px-3">Họ và tên</th>
+                        <th className="py-2.5 px-3">Lớp</th>
+                        <th className="py-2.5 px-3">Thời gian nộp</th>
+                        <th className="py-2.5 px-3">Điểm số</th>
+                        <th className="py-2.5 px-3">Số câu đúng</th>
+                        <th className="py-2.5 px-3 text-center">Bài làm</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                      {teacherSubmissions.filter(s => {
+                        const q = teacherSearchQuery.toLowerCase().trim();
+                        if (!q) return true;
+                        return String(s.studentName || '').toLowerCase().includes(q) || String(s.studentClass || '').toLowerCase().includes(q);
+                      }).length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="py-8 text-center text-slate-400">
+                            {isTeacherLoading ? "Đang tải dữ liệu kết quả phòng thi..." : "Chưa có lượt nộp bài nào cho phòng thi này."}
+                          </td>
+                        </tr>
+                      ) : (
+                        teacherSubmissions
+                          .filter(s => {
+                            const q = teacherSearchQuery.toLowerCase().trim();
+                            if (!q) return true;
+                            return String(s.studentName || '').toLowerCase().includes(q) || String(s.studentClass || '').toLowerCase().includes(q);
+                          })
+                          .map((sub: any, idx: number) => {
+                            const sc = Number(sub.score ?? sub.totalScore) || 0;
+                            return (
+                              <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors">
+                                <td className="py-2.5 px-3 text-slate-500 font-mono">{idx + 1}</td>
+                                <td className="py-2.5 px-3 font-medium text-slate-900 dark:text-white">
+                                  {sub.studentName || sub.name || "Ẩn danh"}
+                                </td>
+                                <td className="py-2.5 px-3 text-slate-600 dark:text-slate-300 font-semibold">
+                                  {sub.studentClass || sub.className || "Mặc định"}
+                                </td>
+                                <td className="py-2.5 px-3 text-slate-500 text-[11px]">
+                                  {sub.timestamp ? new Date(sub.timestamp).toLocaleString('vi-VN') : (sub.submittedAt ? new Date(sub.submittedAt).toLocaleString('vi-VN') : "Vừa xong")}
+                                </td>
+                                <td className="py-2.5 px-3 font-bold">
+                                  <span className={`px-2 py-0.5 rounded-full ${sc >= 8.0 ? 'bg-emerald-100 text-emerald-800' : sc >= 5.0 ? 'bg-blue-100 text-blue-800' : 'bg-rose-100 text-rose-800'}`}>
+                                    {sc.toFixed(1)}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 text-slate-600 dark:text-slate-300">
+                                  {sub.correctCount ?? sub.correct ?? 0} / {sub.totalQuestions || displayQuestions.length}
+                                </td>
+                                <td className="py-2.5 px-3 text-center">
+                                  <button
+                                    onClick={() => setSelectedSubDetail(sub)}
+                                    className="px-2.5 py-1 bg-slate-100 dark:bg-slate-700 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-medium flex items-center gap-1 mx-auto transition-colors cursor-pointer"
+                                  >
+                                    <Eye className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>Xem chi tiết</span>
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Student Detailed Answer Drawer Modal */}
+      {selectedSubDetail && (
+        <div className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800">
+              <div>
+                <h4 className="font-bold text-slate-900 dark:text-white text-base">
+                  Chi tiết bài làm: {selectedSubDetail.studentName || "Học sinh"} ({selectedSubDetail.studentClass || "Lớp"})
+                </h4>
+                <p className="text-xs text-slate-500">
+                  Điểm: <strong className="text-emerald-600">{Number(selectedSubDetail.score ?? selectedSubDetail.totalScore).toFixed(1)}/10</strong> • Làm trong: {selectedSubDetail.timeSpent || "N/A"}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedSubDetail(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
+              {(() => {
+                let parsedAns: any[] = [];
+                try {
+                  if (typeof selectedSubDetail.detailedAnswers === 'string') {
+                    parsedAns = JSON.parse(selectedSubDetail.detailedAnswers);
+                  } else if (Array.isArray(selectedSubDetail.detailedAnswers)) {
+                    parsedAns = selectedSubDetail.detailedAnswers;
+                  } else if (Array.isArray(selectedSubDetail.details)) {
+                    parsedAns = selectedSubDetail.details;
+                  }
+                } catch(e) {}
+
+                if (parsedAns.length === 0) {
+                  return <div className="text-slate-400 text-center py-6">Không tìm thấy chi tiết từng câu của học sinh này.</div>;
+                }
+
+                return parsedAns.map((item: any, i: number) => (
+                  <div key={i} className={`p-3.5 rounded-xl border text-xs space-y-1.5 ${item.isCorrect ? 'bg-emerald-50/50 border-emerald-200' : 'bg-rose-50/50 border-rose-200'}`}>
+                    <div className="flex items-center justify-between font-bold">
+                      <span className="text-slate-900 dark:text-white">Câu {item.questionIndex || item.questionNumber || (i + 1)}:</span>
+                      <span className={`px-2 py-0.5 rounded-full font-semibold ${item.isCorrect ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                        {item.isCorrect ? "Đúng ✓" : "Sai ✗"}
+                      </span>
+                    </div>
+                    <div className="text-slate-700 dark:text-slate-300">
+                      <MathView content={item.questionContent || item.questionText || ''} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-200/60 text-[11px]">
+                      <div>Học sinh chọn: <strong className={item.isCorrect ? "text-emerald-700" : "text-rose-700"}>{String(item.studentAnswer || item.studentChoice || 'Bỏ trống')}</strong></div>
+                      <div>Đáp án đúng: <strong className="text-emerald-700">{String(item.correctAnswer || item.correctChoice || 'N/A')}</strong></div>
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating Calculator Button and Modal */}
       <button

@@ -3229,7 +3229,13 @@ app.post("/api/exams/:id/submit", async (req, res) => {
   }
 
   if (!metadata) {
-    return res.status(404).json({ error: "Không tìm thấy phòng thi tương ứng trên hệ thống." });
+    metadata = {
+      id: rawId,
+      examId: rawId,
+      examName: submission.examName || `Phòng thi ${rawId}`,
+      createdAt: new Date().toISOString(),
+      submissions: []
+    };
   }
 
   // Ensure we strip pdfBase64 if it somehow leaked into metadata

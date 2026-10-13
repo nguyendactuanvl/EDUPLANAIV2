@@ -613,13 +613,14 @@ export function ExamGenerator() {
       console.warn("Lỗi đọc local results:", e);
     }
 
+    const merged = [...local];
+
     // 2. Gọi API lấy dữ liệu thực tế từ Google Sheet Webhook và hợp nhất
     try {
       const res = await fetch(SYSTEM_EXAM_WEBHOOK);
       if (res.ok) {
         const cloudData = await res.json();
         if (Array.isArray(cloudData) && cloudData.length > 0) {
-          const merged = [...local];
           cloudData.forEach((cloudItem: any) => {
             if (!cloudItem || typeof cloudItem !== 'object') return;
             const cName = String(cloudItem.studentName ?? '').trim().toLowerCase();
@@ -650,14 +651,52 @@ export function ExamGenerator() {
               };
             }
           });
-          setExamResults(merged);
         }
       }
     } catch (error) {
       console.error("Lỗi tải kết quả từ máy chủ:", error);
-    } finally {
-      setResultsLoading(false);
     }
+
+    // 3. Lấy dữ liệu bài nộp từ Server API & Cloud KV cho các phòng thi của giáo viên
+    try {
+      const historyRaw = localStorage.getItem("eduplan_teacher_exams_history");
+      const historyArr = historyRaw ? JSON.parse(historyRaw) : [];
+      const codesToFetch = new Set<string>();
+      if (Array.isArray(historyArr)) {
+        historyArr.forEach((h: any) => { if (h.code) codesToFetch.add(String(h.code).toUpperCase()); });
+      }
+      local.forEach((l: any) => { if (l.examId) codesToFetch.add(String(l.examId).toUpperCase()); });
+
+      for (const code of Array.from(codesToFetch)) {
+        try {
+          const res = await fetch(`/api/exams/${code}?fresh=true`);
+          if (res.ok) {
+            const serverExam = await res.json();
+            if (serverExam && Array.isArray(serverExam.submissions)) {
+              serverExam.submissions.forEach((s: any) => {
+                const sName = String(s.studentName || s.name || '').trim().toLowerCase();
+                const sExamId = String(s.examId || code);
+                const isDup = merged.some((m: any) =>
+                  String(m.studentName || m.name || '').trim().toLowerCase() === sName &&
+                  String(m.examId || '').toUpperCase() === sExamId.toUpperCase() &&
+                  Math.abs(new Date(m.timestamp || m.submittedAt || 0).getTime() - new Date(s.timestamp || s.submittedAt || 0).getTime()) < 3 * 60 * 1000
+                );
+                if (!isDup) merged.push(s);
+              });
+            }
+          }
+        } catch (e) {}
+      }
+    } catch (e) {
+      console.warn("Lỗi đồng bộ server results:", e);
+    }
+
+    merged.sort((a: any, b: any) => new Date(b.submittedAt || b.timestamp || 0).getTime() - new Date(a.submittedAt || a.timestamp || 0).getTime());
+    setExamResults(merged);
+    try {
+      localStorage.setItem('eduplan_exam_results', JSON.stringify(merged));
+    } catch (e) {}
+    setResultsLoading(false);
   };
 
   useEffect(() => {
