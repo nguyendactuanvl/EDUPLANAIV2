@@ -34,6 +34,7 @@ import { attachCroppedFiguresToQuestions } from '../lib/cropUtils';
 import { UploadTeacherExamModal } from "../components/UploadTeacherExamModal";
 import { WordEquationModal } from "../components/WordEquationModal";
 import { ExamDiffViewer } from "../components/ExamDiffViewer";
+import { ExamAiInspectorModal } from "../components/ExamAiInspectorModal";
 import { SimilarExamsModal } from "../components/SimilarExamsModal";
 import { QuestionEditModal } from "../components/QuestionEditModal";
 import { HeaderConfigModal } from "../components/HeaderConfigModal";
@@ -56,7 +57,7 @@ import {
 } from '../lib/examMixer';
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import * as XLSX from 'xlsx';
-import { School, FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera, TrendingUp, BarChart2, Box, BarChart3, Calculator, Wand2, FileDiff } from "lucide-react";
+import { School, FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera, TrendingUp, BarChart2, Box, BarChart3, Calculator, Wand2, FileDiff, ShieldCheck } from "lucide-react";
 import { run1ClickMathFix } from "../components/math-tools/MathFormulaFixer";
 
 interface Question {
@@ -961,6 +962,8 @@ export function ExamGenerator() {
   });
   const [showAnswerMatrix, setShowAnswerMatrix] = useState(true);
   const [showDiffViewer, setShowDiffViewer] = useState(false);
+  const [showInspectorModal, setShowInspectorModal] = useState(false);
+  const [inspectorCodeTarget, setInspectorCodeTarget] = useState<string | undefined>(undefined);
   
   // Tùy chọn Ưu tiên câu hỏi bối cảnh thực tế (Chuẩn GDPT 2018)
   const [enableRealWorld, setEnableRealWorld] = useState<boolean>(true);
@@ -4016,6 +4019,17 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                       >
                         <FileDiff className="w-4 h-4" /> <span>So Sánh Diff</span>
                       </button>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setInspectorCodeTarget(undefined);
+                          setShowInspectorModal(true);
+                        }} 
+                        className="px-3 sm:px-4 py-2 bg-gradient-to-r from-purple-700 to-indigo-700 text-white font-bold rounded-lg hover:from-purple-800 hover:to-indigo-800 flex items-center gap-2 shadow-sm transition-all cursor-pointer active:scale-95"
+                        title="AI Kiểm Tra Đề: Phân tích file xuất/mã đề, đối soát với đề gốc, tự động phát hiện lỗi định dạng, MathJax hỏng hoặc mất mát nội dung"
+                      >
+                        <ShieldCheck className="w-4 h-4 text-amber-300 animate-pulse" /> <span>AI Kiểm Tra Đề</span>
+                      </button>
                       <button onClick={handleExportTNMakerExcel} className="px-3 sm:px-4 py-2 bg-white border border-emerald-600 text-emerald-700 font-medium rounded-lg hover:bg-emerald-50 flex items-center gap-2 shadow-sm" title="Xuất file Excel đầy đủ ma trận đáp án, form TNMaker và bảng tra câu gốc">
                         <FileSpreadsheet className="w-4 h-4" /> <span className="hidden sm:inline">Excel Đáp Án (TNMaker)</span>
                       </button>
@@ -4375,6 +4389,17 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                             >
                               <FileDiff className="w-4 h-4 text-indigo-600" />
                               <span>So sánh Diff</span>
+                            </button>
+                            <button 
+                              onClick={() => {
+                                setInspectorCodeTarget(exam.code);
+                                setShowInspectorModal(true);
+                              }} 
+                              className="px-3 py-1.5 bg-purple-50 border border-purple-300 text-purple-900 text-sm font-bold rounded hover:bg-purple-100 flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer active:scale-95"
+                              title="AI Kiểm Tra & Đối Soát riêng cho Mã đề này"
+                            >
+                              <ShieldCheck className="w-4 h-4 text-purple-700" />
+                              <span>AI Kiểm Tra</span>
                             </button>
                             <button onClick={() => handlePrint(`print-exam-${exam.code}`)} className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-sm font-medium rounded hover:bg-slate-50 flex items-center gap-2">
 
@@ -6388,6 +6413,23 @@ Lời giải: Tiệm cận ngang là $y = 1$ nên ý c sai.`);
           onClose={() => setShowDiffViewer(false)}
         />
       )}
+
+      {/* Exam AI Inspector Modal (Kiểm tra & Đối soát chất lượng đề thi) */}
+      <ExamAiInspectorModal
+        isOpen={showInspectorModal}
+        onClose={() => {
+          setShowInspectorModal(false);
+          setInspectorCodeTarget(undefined);
+        }}
+        originalQuestions={questions}
+        shuffledExams={shuffledExams}
+        examTitle={examName || formatExamTitle(examType, subject, grade)}
+        selectedCode={inspectorCodeTarget}
+        onApplyAutoFixAll={(repairedExams) => {
+          setShuffledExams(repairedExams);
+          setToastMessage("Đã tự động sửa hoàn tất tất cả vị trí lỗi trên các mã đề!");
+        }}
+      />
 
       {/* Header Config Modal (Trường, GV, Năm học 2026-2027) */}
       <HeaderConfigModal

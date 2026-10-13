@@ -754,7 +754,11 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
 
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.setHeader('Transfer-Encoding', 'chunked');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Access-Control-Allow-Origin', '*');
+  // Write initial empty byte immediately to establish stream connection with Vercel proxy
+  res.write('');
 
   const config = payloadOptions.config || {};
   const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán.
