@@ -337,8 +337,11 @@ export async function parseExamWithAI(params: {
   }
 
   const payload: any = {};
-  if (workingText && workingText.trim()) {
-    payload.rawText = workingText;
+  // Chỉ gửi rawText nếu do người dùng nhập trực tiếp HOẶC khi không có fileData
+  if (params.rawText && params.rawText.trim()) {
+    payload.rawText = params.rawText.trim();
+  } else if (!params.fileData && workingText && workingText.trim()) {
+    payload.rawText = workingText.trim();
   }
 
   if (params.fileData) {

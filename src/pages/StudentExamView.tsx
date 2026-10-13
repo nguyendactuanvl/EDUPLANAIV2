@@ -868,6 +868,36 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
     }).join('\n\n');
   }, [displayQuestions, examLanguage]);
 
+  const handleAnswerChange = useCallback((idx: number, ans: any) => {
+    setAnswers(prev => ({ ...prev, [idx]: ans }));
+  }, []);
+
+  const handleImageUpload = useCallback((qIdx: number, files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    Array.from(files).forEach((file) => {
+      if (!file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const base64 = e.target?.result as string;
+        if (base64) {
+          setEssayImages(prev => ({
+            ...prev,
+            [qIdx]: [...(prev[qIdx] || []), base64]
+          }));
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const removeEssayImage = useCallback((qIdx: number, imgIdx: number) => {
+    setEssayImages(prev => {
+      const list = [...(prev[qIdx] || [])];
+      list.splice(imgIdx, 1);
+      return { ...prev, [qIdx]: list };
+    });
+  }, []);
+
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-3">
@@ -927,36 +957,6 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
       </div>
     );
   }
-
-  const handleAnswerChange = useCallback((idx: number, ans: any) => {
-    setAnswers(prev => ({ ...prev, [idx]: ans }));
-  }, []);
-
-  const handleImageUpload = useCallback((qIdx: number, files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    Array.from(files).forEach((file) => {
-      if (!file.type.startsWith('image/')) return;
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const base64 = e.target?.result as string;
-        if (base64) {
-          setEssayImages(prev => ({
-            ...prev,
-            [qIdx]: [...(prev[qIdx] || []), base64]
-          }));
-        }
-      };
-      reader.readAsDataURL(file);
-    });
-  }, []);
-
-  const removeEssayImage = useCallback((qIdx: number, imgIdx: number) => {
-    setEssayImages(prev => {
-      const list = [...(prev[qIdx] || [])];
-      list.splice(imgIdx, 1);
-      return { ...prev, [qIdx]: list };
-    });
-  }, []);
 
   const handleSubmit = () => {
     if (!currentExam || !currentExam.questions) return;

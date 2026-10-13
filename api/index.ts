@@ -197,26 +197,13 @@ async function processFilesForAI(files: any[]) {
           }
         });
       } else if (isPdf) {
-        // Gửi file Base64 sạch sang Gemini API dưới dạng inlineData
+        // Gửi file Base64 sạch sang Gemini API dưới dạng inlineData (Gemini đọc chuẩn 100% tất cả các trang PDF)
         processedFiles.push({
           inlineData: {
             data: rawBase64,
             mimeType: 'application/pdf'
           }
         });
-
-        // Bổ sung cơ chế trích xuất văn bản từ PDF làm dữ liệu văn bản đối chiếu
-        try {
-          const pdfBuffer = Buffer.from(rawBase64, 'base64');
-          const pdfText = await extractTextFromPdf(pdfBuffer);
-          if (pdfText && pdfText.trim()) {
-            processedFiles.push({
-              text: `[Văn bản trích xuất từ file PDF ${f.name || 'đề thi'}]:\n${pdfText.trim().substring(0, 60000)}`
-            });
-          }
-        } catch (pdfErr) {
-          console.warn("pdf-parse extraction notice:", pdfErr);
-        }
       } else {
         processedFiles.push({
           inlineData: {
@@ -2906,7 +2893,11 @@ Tuyệt đối chỉ trả về JSON hợp lệ, không kèm bất kỳ lời d�
       userParts.push(...processed);
     }
     if (rawText && typeof rawText === 'string' && rawText.trim()) {
-      userParts.push({ text: `Nội dung tài liệu đề thi:\n${rawText}` });
+      if (!files || files.length === 0) {
+        userParts.push({ text: `Nội dung tài liệu đề thi:\n${rawText}` });
+      } else {
+        userParts.push({ text: `Ghi chú / thông tin bổ sung:\n${rawText}` });
+      }
     }
     userParts.push({ text: promptText });
 
@@ -2919,7 +2910,7 @@ Tuyệt đối chỉ trả về JSON hợp lệ, không kèm bất kỳ lời d�
       ],
       config: {
         temperature: 0.1,
-        maxOutputTokens: 16384,
+        maxOutputTokens: 32768,
         responseMimeType: "application/json"
       }
     });
