@@ -7,7 +7,7 @@ import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveCon
 import { 
   BookOpen, Download, AlertCircle, Edit3, Eye, Printer, Share2, Copy, CheckCircle2, 
   ExternalLink, Upload, FileText, Palette, LayoutTemplate, GitFork, Sparkles, Zap, Image as ImageIcon, Sliders, Check,
-  TrendingUp, BarChart2, Plus, Box, BarChart3, School, User, Wand2, Users, BarChart, Loader2, FileSpreadsheet, Trash2, RefreshCw, X
+  TrendingUp, BarChart2, Plus, Box, BarChart3, School, User, Wand2, Users, BarChart, Loader2, FileSpreadsheet, Trash2, RefreshCw, X, ShieldCheck
 } from "lucide-react";
 import { StudentExamView } from "./StudentExamView";
 import * as XLSX from "xlsx";
@@ -27,6 +27,7 @@ import { QuestionEditModal } from "../components/QuestionEditModal";
 import { HeaderConfigModal } from "../components/HeaderConfigModal";
 import { HeaderConfig, getHeaderConfig, saveHeaderConfig } from "../lib/headerConfig";
 import { QuestionVisualizerPanel } from "../components/math-tools/QuestionVisualizerPanel";
+import { WorksheetAiInspectorModal } from "../components/WorksheetAiInspectorModal";
 import { analyzeFunctionToBbt, generateBbtSvg, convertBbtTableToSvg, autoEnrichTextWithVisuals } from "../lib/bbtRenderer";
 import { getTikzSvg, embedTikzSvgsInText } from "../components/TikzRenderer";
 import { saveToHistory, getHistory, deleteFromHistory } from '../lib/history';
@@ -201,6 +202,7 @@ export function Worksheets() {
   }, [subject, selectedGrade, selectedSemester, selectedChapterId, selectedLessonId]);
   
   const [suggestion, setSuggestion] = useState("");
+  const [showInspectorModal, setShowInspectorModal] = useState<boolean>(false);
   const [streamProgress, setStreamProgress] = useState<{ percentage: number; text: string } | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
@@ -963,6 +965,10 @@ export function Worksheets() {
     setStreamProgress({ percentage: 10, text: "Khởi tạo kết nối tạo phiếu học tập..." });
     
     try {
+      const semData = getKnttCurriculum(subject, selectedGrade, selectedSemester);
+      const currentChapter = semData?.chapters.find(c => c.id === selectedChapterId);
+      const selectedChapterName = currentChapter?.name || "";
+
       const response = await fetch('/api/generate-worksheet-stream', {
         method: 'POST',
         headers: { 
@@ -970,6 +976,8 @@ export function Worksheets() {
         },
         body: JSON.stringify({
           lesson: customLessonName,
+          chapter: selectedChapterName,
+          semester: selectedSemester,
           subject: subject,
           grade: selectedGrade,
           type: worksheetType,
@@ -994,7 +1002,11 @@ export function Worksheets() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            lesson: customLessonName, subject, grade: selectedGrade,
+            lesson: customLessonName,
+            chapter: selectedChapterName,
+            semester: selectedSemester,
+            subject,
+            grade: selectedGrade,
             type: worksheetType, layoutStyle, answerMode, additionalNotes,
             numPartI, numPartII, numPartIII, numPartIV, realWorldPercent, hasParametric
           })
@@ -2190,6 +2202,17 @@ export function Worksheets() {
                       <span>✨ Tự động xuất BBT & Đồ thị ảnh</span>
                     </>
                   )}
+                </button>
+
+                {/* AI Inspector / Check Results Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowInspectorModal(true)}
+                  className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer active:scale-95"
+                  title="AI Kiểm tra kết quả phiếu học tập: kiểm tra đúng bài/chủ đề, đủ số lượng câu hỏi, không sai sót"
+                >
+                  <ShieldCheck className="w-4 h-4 text-amber-300 animate-pulse" />
+                  <span>🔍 AI Kiểm Tra Kết Quả</span>
                 </button>
 
                 {/* Manual Visualizer Drawer Toggles for Document Mode */}
@@ -3428,6 +3451,33 @@ export function Worksheets() {
           </div>
         </div>
       )}
+
+      {/* Worksheet AI Inspector Modal */}
+      <WorksheetAiInspectorModal
+        isOpen={showInspectorModal}
+        onClose={() => setShowInspectorModal(false)}
+        worksheetText={suggestion}
+        selectedGrade={selectedGrade}
+        selectedSubject={subject}
+        selectedSemester={selectedSemester}
+        selectedChapterName={getKnttCurriculum(subject, selectedGrade, selectedSemester)?.chapters.find(c => c.id === selectedChapterId)?.name || ""}
+        selectedLessonName={customLessonName}
+        configCounts={{
+          numPartI,
+          numPartII,
+          numPartIII,
+          numPartIV
+        }}
+        onApplyAutoFix={(fixedText: string) => {
+          setSuggestion(fixedText);
+          showToast("Đã tự động sửa lỗi và hoàn thiện phiếu học tập!");
+          setTimeout(() => triggerGlobalMathRender(), 100);
+        }}
+        onRegenerateWorksheet={() => {
+          setShowInspectorModal(false);
+          handleGenerate();
+        }}
+      />
 
       {/* Floating Toast Notification */}
       {toastMessage && (

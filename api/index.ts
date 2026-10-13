@@ -2249,6 +2249,8 @@ app.all("/api/generate-worksheet", async (req, res) => {
 
       const { 
         lesson, 
+        chapter = '',
+        semester = 'Học kỳ 1',
         subject, 
         grade, 
         type, 
@@ -2344,12 +2346,12 @@ YÊU CẦU PHONG CÁCH: A4 CHUẨN IN ẤN (Đen trắng / Tiết kiệm mực -
       }
 
       const prompt = `Bạn là chuyên gia sư phạm bộ môn ${subject || "Toán"} hàng đầu Việt Nam, nắm vững 100% Chương trình GDPT 2018 và bộ sách giáo khoa "Kết nối tri thức với cuộc sống" (KNTT) áp dụng từ năm học 2026-2027.
-Nhiệm vụ của bạn là nhận thông tin cấu hình và tạo ra một "PHIẾU HỌC TẬP" hoàn chỉnh, khoa học, thẩm mỹ cao và chuẩn mực sư phạm cho học sinh Lớp ${grade}, môn ${subject || "Toán"}, bài học/chủ đề: "${lesson}".
+Nhiệm vụ của bạn là nhận thông tin cấu hình và tạo ra một "PHIẾU HỌC TẬP" hoàn chỉnh, khoa học, thẩm mỹ cao và chuẩn mực sư phạm cho học sinh Lớp ${grade}, ${semester}, môn ${subject || "Toán"}, Chương: "${chapter}", Bài học/chủ đề: "${lesson}".
 
 ---
 ### 1. RÀNG BUỘC PHẠM VI NỘI DUNG VÀ CHUYÊN MÔN SGK KNTT 2026-2027 (BẮT BUỘC 100%)
-- PHẠM VI CHỦ ĐỀ CHÍNH XÁC: TẤT CẢ các câu hỏi trong phiếu học tập BẮT BUỘC phải tập trung trực tiếp và 100% thuộc về bài học/chủ đề: "${lesson}".
-- KHÔNG BỊA LẠCH CHỦ ĐỀ: TUYỆT ĐỐI KHÔNG tự ý bịa ra hoặc chèn thêm bất kỳ câu hỏi nào thuộc các bài học khác, chương học khác hay khối lớp khác ngoài chủ đề "${lesson}".
+- PHẠM VI CHỦ ĐỀ CHÍNH XÁC (TẬP TRUNG 100%): TẤT CẢ các câu hỏi trong phiếu học tập BẮT BUỘC phải thuộc chính xác bài học "${lesson}" (thuộc ${chapter}, Lớp ${grade}, ${semester}).
+- KHÔNG BỊA LỆCH CHỦ ĐỀ: TUYỆT ĐỐI KHÔNG tự ý bịa ra hoặc chèn thêm bất kỳ câu hỏi nào thuộc các chương học khác hay khối lớp khác ngoài chủ đề "${lesson}". (Ví dụ: Khi giáo viên chọn Chương V "Các số đặc trưng đo xu thế trung tâm", TUYỆT ĐỐI KHÔNG xuất hiện câu hỏi về Đạo hàm, Giới hạn hay Tích phân).
 - Chuẩn SGK KNTT: Sử dụng chuẩn xác thuật ngữ, ký hiệu chuyên môn theo bộ sách Kết nối tri thức với cuộc sống từ năm học 2026-2027 cho môn ${subject || "Toán"}.
 - Ranh giới kiến thức chương trình mới:
   + KHÔNG sử dụng phương pháp đổi biến số hay tích phân từng phần (đã giảm tải/không có trong CT 2018).
@@ -2435,6 +2437,8 @@ app.all("/api/generate-worksheet-stream", async (req, res) => {
   const {
     grade = 11,
     subject = "Toán",
+    chapter = "",
+    semester = "Học kỳ 1",
     lesson = "",
     numPartI = 12,
     numPartII = 4,
@@ -2462,10 +2466,10 @@ app.all("/api/generate-worksheet-stream", async (req, res) => {
   else if (answerMode === 'summary') answerPrompt = 'Chỉ kèm bảng đáp án nhanh ở cuối.';
 
   const prompt = `Bạn là chuyên gia sư phạm bộ môn ${subject || "Toán"} Việt Nam (Chương trình GDPT 2018, SGK Kết nối tri thức với cuộc sống áp dụng từ năm học 2026-2027).
-Hãy tạo ngay PHIẾU HỌC TẬP A4 Chuẩn in ấn cho học sinh Lớp ${grade}, môn ${subject || "Toán"}, bài học/chủ đề: "${lesson}".
+Hãy tạo ngay PHIẾU HỌC TẬP A4 Chuẩn in ấn cho học sinh Lớp ${grade}, ${semester}, môn ${subject || "Toán"}, Chương: "${chapter}", Bài học/chủ đề: "${lesson}".
 
 YÊU CẦU QUAN TRỌNG VỀ CẤU TRÚC VÀ PHẠM VI NỘI DUNG (BẮT BUỘC 100%):
-0. PHẠM VI CHỦ ĐỀ CHÍNH XÁC: Tất cả các câu hỏi trong phiếu BẮT BUỘC phải tập trung 100% vào bài học/chủ đề: "${lesson}". TUYỆT ĐỐI KHÔNG BỊA RA HOẶC CHÈN THÊM bất kỳ câu hỏi nào ngoài bài học đã chọn.
+0. PHẠM VI CHỦ ĐỀ CHÍNH XÁC (TẬP TRUNG 100%): Tất cả các câu hỏi trong phiếu BẮT BUỘC phải thuộc chính xác bài học "${lesson}" (thuộc ${chapter}, Lớp ${grade}, ${semester}). TUYỆT ĐỐI KHÔNG BỊA RA HOẶC CHÈN THÊM bất kỳ câu hỏi nào thuộc các chương học khác ngoài bài học đã chọn. (Ví dụ: Khi giáo viên chọn Chương V "Các số đặc trưng đo xu thế trung tâm", TUYỆT ĐỐI KHÔNG xuất hiện câu hỏi về Đạo hàm, Giới hạn hay Tích phân).
 1. SỐ LƯỢNG CÂU HỎI BẮT BUỘC (TỔNG ${totalCount} CÂU): Bạn PHẢI sinh đầy đủ 100% chính xác từng câu từ Câu 1 đến câu cuối cùng của từng Phần. TUYỆT ĐỐI KHÔNG ĐƯỢC TÓM TẮT THÀNH 5 HAY 8 CÂU.
 2. Xuất trực tiếp nội dung phiếu học tập Markdown, không viết câu chào hay mở đầu.
 3. ĐỒNG BỘ TIÊU ĐỀ: TUYỆT ĐỐI KHÔNG tự ý chèn thêm tiêu đề bài học hay header thừa ở đầu văn bản (như "# BÀI 1: GÓC LƯỢNG GIÁC" hay "# PHIẾU HỌC TẬP"), vì hệ thống đã có sẵn khung tiêu đề chuẩn chính quy bên trên. Bắt đầu ngay bằng mục Tóm tắt kiến thức / Lý thuyết trọng tâm.

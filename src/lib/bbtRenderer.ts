@@ -7,6 +7,8 @@
  * - Vùng ngoài tập xác định được tô họa tiết gạch chéo //
  */
 
+import { evaluate } from 'mathjs';
+
 export interface BBTPoint {
   x: string;
   yPrime?: string;
@@ -1504,8 +1506,13 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
     const toSvgX = (x: number) => originX + x * scale;
     const toSvgY = (y: number) => originY - y * scale;
 
-    const convertLatexToMath = (str: string): string => {
-      return str
+    const sanitizeExprForMathJs = (expr: string): string => {
+      let clean = (expr || '').trim()
+        .replace(/\s+/g, '')
+        .replace(/\$/g, '')
+        .replace(/^y\s*=\s*/i, '')
+        .replace(/^f\([a-z]\)\s*=\s*/i, '')
+        .replace(/^g\([a-z]\)\s*=\s*/i, '')
         .replace(/\\frac\s*\{([^}]+)\}\s*\{([^}]+)\}/g, '(($1)/($2))')
         .replace(/\\cdot|\\times/g, '*')
         .replace(/[−–—]/g, '-')
@@ -1513,15 +1520,31 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
         .replace(/³/g, '^3')
         .replace(/⁴/g, '^4')
         .replace(/x\^\{([^}]+)\}/g, 'x^$1')
-        .replace(/x\{([^}]+)\}/g, 'x^$1');
+        .replace(/x\{([^}]+)\}/g, 'x^$1')
+        .replace(/(\d)([a-zA-Z])/g, '$1*$2')
+        .replace(/([a-wA-WzZ])([xX])/g, '$1*$2')
+        .replace(/([xX])([a-wA-WzZ])/g, '$1*$2')
+        .replace(/\)\s*\(/g, ')*(')
+        .replace(/(\d)\s*\(/g, '$1*(')
+        .replace(/\)\s*([a-zA-Z])/g, ')*$1');
+      return clean;
     };
-
-    clean = convertLatexToMath(clean);
 
     let currentExpr = clean;
 
     const evalY = (xVal: number, exprStr: string): number | null => {
       try {
+        const cleanExpr = sanitizeExprForMathJs(exprStr);
+        if (cleanExpr) {
+          try {
+            const scope = { x: xVal, X: xVal, m: 1, a: 1, b: 0, c: 0, d: 0, e: 0 };
+            const val = evaluate(cleanExpr, scope);
+            if (typeof val === 'number' && !isNaN(val) && isFinite(val)) {
+              return val;
+            }
+          } catch (e) {}
+        }
+
         if (exprStr.includes('/')) {
           const parts = exprStr.split('/');
           if (parts.length === 2) {
@@ -1560,7 +1583,7 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
 
     const minX = -6.5;
     const maxX = 6.5;
-    const step = 0.06;
+    const step = 0.05;
     let pathD = '';
     let validPointsCount = 0;
 
@@ -1610,8 +1633,8 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
       validPointsCount++;
     }
 
-    // CRITICAL GUARANTEE: If validPointsCount < 8 (unparseable expression or out of bounds),
-    // FALL BACK TO A REPRESENTATIVE STANDARD CURVE SO NO GRAPH AXIS SYSTEM IS EVER EMPTY!
+    // GUARANTEE: If validPointsCount < 8 (e.g. unparseable expression),
+    // FALL BACK TO A REPRESENTATIVE STANDARD SGK CURVE SO NO GRAPH AXIS IS EVER EMPTY!
     if (validPointsCount < 8) {
       const combinedText = ((expression || '') + ' ' + (contextBlock || '')).toLowerCase();
 
@@ -1632,7 +1655,7 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
         xAsym = null;
         yAsym = null;
       } else {
-        // Standard textbook cubic curve
+        // Standard textbook cubic curve y = x^3 - 3x
         currentExpr = 'x^3-3*x';
         xAsym = null;
         yAsym = null;

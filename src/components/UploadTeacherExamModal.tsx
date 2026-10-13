@@ -695,6 +695,29 @@ export function UploadTeacherExamModal({
         setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(finalUrl)}`);
       }
 
+      // Save to teacher created exams history in localStorage so it is never lost
+      try {
+        const existingHistoryStr = localStorage.getItem("eduplan_teacher_exams_history");
+        const existingHistory = existingHistoryStr ? JSON.parse(existingHistoryStr) : [];
+        const newHistoryEntry = {
+          id: examId,
+          examId: examId,
+          pin: examId,
+          examName: examTitle,
+          examType: examType,
+          duration: duration,
+          subject: subject,
+          grade: grade,
+          createdAt: new Date().toISOString(),
+          shareUrl: finalUrl,
+          submissions: []
+        };
+        const updatedHistory = [newHistoryEntry, ...existingHistory.filter((e: any) => e.examId !== examId && e.id !== examId)];
+        localStorage.setItem("eduplan_teacher_exams_history", JSON.stringify(updatedHistory));
+      } catch (e) {
+        console.warn("Lỗi lưu lịch sử tạo đề online:", e);
+      }
+
       setStep('share_popup');
     } catch (err: any) {
       console.error("Lỗi tạo link:", err);
