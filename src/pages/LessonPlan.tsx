@@ -32,12 +32,12 @@ export function LessonPlan() {
   const [includeInclusiveEducation, setIncludeInclusiveEducation] = useState(true);
   const [uploadedFiles, setUploadedFiles] = useState<{data: string, type: string, name: string}[]>([]);
   
-  // Options for upgrade template mode
   const [upgradeTemplateMode, setUpgradeTemplateMode] = useState<"system" | "uploaded" | "custom">("uploaded");
   const [customTemplateInstructions, setCustomTemplateInstructions] = useState("");
   const [suggestion, setSuggestion] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isContinuing, setIsContinuing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedTextbook, setSelectedTextbook] = useState<Textbook | null>(null);
   const [showVisualizerModal, setShowVisualizerModal] = useState<boolean>(false);
@@ -186,7 +186,7 @@ export function LessonPlan() {
           aiComp: selectedLesson.aiComp,
           stem: selectedLesson.stem,
           grade: selectedLesson.grade || selectedGrade,
-          periods: selectedLesson.periods || customPeriods || 2,
+          periods: customPeriods || selectedLesson.periods || 2,
           subject: subject,
           textbook: selectedTextbook?.name || "Kết nối tri thức với cuộc sống",
           includeInclusiveEducation
@@ -245,6 +245,55 @@ export function LessonPlan() {
     }
 
     await executePlanGeneration(payload, endpoint, displayName);
+  };
+
+  const continuePlanGeneration = async () => {
+    if (!suggestion || isContinuing || isLoading) return;
+    setIsContinuing(true);
+    setError(null);
+
+    const activeLessonName = (activeTab === 'system' && selectedLesson ? selectedLesson.lesson : customLessonName) || "Bài học";
+    const currentPeriods = (activeTab === 'system' && selectedLesson ? (customPeriods || selectedLesson.periods || 4) : (customPeriods || 4));
+
+    try {
+      const response = await apiFetch('/api/continue-lesson-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          existingContent: suggestion,
+          lesson: activeLessonName,
+          periods: currentPeriods,
+          subject: subject,
+          grade: selectedGrade
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error("Không thể kết nối dịch vụ viết tiếp giáo án.");
+      }
+
+      const text = await response.text();
+      const data = parseApiResponse<{ result: string }>(text);
+      const cleanAddition = rescueCodeAndNestedText(data.result || "");
+      if (cleanAddition) {
+        const updated = suggestion.trim() + "\n\n" + cleanAddition.trim();
+        setSuggestion(updated);
+        try {
+          saveToHistory({
+            type: "KHBD",
+            grade: selectedGrade,
+            subject: subject,
+            lessonName: activeLessonName,
+            content: updated
+          });
+        } catch (e) {}
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Không thể tiếp tục viết giáo án lúc này.");
+    } finally {
+      setIsContinuing(false);
+    }
   };
 
   const handleDemoClick = () => {
@@ -418,7 +467,18 @@ export function LessonPlan() {
               <div className="bg-slate-50 rounded-lg p-4 border border-slate-200 text-sm space-y-3">
                 <h3 className="font-semibold text-slate-800 border-b border-slate-200 pb-2">Thông tin bài học:</h3>
                 <p><span className="font-medium text-slate-700">Tên bài:</span> <span className="text-slate-800">{selectedLesson.lesson}</span></p>
-                <p><span className="font-medium text-slate-700">Số tiết:</span> <span className="text-slate-800">{selectedLesson.periods}</span></p>
+                <div className="flex items-center gap-2 py-0.5">
+                  <span className="font-medium text-slate-700">Số tiết soạn:</span>
+                  <input 
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={customPeriods || selectedLesson.periods || 2}
+                    onChange={(e) => setCustomPeriods(Number(e.target.value) || 1)}
+                    className="w-16 px-2 py-1 border border-emerald-400 rounded-md text-center text-sm font-bold bg-white text-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+                  />
+                  <span className="text-xs text-slate-500">(Mặc định SGK: {selectedLesson.periods} tiết)</span>
+                </div>
                 <p><span className="font-medium text-slate-700">Yêu cầu cần đạt:</span> <span className="text-slate-600">{selectedLesson.requirement}</span></p>
                 
                 <div className="pt-2">
@@ -642,6 +702,18 @@ export function LessonPlan() {
             <BarChart3 className="h-4 w-4" />
             <span>+ Thống kê</span>
           </button>
+          {suggestion && (
+            <button 
+              type="button"
+              disabled={isContinuing || isLoading}
+              onClick={continuePlanGeneration}
+              className="px-2.5 py-1 text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-500 hover:to-indigo-500 rounded-md shadow-xs flex items-center gap-1 cursor-pointer active:scale-95 transition-all disabled:opacity-50"
+              title="Nhấn để AI tiếp tục viết các tiết tiếp theo nếu bài nhiều tiết bị ngắt quãng giữa chừng"
+            >
+              <Sparkles className={`h-4 w-4 text-blue-200 ${isContinuing ? 'animate-spin' : ''}`} />
+              <span>{isContinuing ? "Đang viết tiếp..." : "⚡ Soạn tiếp tiết còn lại"}</span>
+            </button>
+          )}
           {suggestion && (
             <button 
               type="button"

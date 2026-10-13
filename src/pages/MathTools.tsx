@@ -785,107 +785,107 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
       )}
 
       {/* Top Header */}
-      <header className="bg-white border-b border-slate-200 px-4 sm:px-6 py-4 sticky top-0 z-20 shadow-2xs">
+      <header className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2.5 sm:py-4 sticky top-0 z-20 shadow-2xs">
         <div className="max-w-7xl mx-auto mb-2">
           <FeatureQuickGuideBanner sectionId={mainSubsystem === 'statistics' ? 'statistics_grouped' : 'kshs_graphing'} />
         </div>
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shadow-md shadow-emerald-500/20">
-              <Calculator className="w-5 h-5" />
+        <div className="max-w-7xl mx-auto flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shadow-md shadow-emerald-500/20 shrink-0">
+              <Calculator className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h1 className="text-base sm:text-xl font-black text-slate-900 tracking-tight">
                   Bộ Công Cụ Toán Học GDPT 2018
                 </h1>
-                <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                <span className="px-2 py-0.5 text-[10px] sm:text-[11px] font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
                   Lớp 9 • 10 • 11 • 12
                 </span>
               </div>
-              <p className="text-xs text-slate-500">
+              <p className="text-[11px] sm:text-xs text-slate-500 hidden sm:block">
                 Thống kê số liệu rời rạc & ghép nhóm • Hỗ trợ vẽ hình 2D/3D & Khảo sát sự biến thiên hàm số (KSHS)
               </p>
             </div>
           </div>
 
-          {/* Sub-system Navigation Tabs (Tabs chính phân hệ) */}
-          <div className="flex flex-wrap items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80 gap-1 md:gap-0">
+          {/* Sub-system Navigation Tabs (Tabs chính phân hệ - Nằm ngang vuốt trượt trên mobile) */}
+          <div className="flex overflow-x-auto no-scrollbar items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80 gap-1 max-w-full">
             <button
               onClick={() => setMainSubsystem("graphing")}
               className={cn(
-                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                "flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 whitespace-nowrap",
                 mainSubsystem === "graphing"
                   ? "bg-white text-blue-800 shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
               )}
             >
-              <Compass className="w-4 h-4 text-blue-600" />
+              <Compass className="w-4 h-4 text-blue-600 shrink-0" />
               <span>1. Hỗ trợ Vẽ hình & KSHS</span>
             </button>
 
             <button
               onClick={() => setMainSubsystem("sim_3d")}
               className={cn(
-                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                "flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 whitespace-nowrap",
                 mainSubsystem === "sim_3d"
                   ? "bg-emerald-600 text-white shadow-md font-bold"
                   : "text-emerald-700 hover:text-emerald-900 hover:bg-emerald-50 font-bold"
               )}
             >
-              <Layers className="w-4 h-4 text-emerald-500 animate-pulse" />
+              <Layers className="w-4 h-4 text-emerald-500 animate-pulse shrink-0" />
               <span>2. Kho Mô Phỏng 3D Cắt Ghép & Tối Ưu</span>
             </button>
 
             <button
               onClick={() => setMainSubsystem("svg_ai")}
               className={cn(
-                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                "flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 whitespace-nowrap",
                 mainSubsystem === "svg_ai"
                   ? "bg-white text-indigo-850 shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
               )}
             >
-              <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
+              <Sparkles className="w-4 h-4 text-amber-500 animate-pulse shrink-0" />
               <span>3. Vẽ hình mô phỏng (AI)</span>
             </button>
 
             <button
               onClick={() => setMainSubsystem("bbt_ai")}
               className={cn(
-                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                "flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 whitespace-nowrap",
                 mainSubsystem === "bbt_ai"
                   ? "bg-white text-indigo-800 shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
               )}
             >
-              <Sparkles className="w-4 h-4 text-indigo-600" />
+              <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
               <span>4. Bảng biến thiên AI</span>
             </button>
 
             <button
               onClick={() => setMainSubsystem("math_fixer")}
               className={cn(
-                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                "flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 whitespace-nowrap",
                 mainSubsystem === "math_fixer"
                   ? "bg-emerald-600 text-white shadow-md font-bold"
                   : "text-emerald-700 hover:text-emerald-900 hover:bg-emerald-50 font-bold"
               )}
             >
-              <Wand2 className="w-4 h-4 text-emerald-400 animate-bounce" />
+              <Wand2 className="w-4 h-4 text-emerald-400 animate-bounce shrink-0" />
               <span>5. ⚡ Sửa lỗi Toán 1-Click</span>
             </button>
 
             <button
               onClick={() => setMainSubsystem("statistics")}
               className={cn(
-                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                "flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 whitespace-nowrap",
                 mainSubsystem === "statistics"
                   ? "bg-white text-emerald-800 shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
               )}
             >
-              <BarChart3 className="w-4 h-4 text-emerald-600" />
+              <BarChart3 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>6. Thống kê 10, 11, 12</span>
             </button>
           </div>
@@ -893,38 +893,38 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
       </header>
 
       {/* Quick Launch Panel */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-950 to-indigo-950 text-white py-3.5 px-4 sm:px-6 shadow-md border-b border-slate-800">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-2 w-2 relative">
+      <div className="bg-gradient-to-r from-slate-900 via-slate-950 to-indigo-950 text-white py-2.5 sm:py-3.5 px-3 sm:px-6 shadow-md border-b border-slate-800">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2">
+            <span className="flex h-2 w-2 relative shrink-0">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
-            <p className="text-xs font-semibold tracking-wide text-slate-300">
-              Công cụ bổ trợ giảng dạy trực quan & tính toán:
+            <p className="text-[11px] sm:text-xs font-semibold tracking-wide text-slate-300">
+              Công cụ bổ trợ:
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex overflow-x-auto no-scrollbar items-center gap-2 pb-0.5 sm:pb-0">
             <button
               onClick={() => setMainSubsystem("math_fixer")}
-              className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 active:scale-98 text-slate-950 rounded-lg text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer border border-emerald-400/50"
+              className="px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 active:scale-98 text-slate-950 rounded-lg text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer border border-emerald-400/50 shrink-0 whitespace-nowrap"
               title="Mở công thức toán và sửa lỗi 1-Click tự động"
             >
-              <Wand2 className="w-3.5 h-3.5 text-slate-950 animate-bounce" /> ⚡ Sửa lỗi Toán 1-Click
+              <Wand2 className="w-3.5 h-3.5 text-slate-950 animate-bounce shrink-0" /> ⚡ Sửa lỗi 1-Click
             </button>
             <button
               onClick={() => setShowGeoGebra(true)}
-              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer border border-indigo-500/30"
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer border border-indigo-500/30 shrink-0 whitespace-nowrap"
               title="Mở phân hệ vẽ hình phẳng, không gian 3D và đồ thị trực quan"
             >
-              <span>📐</span> Vẽ hình GeoGebra (Flat & 3D)
+              <span>📐</span> GeoGebra (2D & 3D)
             </button>
             <button
               onClick={() => setShowCalculator(true)}
-              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer border border-emerald-500/30"
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer border border-emerald-500/30 shrink-0 whitespace-nowrap"
               title="Mở máy tính khoa học cầm tay Casio fx-580VN X"
             >
-              <Calculator className="w-3.5 h-3.5 text-white" /> Máy tính Casio fx-580VN X
+              <Calculator className="w-3.5 h-3.5 text-white shrink-0" /> Casio fx-580
             </button>
           </div>
         </div>

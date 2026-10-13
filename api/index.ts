@@ -1731,7 +1731,7 @@ app.all(["/api/generate-lesson-plan", "/api/generate-lesson-plan-file"], async (
     const stem = req.body.stem || "";
     const textbook = req.body.textbook || "Kết nối tri thức với cuộc sống";
     const includeInclusiveEducation = req.body.includeInclusiveEducation !== false;
-    const maxOutputTokens = 8192;
+    const maxOutputTokens = 16384;
     const files = resolveFiles(req.body);
 
     const inclusiveEducationBlock = includeInclusiveEducation !== false ? `
@@ -1756,8 +1756,10 @@ Bám sát Thông tư 03/2018/TT-BGDĐT và Công văn 5512/BGDĐT-GDTrH, hãy b�
     const lessonPlanSystemInstruction = `Bạn là Chuyên gia Sư phạm cao cấp, Chuyên viên Vụ Giáo dục Trung học (Bộ GD&ĐT), và Giáo viên giỏi cốt cán chuyên sâu về đổi mới phương pháp dạy học theo Chương trình Giáo dục phổ thông 2018.
 Nhiệm vụ của bạn là biên soạn một KẾ HOẠCH BÀI DẠY (GIÁO ÁN) hoàn chỉnh, mẫu mực, chuẩn mực sư phạm 100% theo đúng quy định Công văn 5512/BGDĐT-GDTrH và bám sát bộ sách giáo khoa "${textbook}".
 
-YÊU CẦU ĐẶC BIỆT QUAN TRỌNG VỀ ĐỘ CHI TIẾT:
-TUYỆT ĐỐI KHÔNG ĐƯỢC TÓM TẮT SƠ SÀI, KHÔNG CHỈ VIẾT DÀN Ý HAY GẠCH ĐẦU DÒNG CHUNG CHUNG. Hãy biên soạn một GIÁO ÁN CHI TIẾT ĐẦY ĐỦ NHƯ GIÁO VIÊN SOẠN THỰC TẾ ĐỂ ĐỨNG LỚP VÀ NỘP DUYỆT BAN GIÁM HIỆU/TỔ CHUYÊN MÔN. Mọi câu hỏi, bài toán, lời thoại giáo viên, hành động của học sinh, khó khăn dự kiến, bảng chốt kiến thức và lời giải đều phải được viết rõ ràng, trọn vẹn 100%.
+YÊU CẦU ĐẶC BIỆT QUAN TRỌNG VỀ PHÂN BỔ DUNG LƯỢNG TIẾT HỌC (${periods} TIẾT):
+- Bài học này có tổng cộng ${periods} TIẾT. Bạn BẮT BUỘC phải viết ĐẦY ĐỦ LẦN LƯỢT TỪ TIẾT 1 ĐẾN TIẾT ${periods}.
+- Đảm bảo phân bổ độ dài đồng đều giữa các tiết. TUYỆT ĐỐI KHÔNG viết quá dài dòng ở Tiết 1 rồi làm cạn token và bỏ lửng Tiết 2, Tiết 3 hay Tiết ${periods}.
+- Mọi tiết học (từ Tiết 1 đến Tiết ${periods}) đều phải xuất hiện rõ ràng với tiêu đề "### TIẾT 1: ...", "### TIẾT 2: ...", ..., "### TIẾT ${periods}: ...", và trong từng tiết phải có ĐẦY ĐỦ 4 HOẠT ĐỘNG.
 
 CÁC NGUYÊN TẮC CỐT LÕI BẮT BUỘC TUÂN THỦ NGHIÊM NGẶT:
 
@@ -1778,7 +1780,7 @@ CÁC NGUYÊN TẮC CỐT LÕI BẮT BUỘC TUÂN THỦ NGHIÊM NGẶT:
 - **Bước 1: Chuyển giao nhiệm vụ**:
   + GV chiếu slide hoặc phát phiếu học tập (ghi rõ nội dung cụ thể câu hỏi/bài tập mẫu, số liệu và công thức rõ ràng, KHÔNG ghi chung chung).
   + Kèm lời thoại sư phạm cụ thể của giáo viên khi dẫn dắt và giao việc cho học sinh.
-  + Hướng dẫn cụ thể thao tác số/AI/STEM: Ghi rõ CÂU LỆNH PROMPT MẪU học sinh cần nhập vào ChatGPT/Gemini là gì (ví dụ: \`"Hãy tìm 3 phản ví dụ trong thực tế chứng minh mệnh đề sau là sai: ..."\`); cung cấp đường link hoặc hướng dẫn thao tác GeoGebra/Google Forms/Quizizz cụ thể.
+  + Hướng dẫn cụ thể thao tác số/AI/STEM: Ghi rõ CÂU LỆNH PROMPT MẪU học sinh cần nhập vào ChatGPT/Gemini là gì (ví dụ: 'Hãy tìm 3 phản ví dụ trong thực tế chứng minh mệnh đề sau là sai: ...'); cung cấp đường link hoặc hướng dẫn thao tác GeoGebra/Google Forms/Quizizz cụ thể.
 - **Bước 2: Thực hiện nhiệm vụ**:
   + Nêu rõ thời gian làm việc (học sinh làm việc cá nhân trong bao nhiêu phút, sau đó thảo luận cặp đôi hoặc nhóm trong bao nhiêu phút).
   + GV quan sát, bao quát lớp; DỰ KIẾN CÁC KHÓ KHĂN, SAI LẦM PHỔ BIẾN học sinh thường mắc phải và CÁCH GV GỢI MỞ, HỖ TRỢ kịp thời để học sinh tự tìm ra hướng giải quyết.
@@ -1810,14 +1812,14 @@ THÔNG TIN BÀI DẠY:
 - Môn học: ${subject}
 - Lớp: ${grade}
 - Tên bài dạy: ${lesson}
-- Thời lượng: ${periods} tiết (BẮT BUỘC: Tiến trình dạy học ở Phần III phải chia cụ thể theo từng tiết: từ TIẾT 1 đến TIẾT ${periods}, mỗi tiết có đủ 4 hoạt động)
+- Thời lượng: ${periods} tiết (BẮT BUỘC: Tiến trình dạy học ở Phần III phải chia cụ thể và viết ĐẦY ĐỦ từ TIẾT 1 đến TIẾT ${periods}, mỗi tiết có đủ 4 hoạt động. Tuyệt đối không dừng giữa chừng)
 - Bộ sách giáo khoa: ${textbook}
 ${requirement ? `- Yêu cầu cần đạt: ${requirement}` : ''}
 ${digitalComp ? `- Năng lực số (NLS) cần lồng ghép: ${digitalComp}` : ''}
 ${aiComp ? `- Năng lực Trí tuệ nhân tạo (AI) cần lồng ghép: ${aiComp}` : ''}
 ${stem ? `- Định hướng STEM/STEAM: ${stem}` : ''}
 
-CẤU TRÚC KẾ HOẠCH BÀI DẠY BẮT BUỘC (VIẾT CHI TIẾT TOÀN DIỆN, KHÔNG ĐƯỢC TÓM TẮT):
+CẤU TRÚC KẾ HOẠCH BÀI DẠY BẮT BUỘC (VIẾT CHI TIẾT TOÀN DIỆN TỪ TIẾT 1 ĐẾN TIẾT ${periods}):
 
 # KẾ HOẠCH BÀI DẠY: ${lesson.toUpperCase()}
 **Môn học:** ${subject} | **Lớp:** ${grade} | **Thời lượng:** ${periods} tiết  
@@ -1867,7 +1869,7 @@ d) Tổ chức thực hiện: BẮT BUỘC VIẾT RÕ 4 BƯỚC KÈM LỜI THO�
 LƯU Ý ĐẶC BIỆT:
 - Lồng ghép trực tiếp các kịch bản [Năng lực số], [Năng lực AI] và [Tích hợp STEM/STEAM] vào từng hoạt động và sản phẩm cụ thể của học sinh.
 - Nổi bật mọi công cụ số, NLS, AI bằng Markdown in đậm chuẩn: **[Tên công cụ / NLS / AI]** (TUYỆT ĐỐI CẤM dùng mã HTML inline như <mark style="..."> hay <span>).
-- Viết chi tiết đầy đủ 100%, không tóm tắt, không dùng dấu ba chấm (...).
+- Viết chi tiết đầy đủ 100% từ Tiết 1 đến Tiết ${periods}, không tóm tắt, không dùng dấu ba chấm (...).
 - ĐỐI VỚI MÔN TOÁN (Đặc biệt các bài học về Hàm số, Đạo hàm, Khảo sát hàm số, Tính đơn điệu, Cực trị, Bất phương trình, Hình học):
   + Ở Hoạt động 2 (Hình thành kiến thức mới) và Hoạt động 3 (Luyện tập), BẮT BUỘC chèn BẢNG BIẾN THIÊN dạng Markdown Table chuẩn hoặc khối TikZ/SVG đồ thị hàm số chuẩn SGK vào phần Sản phẩm của học sinh và phần Chuyển giao nhiệm vụ.
   + Tuyệt đối không để trống bảng biến thiên hoặc hình vẽ đồ thị.
@@ -1893,6 +1895,51 @@ ${MATH_FORMATTING_RULES}`;
         systemInstruction: lessonPlanSystemInstruction,
         temperature: 0.5,
         maxOutputTokens: maxOutputTokens
+      }
+    });
+
+    return { result: response.text };
+  });
+});
+
+// Endpoint để Viết tiếp / Soạn tiếp giáo án dở dang khi bài học nhiều tiết (VD 4 tiết)
+app.all("/api/continue-lesson-plan", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  return keepAliveExecute(req, res, async () => {
+    const { existingContent = "", lesson = "Bài học", periods = 4, subject = "Toán", grade = "10" } = req.body || {};
+
+    if (!existingContent) {
+      return res.status(400).json({ error: "Thiếu nội dung giáo án dở dang để viết tiếp." });
+    }
+
+    const lastChunk = existingContent.slice(-1500);
+
+    const prompt = `Bạn là Chuyên gia Sư phạm cao cấp. Bạn đang hỗ trợ giáo viên biên soạn Kế hoạch bài dạy (Giáo án CV 5512) môn ${subject} Lớp ${grade}, bài học "${lesson}" tổng cộng ${periods} tiết.
+
+Dưới đây là ĐOẠN CUỐI CỦA GIÁO ÁN ĐÃ VIẾT TRƯỚC ĐÓ (đang bị cắt dở dang hoặc mới chỉ viết xong 1-2 tiết):
+---
+... ${lastChunk}
+---
+
+NHIỆM VỤ CỦA BẠN:
+1. Đọc và nhận biết chính xác vị trí/tiết học đang viết dở dang ở trên.
+2. TIẾP TỤC VIẾT TIẾP ĐẦY ĐỦ CÁC TIẾT CÒN LẠI (từ vị trí dở dang cho đến hết TIẾT ${periods} và Mục IV/Phụ lục).
+3. KHÔNG LẶP LẠI phần tiêu đề đầu bài hay các mục I, II đã viết. Chỉ nối tiếp tự nhiên từ câu/hoạt động/tiết đang dở dang.
+4. Đảm bảo mọi tiết còn lại đều có đủ 4 hoạt động theo đúng chuẩn Công văn 5512 (Khởi động, Hình thành kiến thức, Luyện tập, Vận dụng) với chi tiết 4 bước d) Tổ chức thực hiện, kịch bản NLS & AI và lời giải đầy đủ.
+
+${MATH_FORMATTING_RULES}`;
+
+    const response = await generateWithFallback(req, {
+      contents: prompt,
+      config: {
+        temperature: 0.5,
+        maxOutputTokens: 16384
       }
     });
 

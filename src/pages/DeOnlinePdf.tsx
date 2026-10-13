@@ -751,12 +751,25 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
     }
   };
 
-  // Delete a room from teacher's local history
   const handleDeleteRoomFromHistory = (code: string) => {
-    if (confirm(`Bạn có chắc muốn xóa lưu trữ phòng thi ${code} khỏi lịch sử trên máy này? (Dữ liệu trên máy chủ vẫn được giữ lại)`)) {
+    let confirmed = true;
+    try {
+      if (typeof window !== 'undefined' && window.confirm) {
+        confirmed = window.confirm(`Bạn có chắc muốn xóa lưu trữ phòng thi ${code} khỏi lịch sử trên máy này? (Dữ liệu trên máy chủ vẫn được giữ lại)`);
+      }
+    } catch (e) {
+      confirmed = true;
+    }
+
+    if (confirmed) {
       const updated = examsHistory.filter(r => r.code !== code);
       setExamsHistory(updated);
-      localStorage.setItem("eduplan_teacher_exams_history", JSON.stringify(updated));
+      try {
+        localStorage.setItem("eduplan_teacher_exams_history", JSON.stringify(updated));
+        localStorage.removeItem(`examCache_${code}`);
+      } catch (e) {
+        console.warn("Could not update localStorage:", e);
+      }
       syncHistoryToCloud(updated);
       if (selectedRoomForResults === code) {
         setSelectedRoomForResults(null);

@@ -26,8 +26,6 @@ export function Sidebar({
     {
       title: "Chuyên môn & Soạn giảng",
       items: [
-        { id: "math_ocr", label: "Math OCR & LaTeX (Word)", icon: ScanLine },
-        { id: "ink", label: "EduPlan AI Ink (Bảng vẽ)", icon: PenTool },
         { id: "math_tools", label: "Công cụ Toán học", icon: Calculator },
         { id: "de_online_pdf", label: "Đề online từ file PDF của GV", icon: FileText },
         { id: "khgd", label: "Kế hoạch giáo dục", icon: Calendar },
@@ -37,6 +35,8 @@ export function Sidebar({
         { id: "pdf2word", label: "Chuyển PDF sang Word", icon: FileEdit },
         { id: "exam", label: "Tạo & Trộn đề", icon: FileCheck },
         { id: "ai_studio", label: "AI Studio & Sáng tạo", icon: Sparkles },
+        { id: "math_ocr", label: "Math OCR & LaTeX (Word)", icon: ScanLine },
+        { id: "ink", label: "EduPlan AI Ink (Bảng vẽ)", icon: PenTool },
       ]
     },
     {

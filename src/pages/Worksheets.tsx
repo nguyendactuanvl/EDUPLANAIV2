@@ -637,17 +637,46 @@ export function Worksheets() {
   };
 
   const handleDeleteRoomFromHistory = (code: string) => {
-    if (window.confirm(`Bạn có chắc muốn xóa phòng thi ${code} khỏi lịch sử?`)) {
+    let confirmed = true;
+    try {
+      if (typeof window !== 'undefined' && window.confirm) {
+        confirmed = window.confirm(`Bạn có chắc muốn xóa phòng thi ${code} khỏi lịch sử?`);
+      }
+    } catch (e) {
+      confirmed = true;
+    }
+
+    if (confirmed) {
       setExamsHistory(prev => {
         const updated = prev.filter(r => r.code !== code);
-        localStorage.setItem("eduplan_worksheet_exams_history", JSON.stringify(updated));
+        try {
+          localStorage.setItem("eduplan_worksheet_exams_history", JSON.stringify(updated));
+          localStorage.removeItem(`examCache_${code}`);
+        } catch (e) {
+          console.warn("Could not update localStorage on room delete:", e);
+        }
         return updated;
       });
-      
+
+      try {
+        const teacherSaved = localStorage.getItem("eduplan_teacher_exams_history");
+        if (teacherSaved) {
+          const parsed = JSON.parse(teacherSaved);
+          if (Array.isArray(parsed)) {
+            const updatedTeacher = parsed.filter((r: any) => r.code !== code && r.id !== code);
+            localStorage.setItem("eduplan_teacher_exams_history", JSON.stringify(updatedTeacher));
+          }
+        }
+      } catch (e) {
+        console.warn("Could not clean teacher history:", e);
+      }
+
       if (selectedRoomForResults === code) {
         setSelectedRoomForResults(null);
         setSelectedRoomResultsData(null);
       }
+
+      showToast(`Đã xóa phòng thi ${code} khỏi lịch sử!`);
     }
   };
   
