@@ -998,25 +998,36 @@ export function Worksheets() {
 
       if (!response.ok || !response.body) {
         // Fallback to non-stream if streaming unavailable
-        const resNonStream = await apiFetch('/api/generate-worksheet', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            lesson: customLessonName,
-            chapter: selectedChapterName,
-            semester: selectedSemester,
-            subject,
-            grade: selectedGrade,
-            type: worksheetType, layoutStyle, answerMode, additionalNotes,
-            numPartI, numPartII, numPartIII, numPartIV, realWorldPercent, hasParametric
-          })
-        });
-        const data = await resNonStream.json();
-        setSuggestion(normalizeMathText(data.result || ''));
-        setStreamProgress({ percentage: 100, text: "Tạo phiếu học tập hoàn tất!" });
-        setTimeout(() => setStreamProgress(null), 1000);
+        try {
+          const resNonStream = await apiFetch('/api/generate-worksheet', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              lesson: customLessonName,
+              chapter: selectedChapterName,
+              semester: selectedSemester,
+              subject,
+              grade: selectedGrade,
+              type: worksheetType, layoutStyle, answerMode, additionalNotes,
+              numPartI, numPartII, numPartIII, numPartIV, realWorldPercent, hasParametric
+            })
+          });
+          const data = await resNonStream.json();
+          if (data && data.result) {
+            setSuggestion(normalizeMathText(data.result || ''));
+            setStreamProgress({ percentage: 100, text: "Tạo phiếu học tập hoàn tất!" });
+            setTimeout(() => setStreamProgress(null), 1000);
+            setIsLoading(false);
+            triggerGlobalMathRender();
+            return;
+          }
+        } catch (nonStreamErr: any) {
+          console.warn("Non-stream fallback also failed:", nonStreamErr);
+        }
+
+        setError("Máy chủ AI hiện đang tạm thời quá tải (Lỗi 503 Service Unavailable). Thầy cô vui lòng nhấn nút 'Tự động tạo Phiếu học tập' để thử lại sau ít phút.");
         setIsLoading(false);
-        triggerGlobalMathRender();
+        setStreamProgress(null);
         return;
       }
 
@@ -1030,6 +1041,20 @@ export function Worksheets() {
 
         const chunk = decoder.decode(value, { stream: true });
         rawAccumulated += chunk;
+
+        // Check if stream contains raw server error string
+        if (rawAccumulated.includes('SERVER_ERROR:') || rawAccumulated.includes('"code": 503') || rawAccumulated.includes('"code":503') || rawAccumulated.includes('Service Unavailable')) {
+          setError("Máy chủ AI hiện đang quá tải (Lỗi 503 Service Unavailable). Thầy cô vui lòng nhấn nút 'Tự động tạo Phiếu học tập' bên dưới để thử lại.");
+          // Clean out raw server error json from suggestion preview
+          const cleanText = rawAccumulated
+            .replace(/SERVER_ERROR:[\s\S]*/g, '')
+            .replace(/\{"error":[\s\S]*/g, '')
+            .trim();
+          setSuggestion(normalizeMathText(cleanText));
+          setIsLoading(false);
+          setStreamProgress(null);
+          return;
+        }
 
         // Progressive display normalized cleanly
         setSuggestion(normalizeMathText(rawAccumulated));

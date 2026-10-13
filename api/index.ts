@@ -389,7 +389,7 @@ function handleAiError(error: any, req: any, res: any) {
     return res.status(500).json({ error: "Phản hồi từ AI chứa ký tự công thức chưa chuẩn. Hệ thống đang tự động tối ưu hóa, thầy/cô vui lòng bấm thử lại." });
   }
 
-  console.error("AI Error Debug:", error, error?.status, error?.message);
+  console.error("AI Error Debug:", error?.name || "Error", error?.message || String(error), error?.status);
   res.status(500).json({ error: errorMsg || "Đã xảy ra lỗi không xác định từ máy chủ AI. Vui lòng thử lại sau." });
 }
 
@@ -405,15 +405,28 @@ async function keepAliveExecute(req: any, res: any, fn: () => Promise<any>) {
       headersSent = true;
     }
     res.write(' ');
-  }, 15000);
+  }, 2500);
 
   try {
     const result = await fn();
     clearInterval(keepAlive);
+
+    let jsonOutput = "";
+    try {
+      jsonOutput = JSON.stringify(result);
+    } catch (strErr) {
+      console.warn("[keepAliveExecute] Circular structure detected and stripped:", strErr);
+      jsonOutput = JSON.stringify({
+        text: typeof result === 'object' && result?.text ? result.text : String(result || ""),
+        result: typeof result === 'object' && result?.result ? result.result : undefined
+      });
+    }
+
     if (!headersSent) {
-      res.json(result);
+      res.setHeader('Content-Type', 'application/json');
+      res.status(200).send(jsonOutput);
     } else {
-      res.write(JSON.stringify(result));
+      res.write(jsonOutput);
       res.end();
     }
   } catch (error: any) {
@@ -651,12 +664,13 @@ function safeJsonParse<T = any>(text: string, fallback?: T): T {
 
 async function generateWithFallback(req: any, payloadOptions: any) {
   const client = getAiClient(req);
-  const isCustomKey = !!req.headers['x-gemini-api-key'] || (!!req.headers['authorization'] && (req.headers['authorization'] as string).startsWith('Bearer '));
   
   const primaryModel = payloadOptions?.model || "gemini-3.8-flash";
   const models = [
     primaryModel,
     ...(primaryModel !== "gemini-3.8-flash" ? ["gemini-3.8-flash"] : []),
+    ...(primaryModel !== "gemini-2.5-flash" ? ["gemini-2.5-flash"] : []),
+    ...(primaryModel !== "gemini-2.0-flash" ? ["gemini-2.0-flash"] : []),
     ...(primaryModel !== "gemini-3.1-flash-lite" ? ["gemini-3.1-flash-lite"] : [])
   ];
 
@@ -666,27 +680,12 @@ async function generateWithFallback(req: any, payloadOptions: any) {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     for (const model of models) {
       try {
-        
         const config = payloadOptions.config || {};
         const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán:
-- TẤT CẢ các biến số, tham số đơn lẻ (như x, y, m, a, b, c, d, S...) BẮT BUỘC phải đặt trong cặp dấu đô la: $x$, $y$, $m$, $a$, $b$, $c$, $d$, $S$. Tuyệt đối không viết chữ cái trần ngoài văn bản thông thường nếu đó đại diện cho toán học.
-- Tuyệt đối không bao giờ được viết các lệnh LaTeX trần trụi (như \\sin, \\cos, \\frac) mà không có dấu đô la kẹp bên ngoài.
-- LUÔN LUÔN sử dụng \\frac thay thế cho \\dfrac. Tuyệt đối KHÔNG dùng \\dfrac trong bất kỳ câu trả lời hay công thức nào.
-- Chỉ số dưới BẮT BUỘC dùng dấu gạch dưới: $u_1$, $u_6$, $S_{10}$, $N_0$, $N_t$.
-- Số mũ / lũy thừa BẮT BUỘC dùng dấu mũ: $q^5$, $2^9$, $2^{10}$, $a^2 + b^2$.
-- Phân số BẮT BUỘC dùng \\frac{tử}{mẫu}: $\\frac{1 - (-2)^{10}}{1 - (-2)}$, $\\frac{108}{54}$.
-- Phép nhân dùng \cdot, dấu suy ra/tương đương dùng \Rightarrow, \Leftrightarrow.
-- QUY TẮC DẤU GẠCH CHÉO NGƯỢC (LATEX / MATHJAX CHUẨN): Mọi tên lệnh và ký hiệu toán học (\frac, \sqrt, \alpha, \infty, \sin, \cos, \begin, \end, \le, \ge, \in...) BẮT BUỘC dùng đúng 1 dấu gạch chéo ngược đơn (\). Tuyệt đối KHÔNG viết hai gạch (\\frac, \\sqrt...) cho tên lệnh. Dấu hai gạch chéo (\\) CHỈ dùng để ngắt dòng trong hệ phương trình \begin{cases} hoặc \begin{aligned}.
-- Họ nghiệm phương trình lượng giác (\sin, \cos...): BẮT BUỘC dùng dấu móc vuông \left[ thay vì \begin{cases}, cú pháp chuẩn LaTeX / MathJax: $\left[\begin{aligned} x &= \alpha + k2\pi \\ x &= \pi - \alpha + k2\pi \end{aligned}\right. \quad (k \in \mathbb{Z})$.
-- Hệ phương trình / Hệ bất phương trình: GIỮ NGUYÊN dấu móc nhọn \begin{cases} ... \end{cases} kèm xuống dòng \\ rõ ràng.
-- Tuyệt đối KHÔNG viết công thức dưới dạng text thường như u1, q5, 2^9 viết thành 29.
-- [QUY CHUẨN CẤU TRÚC ĐỀ THI / PHIẾU HỌC TẬP GDPT 2018]:
-  + TUYỆT ĐỐI KHÔNG ĐƯỢC tóm tắt, không được bỏ qua bất kỳ câu nào, TUYỆT ĐỐI KHÔNG ĐƯỢC sinh placeholder như "(Các câu tương tự...)", "(Tương tự cho các câu sau...)", "(Các câu 5 đến 12 tương tự...)", "... (tiếp tục)" hoặc viết tắt câu.
-  + Nếu yêu cầu N câu thì hệ thống BẮT BUỘC PHẢI SINH ĐỦ 100% ĐÚNG N CÂU HOÀN CHỈNH từ câu 1 đến câu N.
-  + Mỗi câu Đúng/Sai (loại "tf") BẮT BUỘC gồm ĐÚNG 4 mệnh đề con a), b), c), d) trên các dòng riêng biệt (mảng "tfStatements" có đúng 4 phần tử).
-  + Mỗi câu trắc nghiệm (loại "mc") BẮT BUỘC có ĐÚNG 4 lựa chọn (mảng "options" có đúng 4 phần tử).
-  + Câu trả lời ngắn (loại "sa") CHỦ ĐỀ TẬP HỢP: TUYỆT ĐỐI KHÔNG ra đề yêu cầu "Tìm tập hợp", "Viết khoảng/đoạn/nửa khoảng". BẮT BUỘC đáp số là MỘT CON SỐ CỤ THỂ (số phần tử nguyên, tính giá trị biểu thức $T = a + b$ hoặc $2a - b$ với $A \cap B = (a; b)$, tính độ dài khoảng...) và đáp số có độ dài tối đa 4 ký tự.
-  + Khi vẽ đồ thị hàm phân thức (bậc 1/1, bậc 2/1): BẮT BUỘC vẽ tiệm cận đứng và ngang/xiên bằng nét đứt (dashed), vẽ 2 nhánh riêng biệt ở 2 phía của tiệm cận đứng, có trục tọa độ Oxy với mũi tên và chia lưới/vạch rõ ràng.`;
+- TẤT CẢ các biến số, tham số đơn lẻ (như x, y, m, a, b, c, d, S...) BẮT BUỘC phải đặt trong cặp dấu đô la: $x$, $y$, $m$, $a$, $b$, $c$, $d$, $S$.
+- LUÔN LUÔN sử dụng \\frac thay thế cho \\dfrac.
+- Số mũ BẮT BUỘC dùng dấu mũ: $x^2$, $a^3$.
+- Phân số BẮT BUỘC dùng \\frac{tử}{mẫu}.`;
 
         const updatedPayload = { 
           ...payloadOptions, 
@@ -698,11 +697,10 @@ async function generateWithFallback(req: any, payloadOptions: any) {
           } 
         };
         const response = await client.models.generateContent(updatedPayload);
+        const normText = response.text ? response.text.normalize("NFC") : "";
         return {
-          ...response,
-          get text() {
-            return response.text ? response.text.normalize("NFC") : "";
-          }
+          text: normText,
+          candidates: response.candidates ? response.candidates.map((c: any) => ({ finishReason: c.finishReason, index: c.index })) : undefined
         } as any;
   
       } catch (e: any) {
@@ -710,17 +708,16 @@ async function generateWithFallback(req: any, payloadOptions: any) {
         console.warn(`[generateWithFallback] Model ${model} status ${status}. Retrying fallback...`);
         const lowerMsg = (e?.message || "").toLowerCase();
         
-        // Immediately throw if it's an invalid API key to notify user
         if (lowerMsg.includes("api_key_invalid") || lowerMsg.includes("api key not valid")) {
           throw e;
         }
         
         const is429 = lowerMsg.includes("429") || status === 429 || lowerMsg.includes("resource_exhausted") || lowerMsg.includes("quota") || lowerMsg.includes("503") || status === 503 || lowerMsg.includes("unavailable") || lowerMsg.includes("overloaded");
-        const is404 = lowerMsg.includes("not found") || status === 404 || lowerMsg.includes("is not found") || lowerMsg.includes("not exist") || lowerMsg.includes("no longer available") || status === 400;
+        const is404 = lowerMsg.includes("not found") || status === 404 || lowerMsg.includes("is not found");
         
         if (is429) {
           primaryError = e;
-          await delay(300);
+          await delay(500);
           continue; 
         }
         if (is404) {
@@ -731,34 +728,26 @@ async function generateWithFallback(req: any, payloadOptions: any) {
       }
     }
     
-    // If all models failed with 429/503, wait and retry
     if (primaryError && attempt < maxRetries - 1) {
-      await delay(2500 * (attempt + 1) + Math.random() * 1000);
+      await delay(2000 * (attempt + 1) + Math.random() * 500);
     }
   }
   
   if (primaryError) throw primaryError;
-  throw new Error("429 RESOURCE_EXHAUSTED: Hệ thống đang quá tải hoặc tạm thời không khả dụng do nhu cầu cao (429). Vui lòng thử lại sau ít phút hoặc sử dụng API Key cá nhân.");
+  throw new Error("429 RESOURCE_EXHAUSTED: Hệ thống đang quá tải hoặc tạm thời không khả dụng do nhu cầu cao (503/429). Vui lòng thử lại sau ít phút hoặc sử dụng API Key cá nhân.");
 }
 
 async function generateWithFallbackStream(req: any, res: any, payloadOptions: any) {
   const client = getAiClient(req);
-  const isCustomKey = !!req.headers['x-gemini-api-key'] || (!!req.headers['authorization'] && (req.headers['authorization'] as string).startsWith('Bearer '));
   
   const primaryModel = payloadOptions?.model || "gemini-3.8-flash";
   const models = [
     primaryModel,
     ...(primaryModel !== "gemini-3.8-flash" ? ["gemini-3.8-flash"] : []),
+    ...(primaryModel !== "gemini-2.5-flash" ? ["gemini-2.5-flash"] : []),
+    ...(primaryModel !== "gemini-2.0-flash" ? ["gemini-2.0-flash"] : []),
     ...(primaryModel !== "gemini-3.1-flash-lite" ? ["gemini-3.1-flash-lite"] : [])
   ];
-
-  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  res.setHeader('Transfer-Encoding', 'chunked');
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Cache-Control', 'no-cache, no-transform');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  // Write initial empty byte immediately to establish stream connection with Vercel proxy
-  res.write('');
 
   const config = payloadOptions.config || {};
   const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán.
@@ -767,38 +756,56 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
 - Tuyệt đối KHÔNG chào hỏi hay giải thích ngoài lề, xuất trực tiếp văn bản Markdown của phiếu học tập.`;
 
   let primaryError: any = null;
+  let streamStarted = false;
 
-  for (const model of models) {
-    try {
-      const updatedPayload = {
-        ...payloadOptions,
-        model,
-        config: {
-          maxOutputTokens: 8192,
-          ...config,
-          systemInstruction: config.systemInstruction || defaultSystemInstruction
+  for (let attempt = 0; attempt < 3; attempt++) {
+    for (const model of models) {
+      try {
+        const updatedPayload = {
+          ...payloadOptions,
+          model,
+          config: {
+            maxOutputTokens: 8192,
+            ...config,
+            systemInstruction: config.systemInstruction || defaultSystemInstruction
+          }
+        };
+
+        const responseStream = await client.models.generateContentStream(updatedPayload);
+        for await (const chunk of responseStream) {
+          if (chunk.text) {
+            if (!streamStarted) {
+              res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+              res.setHeader('Transfer-Encoding', 'chunked');
+              res.setHeader('X-Content-Type-Options', 'nosniff');
+              res.setHeader('Cache-Control', 'no-cache, no-transform');
+              res.setHeader('Access-Control-Allow-Origin', '*');
+              streamStarted = true;
+            }
+            res.write(chunk.text);
+          }
         }
-      };
-
-      const responseStream = await client.models.generateContentStream(updatedPayload);
-      for await (const chunk of responseStream) {
-        if (chunk.text) {
-          res.write(chunk.text);
+        if (streamStarted) {
+          res.end();
+          return;
+        }
+      } catch (e: any) {
+        console.warn(`[generateWithFallbackStream] Model ${model} attempt ${attempt} error:`, e?.message || e);
+        primaryError = e;
+        if (streamStarted) {
+          res.write('\n\n⚠️ GIÁN ĐOẠN DỮ LIỆU: Máy chủ AI quá tải. Vui lòng bấm "Thử tạo lại" để tạo lại phiếu học tập.');
+          res.end();
+          return;
         }
       }
-      res.end();
-      return;
-    } catch (e: any) {
-      console.warn(`[generateWithFallbackStream] Model ${model} error:`, e?.message || e);
-      primaryError = e;
     }
+    await delay(1500 * (attempt + 1));
   }
 
-  if (!res.headersSent) {
-    res.status(500).json({ error: primaryError?.message || "Lỗi khi gọi AI streaming." });
-  } else {
-    res.write(`\n\nSERVER_ERROR: ${primaryError?.message || "Lỗi khi truyền dữ liệu streaming."}\n`);
-    res.end();
+  if (!streamStarted) {
+    return res.status(503).json({ 
+      error: "Hệ thống AI hiện đang quá tải (Lỗi 503 Service Unavailable). Thầy cô vui lòng bấm 'Thử tạo lại' sau ít phút hoặc nhập API Key cá nhân trong Cài đặt." 
+    });
   }
 }
 
@@ -3719,10 +3726,10 @@ app.post("/api/extract-answers-pdf", async (req, res) => {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  try {
+  return keepAliveExecute(req, res, async () => {
     const { file, type } = resolveSingleFile(req.body);
     if (!file) {
-      return res.status(400).json({ error: "Không tìm thấy tệp tin PDF nào được tải lên." });
+      throw new Error("Không tìm thấy tệp tin PDF nào được tải lên.");
     }
 
     const pdfBuffer = Buffer.from(file, 'base64');
@@ -3830,13 +3837,8 @@ YÊU CẦU TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C�
       throw new Error("Không nhận được phản hồi từ AI trích xuất đáp án.");
     }
 
-    const parsed = safeJsonParse(response.text.trim(), {});
-    res.json(parsed);
-
-  } catch (error: any) {
-    console.error("Lỗi trích xuất đáp án PDF:", error);
-    handleAiError(error, req, res);
-  }
+    return safeJsonParse(response.text.trim(), {});
+  });
 });
 
 // Endpoint Tạo & Chỉnh sửa ảnh (Nano Banana 2.1 / Imagen 3)
