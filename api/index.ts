@@ -650,17 +650,29 @@ function safeJsonParse<T = any>(text: string, fallback?: T): T {
   }
 }
 
+function getValidGeminiModels(requestedModel?: string): string[] {
+  let primary = requestedModel || "gemini-3.8-flash";
+  if (
+    primary.includes("2.5") ||
+    primary.includes("2.0") ||
+    primary.includes("1.5") ||
+    primary.includes("pro-vision")
+  ) {
+    primary = "gemini-3.8-flash";
+  }
+
+  const list = [
+    primary,
+    "gemini-3.8-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-flash-latest"
+  ];
+  return Array.from(new Set(list));
+}
+
 async function generateWithFallback(req: any, payloadOptions: any) {
   const client = getAiClient(req);
-  
-  const primaryModel = payloadOptions?.model || "gemini-3.8-flash";
-  const models = [
-    primaryModel,
-    ...(primaryModel !== "gemini-3.8-flash" ? ["gemini-3.8-flash"] : []),
-    ...(primaryModel !== "gemini-2.5-flash" ? ["gemini-2.5-flash"] : []),
-    ...(primaryModel !== "gemini-2.0-flash" ? ["gemini-2.0-flash"] : []),
-    ...(primaryModel !== "gemini-3.1-flash-lite" ? ["gemini-3.1-flash-lite"] : [])
-  ];
+  const models = getValidGeminiModels(payloadOptions?.model);
 
   let primaryError: any = null;
   const maxRetries = 3;
@@ -727,15 +739,7 @@ async function generateWithFallback(req: any, payloadOptions: any) {
 
 async function generateWithFallbackStream(req: any, res: any, payloadOptions: any) {
   const client = getAiClient(req);
-  
-  const primaryModel = payloadOptions?.model || "gemini-3.8-flash";
-  const models = [
-    primaryModel,
-    ...(primaryModel !== "gemini-3.8-flash" ? ["gemini-3.8-flash"] : []),
-    ...(primaryModel !== "gemini-2.5-flash" ? ["gemini-2.5-flash"] : []),
-    ...(primaryModel !== "gemini-2.0-flash" ? ["gemini-2.0-flash"] : []),
-    ...(primaryModel !== "gemini-3.1-flash-lite" ? ["gemini-3.1-flash-lite"] : [])
-  ];
+  const models = getValidGeminiModels(payloadOptions?.model);
 
   const config = payloadOptions.config || {};
   const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán.
@@ -791,6 +795,9 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
   }
 
   if (!streamStarted) {
+    if (primaryError) {
+      return handleAiError(primaryError, req, res);
+    }
     return res.status(503).json({ 
       error: "Hệ thống AI hiện đang quá tải (Lỗi 503 Service Unavailable). Thầy cô vui lòng bấm 'Thử tạo lại' sau ít phút hoặc nhập API Key cá nhân trong Cài đặt." 
     });
@@ -4073,7 +4080,7 @@ app.post("/api/generate-video", async (req, res) => {
       const formattedPrompt = `${prompt || "Animate static image into cinematic video"}. Motion style: ${motionStyle}. Aspect ratio: ${aspectRatio}.`;
       
       const operation = await client.models.generateVideos({
-        model: 'veo-2.0-generate-001',
+        model: 'veo-3.1-lite-generate-preview',
         prompt: formattedPrompt,
         config: {
           numberOfVideos: 1,

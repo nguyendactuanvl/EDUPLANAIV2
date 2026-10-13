@@ -2555,7 +2555,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                        </div>
                        <div className="flex justify-between items-center">
                           <span className="text-sm text-slate-600">Model</span>
-                          <span className="font-bold text-slate-800">gemini-2.5-flash</span>
+                          <span className="font-bold text-slate-800">gemini-3.8-flash</span>
                        </div>
                     </div>
                  </div>
