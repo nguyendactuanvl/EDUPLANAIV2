@@ -294,9 +294,15 @@ interface RationalParams {
   d: number;
   xAsym: number;
   yAsym: number;
+  isDegree2?: boolean;
+  quadA?: number;
+  quadB?: number;
+  quadC?: number;
+  mSlant?: number;
+  nSlant?: number;
 }
 
-// Trích xuất tham số hàm phân thức bậc nhất trên bậc nhất y = (ax+b)/(cx+d)
+// Trích xuất tham số hàm phân thức bậc nhất trên bậc nhất y = (ax+b)/(cx+d) hoặc bậc hai trên bậc nhất
 function extractRationalParams(code: string): RationalParams | null {
   const parseLinear = (str: string) => {
     let s = str.replace(/[{}\s$]/g, '');
@@ -312,24 +318,69 @@ function extractRationalParams(code: string): RationalParams | null {
     return null;
   };
 
-  // 1. Phân thức LaTeX: \frac{x+2}{x-1} hoặc \frac{ax+b}{cx+d}
+  const parseQuadratic = (str: string) => {
+    let s = str.replace(/[{}\s$]/g, '');
+    // ax^2 + bx + c
+    const m = s.match(/^([+-]?(?:\d*\.?\d*)?)x(?:\^2|²)(?:([+-]?(?:\d*\.?\d*)?)x)?(?:([+-]\d*\.?\d+))?$/);
+    if (m) {
+      let aStr = m[1];
+      if (aStr === '' || aStr === '+') aStr = '1';
+      if (aStr === '-') aStr = '-1';
+      const a = parseFloat(aStr);
+
+      let bStr = m[2] || '0';
+      if (bStr === '+') bStr = '1';
+      if (bStr === '-') bStr = '-1';
+      const b = parseFloat(bStr);
+
+      const c = m[3] ? parseFloat(m[3]) : 0;
+      return { a, b, c };
+    }
+    return null;
+  };
+
+  // 1. Phân thức LaTeX: \frac{...}{...}
   const fracMatch = code.match(/\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}/);
   if (fracMatch) {
-    const num = parseLinear(fracMatch[1]);
     const den = parseLinear(fracMatch[2]);
-    if (num && den && den.c !== 0) {
-      return {
-        a: num.c,
-        b: num.k,
-        c: den.c,
-        d: den.k,
-        xAsym: -den.k / den.c,
-        yAsym: num.c / den.c
-      };
+    if (den && den.c !== 0) {
+      // Thử bậc nhất
+      const numLin = parseLinear(fracMatch[1]);
+      if (numLin) {
+        return {
+          a: numLin.c,
+          b: numLin.k,
+          c: den.c,
+          d: den.k,
+          xAsym: -den.k / den.c,
+          yAsym: numLin.c / den.c
+        };
+      }
+      // Thử bậc hai (tiệm cận xiên)
+      const numQuad = parseQuadratic(fracMatch[1]);
+      if (numQuad) {
+        const xAsym = -den.k / den.c;
+        const mSlant = numQuad.a / den.c;
+        const nSlant = (numQuad.b * den.c - numQuad.a * den.k) / (den.c * den.c);
+        return {
+          a: numQuad.a,
+          b: numQuad.b,
+          c: den.c,
+          d: den.k,
+          xAsym,
+          yAsym: 0,
+          isDegree2: true,
+          quadA: numQuad.a,
+          quadB: numQuad.b,
+          quadC: numQuad.c,
+          mSlant,
+          nSlant
+        };
+      }
     }
   }
 
-  // 2. Dạng phân thức xuyệt (x+2)/(x-1)
+  // 2. Dạng phân thức xuyệt (...) / (...)
   const slashMatch = code.match(/\(?([+-\d\.]*x[+-\d\.]*)\)?\s*\/\s*\(?([+-\d\.]*x[+-\d\.]*)\)?/);
   if (slashMatch) {
     const num = parseLinear(slashMatch[1]);
@@ -400,11 +451,14 @@ function generateRationalFunctionPaths(
   toSvgX: (x: number) => number,
   toSvgY: (y: number) => number
 ): string[] {
-  const { a, b, c, d, xAsym } = params;
+  const { a, b, c, d, xAsym, isDegree2, quadA, quadB, quadC } = params;
   const paths: string[] = [];
   const evalY = (x: number) => {
     const denom = c * x + d;
     if (Math.abs(denom) < 1e-4) return null;
+    if (isDegree2 && quadA !== undefined) {
+      return ((quadA * x * x + (quadB || 0) * x + (quadC || 0)) / denom);
+    }
     return (a * x + b) / denom;
   };
 
@@ -716,11 +770,12 @@ export function renderTikzFallbackSvg(raw: string): string | null {
       }
     }
 
-    // 3.5 BẮT BUỘC: Nếu là đồ thị hàm phân thức y = (ax+b)/(cx+d) mà chưa có nhánh đồ thị \draw plot,
-    // tự động vẽ 2 nhánh phân thức giải tích bằng thẻ <path> SVG với stroke="#2563eb" stroke-width="2"
-    if (!hasFunctionCurve) {
-      const ratParams = extractRationalParams(cleaned);
-      if (ratParams) {
+    // 3.5 BẮT BUỘC: Nếu là đồ thị hàm phân thức (bậc 1/1 hoặc bậc 2/1):
+    // 1) Nếu chưa có nhánh đồ thị \draw plot, tự động vẽ 2 nhánh phân thức giải tích bằng thẻ <path> SVG với stroke="#2563eb"
+    // 2) BỔ SUNG ĐẦY ĐỦ CÁC ĐƯỜNG TIỆM CẬN (tiệm cận đứng, ngang/xiên) nét đứt màu đỏ (#dc2626) cùng nhãn phương trình và tâm đối xứng I
+    const ratParams = extractRationalParams(cleaned);
+    if (ratParams) {
+      if (!hasFunctionCurve) {
         const branches = generateRationalFunctionPaths(
           ratParams,
           adjMinX,
@@ -732,6 +787,67 @@ export function renderTikzFallbackSvg(raw: string): string | null {
         );
         for (const branch of branches) {
           svgElements.push(branch);
+        }
+      }
+
+      // Kiểm tra xem đã có đường nét đứt tiệm cận đứng x = xAsym chưa
+      const hasVertAsymDashed = cleaned.includes('dashed') && (
+        cleaned.includes(`(${ratParams.xAsym}`) ||
+        cleaned.includes(`(${ratParams.xAsym.toFixed(1)}`) ||
+        cleaned.includes(`x = ${ratParams.xAsym}`) ||
+        cleaned.includes(`x=${ratParams.xAsym}`)
+      );
+
+      if (!hasVertAsymDashed && isFinite(ratParams.xAsym)) {
+        const sx = toSvgX(ratParams.xAsym);
+        if (sx >= 10 && sx <= svgWidth - 10) {
+          svgElements.push(`<line x1="${sx.toFixed(1)}" y1="10" x2="${sx.toFixed(1)}" y2="${(svgHeight - 10).toFixed(1)}" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="6,4" />`);
+          const lx = sx > svgWidth - 70 ? sx - 55 : sx + 6;
+          svgElements.push(`<text x="${lx.toFixed(1)}" y="22" font-family="'Times New Roman', Times, serif" font-size="13" font-style="italic" font-weight="bold" fill="#dc2626">x = ${Number(ratParams.xAsym.toFixed(2))}</text>`);
+        }
+      }
+
+      // Tiệm cận ngang (cho hàm bậc 1/1)
+      if (!ratParams.isDegree2 && isFinite(ratParams.yAsym)) {
+        const hasHorizAsymDashed = cleaned.includes('dashed') && (
+          cleaned.includes(`,${ratParams.yAsym})`) ||
+          cleaned.includes(`, ${ratParams.yAsym})`) ||
+          cleaned.includes(`y = ${ratParams.yAsym}`) ||
+          cleaned.includes(`y=${ratParams.yAsym}`)
+        );
+        if (!hasHorizAsymDashed) {
+          const sy = toSvgY(ratParams.yAsym);
+          if (sy >= 10 && sy <= svgHeight - 10) {
+            svgElements.push(`<line x1="10" y1="${sy.toFixed(1)}" x2="${(svgWidth - 10).toFixed(1)}" y2="${sy.toFixed(1)}" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="6,4" />`);
+            svgElements.push(`<text x="${(svgWidth - 55).toFixed(1)}" y="${Math.max(sy - 6, 20).toFixed(1)}" font-family="'Times New Roman', Times, serif" font-size="13" font-style="italic" font-weight="bold" fill="#dc2626">y = ${Number(ratParams.yAsym.toFixed(2))}</text>`);
+          }
+        }
+      } else if (ratParams.isDegree2 && ratParams.mSlant !== undefined && isFinite(ratParams.mSlant)) {
+        // Tiệm cận xiên (cho hàm bậc 2/1)
+        const m = ratParams.mSlant;
+        const n = ratParams.nSlant || 0;
+        const sx1 = toSvgX(adjMinX);
+        const sy1 = toSvgY(m * adjMinX + n);
+        const sx2 = toSvgX(adjMaxX);
+        const sy2 = toSvgY(m * adjMaxX + n);
+        svgElements.push(`<line x1="${sx1.toFixed(1)}" y1="${sy1.toFixed(1)}" x2="${sx2.toFixed(1)}" y2="${sy2.toFixed(1)}" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="6,4" />`);
+        const mStr = m === 1 ? '' : (m === -1 ? '-' : Number(m.toFixed(2)));
+        const nStr = n > 0 ? `+ ${Number(n.toFixed(2))}` : (n < 0 ? `- ${Number(Math.abs(n).toFixed(2))}` : '');
+        svgElements.push(`<text x="${Math.min(sx2 - 75, svgWidth - 80).toFixed(1)}" y="${Math.max(sy2 - 8, 26).toFixed(1)}" font-family="'Times New Roman', Times, serif" font-size="13" font-style="italic" font-weight="bold" fill="#dc2626">y = ${mStr}x ${nStr}</text>`);
+      }
+
+      // Tâm đối xứng I (giao điểm của các tiệm cận)
+      if (isFinite(ratParams.xAsym)) {
+        const yCenter = ratParams.isDegree2 && ratParams.mSlant !== undefined
+          ? (ratParams.mSlant * ratParams.xAsym + (ratParams.nSlant || 0))
+          : ratParams.yAsym;
+        if (isFinite(yCenter)) {
+          const ix = toSvgX(ratParams.xAsym);
+          const iy = toSvgY(yCenter);
+          if (ix >= 10 && ix <= svgWidth - 10 && iy >= 10 && iy <= svgHeight - 10) {
+            svgElements.push(`<circle cx="${ix.toFixed(1)}" cy="${iy.toFixed(1)}" r="3.2" fill="#dc2626" />`);
+            svgElements.push(`<text x="${(ix + 6).toFixed(1)}" y="${(iy - 6).toFixed(1)}" font-family="'Times New Roman', Times, serif" font-size="14" font-weight="bold" font-style="italic" fill="#dc2626">I</text>`);
+          }
         }
       }
     }

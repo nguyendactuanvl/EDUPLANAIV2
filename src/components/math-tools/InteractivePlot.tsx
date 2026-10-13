@@ -53,7 +53,7 @@ export const InteractivePlot: React.FC<InteractivePlotProps> = ({
   const [hoverCoord, setHoverCoord] = useState<{ x: number; y: number } | null>(null);
   const [copied, setCopied] = useState(false);
   const [tikzCopied, setTikzCopied] = useState(false);
-  const [showLabels, setShowLabels] = useState(false);
+  const [showLabels, setShowLabels] = useState(true);
 
   const handleCopyTikzCode = () => {
     const lines: string[] = [];
@@ -65,14 +65,15 @@ export const InteractivePlot: React.FC<InteractivePlotProps> = ({
 
     // Asymptotes
     asymptotes.forEach(asym => {
+      const cleanLabel = (asym.label || "").replace(/\$/g, "");
       if (asym.type === "vertical") {
-        lines.push(`  \\draw[red, dashed, thick] (${asym.value}, ${yMin.toFixed(0)}) -- (${asym.value}, ${yMax.toFixed(0)});`);
+        lines.push(`  \\draw[red, dashed, thick] (${asym.value}, ${yMin.toFixed(0)}) -- (${asym.value}, ${yMax.toFixed(0)}) node[above right, font=\\footnotesize] {$${cleanLabel}$};`);
       } else if (asym.type === "horizontal") {
-        lines.push(`  \\draw[purple, dashed, thick] (${xMin.toFixed(0)}, ${asym.value}) -- (${xMax.toFixed(0)}, ${asym.value});`);
+        lines.push(`  \\draw[purple, dashed, thick] (${xMin.toFixed(0)}, ${asym.value}) -- (${xMax.toFixed(0)}, ${asym.value}) node[above left, font=\\footnotesize] {$${cleanLabel}$};`);
       } else if (asym.type === "slant" && asym.m !== undefined && asym.c !== undefined) {
         const y1 = asym.m * xMin + asym.c;
         const y2 = asym.m * xMax + asym.c;
-        lines.push(`  \\draw[teal, dashed, thick] (${xMin.toFixed(0)}, ${y1.toFixed(2)}) -- (${xMax.toFixed(0)}, ${y2.toFixed(2)});`);
+        lines.push(`  \\draw[teal, dashed, thick] (${xMin.toFixed(0)}, ${y1.toFixed(2)}) -- (${xMax.toFixed(0)}, ${y2.toFixed(2)}) node[above right, font=\\footnotesize] {$${cleanLabel}$};`);
       }
     });
 
@@ -393,10 +394,24 @@ export const InteractivePlot: React.FC<InteractivePlotProps> = ({
         ctx.stroke();
 
         // Label
-        if (showLabels) {
-          ctx.font = "bold 11px sans-serif";
+        if (showLabels && asymp.label) {
+          ctx.font = "bold 12px sans-serif";
+          const textW = ctx.measureText(asymp.label).width;
+          const lx = Math.min(Math.max(px + 6, 8), w - textW - 12);
+          const ly = 24;
+          // Background badge
+          ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+          ctx.strokeStyle = asymp.color || "#ef4444";
+          ctx.lineWidth = 1;
+          ctx.setLineDash([]);
+          ctx.fillRect(lx - 4, ly - 14, textW + 8, 18);
+          ctx.strokeRect(lx - 4, ly - 14, textW + 8, 18);
+          // Text
           ctx.fillStyle = asymp.color || "#ef4444";
-          ctx.fillText(asymp.label, px + 5, 25);
+          ctx.fillText(asymp.label, lx, ly);
+          // Restore dash for subsequent items
+          ctx.lineWidth = 1.8;
+          ctx.setLineDash([6, 5]);
         }
       } else if (asymp.type === "horizontal" && typeof asymp.value === "number") {
         const { py } = toCanvas(0, asymp.value, w, h);
@@ -405,10 +420,24 @@ export const InteractivePlot: React.FC<InteractivePlotProps> = ({
         ctx.stroke();
 
         // Label
-        if (showLabels) {
-          ctx.font = "bold 11px sans-serif";
+        if (showLabels && asymp.label) {
+          ctx.font = "bold 12px sans-serif";
+          const textW = ctx.measureText(asymp.label).width;
+          const lx = Math.max(w - textW - 20, 15);
+          const ly = Math.max(py - 6, 16);
+          // Background badge
+          ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+          ctx.strokeStyle = asymp.color || "#ef4444";
+          ctx.lineWidth = 1;
+          ctx.setLineDash([]);
+          ctx.fillRect(lx - 4, ly - 14, textW + 8, 18);
+          ctx.strokeRect(lx - 4, ly - 14, textW + 8, 18);
+          // Text
           ctx.fillStyle = asymp.color || "#ef4444";
-          ctx.fillText(asymp.label, 15, py - 6);
+          ctx.fillText(asymp.label, lx, ly);
+          // Restore dash for subsequent items
+          ctx.lineWidth = 1.8;
+          ctx.setLineDash([6, 5]);
         }
       } else if (asymp.type === "slant" && typeof asymp.m === "number" && typeof asymp.c === "number") {
         const yAtXMin = asymp.m * xMin + asymp.c;
@@ -420,11 +449,26 @@ export const InteractivePlot: React.FC<InteractivePlotProps> = ({
         ctx.stroke();
 
         // Label
-        if (showLabels) {
-          ctx.font = "bold 11px sans-serif";
+        if (showLabels && asymp.label) {
+          ctx.font = "bold 12px sans-serif";
+          const textW = ctx.measureText(asymp.label).width;
+          const midX = (xMin * 0.35 + xMax * 0.65);
+          const midPoint = toCanvas(midX, asymp.m * midX + asymp.c, w, h);
+          const lx = Math.min(Math.max(midPoint.px + 10, 8), w - textW - 12);
+          const ly = Math.min(Math.max(midPoint.py - 10, 18), h - 10);
+          // Background badge
+          ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+          ctx.strokeStyle = asymp.color || "#ef4444";
+          ctx.lineWidth = 1;
+          ctx.setLineDash([]);
+          ctx.fillRect(lx - 4, ly - 14, textW + 8, 18);
+          ctx.strokeRect(lx - 4, ly - 14, textW + 8, 18);
+          // Text
           ctx.fillStyle = asymp.color || "#ef4444";
-          const midPoint = toCanvas((xMin + xMax) / 2, asymp.m * ((xMin + xMax) / 2) + asymp.c, w, h);
-          ctx.fillText(asymp.label, midPoint.px + 10, midPoint.py - 10);
+          ctx.fillText(asymp.label, lx, ly);
+          // Restore dash for subsequent items
+          ctx.lineWidth = 1.8;
+          ctx.setLineDash([6, 5]);
         }
       }
       ctx.restore();

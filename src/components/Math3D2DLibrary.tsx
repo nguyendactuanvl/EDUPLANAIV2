@@ -1147,9 +1147,84 @@ export function Math3D2DLibrary() {
         ctx.fillText("y", originX + 10, 15);
         ctx.fillText("O", originX - 12, originY + 15);
 
-        ctx.beginPath();
         const plotScale = 30 * zoom;
 
+        if (selectedModelId === "rational_function") {
+          const cSafe = paramC === 0 ? 1 : paramC;
+          const xAsym = -paramD / cSafe;
+          const yAsym = paramA / cSafe;
+
+          // 1. Vẽ các đường tiệm cận nét đứt màu đỏ
+          ctx.save();
+          ctx.setLineDash([6, 5]);
+          ctx.strokeStyle = "#ef4444";
+          ctx.lineWidth = 1.8;
+
+          // Tiệm cận đứng x = xAsym
+          const sxAsym = originX + xAsym * plotScale;
+          ctx.beginPath();
+          ctx.moveTo(sxAsym, 0);
+          ctx.lineTo(sxAsym, height);
+          ctx.stroke();
+
+          // Tiệm cận ngang y = yAsym
+          const syAsym = originY - yAsym * plotScale;
+          ctx.beginPath();
+          ctx.moveTo(0, syAsym);
+          ctx.lineTo(width, syAsym);
+          ctx.stroke();
+
+          // Nhãn phương trình tiệm cận
+          ctx.font = "bold 12px Inter";
+          ctx.fillStyle = "#ef4444";
+          ctx.fillText(`TCĐ: x = ${Number(xAsym.toFixed(2))}`, Math.min(Math.max(sxAsym + 6, 8), width - 90), 25);
+          ctx.fillText(`TCN: y = ${Number(yAsym.toFixed(2))}`, width - 85, Math.max(syAsym - 6, 18));
+
+          // Tâm đối xứng I
+          ctx.beginPath();
+          ctx.arc(sxAsym, syAsym, 4, 0, Math.PI * 2);
+          ctx.fillStyle = "#ef4444";
+          ctx.fill();
+          ctx.fillText("I", sxAsym + 6, syAsym - 6);
+          ctx.restore();
+
+          // 2. Vẽ 2 nhánh đường cong Hypebol không nối qua tiệm cận
+          ctx.beginPath();
+          ctx.strokeStyle = "#10b981";
+          ctx.lineWidth = 3;
+
+          let drawing = false;
+          for (let px = 0; px < width; px += 2) {
+            const xVal = (px - originX) / plotScale;
+            if (Math.abs(xVal - xAsym) < 0.12) {
+              drawing = false;
+              continue;
+            }
+            const denom = cSafe * xVal + paramD;
+            if (Math.abs(denom) < 0.05) {
+              drawing = false;
+              continue;
+            }
+            const yVal = (paramA * xVal + paramB) / denom;
+            const py = originY - yVal * plotScale;
+
+            if (py < -50 || py > height + 50) {
+              drawing = false;
+              continue;
+            }
+
+            if (!drawing) {
+              ctx.moveTo(px, py);
+              drawing = true;
+            } else {
+              ctx.lineTo(px, py);
+            }
+          }
+          ctx.stroke();
+          break;
+        }
+
+        ctx.beginPath();
         for (let px = 0; px < width; px += 2) {
           const xVal = (px - originX) / plotScale;
           let yVal = 0;
@@ -1158,10 +1233,6 @@ export function Math3D2DLibrary() {
             yVal = paramA * Math.pow(xVal, 3) + paramB * Math.pow(xVal, 2) + paramC * xVal + paramD;
           } else if (selectedModelId === "quartic_function") {
             yVal = paramA * Math.pow(xVal, 4) + paramB * Math.pow(xVal, 2) + paramC;
-          } else if (selectedModelId === "rational_function") {
-            const denom = paramC * xVal + paramD;
-            if (Math.abs(denom) < 0.1) continue;
-            yVal = (paramA * xVal + paramB) / denom;
           }
 
           const py = originY - yVal * plotScale;
@@ -1325,6 +1396,28 @@ export function Math3D2DLibrary() {
     \\filldraw[fill=white] (\\p) circle (1.5pt) node[\\pos] {$\\p$};
 `;
           break;
+        case "rational_function": {
+          const cSafe = paramC === 0 ? 1 : paramC;
+          const xAsym = -paramD / cSafe;
+          const yAsym = paramA / cSafe;
+          tikzCode += `  % Đồ thị hàm phân thức y = (${paramA}x + ${paramB})/(${paramC}x + ${paramD})
+  \\draw[->] (-5,0) -- (5,0) node[right] {$x$};
+  \\draw[->] (0,-5) -- (0,5) node[above] {$y$};
+  \\node[below left] at (0,0) {$O$};
+
+  % Tiệm cận đứng và tiệm cận ngang nét đứt màu đỏ
+  \\draw[red, dashed, thick] (${xAsym.toFixed(2)}, -5) -- (${xAsym.toFixed(2)}, 5) node[above, font=\\footnotesize] {$x = ${xAsym.toFixed(2)}$};
+  \\draw[red, dashed, thick] (-5, ${yAsym.toFixed(2)}) -- (5, ${yAsym.toFixed(2)}) node[right, font=\\footnotesize] {$y = ${yAsym.toFixed(2)}$};
+
+  % Tâm đối xứng I
+  \\filldraw[red] (${xAsym.toFixed(2)}, ${yAsym.toFixed(2)}) circle (2pt) node[above right, font=\\footnotesize] {$I$};
+
+  % Hai nhánh đường cong Hypebol
+  \\draw[thick, emerald, domain=-5:${(xAsym - 0.2).toFixed(2)}, samples=60] plot (\\x, {(${paramA}*\\x + ${paramB})/(${cSafe}*\\x + ${paramD})});
+  \\draw[thick, emerald, domain=${(xAsym + 0.2).toFixed(2)}:5, samples=60] plot (\\x, {(${paramA}*\\x + ${paramB})/(${cSafe}*\\x + ${paramD})});
+`;
+          break;
+        }
         default:
           tikzCode += `  % Geometry model: ${activeModel.title}
   \\draw[thick, primary] (0,0) rectangle (${paramA.toFixed(1)},${paramB.toFixed(1)});

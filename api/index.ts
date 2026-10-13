@@ -51,6 +51,7 @@ const MATH_FORMATTING_RULES = `QUY TẮC ĐỊNH DẠNG TOÁN HỌC VÀ VĂN B�
 
 3. HÌNH VẼ ĐỒ THỊ:
    - BẮT BUỘC: Khi sinh câu hỏi có cụm từ "có đồ thị như hình vẽ bên" hoặc "đường cong trong hình vẽ bên là đồ thị của hàm số...", BẮT BUỘC chèn mô tả đặc điểm đồ thị bằng lời trong đề (ví dụ: "Đồ thị đi qua điểm $A(0; -1)$, đỉnh $I(1; -2)$, cắt trục hoành tại...") HOẶC sinh kèm mã TikZ / SVG đồ thị nội tuyến. CẤM VIẾT "có đồ thị như hình vẽ bên" rồi bỏ trống không có hình/mô tả!
+   - ĐỐI VỚI ĐỒ THỊ HÀM PHÂN THỨC (CÓ TIỆM CẬN): BẮT BUỘC vẽ đầy đủ các đường tiệm cận nét đứt (tiệm cận đứng $x = x_0$, tiệm cận ngang $y = y_0$ hoặc tiệm cận xiên $y = ax + b$) kèm nhãn phương trình tiệm cận và tâm đối xứng $I(x_0; y_0)$ giao điểm hai tiệm cận chuẩn 100% SGK.
 
 4. CẤM TUYỆT ĐỐI SINH MÃ HTML INLINE PHỨC TẠP:
    - CẤM TUYỆT ĐỐI sinh mã HTML inline phức tạp (<mark style="...">, <span>, <div style="...">).

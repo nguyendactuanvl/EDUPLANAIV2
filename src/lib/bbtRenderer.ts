@@ -1589,6 +1589,7 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
 
     let xAsym: number | null = null;
     let yAsym: number | null = null;
+    let slantAsym: { m: number; n: number } | null = null;
 
     if (currentExpr.includes('/')) {
       const parts = currentExpr.split('/');
@@ -1597,8 +1598,17 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
         const denCoeffs = parsePolynomialCoeffs(parts[1].replace(/^\(|\)$/g, ''));
         if (denCoeffs[1] && denCoeffs[1] !== 0) {
           xAsym = -(denCoeffs[0] || 0) / denCoeffs[1];
-          if ((numCoeffs[2] === undefined || numCoeffs[2] === 0) && numCoeffs[1]) {
-            yAsym = numCoeffs[1] / denCoeffs[1];
+          if (numCoeffs[2] === undefined || numCoeffs[2] === 0) {
+            yAsym = (numCoeffs[1] || 0) / denCoeffs[1];
+          } else if (numCoeffs[2]) {
+            // Hàm phân thức bậc 2 trên bậc 1 (Toán 12 GDPT 2018): tiệm cận xiên y = mx + n
+            const d = denCoeffs[1];
+            const e = denCoeffs[0] || 0;
+            const a = numCoeffs[2];
+            const b = numCoeffs[1] || 0;
+            const m = a / d;
+            const n = (b * d - a * e) / (d * d);
+            slantAsym = { m, n };
           }
         }
       }
@@ -1642,23 +1652,28 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
         currentExpr = '(x+1)/(x-1)';
         xAsym = 1;
         yAsym = 1;
+        slantAsym = null;
       } else if (combinedText.includes('trùng phương') || combinedText.includes('bậc 4') || combinedText.includes('bậc bốn') || combinedText.includes('x^4') || combinedText.includes('x⁴')) {
         currentExpr = 'x^4-2*x^2';
         xAsym = null;
         yAsym = null;
+        slantAsym = null;
       } else if (combinedText.includes('parabol') || combinedText.includes('bậc 2') || combinedText.includes('bậc hai') || combinedText.includes('x^2') || combinedText.includes('x²')) {
         currentExpr = 'x^2-2*x-1';
         xAsym = null;
         yAsym = null;
+        slantAsym = null;
       } else if (combinedText.includes('-x^3') || combinedText.includes('âm')) {
         currentExpr = '-x^3+3*x';
         xAsym = null;
         yAsym = null;
+        slantAsym = null;
       } else {
         // Standard textbook cubic curve y = x^3 - 3x
         currentExpr = 'x^3-3*x';
         xAsym = null;
         yAsym = null;
+        slantAsym = null;
       }
 
       pathD = '';
@@ -1707,14 +1722,46 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
     svgParts.push(`<rect width="${width}" height="${height}" fill="#ffffff" />`);
     svgParts.push(`<rect width="${width}" height="${height}" fill="url(#graph-grid)" />`);
 
-    // Asymptotes
+    // Asymptotes (Đầy đủ tiệm cận đứng, ngang, xiên với màu đỏ nét đứt, nhãn phương trình và tâm đối xứng I)
     if (xAsym !== null && isFinite(xAsym)) {
       const sx = toSvgX(xAsym);
-      svgParts.push(`<line x1="${sx}" y1="10" x2="${sx}" y2="${height - 10}" stroke="#ef4444" stroke-width="1.2" stroke-dasharray="4,4" />`);
+      svgParts.push(`<line x1="${sx.toFixed(1)}" y1="10" x2="${sx.toFixed(1)}" y2="${height - 10}" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="5,4" />`);
+      const lx = sx + (sx > width - 70 ? -55 : 6);
+      svgParts.push(`<text x="${lx.toFixed(1)}" y="22" font-family="'Times New Roman', Times, serif" font-size="13" font-style="italic" font-weight="bold" fill="#dc2626">x = ${formatNumDisplay(xAsym)}</text>`);
+      // Vạch tọa độ trên trục Ox
+      svgParts.push(`<line x1="${sx.toFixed(1)}" y1="${originY - 4}" x2="${sx.toFixed(1)}" y2="${originY + 4}" stroke="#dc2626" stroke-width="1.5" />`);
     }
     if (yAsym !== null && isFinite(yAsym)) {
       const sy = toSvgY(yAsym);
-      svgParts.push(`<line x1="10" y1="${sy}" x2="${width - 10}" y2="${sy}" stroke="#ef4444" stroke-width="1.2" stroke-dasharray="4,4" />`);
+      svgParts.push(`<line x1="10" y1="${sy.toFixed(1)}" x2="${width - 10}" y2="${sy.toFixed(1)}" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="5,4" />`);
+      const ly = Math.max(sy - 6, 20);
+      svgParts.push(`<text x="${width - 55}" y="${ly.toFixed(1)}" font-family="'Times New Roman', Times, serif" font-size="13" font-style="italic" font-weight="bold" fill="#dc2626">y = ${formatNumDisplay(yAsym)}</text>`);
+      // Vạch tọa độ trên trục Oy
+      svgParts.push(`<line x1="${originX - 4}" y1="${sy.toFixed(1)}" x2="${originX + 4}" y2="${sy.toFixed(1)}" stroke="#dc2626" stroke-width="1.5" />`);
+    }
+    if (slantAsym !== null && isFinite(slantAsym.m) && isFinite(slantAsym.n)) {
+      const sx1 = toSvgX(minX);
+      const sy1 = toSvgY(slantAsym.m * minX + slantAsym.n);
+      const sx2 = toSvgX(maxX);
+      const sy2 = toSvgY(slantAsym.m * maxX + slantAsym.n);
+      svgParts.push(`<line x1="${sx1.toFixed(1)}" y1="${sy1.toFixed(1)}" x2="${sx2.toFixed(1)}" y2="${sy2.toFixed(1)}" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="5,4" />`);
+      const mStr = slantAsym.m === 1 ? '' : (slantAsym.m === -1 ? '-' : formatNumDisplay(slantAsym.m));
+      const nStr = slantAsym.n > 0 ? `+ ${formatNumDisplay(slantAsym.n)}` : (slantAsym.n < 0 ? `- ${formatNumDisplay(Math.abs(slantAsym.n))}` : '');
+      svgParts.push(`<text x="${Math.min(sx2 - 75, width - 85).toFixed(1)}" y="${Math.max(sy2 - 8, 26).toFixed(1)}" font-family="'Times New Roman', Times, serif" font-size="13" font-style="italic" font-weight="bold" fill="#dc2626">y = ${mStr}x ${nStr}</text>`);
+    }
+    // Tâm đối xứng I (giao điểm hai đường tiệm cận)
+    if (xAsym !== null && isFinite(xAsym)) {
+      let yCenter: number | null = null;
+      if (yAsym !== null && isFinite(yAsym)) yCenter = yAsym;
+      else if (slantAsym !== null) yCenter = slantAsym.m * xAsym + slantAsym.n;
+      if (yCenter !== null && isFinite(yCenter)) {
+        const ix = toSvgX(xAsym);
+        const iy = toSvgY(yCenter);
+        if (ix >= 10 && ix <= width - 10 && iy >= 10 && iy <= height - 10) {
+          svgParts.push(`<circle cx="${ix.toFixed(1)}" cy="${iy.toFixed(1)}" r="3.2" fill="#dc2626" />`);
+          svgParts.push(`<text x="${(ix + 6).toFixed(1)}" y="${(iy - 6).toFixed(1)}" font-family="'Times New Roman', Times, serif" font-size="14" font-weight="bold" font-style="italic" fill="#dc2626">I</text>`);
+        }
+      }
     }
 
     // Axes
