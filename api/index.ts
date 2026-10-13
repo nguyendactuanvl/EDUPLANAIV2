@@ -656,7 +656,8 @@ function getValidGeminiModels(requestedModel?: string): string[] {
     primary.includes("2.5") ||
     primary.includes("2.0") ||
     primary.includes("1.5") ||
-    primary.includes("pro-vision")
+    primary.includes("pro-vision") ||
+    primary.includes("flash-latest")
   ) {
     primary = "gemini-3.8-flash";
   }
@@ -664,8 +665,7 @@ function getValidGeminiModels(requestedModel?: string): string[] {
   const list = [
     primary,
     "gemini-3.8-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-flash-latest"
+    "gemini-3.1-flash-lite"
   ];
   return Array.from(new Set(list));
 }
@@ -2809,24 +2809,37 @@ app.all("/api/parse-exam", async (req, res) => {
     const { rawText } = req.body || {};
     const files = resolveFiles(req.body);
 
+    let examRawText = typeof rawText === 'string' ? rawText.trim() : '';
+    if (!examRawText && files && files.length > 0) {
+      for (const f of files) {
+        if (f.data) {
+          try {
+            let b64 = typeof f.data === 'string' ? f.data.replace(/^data:[^;]+;base64,/, '').trim() : '';
+            const buf = Buffer.from(b64, 'base64');
+            const isPdf = f.type === 'application/pdf' || f.name?.toLowerCase().endsWith('.pdf') || b64.startsWith('JVBERi0');
+            if (isPdf) {
+              const pdfTxt = await extractTextFromPdf(buf);
+              if (pdfTxt && pdfTxt.trim().length > 30) {
+                examRawText = pdfTxt.trim();
+                break;
+              }
+            }
+          } catch (e) {}
+        }
+      }
+    }
+
     const promptText = `Bạn là chuyên gia bóc tách đề thi môn Toán và khoa học tự nhiên chuẩn cấu trúc GDPT 2018. Hãy phân tích tài liệu đề thi được cung cấp (Word, PDF, Text) và tự động nhận diện chính xác từng câu hỏi thuộc các phần của đề thi:
 
-[CỰC KỲ QUAN TRỌNG: BẮT BUỘC BÓC TÁCH TOÀN BỘ ĐỀ THI - TUYỆT ĐỐI KHÔNG ĐƯỢC DỪNG LẠI HOẶC CHỈ LẤY 1 CÂU MỖI PHẦN]:
-- Quét tiếp toàn bộ tài liệu từ đầu đến cuối đề thi để trích xuất đầy đủ 100% tất cả các câu hỏi của tất cả các phần:
+[CỰC KỲ QUAN TRỌNG: BẮT BUỘC BÓC TÁCH TOÀN BỘ 100% TẤT CẢ CÁC CÂU HỎI TRONG ĐỀ THI - TUYỆT ĐỐI KHÔNG CHỈ LẤY 1 CÂU MỖI PHẦN]:
+- Đề thi hoàn chỉnh có đầy đủ từ 20 đến 50 câu hỏi. BẠN BẮT BUỘC PHẢI BÓC TÁCH ĐẦY ĐỦ 100% TẤT CẢ CÁC CÂU HỎI CỦA TỪNG PHẦN:
+  + PHẦN I: Trắc nghiệm 4 lựa chọn (bóc tách tất cả các câu của Phần I, thường là từ Câu 1 đến Câu 12).
+  + PHẦN II: Trắc nghiệm Đúng/Sai (bóc tách tất cả các câu của Phần II, thường là từ Câu 1 đến Câu 4, mỗi câu đủ 4 ý a, b, c, d).
+  + PHẦN III: Trắc nghiệm trả lời ngắn (bóc tách tất cả các câu của Phần III, thường là từ Câu 1 đến Câu 6).
+  + PHẦN IV: Tự luận (bóc tách tất cả các câu nếu có).
 - TUYỆT ĐỐI KHÔNG ĐƯỢC CHỈ LẤY 1 CÂU MỖI PHẦN! ĐÂY LÀ NHIỆM VỤ BÓC TÁCH TOÀN BỘ ĐỀ THI THẬT, KHÔNG PHẢI VÍ DỤ MINH HỌA!
-- Nếu đề thi có bao nhiêu câu hỏi ở các trang (ví dụ: 12 câu Phần I, 4 câu Phần II, 6 câu Phần III, 2 câu Phần IV...), mảng "questions" BẮT BUỘC PHẢI CHỨA ĐỦ 100% TẤT CẢ CÁC CÂU HỎI (ở ví dụ trên là ĐỦ 24 CÂU từ Câu 1 đến Câu 24).
-- Các phần của đề thi:
-  + PHẦN I: Trắc nghiệm nhiều lựa chọn (bóc tách tất cả các câu của Phần I, ví dụ Câu 1 đến Câu 12).
-  + PHẦN II: Trắc nghiệm Đúng/Sai (bóc tách tất cả các câu của Phần II, ví dụ Câu 1 đến Câu 4). Mỗi câu BẮT BUỘC có 4 ý a), b), c), d) kèm trạng thái Đúng hoặc Sai trong mảng "tfStatements".
-  + PHẦN III: Trắc nghiệm trả lời ngắn / điền số (bóc tách tất cả các câu của Phần III, ví dụ Câu 1 đến Câu 6). Lưu nội dung câu hỏi và ô đáp án số ngắn trong "correctAnswer" (ví dụ: "4", "13", "273", "-5", "1/2"...).
-  + PHẦN IV: Tự luận (nếu có): Đánh dấu type: "ESSAY". Bóc tách trọn vẹn toàn bộ các câu hỏi tự luận kèm hướng dẫn chấm / đáp án chi tiết nếu có trong "correctAnswer" hoặc "explanation".
-- ĐẢM BẢO DANH SÁCH CÂU HỎI NHẬN VỀ ĐẦY ĐỦ CẢ ĐỀ THI. TUYỆT ĐỐI KHÔNG BỎ SÓT HOẶC CẮT BỚT BẤT KỲ CÂU NÀO.
-
-QUY TẮC NHẬN DIỆN THỜI GIAN LÀM BÀI & TIÊU ĐỀ ĐỀ THI:
-+ Tự động quét phần tiêu đề / đầu trang / ghi chú đề thi để tìm thời gian làm bài, ví dụ:
-  - "Thời gian làm bài : 90 Phút", "Thời gian: 60 phút", "Thời gian làm bài: 45 phút", "120 phút", "Thời lượng: 50 phút", "Thời gian: 90 phút (không kể thời gian phát đề)"...
-  - Trích xuất số phút thực tế tìm thấy (kiểu số nguyên dương, ví dụ: 90). Nếu tài liệu không ghi thời gian, trả về null.
-+ Tự động nhận diện tiêu đề đề thi ở đầu trang (ví dụ: "ĐỀ KIỂM TRA ĐỊNH KỲ MÔN TOÁN LỚP 12", "ĐỀ THI HỌC KỲ I..."), gán vào trường "examTitle". Nếu không rõ, để null.
+- Nếu đề thi có bao nhiêu câu hỏi ở các trang (ví dụ: 12 câu Phần I, 4 câu Phần II, 6 câu Phần III...), mảng "questions" BẮT BUỘC PHẢI CHỨA ĐỦ 100% TẤT CẢ CÁC CÂU HỎI (ở ví dụ trên là ĐỦ 22 CÂU từ Câu 1 đến Câu 22).
+- ĐÁNH SỐ TRƯỜNG "id" TĂNG DẦN LIÊN TỤC TỪ 1 ĐẾN HẾT ĐỀ (1, 2, 3, ..., 22...). TUYỆT ĐỐI KHÔNG RESET "id" VỀ 1 Ở MỖI PHẦN!
 
 CẤU TRÚC ĐỀ THI GDPT 2018 GỒM CÁC PHẦN:
 1. PHẦN I: TRẮC NGHIỆM NHIỀU LỰA CHỌN (MULTIPLE_CHOICE)
@@ -2903,12 +2916,8 @@ Tuyệt đối chỉ trả về JSON hợp lệ, không kèm bất kỳ lời d�
       const processed = await processFilesForAI(files);
       userParts.push(...processed);
     }
-    if (rawText && typeof rawText === 'string' && rawText.trim()) {
-      if (!files || files.length === 0) {
-        userParts.push({ text: `Nội dung tài liệu đề thi:\n${rawText}` });
-      } else {
-        userParts.push({ text: `Ghi chú / thông tin bổ sung:\n${rawText}` });
-      }
+    if (examRawText && examRawText.trim()) {
+      userParts.push({ text: `Toàn bộ văn bản trích xuất từ tài liệu đề thi (BẮT BUỘC ĐỐI CHIẾU VÀ BÓC TÁCH ĐẦY ĐỦ 100% TẤT CẢ CÁC CÂU HỎI, KHÔNG BỎ SÓT BẤT KỲ CÂU NÀO):\n${examRawText}` });
     }
     userParts.push({ text: promptText });
 
@@ -2986,7 +2995,7 @@ Tuyệt đối chỉ trả về JSON hợp lệ, không kèm bất kỳ lời d�
       const sol = (q.solution || q.explanation || "").trim();
       return {
         ...q,
-        id: q.id || idx + 1,
+        id: idx + 1,
         question: cleanLatexMathField(q.question || q.content || ''),
         content: cleanLatexMathField(q.content || q.question || ''),
         options: Array.isArray(q.options) ? q.options.map(cleanLatexMathField) : q.options,

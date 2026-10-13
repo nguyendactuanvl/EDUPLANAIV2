@@ -110,9 +110,9 @@ export const FeatureQuickGuideBanner: React.FC<FeatureQuickGuideBannerProps> = (
                   <h4 className="text-xs font-bold text-emerald-300 line-clamp-1">
                     {step.title}
                   </h4>
-                  <p className="text-[11px] text-slate-300 mt-0.5 leading-normal line-clamp-2">
+                  <div className="text-[11px] text-slate-300 mt-0.5 leading-normal line-clamp-2">
                     <MathSpan content={step.detail} />
-                  </p>
+                  </div>
                 </div>
               </div>
             ))}

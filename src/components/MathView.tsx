@@ -85,6 +85,16 @@ const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
   };
 
   const sharedComponents = {
+    p: ({ children, ...props }: any) => (
+      <div className="my-2.5 leading-relaxed" {...cleanProps(props)}>
+        {children}
+      </div>
+    ),
+    div: ({ children, ...props }: any) => (
+      <div {...cleanProps(props)}>
+        {children}
+      </div>
+    ),
     code: customCodeRenderer,
     // @ts-ignore
     'svg-wrapper': ({ node }: any) => {
@@ -143,7 +153,33 @@ const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
   const inlineComponents = {
     ...sharedComponents,
     p: ({ children, ...props }: any) => <span className="inline" {...cleanProps(props)}>{children}</span>,
-    div: ({ children, ...props }: any) => <span className="inline" {...cleanProps(props)}>{children}</span>
+    div: ({ children, ...props }: any) => <span className="inline" {...cleanProps(props)}>{children}</span>,
+    // @ts-ignore
+    'svg-wrapper': ({ node }: any) => {
+      try {
+        const base64 = node.properties?.dataSvg || node.properties?.['data-svg'];
+        if (!base64) return null;
+        const decoded = decodeSafeBase64(base64);
+        if (!decoded) return null;
+        return (
+          <span className="svg-wrapper my-1 inline-flex flex-col items-center align-middle">
+            <span
+              className="bg-white p-1.5 rounded-lg border border-slate-300 shadow-2xs max-w-full overflow-x-auto inline-block"
+              dangerouslySetInnerHTML={{ __html: decoded }}
+            />
+          </span>
+        );
+      } catch (e) {
+        return <span className="text-red-500">Lỗi hiển thị hình ảnh SVG</span>;
+      }
+    },
+    table: ({ node, children, ...props }: any) => (
+      <span className="overflow-x-auto my-1 max-w-full inline-block align-middle">
+        <table className="min-w-fit mx-auto border-collapse border border-slate-300 text-sm text-center shadow-2xs rounded-md overflow-hidden bg-white" {...cleanProps(props)}>
+          {children}
+        </table>
+      </span>
+    )
   };
 
 /**

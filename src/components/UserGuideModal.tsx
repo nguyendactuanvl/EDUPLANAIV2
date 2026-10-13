@@ -522,9 +522,9 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                         {step.title}
                       </h4>
                     </div>
-                    <p className="text-xs sm:text-sm text-slate-300 pl-8 leading-relaxed">
+                    <div className="text-xs sm:text-sm text-slate-300 pl-8 leading-relaxed">
                       <MathSpan content={step.detail} />
-                    </p>
+                    </div>
                   </div>
                 ))}
               </div>

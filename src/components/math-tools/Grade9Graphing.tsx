@@ -109,9 +109,9 @@ export const Grade9Graphing: React.FC = () => {
                 <h3 className="text-sm font-bold text-slate-800">
                   <MathSpan content="Thiết lập hàm số bậc nhất: $y = ax + b$" />
                 </h3>
-                <p className="text-xs text-slate-500">
+                <div className="text-xs text-slate-500">
                   <MathSpan content="Nhập các hệ số $a$ (hệ số góc) và $b$ (tung độ gốc)" />
-                </p>
+                </div>
               </div>
 
               {/* Inputs */}
@@ -230,9 +230,9 @@ export const Grade9Graphing: React.FC = () => {
                 <h3 className="text-sm font-bold text-slate-800">
                   <MathSpan content="Thiết lập Parabol: $y = ax^2$ ($a \ne 0$)" />
                 </h3>
-                <p className="text-xs text-slate-500">
+                <div className="text-xs text-slate-500">
                   <MathSpan content="Đồ thị có đỉnh tại gốc tọa độ $O(0;0)$ và nhận trục tung $Oy$ làm trục đối xứng" />
-                </p>
+                </div>
               </div>
 
               {/* Input a */}

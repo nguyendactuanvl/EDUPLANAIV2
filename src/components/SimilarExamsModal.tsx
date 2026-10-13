@@ -174,6 +174,32 @@ export function SimilarExamsModal({
         b64 = await base64Promise;
       }
 
+      // Tự động trích xuất văn bản từ tệp PDF/ảnh để đối chiếu và dự phòng không bỏ sót bất kỳ câu nào
+      if (b64 && !extracted) {
+        try {
+          const extRes = await apiFetch('/api/extract-file-text', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              files: [{
+                name: file.name,
+                type: file.type || 'application/pdf',
+                data: b64
+              }]
+            })
+          });
+          if (extRes.ok) {
+            const extJson = await extRes.json();
+            if (extJson?.text && typeof extJson.text === 'string' && extJson.text.trim().length > 20) {
+              extracted = extJson.text.trim();
+              setRawText(extracted);
+            }
+          }
+        } catch (extErr) {
+          console.warn('PDF auto-extract text notice:', extErr);
+        }
+      }
+
       // Call AI Smart Parser (with automatic text extraction fallback inside parseExamWithAI)
       let aiQuestions: ParsedQuestion[] = [];
       try {
@@ -186,6 +212,36 @@ export function SimilarExamsModal({
         aiQuestions = res?.questions || (Array.isArray(res) ? res : []);
       } catch (aiErr) {
         console.warn('AI Parsing encountered error, checking local text fallback:', aiErr);
+      }
+
+      // Nếu AI chỉ trả về một phần câu (ví dụ 4 câu tượng trưng cho 4 phần) nhưng văn bản trích xuất có nhiều câu hơn:
+      if (extracted) {
+        try {
+          const localParsed = parseRawExamText(extracted);
+          if (localParsed && localParsed.length > aiQuestions.length) {
+            console.log(`[SimilarExamsModal] localParsed có ${localParsed.length} câu > aiQuestions ${aiQuestions.length} câu. Hợp nhất toàn bộ câu hỏi đề thi.`);
+            const mergedQuestions: SimilarQuestion[] = localParsed.map((lq, i) => {
+              const aiQ = aiQuestions.find(q => q.id === i + 1 || q.id === lq.id);
+              return {
+                id: i + 1,
+                type: (lq.type || 'mc') as any,
+                content: lq.content,
+                options: lq.options,
+                correctOptionIndex: lq.correctOptionIndex,
+                correctAnswer: lq.correctAnswer,
+                tfStatements: lq.tfStatements,
+                level: lq.level || 'Thông hiểu',
+                solution: (aiQ?.solution || aiQ?.explanation || lq.solution || lq.explanation || '').trim()
+              };
+            });
+            setActiveQuestions(mergedQuestions);
+            setActiveExamTitle(file.name.replace(/\.[^/.]+$/, ''));
+            setIsParsingUpload(false);
+            return;
+          }
+        } catch (e) {
+          console.warn("Lỗi kiểm tra localParsed trong SimilarExamsModal:", e);
+        }
       }
 
       if (aiQuestions && aiQuestions.length > 0) {

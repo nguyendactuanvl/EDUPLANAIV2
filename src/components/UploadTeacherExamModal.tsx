@@ -356,6 +356,29 @@ export function UploadTeacherExamModal({
 
       let parsedQuestions = parsedRes.questions || (Array.isArray(parsedRes) ? parsedRes : []);
 
+      if (!isPdfPlaceholder && rawText.trim()) {
+        try {
+          const localParsed = parseRawExamText(rawText);
+          if (localParsed && localParsed.length > parsedQuestions.length) {
+            const mergedQuestions = localParsed.map((lq, i) => {
+              const aiQ = parsedQuestions.find((q: any) => q.id === i + 1 || q.id === lq.id);
+              if (aiQ) {
+                return {
+                  ...lq,
+                  id: i + 1,
+                  solution: aiQ.solution || aiQ.explanation || lq.solution,
+                  explanation: aiQ.explanation || aiQ.solution || lq.explanation,
+                  hasFigure: aiQ.hasFigure ?? lq.hasFigure,
+                  figureBox: aiQ.figureBox ?? lq.figureBox
+                };
+              }
+              return { ...lq, id: i + 1 };
+            });
+            parsedQuestions = mergedQuestions;
+          }
+        } catch (e) {}
+      }
+
       // Tự động cắt và nhúng ảnh/BBT vào câu hỏi nếu có file gốc tải lên
       if (uploadedFile?.data && parsedQuestions && parsedQuestions.length > 0) {
         try {

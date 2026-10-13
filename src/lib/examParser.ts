@@ -124,7 +124,7 @@ export function formatAiQuestionsToParsed(rawQuestions: any[]): ParsedQuestion[]
 
       const solText = q.solution ? fixMath(cleanMath(q.solution)) : (q.explanation ? fixMath(cleanMath(q.explanation)) : "");
       return {
-        id: q.id || (idx + 1),
+        id: idx + 1,
         section: section,
         type: 'tf',
         level: q.level || 'Thông hiểu',
@@ -145,7 +145,7 @@ export function formatAiQuestionsToParsed(rawQuestions: any[]): ParsedQuestion[]
       const sanitizedAns = sanitizeShortAnswerInput(rawAns) || cleanMath(rawAns).slice(0, 4);
       const solText = q.solution ? fixMath(cleanMath(q.solution)) : (q.explanation ? fixMath(cleanMath(q.explanation)) : "");
       return {
-        id: q.id || (idx + 1),
+        id: idx + 1,
         section: section,
         type: 'sa',
         level: q.level || 'Vận dụng',
@@ -165,7 +165,7 @@ export function formatAiQuestionsToParsed(rawQuestions: any[]): ParsedQuestion[]
       const solutionText = String(q.correctAnswer ?? q.explanation ?? q.rubric ?? q.solution ?? '').trim();
       const solText = q.solution ? fixMath(cleanMath(q.solution)) : (solutionText ? fixMath(cleanMath(solutionText)) : (q.explanation ? fixMath(cleanMath(q.explanation)) : ""));
       return {
-        id: q.id || (idx + 1),
+        id: idx + 1,
         section: section,
         type: 'essay',
         level: q.level || '1.0 điểm',
@@ -215,7 +215,7 @@ export function formatAiQuestionsToParsed(rawQuestions: any[]): ParsedQuestion[]
     const solText = q.solution ? fixMath(cleanMath(q.solution)) : (q.explanation ? fixMath(cleanMath(q.explanation)) : "");
 
     return {
-      id: q.id || (idx + 1),
+      id: idx + 1,
       section: section,
       type: 'mc',
       level: q.level || 'Nhận biết',
@@ -521,20 +521,24 @@ export async function parseExamWithAI(params: {
   if (workingText && workingText.trim().length > 50) {
     try {
       const localParsed = parseRawExamText(workingText);
-      if (localParsed && localParsed.length > rawList.length && localParsed.length >= 5) {
+      if (localParsed && localParsed.length > rawList.length) {
         console.log(`[parseExamWithAI] AI trả về ${rawList.length} câu, bộ bóc tách văn bản nhận diện được ${localParsed.length} câu. Tiến hành hợp nhất đầy đủ đề thi.`);
         const mergedList = localParsed.map((lq, idx) => {
           const aiMatch = rawList.find((aq: any) => aq.id === idx + 1 || aq.id === lq.id);
           if (aiMatch) {
             return {
               ...lq,
+              id: idx + 1,
               solution: aiMatch.solution || aiMatch.explanation || lq.solution,
               explanation: aiMatch.explanation || aiMatch.solution || lq.explanation,
               hasFigure: aiMatch.hasFigure ?? lq.hasFigure,
               figureBox: aiMatch.figureBox ?? lq.figureBox
             };
           }
-          return lq;
+          return {
+            ...lq,
+            id: idx + 1
+          };
         });
         rawList = mergedList;
       }
@@ -573,8 +577,9 @@ export function preprocessExamText(text: string): string {
   s = s.replace(/(?:^|[^\n])\s*(PHẦN\s*(?:[I|V|X\d]+|\d+)[:\.\-\s][^\n]*)/gi, '\n\n$1\n');
   s = s.replace(/(?:^|[^\n])\s*(B\.?\s*TỰ\s*LUẬN[^\n]*|BÀI\s*TẬP\s*TỰ\s*LUẬN[^\n]*)/gi, '\n\n$1\n');
 
-  // Ensure newlines before Câu \d+ or Bài \d+
-  s = s.replace(/(?<=[^\s])\s+(?=(?:Câu|Bài|Question|Q)\s*\d+[\.:\s\-])/gi, '\n\n');
+  // Ensure newlines before Câu \d+ or Bài \d+ (even if inside markdown bold/brackets or preceded by space/punctuation)
+  s = s.replace(/(?:^|[^\n])\s*(?=(?:\*\*|<b>|\[)?(?:Câu|Bài|Question|Q)\s*\d+[\.:\s\-\/\)])/gi, '\n\n');
+  s = s.replace(/(?:^|[^\n])\s*(?=\b\d+[\.:\)]\s+(?:Cho|Tính|Tìm|Trong|Biết|Xét|Đường|Hàm|Hình|Giá|Một|Có|Đồ|Phương|Tập))/gi, '\n\n');
 
   // Từ ngữ chỉ điểm/hình học/giới từ không được coi là phương án trắc nghiệm
   const geoWordPattern = /(?:tại|điểm|đỉnh|gọi|qua|với|từ|trên|của|cho|và|thuộc|đến|cạnh|đường|mặt\s*phẳng|chiếu\s*lên|tọa\s*độ|tâm|trọng\s*tâm|trực\s*tâm|bán\s*kính|vectơ|vector|tam\s*giác(?:\s+[a-zA-Z\.]+)?|tứ\s*diện(?:\s+[a-zA-Z\.]+)?|hình\s*chóp(?:\s+[a-zA-Z\.]+)?|đoạn\s*thẳng)$/i;
@@ -679,7 +684,7 @@ export function parseRawExamText(rawText: string): ParsedQuestion[] {
     if (!secContent) return;
 
     // Split into questions using "Câu \d+[:\.]" or "Bài \d+[:\.]"
-    const qRegex = /(?:^|\n)(?=(?:Câu|Bài|Question|Q)\s*\d+[\.:\s])/i;
+    const qRegex = /(?:^|\n)\s*(?=(?:\*\*|<b>|\[)?(?:Câu|Bài|Question|Q)\s*\d+[\.:\s\-\/\)])/i;
     let parts = secContent.split(qRegex).map(p => p.trim()).filter(Boolean);
 
     // Fallback: If no "Câu \d+" found, try splitting on numbered lines "1." or "1)" at start of line
@@ -693,7 +698,7 @@ export function parseRawExamText(rawText: string): ParsedQuestion[] {
 
     const questionBlocks: string[] = [];
     for (const part of parts) {
-      if (/^(?:(?:Câu|Bài|Question|Q)\s*\d+|\d+[\.:\)])/i.test(part)) {
+      if (/^(?:(?:\*\*|<b>|\[)?(?:Câu|Bài|Question|Q)\s*\d+|\d+[\.:\)])/i.test(part)) {
         questionBlocks.push(part);
       } else if (questionBlocks.length === 0) {
         questionBlocks.push(part);
@@ -749,11 +754,11 @@ export function parseRawExamText(rawText: string): ParsedQuestion[] {
 
         const solText = explanation ? fixMath(cleanMath(explanation)) : "";
         results.push({
-          id: sectionQuestionId++,
+          id: globalId++,
           section: (sec.type as string) === 'tf' ? 2 : (sec.type as string) === 'sa' ? 3 : (sec.type as string) === 'essay' ? 4 : 2,
           type: "tf",
           level: "Thông hiểu",
-          content: fixMath(cleanMath(stem.replace(/^(?:Câu|Bài|Question|Q)?\s*\d+[\.:\s]*/i, '').trim() || `Câu ${sectionQuestionId}`)),
+          content: fixMath(cleanMath(stem.replace(/^(?:Câu|Bài|Question|Q)?\s*\d+[\.:\s]*/i, '').trim() || `Câu ${globalId}`)),
           tfStatements: statements,
           solution: solText,
           explanation: solText || undefined
@@ -831,11 +836,11 @@ export function parseRawExamText(rawText: string): ParsedQuestion[] {
 
           const solText = explanation ? fixMath(cleanMath(explanation)) : "";
           results.push({
-            id: sectionQuestionId++,
+            id: globalId++,
             section: (sec.type as string) === 'tf' ? 2 : (sec.type as string) === 'sa' ? 3 : (sec.type as string) === 'essay' ? 4 : 1,
             type: "mc",
             level: "Nhận biết",
-            content: fixMath(cleanMath(stem || `Câu ${sectionQuestionId}`)),
+            content: fixMath(cleanMath(stem || `Câu ${globalId}`)),
             options: options,
             correctOptionIndex,
             correctAnswer: String.fromCharCode(65 + correctOptionIndex),
@@ -852,11 +857,11 @@ export function parseRawExamText(rawText: string): ParsedQuestion[] {
         const sanitizedAns = sanitizeShortAnswerInput(rawAns) || cleanMath(rawAns).slice(0, 4);
         const solText = explanation ? fixMath(cleanMath(explanation)) : "";
         results.push({
-          id: sectionQuestionId++,
+          id: globalId++,
           section: (sec.type as string) === 'tf' ? 2 : (sec.type as string) === 'sa' ? 3 : (sec.type as string) === 'essay' ? 4 : 1,
           type: "sa",
           level: "Vận dụng",
-          content: fixMath(cleanMath(mainBlock.replace(/^(?:Câu|Bài|Question|Q)?\s*\d+[\.:\s]*/i, '').trim() || `Câu ${sectionQuestionId}`)),
+          content: fixMath(cleanMath(mainBlock.replace(/^(?:Câu|Bài|Question|Q)?\s*\d+[\.:\s]*/i, '').trim() || `Câu ${globalId}`)),
           correctAnswer: sanitizedAns,
           solution: solText,
           explanation: solText || undefined
@@ -867,11 +872,11 @@ export function parseRawExamText(rawText: string): ParsedQuestion[] {
       // 4. Kiểm tra Tự luận (Phần IV)
       const solText = explanation ? fixMath(cleanMath(explanation)) : (extractedCorrect ? fixMath(cleanMath(extractedCorrect)) : "Lời giải và hướng dẫn chấm chi tiết");
       results.push({
-        id: sectionQuestionId++,
+        id: globalId++,
         section: (sec.type as string) === 'tf' ? 2 : (sec.type as string) === 'sa' ? 3 : (sec.type as string) === 'essay' ? 4 : 1,
         type: "essay",
         level: "1.0 điểm",
-        content: fixMath(cleanMath(mainBlock.replace(/^(?:Câu|Bài|Question|Q)?\s*\d+[\.:\s]*/i, '').trim() || `Câu ${sectionQuestionId}`)),
+        content: fixMath(cleanMath(mainBlock.replace(/^(?:Câu|Bài|Question|Q)?\s*\d+[\.:\s]*/i, '').trim() || `Câu ${globalId}`)),
         correctAnswer: solText,
         solution: solText,
         explanation: solText || undefined

@@ -2122,9 +2122,9 @@ export function Worksheets() {
                           </div>
                         ) : (
                           <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
-                            <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                            <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                               <BarChart2 className="w-4 h-4 text-indigo-600" /> Phổ điểm học sinh (Recharts)
-                            </p>
+                            </div>
                             <div className="h-52 w-full">
                               {(() => {
                                 const scores = selectedRoomResultsData.submissions.map((s: any) => Number(s.totalScore) || 0);
@@ -2611,8 +2611,8 @@ export function Worksheets() {
                           </div>
                           <div className="col-span-9 pl-3 border-l border-slate-200">
                             <span className="font-bold block text-slate-800 text-xs">Lời phê & Nhận xét của Thầy / Cô:</span>
-                            <p className="border-b border-dotted border-slate-400 mt-2 h-4"></p>
-                            <p className="border-b border-dotted border-slate-400 mt-2.5 h-4"></p>
+                            <div className="border-b border-dotted border-slate-400 mt-2 h-4" />
+                            <div className="border-b border-dotted border-slate-400 mt-2.5 h-4" />
                           </div>
                         </div>
                       </div>
@@ -3234,8 +3234,8 @@ export function Worksheets() {
                             </div>
                             <div className="col-span-9 pl-3 border-l border-slate-200">
                               <span className="font-bold block text-slate-800 text-xs">Lời phê & Nhận xét của Thầy / Cô:</span>
-                              <p className="border-b border-dotted border-slate-400 mt-2 h-4"></p>
-                              <p className="border-b border-dotted border-slate-400 mt-2.5 h-4"></p>
+                              <div className="border-b border-dotted border-slate-400 mt-2 h-4" />
+                              <div className="border-b border-dotted border-slate-400 mt-2.5 h-4" />
                             </div>
                           </div>
                         </div>
