@@ -2912,6 +2912,7 @@ Tuyệt đối chỉ trả về JSON hợp lệ, không kèm bất kỳ lời d�
       ],
       config: {
         temperature: 0.1,
+        maxOutputTokens: 16384,
         responseMimeType: "application/json"
       }
     });

@@ -156,30 +156,64 @@ export function SimilarExamsModal({
 
     try {
       let extracted = '';
+      let b64 = '';
+
       if (file.name.endsWith('.docx')) {
         const ab = await file.arrayBuffer();
         const res = await mammoth.extractRawText({ arrayBuffer: ab });
-        extracted = res.value;
+        extracted = res.value || '';
       } else if (file.name.endsWith('.txt') || file.type.startsWith('text/')) {
         extracted = await file.text();
       } else {
-        // PDF or image: read via Base64 and AI Parser
+        // Read as Data URL (base64) for PDF/images
         const reader = new FileReader();
         const base64Promise = new Promise<string>((resolve) => {
-          reader.onloadend = () => resolve(reader.result as string);
+          reader.onloadend = () => resolve((reader.result as string) || '');
           reader.readAsDataURL(file);
         });
-        const b64 = await base64Promise;
+        b64 = await base64Promise;
+      }
+
+      // Call AI Smart Parser (with automatic text extraction fallback inside parseExamWithAI)
+      let aiQuestions: ParsedQuestion[] = [];
+      try {
         const res = await parseExamWithAI({
-          fileData: b64,
+          rawText: extracted || undefined,
+          fileData: b64 || undefined,
           fileName: file.name,
-          fileType: file.type
+          fileType: file.type || 'application/pdf'
         });
-        const aiParsed = res?.questions || [];
-        if (aiParsed && aiParsed.length > 0) {
-          const qs: SimilarQuestion[] = aiParsed.map((q, i) => ({
+        aiQuestions = res?.questions || (Array.isArray(res) ? res : []);
+      } catch (aiErr) {
+        console.warn('AI Parsing encountered error, checking local text fallback:', aiErr);
+      }
+
+      if (aiQuestions && aiQuestions.length > 0) {
+        const qs: SimilarQuestion[] = aiQuestions.map((q, i) => ({
+          id: i + 1,
+          type: (q.type || 'mc') as any,
+          content: q.content,
+          options: q.options,
+          correctOptionIndex: q.correctOptionIndex,
+          correctAnswer: q.correctAnswer,
+          tfStatements: q.tfStatements,
+          level: q.level || 'Thông hiểu',
+          solution: (q.explanation || '').trim()
+        }));
+        setActiveQuestions(qs);
+        setActiveExamTitle(file.name.replace(/\.[^/.]+$/, ''));
+        setIsParsingUpload(false);
+        return;
+      }
+
+      // Regex fallback if extracted text is available
+      if (extracted) {
+        setRawText(extracted);
+        const parsed = parseRawExamText(extracted);
+        if (parsed && parsed.length > 0) {
+          const qs: SimilarQuestion[] = parsed.map((q, i) => ({
             id: i + 1,
-            type: q.type as any,
+            type: (q.type || 'mc') as any,
             content: q.content,
             options: q.options,
             correctOptionIndex: q.correctOptionIndex,
@@ -195,28 +229,10 @@ export function SimilarExamsModal({
         }
       }
 
-      if (extracted) {
-        setRawText(extracted);
-        const parsed = parseRawExamText(extracted);
-        if (parsed && parsed.length > 0) {
-          const qs: SimilarQuestion[] = parsed.map((q, i) => ({
-            id: i + 1,
-            type: q.type as any,
-            content: q.content,
-            options: q.options,
-            correctOptionIndex: q.correctOptionIndex,
-            correctAnswer: q.correctAnswer,
-            tfStatements: q.tfStatements,
-            level: q.level || 'Thông hiểu',
-            solution: (q.explanation || '').trim()
-          }));
-          setActiveQuestions(qs);
-          setActiveExamTitle(file.name.replace(/\.[^/.]+$/, ''));
-        }
-      }
+      throw new Error("Không thể bóc tách câu hỏi từ tệp này. Vui lòng kiểm tra định dạng tệp.");
     } catch (err: any) {
       console.error('Lỗi phân tích file đề:', err);
-      alert('Không thể đọc file: ' + (err?.message || 'Lỗi định dạng.'));
+      alert('Không thể đọc file: ' + (err?.message || 'Lỗi định dạng tệp.'));
     } finally {
       setIsParsingUpload(false);
       setProgressMsg('');

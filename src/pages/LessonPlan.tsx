@@ -1,8 +1,9 @@
 import { apiFetch } from '../lib/apiFetch';
 import { useSubjects } from '../lib/subjects';
-import { exportHtmlToWord } from '../lib/exportUtils';
+import { exportHtmlToWord, generateDocxBlobFromElement } from '../lib/exportUtils';
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Sparkles, Save, BookOpen, Download, AlertCircle, Upload, Edit3, Eye, Presentation, TrendingUp, BarChart2, X, Box, BarChart3, Wand2 } from "lucide-react";
+import { Sparkles, Save, BookOpen, Download, AlertCircle, Upload, Edit3, Eye, Presentation, TrendingUp, BarChart2, X, Box, BarChart3, Wand2, Cloud } from "lucide-react";
+import { GoogleDriveSaveModal } from "../components/GoogleDriveSaveModal";
 import { fullPlan } from "../data/mockData";
 import { MarkdownRenderer, fixMath } from "../components/MarkdownRenderer";
 import { MathView } from "../components/MathView";

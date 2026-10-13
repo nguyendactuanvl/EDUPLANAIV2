@@ -309,10 +309,38 @@ export async function parseExamWithAI(params: {
   fileName?: string;
   fileType?: string;
 }): Promise<ParseExamResult> {
-  const payload: any = {};
-  if (params.rawText && params.rawText.trim()) {
-    payload.rawText = params.rawText;
+  let workingText = params.rawText || '';
+
+  // 1. Tự động trích xuất văn bản từ tệp nếu chưa có rawText
+  if (!workingText.trim() && params.fileData) {
+    try {
+      const extRes = await apiFetch('/api/extract-file-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          files: [{
+            name: params.fileName || 'exam_document',
+            type: params.fileType || 'application/pdf',
+            data: params.fileData
+          }]
+        })
+      });
+      if (extRes.ok) {
+        const extJson = await extRes.json();
+        if (extJson?.text && typeof extJson.text === 'string' && extJson.text.trim().length > 20) {
+          workingText = extJson.text.trim();
+        }
+      }
+    } catch (extractErr) {
+      console.warn("[parseExamWithAI] Auto text extraction notice:", extractErr);
+    }
   }
+
+  const payload: any = {};
+  if (workingText && workingText.trim()) {
+    payload.rawText = workingText;
+  }
+
   if (params.fileData) {
     let formattedData = params.fileData;
     // Standardize data URI if missing prefix for PDF
@@ -326,7 +354,10 @@ export async function parseExamWithAI(params: {
     }];
   }
 
-  let response: Response;
+  let response: Response | null = null;
+  let netErrorOccurred = false;
+  let netErrorMessage = "";
+
   try {
     response = await apiFetch('/api/parse-exam', {
       method: 'POST',
@@ -334,7 +365,23 @@ export async function parseExamWithAI(params: {
       body: JSON.stringify(payload)
     });
   } catch (netErr: any) {
-    throw new Error("Lỗi kết nối máy chủ phân tích đề: " + (netErr.message || "Không thể kết nối đến máy chủ."));
+    netErrorOccurred = true;
+    netErrorMessage = netErr?.message || "Không thể kết nối đến máy chủ.";
+    console.warn("[parseExamWithAI] API call failed, evaluating local fallback:", netErr);
+  }
+
+  // Nếu gặp lỗi kết nối API nhưng đã trích xuất được văn bản, tự động chuyển sang bộ bóc tách Regex cục bộ làm dự phòng!
+  if (netErrorOccurred || !response) {
+    if (workingText && workingText.trim().length > 20) {
+      const localParsed = parseRawExamText(workingText);
+      if (localParsed && localParsed.length > 0) {
+        const resultWithMeta = localParsed as ParseExamResult;
+        resultWithMeta.questions = localParsed;
+        resultWithMeta.detectedDuration = detectExamDurationFromText(workingText);
+        return resultWithMeta;
+      }
+    }
+    throw new Error("Lỗi kết nối máy chủ phân tích đề: " + (netErrorMessage || "Không thể phân tích tài liệu đề thi. Vui lòng kiểm tra lại kết nối mạng."));
   }
 
   // 1. Kiểm tra response.ok: Nếu !response.ok, đọc text và báo lỗi chi tiết
@@ -352,6 +399,17 @@ export async function parseExamWithAI(params: {
         msg = errText.trim();
       }
     }
+
+    // Nếu server trả lỗi nhưng có text, thử phân tích cục bộ
+    if (workingText && workingText.trim().length > 20) {
+      const localParsed = parseRawExamText(workingText);
+      if (localParsed && localParsed.length > 0) {
+        const resultWithMeta = localParsed as ParseExamResult;
+        resultWithMeta.questions = localParsed;
+        resultWithMeta.detectedDuration = detectExamDurationFromText(workingText);
+        return resultWithMeta;
+      }
+    }
     throw new Error("Lỗi kết nối máy chủ phân tích đề: " + msg);
   }
 
@@ -361,9 +419,27 @@ export async function parseExamWithAI(params: {
 
   if (cleanResponseText.includes("SERVER_ERROR:")) {
     const rawError = cleanResponseText.substring(cleanResponseText.indexOf("SERVER_ERROR:") + 13).trim();
+    if (workingText && workingText.trim().length > 20) {
+      const localParsed = parseRawExamText(workingText);
+      if (localParsed && localParsed.length > 0) {
+        const resultWithMeta = localParsed as ParseExamResult;
+        resultWithMeta.questions = localParsed;
+        resultWithMeta.detectedDuration = detectExamDurationFromText(workingText);
+        return resultWithMeta;
+      }
+    }
     throw new Error("Lỗi kết nối máy chủ phân tích đề: " + (rawError || "Không thể phân tích tài liệu đề thi."));
   }
   if (cleanResponseText.startsWith("SERVER_ERR")) {
+    if (workingText && workingText.trim().length > 20) {
+      const localParsed = parseRawExamText(workingText);
+      if (localParsed && localParsed.length > 0) {
+        const resultWithMeta = localParsed as ParseExamResult;
+        resultWithMeta.questions = localParsed;
+        resultWithMeta.detectedDuration = detectExamDurationFromText(workingText);
+        return resultWithMeta;
+      }
+    }
     throw new Error("Lỗi kết nối máy chủ phân tích đề: " + cleanResponseText);
   }
 

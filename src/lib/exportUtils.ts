@@ -2066,13 +2066,42 @@ export async function exportHtmlToWord(
     const docBlob = await Packer.toBlob(doc);
     const finalFilename = filename.replace(/\.doc$/i, '') + '.docx';
     saveAs(docBlob, finalFilename);
+    return docBlob;
   } catch (err) {
     console.error('DOCX Export failed:', err);
     alert('Có lỗi xảy ra khi tạo file Word .docx. Vui lòng thử lại.');
+    return null;
   } finally {
     if (loadingOverlay) {
       loadingOverlay.style.display = 'none';
     }
+  }
+}
+
+/**
+ * Generates a Word .docx Blob directly from an HTML element without triggering browser download
+ */
+export async function generateDocxBlobFromElement(
+  element: HTMLElement,
+  mathFormat: 'omml' | 'image' = 'omml'
+): Promise<Blob | null> {
+  try {
+    const clone = element.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('.no-print, button, input, select, textarea').forEach(el => el.remove());
+    clone.querySelectorAll('.print-only, .only-print').forEach(el => {
+      (el as HTMLElement).style.display = 'block';
+      el.classList.remove('print-only', 'only-print');
+    });
+    clone.querySelectorAll('details').forEach(details => {
+      details.setAttribute('open', 'true');
+      (details as HTMLElement).style.display = 'block';
+    });
+
+    const docBlob = await exportHtmlToWord(clone, 'temp_drive_file.docx', mathFormat);
+    return docBlob;
+  } catch (e) {
+    console.error('Lỗi tạo Word Blob cho Google Drive:', e);
+    return null;
   }
 }
 

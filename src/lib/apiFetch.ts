@@ -4,29 +4,93 @@ export const API_KEY_STORAGE = 'eduplan_gemini_api_key_v2';
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+export function getApiHeaders(options: RequestInit = {}, skipCustomKey = false): Headers {
+  const headers = new Headers(options.headers || {});
+  headers.delete('x-gemini-api-key');
+  headers.delete('Authorization');
+  
+  if (!skipCustomKey) {
+    const customKey = localStorage.getItem(API_KEY_STORAGE);
+    if (customKey) {
+      headers.set('Authorization', 'Bearer ' + encodeURIComponent(customKey));
+      headers.set('x-gemini-api-key', encodeURIComponent(customKey)); // Keep fallback
+    }
+  }
+  return headers;
+}
+
+export async function uploadFileChunked(fileData: string, type: string, extraHeaders?: Headers): Promise<string> {
+  const baseUrl = (import.meta as any).env.VITE_API_BASE_URL || '';
+  const fileId = Math.random().toString(36).substring(2) + Date.now().toString(36);
+  // Max payload is ~1MB for Nginx, so we use 500KB chunks
+  const chunkSize = 500 * 1024;
+  const totalChunks = Math.ceil(fileData.length / chunkSize);
+  
+  for (let i = 0; i < totalChunks; i++) {
+    const chunkData = fileData.substring(i * chunkSize, (i + 1) * chunkSize);
+    let success = false;
+    let lastErr = "";
+
+    // Retry each chunk up to 3 times
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (extraHeaders) {
+          extraHeaders.forEach((val, key) => {
+            reqHeaders[key] = val;
+          });
+        }
+        const res = await fetch(baseUrl + '/api/upload-chunk', {
+          credentials: 'include',
+          method: 'POST',
+          headers: reqHeaders,
+          body: JSON.stringify({ fileId, chunkIndex: i, totalChunks, chunkData, type })
+        });
+        if (res.ok) {
+          success = true;
+          break;
+        } else {
+          lastErr = `HTTP ${res.status}`;
+        }
+      } catch (err: any) {
+        lastErr = err?.message || "Lỗi kết nối mạng";
+      }
+      await delay(1000 * (attempt + 1));
+    }
+
+    if (!success) {
+      throw new Error(`Lỗi khi tải tệp lên (phần ${i + 1}/${totalChunks}: ${lastErr}). Vui lòng thử lại.`);
+    }
+  }
+  return fileId;
+}
+
 export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  let skipCustomKey = false;
+
   if (options.body && typeof options.body === 'string' && options.body.length > 250 * 1024) {
     try {
       const parsedBody = JSON.parse(options.body);
       let modified = false;
+      const headersForChunk = getApiHeaders(options, skipCustomKey);
       
       if (parsedBody.files && Array.isArray(parsedBody.files)) {
         parsedBody.fileIds = parsedBody.fileIds || [];
         for (let i = 0; i < parsedBody.files.length; i++) {
           const f = parsedBody.files[i];
           if (f.data && f.data.length > 100 * 1024) {
-            const fileId = await uploadFileChunked(f.data, f.type);
+            const fileId = await uploadFileChunked(f.data, f.type || 'application/octet-stream', headersForChunk);
             parsedBody.fileIds.push(fileId);
             f.data = ""; // Clear large data
             modified = true;
           }
         }
-        // Filter out empty data files if they were offloaded
-        parsedBody.files = parsedBody.files.filter((f: any) => f.data.length > 0);
+        // Keep files array intact if fileIds present, but filter out cleared data
+        parsedBody.files = parsedBody.files.filter((f: any) => f.data && f.data.length > 0);
       }
       
       if (parsedBody.file && typeof parsedBody.file === 'string' && parsedBody.file.length > 100 * 1024) {
-        const fileId = await uploadFileChunked(parsedBody.file, parsedBody.type || 'text/plain');
+        const fileId = await uploadFileChunked(parsedBody.file, parsedBody.type || 'text/plain', headersForChunk);
         parsedBody.fileId = fileId;
         parsedBody.file = ""; // Clear
         modified = true;
@@ -35,28 +99,16 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
       if (modified) {
         options.body = JSON.stringify(parsedBody);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn("Could not chunk upload:", e);
+      // If the body is still larger than 1.5MB and chunking failed, raise descriptive error
+      if (options.body.length > 1.5 * 1024 * 1024) {
+        throw new Error("Không thể tải tệp kích thước lớn (" + Math.round(options.body.length / 1024) + " KB) do kết nối bị gián đoạn: " + (e?.message || "Lỗi tải tệp."));
+      }
     }
   }
 
-  const getHeaders = (skipCustomKey = false) => {
-    const headers = new Headers(options.headers || {});
-    headers.delete('x-gemini-api-key');
-    headers.delete('Authorization');
-    
-    if (!skipCustomKey) {
-      const customKey = localStorage.getItem(API_KEY_STORAGE);
-      if (customKey) {
-        headers.set('Authorization', 'Bearer ' + encodeURIComponent(customKey));
-        headers.set('x-gemini-api-key', encodeURIComponent(customKey)); // Keep fallback
-      }
-    }
-    return headers;
-  };
-
   const maxRetries = 5; // Up to 5 retries (total ~1 minute wait)
-  let skipCustomKey = false;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     let customKeyUsed = !skipCustomKey && !!localStorage.getItem(API_KEY_STORAGE);
@@ -68,7 +120,7 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
       response = await fetch(baseUrl + url, {
         credentials: 'include',
         ...options,
-        headers: getHeaders(skipCustomKey)
+        headers: getApiHeaders(options, skipCustomKey)
       });
     } catch (netErr: any) {
       console.warn(`[apiFetch] Network/fetch error on ${url}:`, netErr);
@@ -86,7 +138,6 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
       throw new Error("Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau.");
     }
 
-    
     const contentType = response.headers.get("content-type");
     if (contentType && contentType.includes("text/html")) {
       const text = await response.text();
@@ -197,24 +248,3 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
   throw new Error("Request failed after retries.");
 }
 
-export async function uploadFileChunked(fileData: string, type: string): Promise<string> {
-  const baseUrl = (import.meta as any).env.VITE_API_BASE_URL || '';
-  const fileId = Math.random().toString(36).substring(2) + Date.now().toString(36);
-  // Max payload is ~1MB for Nginx, so we use 500KB chunks
-  const chunkSize = 500 * 1024;
-  const totalChunks = Math.ceil(fileData.length / chunkSize);
-  
-  for (let i = 0; i < totalChunks; i++) {
-    const chunkData = fileData.substring(i * chunkSize, (i + 1) * chunkSize);
-    const res = await fetch(baseUrl + '/api/upload-chunk', {
-      credentials: 'include',
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileId, chunkIndex: i, totalChunks, chunkData, type })
-    });
-    if (!res.ok) {
-      throw new Error(`Lỗi khi tải file lên (phần ${i + 1}/${totalChunks}). Vui lòng thử lại.`);
-    }
-  }
-  return fileId;
-}
