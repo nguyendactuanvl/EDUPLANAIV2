@@ -33,6 +33,7 @@ import { parseRawExamText, formatAiQuestionsToParsed } from '../lib/examParser';
 import { attachCroppedFiguresToQuestions } from '../lib/cropUtils';
 import { UploadTeacherExamModal } from "../components/UploadTeacherExamModal";
 import { WordEquationModal } from "../components/WordEquationModal";
+import { ExamDiffViewer } from "../components/ExamDiffViewer";
 import { SimilarExamsModal } from "../components/SimilarExamsModal";
 import { QuestionEditModal } from "../components/QuestionEditModal";
 import { HeaderConfigModal } from "../components/HeaderConfigModal";
@@ -55,7 +56,7 @@ import {
 } from '../lib/examMixer';
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import * as XLSX from 'xlsx';
-import { School, FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera, TrendingUp, BarChart2, Box, BarChart3, Calculator, Wand2 } from "lucide-react";
+import { School, FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera, TrendingUp, BarChart2, Box, BarChart3, Calculator, Wand2, FileDiff } from "lucide-react";
 import { run1ClickMathFix } from "../components/math-tools/MathFormulaFixer";
 
 interface Question {
@@ -68,7 +69,7 @@ interface Question {
   correctOptionIndex?: number;
   correctAnswer?: string;
   tfStatements?: { statement: string; correct: boolean }[];
-  level: string;
+  level?: string;
   isRealWorld?: boolean;
   topic?: string;
   subtopic?: string;
@@ -959,6 +960,7 @@ export function ExamGenerator() {
     detailedSolution: true
   });
   const [showAnswerMatrix, setShowAnswerMatrix] = useState(true);
+  const [showDiffViewer, setShowDiffViewer] = useState(false);
   
   // Tùy chọn Ưu tiên câu hỏi bối cảnh thực tế (Chuẩn GDPT 2018)
   const [enableRealWorld, setEnableRealWorld] = useState<boolean>(true);
@@ -4006,6 +4008,14 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                       <button onClick={handleShare} className="px-3 sm:px-4 py-2 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 flex items-center gap-2 shadow-sm">
                         <Share2 className="w-4 h-4" /> <span className="hidden sm:inline">Chia sẻ Online</span>
                       </button>
+                      <button 
+                        type="button"
+                        onClick={() => setShowDiffViewer(true)} 
+                        className="px-3 sm:px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                        title="Mở giao diện so sánh song song giữa Đề gốc và Đề đã trộn, kiểm định MathJax và định dạng Word"
+                      >
+                        <FileDiff className="w-4 h-4" /> <span>So Sánh Diff</span>
+                      </button>
                       <button onClick={handleExportTNMakerExcel} className="px-3 sm:px-4 py-2 bg-white border border-emerald-600 text-emerald-700 font-medium rounded-lg hover:bg-emerald-50 flex items-center gap-2 shadow-sm" title="Xuất file Excel đầy đủ ma trận đáp án, form TNMaker và bảng tra câu gốc">
                         <FileSpreadsheet className="w-4 h-4" /> <span className="hidden sm:inline">Excel Đáp Án (TNMaker)</span>
                       </button>
@@ -4357,6 +4367,14 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                             >
                               <School className="w-4 h-4 text-emerald-600" />
                               <span>Tiêu đề (Trường, GV, 2026-2027)</span>
+                            </button>
+                            <button 
+                              onClick={() => setShowDiffViewer(true)} 
+                              className="px-3 py-1.5 bg-indigo-50 border border-indigo-300 text-indigo-800 text-sm font-bold rounded hover:bg-indigo-100 flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                              title="So sánh song song Mã đề này với Đề gốc để kiểm định MathJax & định dạng Word"
+                            >
+                              <FileDiff className="w-4 h-4 text-indigo-600" />
+                              <span>So sánh Diff</span>
                             </button>
                             <button onClick={() => handlePrint(`print-exam-${exam.code}`)} className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-sm font-medium rounded hover:bg-slate-50 flex items-center gap-2">
 
@@ -6341,6 +6359,35 @@ Lời giải: Tiệm cận ngang là $y = 1$ nên ý c sai.`);
         isOpen={showWordEquationModal}
         onClose={() => setShowWordEquationModal(false)}
       />
+
+      {/* Exam Diff Viewer Modal (So sánh song song Đề gốc vs Đề đã trộn) */}
+      {showDiffViewer && (
+        <ExamDiffViewer
+          originalQuestions={questions}
+          shuffledExams={shuffledExams}
+          examTitle={examName || formatExamTitle(examType, subject, grade)}
+          onUpdateOriginalQuestion={(index, updatedQ) => {
+            setQuestions((prev) => {
+              const next = [...prev];
+              next[index] = updatedQ;
+              return next;
+            });
+          }}
+          onUpdateShuffledExamQuestion={(code, qIndex, updatedQ) => {
+            setShuffledExams((prev) =>
+              prev.map((e) => {
+                if (e.code === code) {
+                  const newQs = [...e.questions];
+                  newQs[qIndex] = updatedQ;
+                  return { ...e, questions: newQs };
+                }
+                return e;
+              })
+            );
+          }}
+          onClose={() => setShowDiffViewer(false)}
+        />
+      )}
 
       {/* Header Config Modal (Trường, GV, Năm học 2026-2027) */}
       <HeaderConfigModal

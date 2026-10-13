@@ -1547,10 +1547,10 @@ app.all("/api/upgrade-lesson-plan", async (req, res) => {
   }
   
   try {
-    const { lesson, subject, templateMode = 'uploaded', customTemplateInstructions = '', includeInclusiveEducation = true } = req.body || {};
+    const { lesson, subject, templateMode = 'uploaded', customTemplateInstructions = '', includeInclusiveEducation = false } = req.body || {};
     const files = resolveFiles(req.body);
 
-    const inclusiveEducationBlock = includeInclusiveEducation !== false ? `
+    const inclusiveEducationBlock = includeInclusiveEducation === true ? `
 ĐIỀU CHỈNH KẾ HOẠCH DẠY HỌC CHO HỌC SINH KHUYẾT TẬT HÒA NHẬP (BẮT BUỘC BỔ SUNG THÀNH MỤC IV HOẶC MỤC RIÊNG CUỐI GIÁO ÁN CHO MỌI MÔN HỌC/HOẠT ĐỘNG):
 Bám sát Thông tư 03/2018/TT-BGDĐT và Công văn 5512/BGDĐT-GDTrH, hãy bổ sung mục này với cấu trúc chuẩn:
 1. **MỤC TIÊU ĐIỀU CHỈNH:**

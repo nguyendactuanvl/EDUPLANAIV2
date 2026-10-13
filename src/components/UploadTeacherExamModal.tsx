@@ -677,9 +677,9 @@ export function UploadTeacherExamModal({
       setSharePin(examId);
       setShareLink(finalUrl);
 
-      // 6. Generate QR Code safely using cleanPinUrl (short ~40 chars, perfectly sized for QR codes)
+      // 6. Generate QR Code safely using finalUrl (short ~40 chars, perfectly sized for QR codes)
       try {
-        const qrData = await QRCode.toDataURL(cleanPinUrl, {
+        const qrData = await QRCode.toDataURL(finalUrl, {
           width: 280,
           margin: 2,
           errorCorrectionLevel: 'M',
@@ -692,7 +692,7 @@ export function UploadTeacherExamModal({
       } catch (qrErr: any) {
         console.warn("QR code generation warning:", qrErr);
         // Fallback: Use free QR API
-        setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(cleanPinUrl)}`);
+        setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(finalUrl)}`);
       }
 
       setStep('share_popup');

@@ -234,7 +234,7 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
         });
         setQrCodeUrl(qrData);
       } catch (qrErr) {
-        setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(cleanPinUrl)}`);
+        setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(finalUrl)}`);
       }
 
       setSharePin(examId);

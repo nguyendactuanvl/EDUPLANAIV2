@@ -1715,7 +1715,7 @@ export const sanitizeExamQuestion = (rawContent: string): string => {
   content = content.replace(/\\begin\s*\{cases\*?\}([\s\S]*?)\\end\s*\{cases\*?\}/g, (_m, body) => `\\begin{cases}\n${normalizeCasesBody(body)}\n\\end{cases}`);
   const envTokens: string[] = [];
   content = unflattenMarkdownTables(content);
-  content = content.replace(/(```[\s\S]*?```|`[^`\n]+`|<img[\s\S]*?>|<svg[\s\S]*?<\/svg>|<tikz-diagram[\s\S]*?<\/tikz-diagram>|<svg-wrapper[\s\S]*?<\/svg-wrapper>|\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\}|\\left\s*\[\s*\\begin\s*\{aligned\*?\}[\s\S]*?\\end\s*\{aligned\*?\}\s*\\right\.?|\\begin\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}[\s\S]*?\\end\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}|(?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gim, (match) => {
+  content = content.replace(/(```[\s\S]*?```|`[^`\n]+`|<img[\s\S]*?>|<svg[\s\S]*?<\/svg>|<tikz-diagram[\s\S]*?<\/tikz-diagram>|<svg-wrapper[\s\S]*?<\/svg-wrapper>|\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\}|___?VISUAL\\?_TOKEN_\d+___?|___[A-Z0-9_]+_TOKEN_\d+___|\\left\s*\[\s*\\begin\s*\{aligned\*?\}[\s\S]*?\\end\s*\{aligned\*?\}\s*\\right\.?|\\begin\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}[\s\S]*?\\end\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}|(?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gim, (match) => {
     envTokens.push(match);
     return `\uE000EB_${envTokens.length - 1}\uE001`;
   });
@@ -2361,10 +2361,13 @@ export function cleanQuestionStem(content: any, options?: any[], tfStatements?: 
   let cleaned = sanitizeExamQuestion(text.trim());
 
   // Khôi phục các hình vẽ BBT & đồ thị nguyên vẹn 100%
-  cleaned = cleaned.replace(/___VISUAL_TOKEN_(\d+)___/g, (_m, idx) => {
+  cleaned = cleaned.replace(/___?VISUAL\\?_TOKEN_(\d+)___?/gi, (_m, idx) => {
     const raw = visualTokens[Number(idx)];
     return raw ? `\n\n${raw}\n\n` : '';
   });
+
+  // Triệt tiêu hoàn toàn bất kỳ chuỗi token hình vẽ mồ côi nào sót lại
+  cleaned = cleaned.replace(/___?VISUAL\\?_TOKEN_\d+___?/gi, '');
 
   // Fallback an toàn tuyệt đối: Nếu cleaned bị rỗng hoặc ngắn bất thường (< 10 ký tự) trong khi đề gốc dài,
   // bảo toàn 100% nội dung gốc của câu hỏi để câu hỏi (đặc biệt câu 21, 22) không bao giờ bị mất!
