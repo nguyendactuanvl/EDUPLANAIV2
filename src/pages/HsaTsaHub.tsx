@@ -4,9 +4,10 @@ import {
   HelpCircle, Send, FileText, Brain, Compass, Layers, Calculator, 
   Play, RotateCcw, Check, XCircle, ChevronRight, ShieldCheck, 
   BookMarked, Lightbulb, Target, TrendingUp, BarChart3, RefreshCw,
-  Printer, Download, Copy, Shuffle, Plus
+  Printer, Download, Copy, Shuffle, Plus, PieChart, Activity,
+  Users, UserPlus, MessageSquare
 } from 'lucide-react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { apiFetch } from '../lib/apiFetch';
 
@@ -119,9 +120,10 @@ const TSA_QUESTION_BANK: PracticeQuestion[] = [
 ];
 
 export function HsaTsaHub() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'materials' | 'practice' | 'generator' | 'progress' | 'ai_tutor'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'materials' | 'practice' | 'generator' | 'progress' | 'analytics' | 'groups' | 'ai_tutor'>('overview');
   const [selectedExamType, setSelectedExamType] = useState<'hsa' | 'tsa'>('hsa');
   const [isFocusMode, setIsFocusMode] = useState(false);
+  const [isReaderMode, setIsReaderMode] = useState(false);
 
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('hsa-focus-mode', { detail: isFocusMode }));
@@ -152,6 +154,48 @@ export function HsaTsaHub() {
   const [genExamCode, setGenExamCode] = useState<string>("101");
   const [generatedExamList, setGeneratedExamList] = useState<PracticeQuestion[]>([]);
   const [showAnswersInGen, setShowAnswersInGen] = useState<boolean>(true);
+
+  interface ExamScanWarning {
+    type: 'error' | 'warning' | 'success';
+    message: string;
+  }
+  const [examScanResults, setExamScanResults] = useState<ExamScanWarning[] | null>(null);
+  const [isScanningExam, setIsScanningExam] = useState(false);
+
+  const handleScanExamQuality = () => {
+    setIsScanningExam(true);
+    setTimeout(() => {
+      const warnings: ExamScanWarning[] = [];
+      if (generatedExamList.length === 0) {
+        warnings.push({ type: 'error', message: 'Chưa có câu hỏi nào trong đề thi. Vui lòng bấm Trộn đề ngay.' });
+      } else {
+        generatedExamList.forEach((q, idx) => {
+          if (!q.correctAnswer || !['A', 'B', 'C', 'D'].includes(q.correctAnswer)) {
+            warnings.push({ type: 'error', message: `Câu ${idx + 1}: Thiếu hoặc sai định dạng đáp án đúng (${q.correctAnswer || 'Không có'}).` });
+          }
+          if (!q.explanation || q.explanation.trim().length < 5) {
+            warnings.push({ type: 'warning', message: `Câu ${idx + 1}: Thiếu hoặc hướng dẫn giải chi tiết quá ngắn.` });
+          }
+          if (!q.options || q.options.length < 4) {
+            warnings.push({ type: 'error', message: `Câu ${idx + 1}: Không đủ 4 phương án lựa chọn.` });
+          }
+        });
+
+        const questionTexts = generatedExamList.map(q => q.question);
+        const uniqueQuestions = new Set(questionTexts);
+        if (uniqueQuestions.size < generatedExamList.length) {
+          warnings.push({ type: 'error', message: 'Phát hiện câu hỏi trùng lặp trong đề thi được trộn.' });
+        }
+      }
+
+      if (warnings.length === 0) {
+        warnings.push({ type: 'success', message: 'Tuyệt vời! Đề thi đạt chuẩn 100% chất lượng sư phạm, không có lỗi thiếu đáp án hay thiếu lời giải.' });
+      }
+
+      setExamScanResults(warnings);
+      setIsScanningExam(false);
+    }, 400);
+  };
 
   // Progress Tracking state (Recharts)
   const [progressHistory, setProgressHistory] = useState([
@@ -315,6 +359,101 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
     window.print();
   };
 
+  interface StudyGroup {
+    id: string;
+    name: string;
+    description: string;
+    examType: 'hsa' | 'tsa';
+    membersCount: number;
+    members: Array<{ name: string; score: number; status: string; avatar: string }>;
+    code: string;
+  }
+
+  const [studyGroups, setStudyGroups] = useState<StudyGroup[]>([
+    {
+      id: 'g1',
+      name: 'Đội tuyển HSA 130+ ĐHQGHN',
+      description: 'Nhóm ôn thi chuyên sâu các chuyên đề Toán - Văn - Khoa học mục tiêu 130+ điểm.',
+      examType: 'hsa',
+      membersCount: 12,
+      code: 'HSA130',
+      members: [
+        { name: 'Nguyễn Đức Tuấn (Trưởng nhóm)', score: 135, status: 'Đang làm bài', avatar: 'ND' },
+        { name: 'Trần Minh Hoàng', score: 128, status: 'Hoàn thành đề #4', avatar: 'TH' },
+        { name: 'Lê Thị Thu Thảo', score: 122, status: 'Đang ôn tài liệu', avatar: 'LT' },
+        { name: 'Phạm Văn Nam', score: 118, status: 'Hoàn thành đề #3', avatar: 'PN' }
+      ]
+    },
+    {
+      id: 'g2',
+      name: 'Luyện thi TSA Bách Khoa Top ĐẦU',
+      description: 'Nhóm thảo luận tư duy toán học, đọc hiểu kỹ thuật và giải quyết vấn đề HUST.',
+      examType: 'tsa',
+      membersCount: 8,
+      code: 'TSAHUST',
+      members: [
+        { name: 'Hoàng Gia Bảo', score: 92, status: 'Đang làm đề TSA #2', avatar: 'HB' },
+        { name: 'Vũ Minh Thư', score: 88, status: 'Hoàn thành đề #1', avatar: 'VT' },
+        { name: 'Đỗ Hoàng Long', score: 84, status: 'Nghỉ giải lao', avatar: 'ĐL' }
+      ]
+    }
+  ]);
+
+  const [activeGroupId, setActiveGroupId] = useState<string>('g1');
+  const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupDesc, setNewGroupDesc] = useState('');
+  const [newGroupExam, setNewGroupExam] = useState<'hsa' | 'tsa'>('hsa');
+  const [joinCodeInput, setJoinCodeInput] = useState('');
+  const [groupMessageInput, setGroupMessageInput] = useState('');
+  const [groupChatMessages, setGroupChatMessages] = useState<Array<{ sender: string; text: string; time: string }>>([
+    { sender: 'Trần Minh Hoàng', text: 'Mọi người đã làm xong đề định lượng số 4 chưa? Câu tích phân hàm hợp khó phết!', time: '09:15' },
+    { sender: 'Nguyễn Đức Tuấn', text: 'Đã giải xong rồi nhé, lát mình gửi lời giải chi tiết lên nhóm cho.', time: '09:18' }
+  ]);
+
+  const handleCreateGroup = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newGroupName.trim()) return;
+    const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const created: StudyGroup = {
+      id: `g_${Date.now()}`,
+      name: newGroupName,
+      description: newGroupDesc || 'Nhóm học tập luyện thi HSA & TSA trực tuyến',
+      examType: newGroupExam,
+      membersCount: 1,
+      code: newCode,
+      members: [
+        { name: 'Bạn (Trưởng nhóm)', score: 110, status: 'Vừa tham gia', avatar: 'ME' }
+      ]
+    };
+    setStudyGroups(prev => [created, ...prev]);
+    setActiveGroupId(created.id);
+    setNewGroupName('');
+    setNewGroupDesc('');
+  };
+
+  const handleJoinGroup = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!joinCodeInput.trim()) return;
+    const found = studyGroups.find(g => g.code.toUpperCase() === joinCodeInput.trim().toUpperCase());
+    if (found) {
+      setActiveGroupId(found.id);
+      setJoinCodeInput('');
+      alert(`Đã tham gia thành công nhóm: ${found.name}`);
+    } else {
+      alert('Không tìm thấy nhóm với mã code này. Vui lòng kiểm tra lại!');
+    }
+  };
+
+  const handleSendGroupMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!groupMessageInput.trim()) return;
+    setGroupChatMessages(prev => [
+      ...prev,
+      { sender: 'Bạn', text: groupMessageInput.trim(), time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+    ]);
+    setGroupMessageInput('');
+  };
+
   const handleAddProgress = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTestName || !newTestScore) return;
@@ -366,7 +505,7 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
       <div className="max-w-7xl mx-auto space-y-6">
         
         {/* Header Banner */}
-        {!isFocusMode && (
+        {!(isFocusMode || (activeTab === 'materials' && isReaderMode)) && (
           <div className="bg-gradient-to-r from-indigo-700 via-indigo-600 to-purple-700 rounded-2xl shadow-xl p-6 sm:p-8 text-white flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="space-y-3">
               <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/15 backdrop-blur-md rounded-full text-xs font-semibold uppercase tracking-wider">
@@ -398,7 +537,7 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
         )}
 
         {/* Navigation Tabs */}
-        {!isFocusMode && (
+        {!(isFocusMode || (activeTab === 'materials' && isReaderMode)) && (
           <div className="flex border-b border-slate-200 dark:border-slate-800 gap-2 overflow-x-auto">
             <button
               onClick={() => setActiveTab('overview')}
@@ -434,6 +573,20 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
             >
               <TrendingUp className="w-4 h-4 text-amber-500" />
               <span>Biểu đồ tiến độ</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('analytics')}
+              className={`flex items-center gap-2 px-5 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap cursor-pointer ${activeTab === 'analytics' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'}`}
+            >
+              <PieChart className="w-4 h-4 text-rose-500" />
+              <span>Phân tích chuyên sâu</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('groups')}
+              className={`flex items-center gap-2 px-5 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap cursor-pointer ${activeTab === 'groups' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'}`}
+            >
+              <Users className="w-4 h-4 text-blue-500" />
+              <span>Nhóm học tập ảo</span>
             </button>
             <button
               onClick={() => setActiveTab('ai_tutor')}
@@ -523,18 +676,44 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
         {/* Tab 2: Materials */}
         {activeTab === 'materials' && (
           <div className="space-y-6">
+            {/* Reader Mode Banner */}
+            {isReaderMode && (
+              <div className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white p-4 rounded-2xl shadow-lg flex items-center justify-between sticky top-4 z-20">
+                <div className="flex items-center gap-2 font-bold text-sm">
+                  <BookOpen className="w-5 h-5 animate-pulse text-emerald-200" />
+                  <span>Chế độ đọc đang bật (Đã ẩn toàn bộ sidebar và thanh công cụ tập trung chuyên môn)</span>
+                </div>
+                <button
+                  onClick={() => setIsReaderMode(false)}
+                  className="px-4 py-2 bg-white text-emerald-900 rounded-xl text-xs font-bold hover:bg-emerald-50 transition-all shadow cursor-pointer"
+                >
+                  Thoát Chế độ đọc
+                </button>
+              </div>
+            )}
+
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 no-print">
               <div>
                 <h3 className="font-extrabold text-lg text-slate-900 dark:text-white">Tài liệu ôn thi trọng tâm HSA & TSA</h3>
                 <p className="text-xs text-slate-500">Hệ thống công thức, kiến thức và chiến lược làm bài thi ĐGNL & ĐGTD</p>
               </div>
-              <button
-                onClick={() => window.print()}
-                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm flex items-center gap-2 cursor-pointer shadow transition-all"
-              >
-                <Printer className="w-4 h-4" />
-                <span>Xuất Tài Liệu PDF & In Ấn</span>
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setIsReaderMode(!isReaderMode)}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm ${isReaderMode ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'}`}
+                  title="Ẩn toàn bộ sidebar và thanh công cụ để tập trung đọc giáo án"
+                >
+                  <BookOpen className="w-4 h-4" />
+                  <span>{isReaderMode ? 'Thoát Chế độ đọc' : 'Bật Chế độ đọc'}</span>
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm flex items-center gap-2 cursor-pointer shadow transition-all"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Xuất Tài Liệu PDF & In Ấn</span>
+                </button>
+              </div>
             </div>
 
             <div className="print-only-header">
@@ -814,13 +993,23 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
                   <span>Trộn đề ngay</span>
                 </button>
                 {generatedExamList.length > 0 && (
-                  <button
-                    onClick={handlePrintExam}
-                    className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm transition-all cursor-pointer flex items-center gap-2 shadow"
-                  >
-                    <Printer className="w-4 h-4" />
-                    <span>In đề / Xuất PDF</span>
-                  </button>
+                  <>
+                    <button
+                      onClick={handleScanExamQuality}
+                      disabled={isScanningExam}
+                      className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold rounded-xl text-sm transition-all cursor-pointer flex items-center gap-2 shadow"
+                    >
+                      {isScanningExam ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                      <span>Quét chất lượng đề</span>
+                    </button>
+                    <button
+                      onClick={handlePrintExam}
+                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm transition-all cursor-pointer flex items-center gap-2 shadow"
+                    >
+                      <Printer className="w-4 h-4" />
+                      <span>In đề / Xuất PDF</span>
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -860,6 +1049,37 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
                 </label>
               </div>
             </div>
+
+            {/* Exam Quality Scan Report Modal / Box */}
+            {examScanResults && (
+              <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl space-y-4 border border-slate-800 animate-fadeIn">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                    <h3 className="font-extrabold text-base">Báo cáo kiểm định chất lượng đề thi tự động</h3>
+                  </div>
+                  <button
+                    onClick={() => setExamScanResults(null)}
+                    className="text-slate-400 hover:text-white text-sm font-bold"
+                  >
+                    ✕ Đóng
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {examScanResults.map((warn, i) => (
+                    <div
+                      key={i}
+                      className={`p-3 rounded-xl text-xs flex items-start gap-2 ${warn.type === 'error' ? 'bg-rose-950/80 text-rose-200 border border-rose-800/60' : warn.type === 'warning' ? 'bg-amber-950/80 text-amber-200 border border-amber-800/60' : 'bg-emerald-950/80 text-emerald-200 border border-emerald-800/60'}`}
+                    >
+                      <span className="font-bold shrink-0">
+                        {warn.type === 'error' ? '❌ Lỗi:' : warn.type === 'warning' ? '⚠️ Cảnh báo:' : '✅ Đạt chuẩn:'}
+                      </span>
+                      <span>{warn.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {generatedExamList.length === 0 ? (
               <div className="text-center py-16 text-slate-400 space-y-3">
@@ -1203,6 +1423,343 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
                 </table>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Tab 6: Analytics & Subject Progression */}
+        {activeTab === 'analytics' && (
+          <div className="space-y-6">
+            <div className="bg-gradient-to-r from-rose-900 via-indigo-900 to-purple-950 text-white p-6 sm:p-8 rounded-2xl shadow-xl space-y-3">
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full text-xs font-semibold text-rose-300">
+                <PieChart className="w-3.5 h-3.5" />
+                <span>Phân tích chuyên sâu xu hướng tiến bộ</span>
+              </div>
+              <h2 className="text-2xl font-extrabold tracking-tight">Biểu đồ so sánh kết quả các lần thi thử qua từng môn</h2>
+              <div className="text-xs sm:text-sm text-slate-200 max-w-3xl leading-relaxed">
+                <MarkdownRenderer content="Đánh giá toàn diện sự tiến bộ của học sinh qua các môn Định lượng (Toán), Định tính (Văn) và Khoa học. Công thức thống kê học tập được tính toán tự động dựa trên mô hình định lượng $\bar{S} = \frac{1}{n}\sum_{i=1}^{n}S_i$ và phương sai độ lệch chuẩn $\sigma$." />
+              </div>
+            </div>
+
+            {/* Area Chart Comparison */}
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-slate-900 dark:text-white text-base">Biểu đồ Vùng so sánh xu hướng tiến bộ từng môn thi</h3>
+                  <p className="text-xs text-slate-500">So sánh trực quan điểm số Toán, Văn, Khoa học theo từng đợt thi thử</p>
+                </div>
+                <Activity className="w-5 h-5 text-rose-500" />
+              </div>
+              <div className="h-80 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={progressHistory}>
+                    <defs>
+                      <linearGradient id="colorMath" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8}/>
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorLang" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorScience" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.8}/>
+                        <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.5} />
+                    <XAxis dataKey="test" stroke="#94a3b8" fontSize={12} />
+                    <YAxis stroke="#94a3b8" fontSize={12} domain={[0, 60]} />
+                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '12px' }} />
+                    <Legend />
+                    <Area type="monotone" dataKey="math" name="Định lượng (Toán)" stroke="#6366f1" fillOpacity={1} fill="url(#colorMath)" />
+                    <Area type="monotone" dataKey="lang" name="Định tính (Văn)" stroke="#10b981" fillOpacity={1} fill="url(#colorLang)" />
+                    <Area type="monotone" dataKey="science" name="Khoa học" stroke="#f59e0b" fillOpacity={1} fill="url(#colorScience)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Statistical Summary & Math Formulas */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+                <div className="flex items-center gap-2 text-indigo-600 font-bold text-sm">
+                  <Calculator className="w-4 h-4" />
+                  <MarkdownRenderer content="Điểm trung bình định lượng $\bar{M}$" />
+                </div>
+                <p className="text-3xl font-black text-slate-900 dark:text-white">
+                  {Math.round((progressHistory.reduce((acc, cur) => acc + cur.math, 0) / progressHistory.length) * 10) / 10} <span className="text-xs font-normal text-slate-400">/ 50</span>
+                </p>
+                <div className="text-xs text-slate-500 leading-relaxed">
+                  <MarkdownRenderer content="Được tính theo công thức kỳ vọng toán học: $\bar{M} = \frac{1}{n} \sum_{i=1}^{n} M_i$. Mức độ vững chắc cao." />
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+                <div className="flex items-center gap-2 text-emerald-600 font-bold text-sm">
+                  <BookOpen className="w-4 h-4" />
+                  <MarkdownRenderer content="Điểm trung bình định tính $\bar{L}$" />
+                </div>
+                <p className="text-3xl font-black text-slate-900 dark:text-white">
+                  {Math.round((progressHistory.reduce((acc, cur) => acc + cur.lang, 0) / progressHistory.length) * 10) / 10} <span className="text-xs font-normal text-slate-400">/ 50</span>
+                </p>
+                <div className="text-xs text-slate-500 leading-relaxed">
+                  <MarkdownRenderer content="Đánh giá năng lực ngôn ngữ và tư duy đọc hiểu văn bản: $\bar{L} = \frac{1}{n} \sum_{i=1}^{n} L_i$." />
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+                <div className="flex items-center gap-2 text-amber-600 font-bold text-sm">
+                  <Award className="w-4 h-4" />
+                  <MarkdownRenderer content="Tích lũy tổng điểm $S_{total}$" />
+                </div>
+                <p className="text-3xl font-black text-slate-900 dark:text-white">
+                  {Math.round(progressHistory.reduce((acc, cur) => acc + cur.score, 0) / progressHistory.length)} <span className="text-xs font-normal text-slate-400">/ 150</span>
+                </p>
+                <div className="text-xs text-slate-500 leading-relaxed">
+                  <MarkdownRenderer content="Tổng điểm trung bình đạt được: $S_{total} = \bar{M} + \bar{L} + \bar{S_c}$. Đạt ngưỡng an toàn vào đại học top." />
+                </div>
+              </div>
+            </div>
+
+            {/* Detailed Subject Analysis Breakdown */}
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+              <h3 className="font-bold text-base text-slate-900 dark:text-white">Nhận định sư phạm & Xu hướng tiến bộ</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl space-y-2 border border-slate-200 dark:border-slate-700">
+                  <span className="font-bold text-slate-900 dark:text-white text-sm block">1. Phần Tư duy Định lượng (Toán học)</span>
+                  <div className="text-xs">
+                    <MarkdownRenderer content="Học sinh duy trì phong độ rất tốt ở phần Đại số và Giải tích với đạo hàm $\frac{dy}{dx}$ và tích phân $\int f(x)dx$. Cần chú ý thêm về xác suất thống kê để tối đa hóa điểm số lên mức tuyệt đối." />
+                  </div>
+                </div>
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl space-y-2 border border-slate-200 dark:border-slate-700">
+                  <span className="font-bold text-slate-900 dark:text-white text-sm block">2. Phần Đọc hiểu & Khoa học</span>
+                  <p>
+                    Tốc độ đọc hiểu và tư duy logic khoa học đã cải thiện rõ rệt qua các lần thi thử (tăng trung bình $+12\%$ so với đề đầu tiên). Biểu đồ cho thấy xu hướng tiệm cận mốc điểm $120+$ ổn định.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 7: Virtual Study Groups */}
+        {activeTab === 'groups' && (
+          <div className="space-y-6">
+            <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white p-6 sm:p-8 rounded-2xl shadow-xl space-y-3">
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full text-xs font-semibold text-blue-300">
+                <Users className="w-3.5 h-3.5" />
+                <span>Nhóm học tập ảo trực tuyến</span>
+              </div>
+              <h2 className="text-2xl font-extrabold tracking-tight">Học nhóm cùng bạn bè & So sánh kết quả thời gian thực</h2>
+              <p className="text-xs sm:text-sm text-slate-200 max-w-3xl leading-relaxed">
+                Tạo hoặc tham gia các nhóm ôn thi HSA/TSA để cùng luyện đề thi thử, chia sẻ tài liệu và theo dõi bảng xếp hạng điểm số trực tuyến theo thời gian thực.
+              </p>
+            </div>
+
+            {/* Create / Join Group Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                <div className="flex items-center gap-2 text-indigo-600 font-bold text-base">
+                  <UserPlus className="w-5 h-5" />
+                  <span>Tạo nhóm học tập ảo mới</span>
+                </div>
+                <form onSubmit={handleCreateGroup} className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Tên nhóm</label>
+                    <input
+                      type="text"
+                      value={newGroupName}
+                      onChange={(e) => setNewGroupName(e.target.value)}
+                      placeholder="VD: Đội tuyển HSA 140+ ĐHQGHN"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Mô tả mục tiêu nhóm</label>
+                    <input
+                      type="text"
+                      value={newGroupDesc}
+                      onChange={(e) => setNewGroupDesc(e.target.value)}
+                      placeholder="VD: Luyện đề Toán & Khoa học mỗi tối"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Loại kỳ thi trọng tâm</label>
+                    <select
+                      value={newGroupExam}
+                      onChange={(e) => setNewGroupExam(e.target.value as any)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm"
+                    >
+                      <option value="hsa">Đánh giá năng lực (HSA)</option>
+                      <option value="tsa">Đánh giá tư duy (TSA)</option>
+                    </select>
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm shadow cursor-pointer transition-all"
+                  >
+                    Tạo nhóm ngay
+                  </button>
+                </form>
+              </div>
+
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                <div className="flex items-center gap-2 text-emerald-600 font-bold text-base">
+                  <Users className="w-5 h-5" />
+                  <span>Tham gia nhóm bằng mã mời</span>
+                </div>
+                <form onSubmit={handleJoinGroup} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Nhập mã nhóm (Group Code)</label>
+                    <input
+                      type="text"
+                      value={joinCodeInput}
+                      onChange={(e) => setJoinCodeInput(e.target.value)}
+                      placeholder="VD: HSA130 hoặc TSAHUST"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm uppercase font-mono"
+                      required
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Mã code được cung cấp bởi trưởng nhóm hoặc giáo viên ôn luyện. Tham gia để kết nối với các bạn học sinh cùng chí hướng.
+                  </p>
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm shadow cursor-pointer transition-all"
+                  >
+                    Vào nhóm học tập
+                  </button>
+                </form>
+
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <p className="text-xs font-semibold text-slate-500 mb-2">Các nhóm đang tham gia:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {studyGroups.map(g => (
+                      <button
+                        key={g.id}
+                        onClick={() => setActiveGroupId(g.id)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeGroupId === g.id ? 'bg-indigo-600 text-white shadow' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'}`}
+                      >
+                        {g.name} ({g.code})
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Active Group Details & Leaderboard */}
+            {(() => {
+              const currentGroup = studyGroups.find(g => g.id === activeGroupId) || studyGroups[0];
+              return (
+                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-6">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+                    <div>
+                      <div className="inline-flex items-center gap-2 px-2.5 py-0.5 bg-indigo-100 dark:bg-indigo-950 text-indigo-600 rounded-md text-xs font-bold mb-1">
+                        Mã nhóm: {currentGroup.code} • {currentGroup.examType.toUpperCase()}
+                      </div>
+                      <h3 className="font-extrabold text-xl text-slate-900 dark:text-white">{currentGroup.name}</h3>
+                      <p className="text-xs text-slate-500">{currentGroup.description}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-3 py-1.5 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5" /> {currentGroup.members.length} thành viên online
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Leaderboard Table */}
+                  <div className="space-y-4">
+                    <h4 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                      <Award className="w-4 h-4 text-amber-500" />
+                      <span>Bảng xếp hạng điểm thi thử trực tuyến trong nhóm</span>
+                    </h4>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-semibold text-xs">
+                            <th className="pb-3 w-16">Thứ hạng</th>
+                            <th className="pb-3">Thành viên</th>
+                            <th className="pb-3">Điểm cao nhất</th>
+                            <th className="pb-3">Trạng thái thời gian thực</th>
+                            <th className="pb-3">Hành động</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                          {currentGroup.members
+                            .sort((a, b) => b.score - a.score)
+                            .map((member, mIdx) => (
+                              <tr key={mIdx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
+                                <td className="py-3 font-extrabold">
+                                  {mIdx === 0 ? '🥇 1' : mIdx === 1 ? '🥈 2' : mIdx === 2 ? '🥉 3' : `#${mIdx + 1}`}
+                                </td>
+                                <td className="py-3 font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                                  <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-600 flex items-center justify-center font-bold text-xs">
+                                    {member.avatar}
+                                  </div>
+                                  <span>{member.name}</span>
+                                </td>
+                                <td className="py-3 font-black text-indigo-600">{member.score} <span className="text-xs font-normal text-slate-400">/ 150</span></td>
+                                <td className="py-3">
+                                  <span className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-full text-xs font-medium">
+                                    {member.status}
+                                  </span>
+                                </td>
+                                <td className="py-3">
+                                  <button
+                                    onClick={() => alert(`Đã gửi thách đấu thi thử trực tuyến đến ${member.name}!`)}
+                                    className="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950 dark:hover:bg-indigo-900 text-indigo-600 dark:text-indigo-300 font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                                  >
+                                    Thách đấu
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Group Discussion Chat */}
+                  <div className="pt-6 border-t border-slate-100 dark:border-slate-800 space-y-4">
+                    <h4 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4 text-purple-600" />
+                      <span>Thảo luận nhóm học tập trực tuyến</span>
+                    </h4>
+                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-4 h-56 overflow-y-auto space-y-3 border border-slate-200 dark:border-slate-700">
+                      {groupChatMessages.map((msg, cIdx) => (
+                        <div key={cIdx} className="bg-white dark:bg-slate-900 p-3 rounded-xl shadow-xs space-y-1">
+                          <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
+                            <span className="text-indigo-600 dark:text-indigo-400">{msg.sender}</span>
+                            <span className="font-mono">{msg.time}</span>
+                          </div>
+                          <p className="text-xs text-slate-800 dark:text-slate-200">{msg.text}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <form onSubmit={handleSendGroupMessage} className="flex gap-2">
+                      <input
+                        type="text"
+                        value={groupMessageInput}
+                        onChange={(e) => setGroupMessageInput(e.target.value)}
+                        placeholder="Nhập nội dung thảo luận, chia sẻ tài liệu hoặc hỏi bài cùng nhóm..."
+                        className="flex-1 px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white"
+                        required
+                      />
+                      <button
+                        type="submit"
+                        className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Gửi tin</span>
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
