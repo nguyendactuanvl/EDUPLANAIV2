@@ -271,8 +271,8 @@ export function PdfToWord() {
             setProgressPercent(pct);
             setProgressStatus(`📄 Đang bóc tách & số hóa Trang ${p}/${endP} (Tiến độ ${currentPageIndex}/${pagesToProcess} trang)...`);
 
-            // Render only this 1 page to high-res PNG
-            const { dataUrl } = await renderPdfPageToDataUrl(freshBuffer.slice(0), p, 1.5);
+            // Render only this 1 page to high-res PNG (scale 2.0 for sharp OCR & figures)
+            const { dataUrl } = await renderPdfPageToDataUrl(freshBuffer.slice(0), p, 2.0);
             pageImagesMap[p] = dataUrl;
 
             const singleFile = [{

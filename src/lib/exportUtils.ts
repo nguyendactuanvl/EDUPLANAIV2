@@ -832,7 +832,8 @@ function buildInvisibleChoiceTable(
   });
 
   const maxLen = Math.max(...texts.map((t) => t.length), 0);
-  const use4Cols = maxLen <= 18;
+  const use1Col = maxLen > 45;
+  const use4Cols = maxLen <= 22;
 
   const createCell = (opt: { label: string; node?: Node; text?: string }, colPct: number) => {
     let childRuns: ParagraphChild[] = [];
@@ -879,7 +880,12 @@ function buildInvisibleChoiceTable(
 
   const rows: TableRow[] = [];
 
-  if (use4Cols) {
+  if (use1Col) {
+    // 1 column x 4 rows
+    cleanOpts.forEach((opt) => {
+      rows.push(new TableRow({ children: [createCell(opt, 100)] }));
+    });
+  } else if (use4Cols) {
     const cells = cleanOpts.map((opt) => createCell(opt, 25));
     // Pad to 4 cells if needed
     while (cells.length < 4) {
@@ -905,7 +911,7 @@ function buildInvisibleChoiceTable(
 
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
-    columnWidths: use4Cols ? [2338, 2339, 2339, 2339] : [4677, 4678],
+    columnWidths: use1Col ? [9355] : (use4Cols ? [2338, 2339, 2339, 2339] : [4677, 4678]),
     borders: {
       top: { style: BorderStyle.NONE, size: 0, color: 'auto' },
       bottom: { style: BorderStyle.NONE, size: 0, color: 'auto' },
@@ -1315,20 +1321,33 @@ async function parseDomToDocxChildren(
       /^(DIV|P|TABLE|UL|OL|H[1-6]|HR)$/i.test(c.tagName)
     );
 
-    // Check if this container is a Multiple Choice Options grid (2-4 child options)
-    const childDivs = Array.from(el.children).filter(c => c.tagName === 'DIV');
-    if (childDivs.length >= 2 && childDivs.length <= 4) {
-      const childTexts = childDivs.map(c => stripInternalTags(getNodeLatexOrText(c)).trim());
+    // Check if this container is a Multiple Choice Options grid or True/False block (2-4 child option elements)
+    const blockChoiceChildren = Array.from(el.children).filter(c => /^(DIV|P|LI)$/i.test(c.tagName));
+    if (blockChoiceChildren.length >= 2 && blockChoiceChildren.length <= 4) {
+      const childTexts = blockChoiceChildren.map(c => stripInternalTags(getNodeLatexOrText(c)).trim());
       const isGridChoice = childTexts.every((t, i) => {
         const expectedLetter = String.fromCharCode(65 + i);
         return new RegExp(`^\\s*(?:[-*]\\s*)?(?:\\*{0,2})[${expectedLetter}][\\.\\:\\)]`, 'i').test(t);
       });
       if (isGridChoice) {
-        const optsList = childDivs.map((c, i) => {
+        const optsList = blockChoiceChildren.map((c, i) => {
           const label = `${String.fromCharCode(65 + i)}.`;
           return { label, node: c };
         });
         result.push(buildInvisibleChoiceTable(optsList, options));
+        return;
+      }
+
+      const isGridTf = childTexts.every((t, i) => {
+        const expectedLetter = String.fromCharCode(97 + i);
+        return new RegExp(`^\\s*(?:[-*]\\s*)?(?:\\*{0,2})[${expectedLetter}][\\.\\:\\)]`, 'i').test(t);
+      });
+      if (isGridTf) {
+        const stmts = blockChoiceChildren.map((c, i) => {
+          const label = `${String.fromCharCode(97 + i)})`;
+          return { label, node: c };
+        });
+        result.push(...buildTrueFalseParagraphs(stmts, options));
         return;
       }
     }
