@@ -4370,6 +4370,45 @@ Hãy trả về duy nhất văn bản đã dịch hoàn chỉnh, không thêm b�
   }
 });
 
+// Endpoint Nhật ký giáo viên hỗ trợ AI
+app.post("/api/journal-ai", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  try {
+    const { action, text, studentName, category } = req.body || {};
+
+    let promptText = "";
+    if (action === 'polish') {
+      promptText = `Bạn là trợ lý chuyên môn sư phạm. Hãy biên tập và chuẩn hóa lại ghi chú sau của giáo viên thành văn phong sư phạm chuyên nghiệp, mạch lạc, súc tích và chuẩn mực:
+Ghi chú gốc: "${text}"
+${studentName ? `Học sinh liên quan: ${studentName}` : ''}
+${category ? `Phân loại: ${category}` : ''}
+Hãy trả về nội dung đã biên tập chuyên nghiệp.`;
+    } else if (action === 'suggest_adjustments') {
+      promptText = `Bạn là chuyên gia cố vấn phương pháp dạy học HSA/TSA và GDPT 2018. Dựa trên quan sát/tiến độ sau của giáo viên, hãy gợi ý 3 điều chỉnh bài giảng hoặc phương pháp sư phạm thiết thực, hiệu quả để giúp học sinh tiến bộ nhanh hơn:
+Quan sát của giáo viên: "${text}"
+${studentName ? `Học sinh liên quan: ${studentName}` : ''}
+Hãy trình bày ngắn gọn, rõ ràng, thực tế.`;
+    } else {
+      promptText = `Bạn là trợ lý giáo viên. Hãy tổng hợp và viết tiếp một báo cáo nhật ký ngắn gọn, chuyên nghiệp dựa trên ý tưởng sau: "${text}".`;
+    }
+
+    const response = await generateWithFallback(req, {
+      contents: [{ role: "user", parts: [{ text: promptText }] }]
+    });
+
+    const aiResult = response?.text?.trim() || "Không có phản hồi từ AI.";
+    return res.json({ success: true, result: aiResult });
+  } catch (error: any) {
+    console.error("Lỗi AI Nhật ký:", error);
+    return handleAiError(error, req, res);
+  }
+});
+
 app.use("/api", (req, res) => {
   res.status(404).json({ error: "API endpoint không tồn tại." });
 });

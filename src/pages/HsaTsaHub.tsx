@@ -120,7 +120,8 @@ const TSA_QUESTION_BANK: PracticeQuestion[] = [
 ];
 
 export function HsaTsaHub() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'materials' | 'practice' | 'generator' | 'progress' | 'analytics' | 'groups' | 'ai_tutor'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'materials' | 'practice' | 'generator' | 'progress' | 'analytics' | 'groups' | 'journal' | 'subjects' | 'ai_tutor'>('overview');
+  const [selectedSubjectTab, setSelectedSubjectTab] = useState<'math' | 'literature' | 'science' | 'logic'>('math');
   const [selectedExamType, setSelectedExamType] = useState<'hsa' | 'tsa'>('hsa');
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [isReaderMode, setIsReaderMode] = useState(false);
@@ -454,6 +455,94 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
     setGroupMessageInput('');
   };
 
+  // Teacher Journal state & handlers
+  interface JournalEntry {
+    id: string;
+    date: string;
+    title: string;
+    studentName: string;
+    category: 'Tiến bộ học sinh' | 'Điều chỉnh bài giảng' | 'Quan sát trên lớp' | 'Khác';
+    content: string;
+    aiSuggested?: string;
+  }
+
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([
+    {
+      id: 'j1',
+      date: '2026-10-14',
+      title: 'Tiến bộ vượt bậc phần Tư duy định lượng (HSA)',
+      studentName: 'Nguyễn Văn A',
+      category: 'Tiến bộ học sinh',
+      content: 'Học sinh giải quyết rất tốt các bài toán hàm số và tích phân nâng cao trong bài thi thử số 3. Điểm số tăng từ 28 lên 34 điểm phần toán.',
+      aiSuggested: 'Đề xuất tiếp tục phát huy thế mạnh bằng bộ đề chuyên đề vận dụng cao (VDC) và rèn thêm tốc độ xử lý trắc nghiệm.'
+    },
+    {
+      id: 'j2',
+      date: '2026-10-12',
+      title: 'Điều chỉnh tiến độ ôn tập chuyên đề Đọc hiểu TSA',
+      studentName: 'Cả lớp 12A1',
+      category: 'Điều chỉnh bài giảng',
+      content: 'Phần lớn học sinh còn lúng túng với các câu hỏi suy luận logic và xử lý thông tin biểu đồ khoa học kỹ thuật. Cần bổ sung thêm 2 buổi luyện tập kỹ năng đọc lướt và phân tích dữ liệu.',
+      aiSuggested: 'Tăng cường các bài tập đọc hiểu khoa học tự nhiên lấy từ đề thi thực tế các năm trước.'
+    }
+  ]);
+  const [journalTitle, setJournalTitle] = useState('');
+  const [journalStudent, setJournalStudent] = useState('');
+  const [journalCategory, setJournalCategory] = useState<'Tiến bộ học sinh' | 'Điều chỉnh bài giảng' | 'Quan sát trên lớp' | 'Khác'>('Tiến bộ học sinh');
+  const [journalContent, setJournalContent] = useState('');
+  const [isJournalAiLoading, setIsJournalAiLoading] = useState(false);
+
+  const handleAddJournalEntry = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!journalTitle.trim() || !journalContent.trim()) return;
+    const newEntry: JournalEntry = {
+      id: 'j_' + Date.now(),
+      date: new Date().toISOString().split('T')[0],
+      title: journalTitle.trim(),
+      studentName: journalStudent.trim() || 'Tất cả học sinh',
+      category: journalCategory,
+      content: journalContent.trim()
+    };
+    setJournalEntries(prev => [newEntry, ...prev]);
+    setJournalTitle('');
+    setJournalStudent('');
+    setJournalContent('');
+  };
+
+  const handleJournalAiAssist = async (action: 'polish' | 'suggest_adjustments') => {
+    if (!journalContent.trim()) {
+      alert('Vui lòng nhập nội dung ghi chú ban đầu trước khi gọi AI hỗ trợ!');
+      return;
+    }
+    setIsJournalAiLoading(true);
+    try {
+      const res = await apiFetch('/api/journal-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          text: journalContent,
+          studentName: journalStudent,
+          category: journalCategory
+        })
+      });
+      const data = await res.json();
+      if (data.success && data.result) {
+        if (action === 'polish') {
+          setJournalContent(data.result);
+        } else {
+          setJournalContent(prev => prev + '\n\n[Gợi ý điều chỉnh từ AI]:\n' + data.result);
+        }
+      } else {
+        alert(data.error || 'Có lỗi xảy ra khi gọi AI.');
+      }
+    } catch (err: any) {
+      alert('Lỗi kết nối máy chủ AI: ' + (err?.message || err));
+    } finally {
+      setIsJournalAiLoading(false);
+    }
+  };
+
   const handleAddProgress = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTestName || !newTestScore) return;
@@ -587,6 +676,20 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
             >
               <Users className="w-4 h-4 text-blue-500" />
               <span>Nhóm học tập ảo</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('subjects')}
+              className={`flex items-center gap-2 px-5 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap cursor-pointer ${activeTab === 'subjects' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'}`}
+            >
+              <Calculator className="w-4 h-4 text-indigo-600" />
+              <span>Phòng ôn luyện theo môn</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('journal')}
+              className={`flex items-center gap-2 px-5 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap cursor-pointer ${activeTab === 'journal' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'}`}
+            >
+              <FileText className="w-4 h-4 text-emerald-500" />
+              <span>Nhật ký giáo viên</span>
             </button>
             <button
               onClick={() => setActiveTab('ai_tutor')}
@@ -1760,6 +1863,455 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
                 </div>
               );
             })()}
+          </div>
+        )}
+
+
+        {/* Tab: Subjects / Phòng ôn luyện theo môn */}
+        {activeTab === 'subjects' && (
+          <div className="space-y-6">
+            <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white p-6 sm:p-8 rounded-2xl shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-500/20 text-indigo-300 rounded-full text-xs font-bold">
+                  <Calculator className="w-4 h-4" />
+                  <span>Trung tâm chuyên môn độc lập</span>
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-black">Phòng ôn luyện theo môn (Toán, Văn, Khoa học, Logic)</h2>
+                <p className="text-indigo-100/80 text-sm max-w-2xl leading-relaxed">
+                  Thiết kế riêng biệt cho từng giáo viên bộ môn dễ dàng tra cứu lý thuyết trọng tâm, ngân hàng câu hỏi chuẩn định dạng LaTeX, và công cụ luyện thi chuyên sâu theo chuẩn cấu trúc HSA & TSA.
+                </p>
+              </div>
+            </div>
+
+            {/* Subject Selector Tabs */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <button
+                onClick={() => setSelectedSubjectTab('math')}
+                className={`p-4 rounded-2xl border font-bold text-sm transition-all flex items-center gap-3 cursor-pointer ${
+                  selectedSubjectTab === 'math'
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg'
+                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg ${selectedSubjectTab === 'math' ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300'}`}>
+                  📐
+                </div>
+                <div className="text-left">
+                  <div className="font-black">Môn Toán (HSA/TSA)</div>
+                  <div className={`text-xs ${selectedSubjectTab === 'math' ? 'text-indigo-100' : 'text-slate-400'}`}>Định lượng & Giải tích</div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setSelectedSubjectTab('literature')}
+                className={`p-4 rounded-2xl border font-bold text-sm transition-all flex items-center gap-3 cursor-pointer ${
+                  selectedSubjectTab === 'literature'
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg'
+                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg ${selectedSubjectTab === 'literature' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-300'}`}>
+                  📚
+                </div>
+                <div className="text-left">
+                  <div className="font-black">Môn Ngữ Văn (HSA)</div>
+                  <div className={`text-xs ${selectedSubjectTab === 'literature' ? 'text-emerald-100' : 'text-slate-400'}`}>Đọc hiểu & Ngôn ngữ</div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setSelectedSubjectTab('science')}
+                className={`p-4 rounded-2xl border font-bold text-sm transition-all flex items-center gap-3 cursor-pointer ${
+                  selectedSubjectTab === 'science'
+                    ? 'bg-amber-600 text-white border-amber-600 shadow-lg'
+                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg ${selectedSubjectTab === 'science' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-300'}`}>
+                  🔬
+                </div>
+                <div className="text-left">
+                  <div className="font-black">Khoa học Tự nhiên</div>
+                  <div className={`text-xs ${selectedSubjectTab === 'science' ? 'text-amber-100' : 'text-slate-400'}`}>Lý, Hóa, Sinh, Sử, Địa</div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setSelectedSubjectTab('logic')}
+                className={`p-4 rounded-2xl border font-bold text-sm transition-all flex items-center gap-3 cursor-pointer ${
+                  selectedSubjectTab === 'logic'
+                    ? 'bg-purple-600 text-white border-purple-600 shadow-lg'
+                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg ${selectedSubjectTab === 'logic' ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-600 dark:bg-purple-950 dark:text-purple-300'}`}>
+                  📊
+                </div>
+                <div className="text-left">
+                  <div className="font-black">Tư duy Logic & Số liệu</div>
+                  <div className={`text-xs ${selectedSubjectTab === 'logic' ? 'text-purple-100' : 'text-slate-400'}`}>TSA / Đồ thị / Biểu đồ</div>
+                </div>
+              </button>
+            </div>
+
+            {/* Subject Specific Content Panel */}
+            <div className="bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 space-y-6">
+              {selectedSubjectTab === 'math' && (
+                <div className="space-y-6">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+                    <div>
+                      <h3 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+                        <span>📐 Chuyên đề Toán học & Tư duy định lượng</span>
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-1">Dành riêng cho giáo viên Toán ôn luyện 50 câu định lượng (HSA) hoặc Tư duy Toán học (TSA).</p>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab('generator')}
+                      className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-colors flex items-center gap-2 cursor-pointer shadow"
+                    >
+                      <Shuffle className="w-4 h-4" />
+                      <span>Trộn đề chuyên đề Toán ngay</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
+                      <h4 className="font-bold text-sm text-indigo-600 dark:text-indigo-400">1. Giải tích & Hàm số (35%)</h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                        Khảo sát hàm số, cực trị, tiệm cận, giá trị lớn nhất nhỏ nhất. Tích phân và ứng dụng tính diện tích, thể tích khối tròn xoay.
+                      </p>
+                      <div className="p-2 bg-white dark:bg-slate-900 rounded-xl text-xs">
+                        <MarkdownRenderer content="$$\\int_{a}^{b} f(x)dx = F(b) - F(a)$$" />
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
+                      <h4 className="font-bold text-sm text-indigo-600 dark:text-indigo-400">2. Hình học Oxyz & Không gian (30%)</h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                        Hệ tọa độ không gian $Oxyz$, phương trình mặt phẳng, đường thẳng, mặt cầu. Khoảng cách và góc giữa đường thẳng và mặt phẳng.
+                      </p>
+                      <div className="p-2 bg-white dark:bg-slate-900 rounded-xl text-xs">
+                        <MarkdownRenderer content="$$d(M, (P)) = \\frac{|Ax_0 + By_0 + Cz_0 + D|}{\\sqrt{A^2 + B^2 + C^2}}$$" />
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
+                      <h4 className="font-bold text-sm text-indigo-600 dark:text-indigo-400">3. Đại số & Xác suất thống kê (35%)</h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                        Số phức, phương trình mũ - logarit, dãy số, cấp số cộng, cấp số nhân và bài toán xác suất biến cố có điều kiện.
+                      </p>
+                      <div className="p-2 bg-white dark:bg-slate-900 rounded-xl text-xs">
+                        <MarkdownRenderer content="$$P(A|B) = \\frac{P(A \\cap B)}{P(B)}$$" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {selectedSubjectTab === 'literature' && (
+                <div className="space-y-6">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+                    <div>
+                      <h3 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+                        <span>📚 Chuyên đề Ngữ văn & Ngôn ngữ (HSA)</span>
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-1">Dành riêng cho giáo viên Ngữ văn ôn luyện phần Đọc hiểu văn bản và Tiếng Việt.</p>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab('materials')}
+                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors flex items-center gap-2 cursor-pointer shadow"
+                    >
+                      <BookMarked className="w-4 h-4" />
+                      <span>Xem tài liệu Ngữ văn trọng tâm</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
+                      <h4 className="font-bold text-sm text-emerald-600 dark:text-emerald-400">1. Đọc hiểu văn bản nghệ thuật</h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                        Phân tích phong cách nghệ thuật, cảm hứng chủ đạo, tầng ý nghĩa biểu tượng của các tác phẩm thơ ca và văn xuôi hiện đại.
+                      </p>
+                    </div>
+
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
+                      <h4 className="font-bold text-sm text-emerald-600 dark:text-emerald-400">2. Phong cách ngôn ngữ & Biện pháp tu từ</h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                        Nhận diện chính xác các phong cách ngôn ngữ (sinh hoạt, nghệ thuật, báo chí, chính luận...) và hiệu quả biểu đạt của tu từ.
+                      </p>
+                    </div>
+
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
+                      <h4 className="font-bold text-sm text-emerald-600 dark:text-emerald-400">3. Nghị luận xã hội & Tư duy phản biện</h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                        Kỹ năng xử lý các câu hỏi đọc hiểu thông tin văn bản nhật dụng, phát hiện luận điểm và đánh giá tư tưởng đạo lý.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {selectedSubjectTab === 'science' && (
+                <div className="space-y-6">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+                    <div>
+                      <h3 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+                        <span>🔬 Chuyên đề Khoa học Tự nhiên & Xã hội</span>
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-1">Tổng hợp kiến thức trọng tâm các môn Vật lý, Hóa học, Sinh học, Lịch sử, Địa lý trong đề thi HSA.</p>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab('generator')}
+                      className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs transition-colors flex items-center gap-2 cursor-pointer shadow"
+                    >
+                      <Shuffle className="w-4 h-4" />
+                      <span>Tạo đề Khoa học ngẫu nhiên</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
+                      <h4 className="font-bold text-sm text-amber-600 dark:text-amber-400">1. Vật lý & Hóa học ứng dụng</h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                        Dao động điều hòa, dòng điện xoay chiều, nhiệt động lực học. Hóa học vô cơ nâng cao, este, amin và chuỗi phản ứng tổng hợp.
+                      </p>
+                      <div className="p-2 bg-white dark:bg-slate-900 rounded-xl text-xs">
+                        <MarkdownRenderer content="$$T = 2\\pi\\sqrt{\\frac{l}{g}}$$" />
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
+                      <h4 className="font-bold text-sm text-amber-600 dark:text-amber-400">2. Sinh học tế bào & Di truyền</h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                        Cấu trúc ADN, quá trình nhân đôi, phiên mã, dịch mã, quy luật di truyền Mendel và di truyền quần thể.
+                      </p>
+                      <div className="p-2 bg-white dark:bg-slate-900 rounded-xl text-xs font-mono text-slate-700 dark:text-slate-200">
+                        $$p^2AA + 2pqAa + q^2aa = 1$$
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
+                      <h4 className="font-bold text-sm text-amber-600 dark:text-amber-400">3. Lịch sử & Địa lý Việt Nam</h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                        Các mốc lịch sử hào hùng từ 1930 đến nay, chiến lược phát triển kinh tế xã hội và địa lý vùng kinh tế trọng điểm.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {selectedSubjectTab === 'logic' && (
+                <div className="space-y-6">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+                    <div>
+                      <h3 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+                        <span>📊 Tư duy Logic & Xử lý số liệu (TSA)</span>
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-1">Phần thi chuyên biệt đánh giá năng lực tư duy định tính, phân tích biểu đồ và suy luận logic.</p>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab('practice')}
+                      className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs transition-colors flex items-center gap-2 cursor-pointer shadow"
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>Làm bài thi thử TSA trực tuyến</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
+                      <h4 className="font-bold text-sm text-purple-600 dark:text-purple-400">1. Xử lý số liệu & Biểu đồ</h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                        Đọc hiểu biểu đồ cột, biểu đồ tròn, bảng thống kê dữ liệu kinh tế - xã hội và tính toán tốc độ tăng trưởng.
+                      </p>
+                    </div>
+
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
+                      <h4 className="font-bold text-sm text-purple-600 dark:text-purple-400">2. Suy luận logic & Sơ đồ</h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                        Giải quyết các câu hỏi điều kiện, sắp xếp vị trí, suy luận chân lý mệnh đề và bài toán đếm tổ hợp logic.
+                      </p>
+                    </div>
+
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
+                      <h4 className="font-bold text-sm text-purple-600 dark:text-purple-400">3. Đọc hiểu khoa học kỹ thuật</h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                        Phân tích các bài báo khoa học, sơ đồ công nghệ, trích xuất thông tin thực tế để trả lời câu hỏi trắc nghiệm.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tab: Journal / Nhật ký giáo viên */}
+        {activeTab === 'journal' && (
+          <div className="space-y-6">
+            <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 text-white p-6 sm:p-8 rounded-2xl shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/20 text-emerald-300 rounded-full text-xs font-bold">
+                  <FileText className="w-4 h-4" />
+                  <span>Sổ tay & Nhật ký chuyên môn</span>
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-black">Nhật ký tiến độ & Điều chỉnh bài giảng</h2>
+                <p className="text-emerald-100/80 text-sm max-w-2xl leading-relaxed">
+                  Ghi chú nhanh các quan sát về sự tiến bộ của học sinh, ghi nhận điểm yếu cần khắc phục, điều chỉnh bài giảng trong giờ dạy, kết hợp trợ lý AI biên tập văn phong sư phạm và gợi ý phương pháp tối ưu.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Add New Entry Form */}
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 space-y-4 lg:col-span-1">
+                <h3 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
+                  <Plus className="w-5 h-5 text-emerald-600" />
+                  <span>Thêm ghi chú nhật ký mới</span>
+                </h3>
+                <form onSubmit={handleAddJournalEntry} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">Tiêu đề ghi chú</label>
+                    <input
+                      type="text"
+                      value={journalTitle}
+                      onChange={(e) => setJournalTitle(e.target.value)}
+                      placeholder="Ví dụ: Tiến bộ phần hình học không gian..."
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">Học sinh / Lớp liên quan</label>
+                    <input
+                      type="text"
+                      value={journalStudent}
+                      onChange={(e) => setJournalStudent(e.target.value)}
+                      placeholder="Ví dụ: Nguyễn Văn A hoặc Cả lớp 12A1"
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">Phân loại ghi chú</label>
+                    <select
+                      value={journalCategory}
+                      onChange={(e: any) => setJournalCategory(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white"
+                    >
+                      <option value="Tiến bộ học sinh">Tiến bộ học sinh</option>
+                      <option value="Điều chỉnh bài giảng">Điều chỉnh bài giảng</option>
+                      <option value="Quan sát trên lớp">Quan sát trên lớp</option>
+                      <option value="Khác">Khác</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">Nội dung quan sát / Ghi chú</label>
+                    <textarea
+                      value={journalContent}
+                      onChange={(e) => setJournalContent(e.target.value)}
+                      rows={5}
+                      placeholder="Nhập ghi chú chi tiết hoặc ý tưởng ban đầu..."
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white leading-relaxed"
+                      required
+                    ></textarea>
+                  </div>
+
+                  {/* AI Assistant Buttons */}
+                  <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <span className="text-[11px] font-bold text-purple-600 dark:text-purple-400 flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Hỗ trợ thông minh bằng AI</span>
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleJournalAiAssist('polish')}
+                        disabled={isJournalAiLoading}
+                        className="px-3 py-2 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900 text-purple-700 dark:text-purple-300 font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Biên tập sư phạm</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleJournalAiAssist('suggest_adjustments')}
+                        disabled={isJournalAiLoading}
+                        className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900 text-emerald-700 dark:text-emerald-300 font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <Lightbulb className="w-3.5 h-3.5" />
+                        <span>Gợi ý điều chỉnh</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors shadow cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Lưu ghi chú nhật ký</span>
+                  </button>
+                </form>
+              </div>
+
+              {/* Journal Entries List */}
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 space-y-6 lg:col-span-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-indigo-600" />
+                    <span>Danh sách ghi chú & Nhật ký ({journalEntries.length})</span>
+                  </h3>
+                </div>
+
+                <div className="space-y-4">
+                  {journalEntries.map((entry) => (
+                    <div key={entry.id} className="p-5 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                              entry.category === 'Tiến bộ học sinh' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' :
+                              entry.category === 'Điều chỉnh bài giảng' ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300' :
+                              'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                            }`}>
+                              {entry.category}
+                            </span>
+                            <span className="text-xs text-slate-400 font-mono">{entry.date}</span>
+                          </div>
+                          <h4 className="font-bold text-sm text-slate-900 dark:text-white">{entry.title}</h4>
+                        </div>
+                        <span className="text-xs font-semibold px-3 py-1 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 rounded-xl shadow-xs">
+                          👤 {entry.studentName}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{entry.content}</p>
+
+                      {entry.aiSuggested && (
+                        <div className="p-3 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900 rounded-xl space-y-1">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-purple-700 dark:text-purple-300">
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Gợi ý chuyên môn từ AI:</span>
+                          </div>
+                          <p className="text-xs text-purple-900 dark:text-purple-200 leading-relaxed">{entry.aiSuggested}</p>
+                        </div>
+                      )}
+
+                      <div className="flex justify-end gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-700">
+                        <button
+                          onClick={() => {
+                            setJournalEntries(prev => prev.filter(item => item.id !== entry.id));
+                          }}
+                          className="px-3 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          Xóa ghi chú
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
