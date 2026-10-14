@@ -2514,10 +2514,10 @@ export function Worksheets() {
           {isLoading ? (
             <div className="h-full min-h-[400px] flex flex-col items-center justify-center space-y-4">
               <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-              <p className="text-emerald-700 font-bold text-base">Đang khởi tạo phiếu học tập phong cách {LAYOUT_STYLE_OPTIONS.find(s => s.id === layoutStyle)?.title}...</p>
-              <p className="text-slate-500 text-sm max-w-sm text-center">
+              <div className="text-emerald-700 font-bold text-base">Đang khởi tạo phiếu học tập phong cách {LAYOUT_STYLE_OPTIONS.find(s => s.id === layoutStyle)?.title}...</div>
+              <div className="text-slate-500 text-sm max-w-sm text-center">
                 AI đang cấu trúc hóa kiến thức trọng tâm, bài toán thực tế và lời giải chi tiết. Vui lòng đợi trong giây lát...
-              </p>
+              </div>
             </div>
           ) : (
             <div className="max-w-4xl mx-auto">
@@ -2571,12 +2571,12 @@ export function Worksheets() {
                       <div className="border-2 border-slate-800 mb-6 p-4 bg-white text-xs sm:text-sm text-slate-800 leading-normal">
                         <div className="grid grid-cols-2 gap-4 pb-3 border-b border-slate-300">
                           <div className="text-center font-bold">
-                            <p className="uppercase text-[11px] sm:text-xs tracking-wider text-slate-700">{headerConfig.department || "SỞ GIÁO DỤC VÀ ĐÀO TẠO"}</p>
-                            <p className="uppercase text-[12px] sm:text-sm text-slate-900 font-extrabold">{headerConfig.schoolName ? `TRƯỜNG: ${headerConfig.schoolName}` : "TRƯỜNG THPT: ................................................"}</p>
-                            <p className="text-[11px] font-semibold text-slate-600 uppercase">{headerConfig.subjectGroup || `TỔ CHUYÊN MÔN: ${subject || "TOÁN - TIN HỌC"}`}</p>
-                            <p className="text-[11px] font-semibold text-slate-800 mt-0.5">
+                            <div className="uppercase text-[11px] sm:text-xs tracking-wider text-slate-700">{headerConfig.department || "SỞ GIÁO DỤC VÀ ĐÀO TẠO"}</div>
+                            <div className="uppercase text-[12px] sm:text-sm text-slate-900 font-extrabold">{headerConfig.schoolName ? `TRƯỜNG: ${headerConfig.schoolName}` : "TRƯỜNG THPT: ................................................"}</div>
+                            <div className="text-[11px] font-semibold text-slate-600 uppercase">{headerConfig.subjectGroup || `TỔ CHUYÊN MÔN: ${subject || "TOÁN - TIN HỌC"}`}</div>
+                            <div className="text-[11px] font-semibold text-slate-800 mt-0.5">
                               {headerConfig.teacherName ? `Giáo viên: ${headerConfig.teacherName}` : "Giáo viên: ................................................"}
-                            </p>
+                            </div>
                             <button
                               type="button"
                               onClick={() => setIsHeaderModalOpen(true)}
@@ -2586,9 +2586,9 @@ export function Worksheets() {
                             </button>
                           </div>
                           <div className="text-center">
-                            <p className="font-black uppercase text-slate-900 text-sm sm:text-base tracking-wide">PHIẾU HỌC TẬP</p>
-                            <p className="font-bold text-emerald-800 text-xs sm:text-sm mt-0.5 uppercase">{getFormattedLessonTitle(customLessonName)}</p>
-                            <p className="text-[11px] text-slate-600 mt-0.5">Môn: {subject} • Lớp {selectedGrade} • Năm học {headerConfig.schoolYear || "2026 - 2027"}</p>
+                            <div className="font-black uppercase text-slate-900 text-sm sm:text-base tracking-wide">PHIẾU HỌC TẬP</div>
+                            <div className="font-bold text-emerald-800 text-xs sm:text-sm mt-0.5 uppercase">{getFormattedLessonTitle(customLessonName)}</div>
+                            <div className="text-[11px] text-slate-600 mt-0.5">Môn: {subject} • Lớp {selectedGrade} • Năm học {headerConfig.schoolYear || "2026 - 2027"}</div>
                           </div>
                         </div>
 
@@ -3194,25 +3194,25 @@ export function Worksheets() {
                         <div className="border-2 border-slate-800 mb-8 p-4 bg-white text-xs sm:text-sm text-slate-800 leading-normal">
                           <div className="grid grid-cols-2 gap-4 pb-3 border-b border-slate-300">
                             <div className="text-center font-bold">
-                              <p className="uppercase text-[11px] sm:text-xs tracking-wider text-slate-700">{headerConfig.department || "SỞ GIÁO DỤC VÀ ĐÀO TẠO"}</p>
-                              <p className="uppercase text-[12px] sm:text-sm text-slate-900 font-extrabold">{headerConfig.schoolName ? `TRƯỜNG: ${headerConfig.schoolName}` : "TRƯỜNG THPT: ................................................"}</p>
-                              <p className="text-[11px] font-semibold text-slate-600 uppercase">{headerConfig.subjectGroup || `TỔ CHUYÊN MÔN: ${subject || "TOÁN - TIN HỌC"}`}</p>
-                              <p className="text-[11px] font-semibold text-slate-800 mt-0.5">
-                                {headerConfig.teacherName ? `Giáo viên: ${headerConfig.teacherName}` : "Giáo viên: ................................................"}
-                              </p>
-                              <button
-                                type="button"
-                                onClick={() => setIsHeaderModalOpen(true)}
-                                className="no-print mt-1 text-[10px] text-emerald-600 hover:text-emerald-800 underline font-normal cursor-pointer flex items-center justify-center gap-1 mx-auto"
-                              >
-                                ✏️ Chỉnh sửa thông tin Trường / GV / Năm học
-                              </button>
+                            <div className="uppercase text-[11px] sm:text-xs tracking-wider text-slate-700">{headerConfig.department || "SỞ GIÁO DỤC VÀ ĐÀO TẠO"}</div>
+                            <div className="uppercase text-[12px] sm:text-sm text-slate-900 font-extrabold">{headerConfig.schoolName ? `TRƯỜNG: ${headerConfig.schoolName}` : "TRƯỜNG THPT: ................................................"}</div>
+                            <div className="text-[11px] font-semibold text-slate-600 uppercase">{headerConfig.subjectGroup || `TỔ CHUYÊN MÔN: ${subject || "TOÁN - TIN HỌC"}`}</div>
+                            <div className="text-[11px] font-semibold text-slate-800 mt-0.5">
+                              {headerConfig.teacherName ? `Giáo viên: ${headerConfig.teacherName}` : "Giáo viên: ................................................"}
                             </div>
-                            <div className="text-center">
-                              <p className="font-black uppercase text-slate-900 text-sm sm:text-base tracking-wide">PHIẾU HỌC TẬP</p>
-                              <p className="font-bold text-emerald-800 text-xs sm:text-sm mt-0.5 uppercase">{getFormattedLessonTitle(customLessonName)}</p>
-                              <p className="text-[11px] text-slate-600 mt-0.5">Môn: {subject} • Lớp {selectedGrade} • Năm học {headerConfig.schoolYear || "2026 - 2027"}</p>
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setIsHeaderModalOpen(true)}
+                              className="no-print mt-1 text-[10px] text-emerald-600 hover:text-emerald-800 underline font-normal cursor-pointer flex items-center justify-center gap-1 mx-auto"
+                            >
+                              ✏️ Chỉnh sửa thông tin Trường / GV / Năm học
+                            </button>
+                          </div>
+                          <div className="text-center">
+                            <div className="font-black uppercase text-slate-900 text-sm sm:text-base tracking-wide">PHIẾU HỌC TẬP</div>
+                            <div className="font-bold text-emerald-800 text-xs sm:text-sm mt-0.5 uppercase">{getFormattedLessonTitle(customLessonName)}</div>
+                            <div className="text-[11px] text-slate-600 mt-0.5">Môn: {subject} • Lớp {selectedGrade} • Năm học {headerConfig.schoolYear || "2026 - 2027"}</div>
+                          </div>
                           </div>
 
                           <div className="py-2.5 grid grid-cols-1 sm:grid-cols-3 gap-2 border-b border-dashed border-slate-300 text-xs sm:text-sm">
@@ -3309,7 +3309,7 @@ export function Worksheets() {
                                 <h2 className="text-sm sm:text-base font-black uppercase text-white leading-tight">
                                   {getFormattedLessonTitle(customLessonName)}
                                 </h2>
-                                <p className="text-[10px] text-sky-100 font-semibold mt-0.5">Chương trình {subject} {selectedGrade} (KNTT)</p>
+                                <div className="text-[10px] text-sky-100 font-semibold mt-0.5">Chương trình {subject} {selectedGrade} (KNTT)</div>
                               </div>
 
                               {/* Student info */}
@@ -3328,10 +3328,10 @@ export function Worksheets() {
                             <div className="p-4 m-5 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
                               <Sparkles className="w-5 h-5 text-amber-500 shrink-0 mt-0.5 animate-pulse" />
                               <div>
-                                <p className="text-[10px] font-black uppercase text-amber-800 tracking-wider">Góc ôn tập cốt lõi</p>
-                                <p className="text-[11px] font-semibold text-amber-950 mt-0.5 leading-relaxed">
+                                <div className="text-[10px] font-black uppercase text-amber-800 tracking-wider">Góc ôn tập cốt lõi</div>
+                                <div className="text-[11px] font-semibold text-amber-950 mt-0.5 leading-relaxed">
                                   Nắm chắc khái niệm và phân tích các ví dụ mẫu sẽ giúp thầy cô rèn luyện tư duy tự luận và tăng tốc độ làm trắc nghiệm của học sinh!
-                                </p>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -3348,7 +3348,7 @@ export function Worksheets() {
                                 <h2 className="text-sm sm:text-base font-black uppercase text-white leading-tight">
                                   (Phần Dành Cho Học Sinh Luyện Tập)
                                 </h2>
-                                <p className="text-[10px] text-sky-100 font-semibold mt-0.5">Yêu cầu hoàn thành đầy đủ các phần bên dưới</p>
+                                <div className="text-[10px] text-sky-100 font-semibold mt-0.5">Yêu cầu hoàn thành đầy đủ các phần bên dưới</div>
                               </div>
 
                               {/* Student info */}
@@ -3435,10 +3435,10 @@ export function Worksheets() {
                     <div className="w-16 h-16 rounded-2xl bg-indigo-50 flex items-center justify-center mb-4 text-indigo-400">
                       <BookOpen className="w-8 h-8" />
                     </div>
-                    <p className="text-lg font-bold text-slate-700">Phiếu học tập sẽ xuất hiện ở đây</p>
-                    <p className="text-sm mt-1 text-slate-500 max-w-md text-center">
+                    <div className="text-lg font-bold text-slate-700">Phiếu học tập sẽ xuất hiện ở đây</div>
+                    <div className="text-sm mt-1 text-slate-500 max-w-md text-center">
                       Chọn môn học, chủ đề và phong cách trình bày mong muốn (A4 Chuẩn in ấn hoặc Phiếu học tập dạng ảnh 2 cột) rồi nhấn "Tạo bản Word/In".
-                    </p>
+                    </div>
                     <div className="flex flex-wrap justify-center gap-2 mt-4">
                       {LAYOUT_STYLE_OPTIONS.map(s => (
                         <span key={s.id} className="text-xs bg-white px-2.5 py-1 rounded-full border border-slate-200 text-slate-600 font-medium">

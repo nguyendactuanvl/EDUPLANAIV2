@@ -92,9 +92,9 @@ export const FeatureQuickGuideBanner: React.FC<FeatureQuickGuideBannerProps> = (
       {/* Banner Content (Steps & Tips) */}
       {!isCollapsed && (
         <div className="p-4 space-y-3 animate-in fade-in duration-200">
-          <p className="text-xs text-slate-300 leading-relaxed">
+          <div className="text-xs text-slate-300 leading-relaxed">
             {guideSection.description}
-          </p>
+          </div>
 
           {/* Steps Grid */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1">

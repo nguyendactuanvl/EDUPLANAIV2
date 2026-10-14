@@ -19,7 +19,7 @@ export function getApiHeaders(options: RequestInit = {}, skipCustomKey = false):
   return headers;
 }
 
-export async function uploadFileChunked(fileData: string, type: string, extraHeaders?: Headers): Promise<string> {
+export async function uploadFileChunked(fileData: string, type: string, extraHeaders?: Headers, name?: string): Promise<string> {
   const baseUrl = (import.meta as any).env.VITE_API_BASE_URL || '';
   const fileId = Math.random().toString(36).substring(2) + Date.now().toString(36);
   // Max payload is ~1MB for Nginx, so we use 500KB chunks
@@ -44,7 +44,7 @@ export async function uploadFileChunked(fileData: string, type: string, extraHea
           credentials: 'include',
           method: 'POST',
           headers: reqHeaders,
-          body: JSON.stringify({ fileId, chunkIndex: i, totalChunks, chunkData, type })
+          body: JSON.stringify({ fileId, chunkIndex: i, totalChunks, chunkData, type, name })
         });
         if (res.ok) {
           success = true;
@@ -68,7 +68,8 @@ export async function uploadFileChunked(fileData: string, type: string, extraHea
 export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
   let skipCustomKey = false;
 
-  if (options.body && typeof options.body === 'string' && options.body.length > 250 * 1024) {
+  // Only chunk very large payloads (> 12MB) since backend accepts 50MB directly
+  if (options.body && typeof options.body === 'string' && options.body.length > 12 * 1024 * 1024) {
     try {
       const parsedBody = JSON.parse(options.body);
       let modified = false;
@@ -78,8 +79,8 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
         parsedBody.fileIds = parsedBody.fileIds || [];
         for (let i = 0; i < parsedBody.files.length; i++) {
           const f = parsedBody.files[i];
-          if (f.data && f.data.length > 100 * 1024) {
-            const fileId = await uploadFileChunked(f.data, f.type || 'application/octet-stream', headersForChunk);
+          if (f.data && f.data.length > 10 * 1024 * 1024) {
+            const fileId = await uploadFileChunked(f.data, f.type || 'application/octet-stream', headersForChunk, f.name);
             parsedBody.fileIds.push(fileId);
             f.data = ""; // Clear large data
             modified = true;
@@ -89,8 +90,8 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
         parsedBody.files = parsedBody.files.filter((f: any) => f.data && f.data.length > 0);
       }
       
-      if (parsedBody.file && typeof parsedBody.file === 'string' && parsedBody.file.length > 100 * 1024) {
-        const fileId = await uploadFileChunked(parsedBody.file, parsedBody.type || 'text/plain', headersForChunk);
+      if (parsedBody.file && typeof parsedBody.file === 'string' && parsedBody.file.length > 10 * 1024 * 1024) {
+        const fileId = await uploadFileChunked(parsedBody.file, parsedBody.type || 'text/plain', headersForChunk, parsedBody.name);
         parsedBody.fileId = fileId;
         parsedBody.file = ""; // Clear
         modified = true;
@@ -101,9 +102,8 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
       }
     } catch (e: any) {
       console.warn("Could not chunk upload:", e);
-      // If the body is still larger than 1.5MB and chunking failed, raise descriptive error
-      if (options.body.length > 1.5 * 1024 * 1024) {
-        throw new Error("Không thể tải tệp kích thước lớn (" + Math.round(options.body.length / 1024) + " KB) do kết nối bị gián đoạn: " + (e?.message || "Lỗi tải tệp."));
+      if (options.body.length > 30 * 1024 * 1024) {
+        throw new Error("Không thể tải tệp kích thước lớn (" + Math.round(options.body.length / (1024 * 1024)) + " MB) do kết nối bị gián đoạn: " + (e?.message || "Lỗi tải tệp."));
       }
     }
   }

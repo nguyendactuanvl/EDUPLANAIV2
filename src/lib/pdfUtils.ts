@@ -1,9 +1,19 @@
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Configure worker with fallback
+// Configure worker with safe blob URL wrapper to bypass cross-origin browser restrictions
 if (typeof window !== 'undefined') {
   try {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version || '4.10.38'}/pdf.worker.min.mjs`;
+    const workerVersion = pdfjsLib.version || '6.3.289';
+    const cdnUrl = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${workerVersion}/pdf.worker.min.mjs`;
+    
+    // In browser, new Worker(cdnUrl) throws SecurityError due to cross-origin script rules.
+    // An inline Blob module worker importing the CDN script executes with same-origin privileges.
+    try {
+      const blob = new Blob([`import '${cdnUrl}';`], { type: 'text/javascript' });
+      pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+    } catch {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = cdnUrl;
+    }
   } catch (e) {
     console.warn('PDF worker setup:', e);
   }
@@ -32,12 +42,25 @@ function getSafePdfData(pdfData: ArrayBuffer | Uint8Array): Uint8Array {
 }
 
 /**
+ * Standard configuration options for getDocument
+ */
+function getDocumentOptions(safeData: Uint8Array) {
+  const workerVersion = pdfjsLib.version || '6.3.289';
+  return {
+    data: safeData,
+    cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${workerVersion}/cmaps/`,
+    cMapPacked: true,
+    standardFontDataUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${workerVersion}/standard_fonts/`
+  };
+}
+
+/**
  * Quick inspection to get total number of pages in a PDF
  */
 export async function getPdfTotalPages(pdfData: ArrayBuffer | Uint8Array): Promise<number> {
   try {
     const safeData = getSafePdfData(pdfData);
-    const loadingTask = pdfjsLib.getDocument({ data: safeData });
+    const loadingTask = pdfjsLib.getDocument(getDocumentOptions(safeData));
     const pdf = await loadingTask.promise;
     return pdf.numPages || 1;
   } catch (err) {
@@ -55,7 +78,7 @@ export async function renderPdfPageToDataUrl(
   scale: number = 1.5
 ): Promise<{ dataUrl: string; width: number; height: number; numPages: number }> {
   const safeData = getSafePdfData(pdfData);
-  const loadingTask = pdfjsLib.getDocument({ data: safeData });
+  const loadingTask = pdfjsLib.getDocument(getDocumentOptions(safeData));
   const pdf = await loadingTask.promise;
   const numPages = pdf.numPages;
 
@@ -101,7 +124,7 @@ export async function renderPdfPageRange(
 ): Promise<{ pages: string[]; totalPages: number }> {
   try {
     const safeData = getSafePdfData(pdfData);
-    const loadingTask = pdfjsLib.getDocument({ data: safeData });
+    const loadingTask = pdfjsLib.getDocument(getDocumentOptions(safeData));
     const pdf = await loadingTask.promise;
     const totalPages = pdf.numPages;
 

@@ -88,15 +88,16 @@ app.use((req, _res, next) => {
   next();
 });
 
-const chunkStore = new Map<string, { chunks: string[], type: string, total: number, timestamp: number }>();
+const chunkStore = new Map<string, { chunks: string[], type: string, name?: string, total: number, timestamp: number }>();
 
 app.post("/api/upload-chunk", (req, res) => {
-  const { fileId, chunkIndex, totalChunks, chunkData, type } = req.body;
+  const { fileId, chunkIndex, totalChunks, chunkData, type, name } = req.body;
   if (!chunkStore.has(fileId)) {
-    chunkStore.set(fileId, { chunks: new Array(totalChunks), type, total: totalChunks, timestamp: Date.now() });
+    chunkStore.set(fileId, { chunks: new Array(totalChunks), type, name, total: totalChunks, timestamp: Date.now() });
   }
   const fileEntry = chunkStore.get(fileId)!;
   fileEntry.chunks[chunkIndex] = chunkData;
+  if (name && !fileEntry.name) fileEntry.name = name;
   fileEntry.timestamp = Date.now();
   res.json({ success: true });
 });
@@ -158,6 +159,11 @@ async function processFilesForAI(files: any[]) {
          isDocx = true; // ZIP format
       }
 
+      let isPng = f.type === 'image/png' || rawBase64.startsWith('iVBORw0KGgo');
+      let isJpeg = f.type === 'image/jpeg' || f.type === 'image/jpg' || rawBase64.startsWith('/9j/');
+      let isWebp = f.type === 'image/webp' || rawBase64.startsWith('UklGR');
+      let isGif = f.type === 'image/gif' || rawBase64.startsWith('R0lGOD');
+
       if (isExcel) {
         try {
           const buffer = Buffer.from(rawBase64, 'base64');
@@ -205,6 +211,34 @@ async function processFilesForAI(files: any[]) {
             mimeType: 'application/pdf'
           }
         });
+      } else if (isPng) {
+        processedFiles.push({
+          inlineData: {
+            data: rawBase64,
+            mimeType: 'image/png'
+          }
+        });
+      } else if (isJpeg) {
+        processedFiles.push({
+          inlineData: {
+            data: rawBase64,
+            mimeType: 'image/jpeg'
+          }
+        });
+      } else if (isWebp) {
+        processedFiles.push({
+          inlineData: {
+            data: rawBase64,
+            mimeType: 'image/webp'
+          }
+        });
+      } else if (isGif) {
+        processedFiles.push({
+          inlineData: {
+            data: rawBase64,
+            mimeType: 'image/gif'
+          }
+        });
       } else {
         processedFiles.push({
           inlineData: {
@@ -232,11 +266,11 @@ function resolveFiles(reqBody: any) {
   if (Array.isArray(reqBody.files)) {
     files.push(...reqBody.files);
   }
-  const fileIds = reqBody.fileIds || [];
+  const fileIds = [...(reqBody.fileIds || []), ...(reqBody.fileId ? [reqBody.fileId] : [])];
   for (const id of fileIds) {
     const entry = chunkStore.get(id);
     if (entry) {
-      files.push({ data: entry.chunks.join(''), type: entry.type });
+      files.push({ data: entry.chunks.join(''), type: entry.type, name: entry.name });
       chunkStore.delete(id);
     }
   }
@@ -255,14 +289,15 @@ function resolveFiles(reqBody: any) {
 }
 
 function resolveSingleFile(reqBody: any) {
-  let { file, type, fileId } = reqBody;
+  let { file, type, fileId, name } = reqBody;
   if (fileId && chunkStore.has(fileId)) {
     const entry = chunkStore.get(fileId)!;
     file = entry.chunks.join('');
     type = entry.type;
+    name = entry.name;
     chunkStore.delete(fileId);
   }
-  return { file, type };
+  return { file, type, name };
 }
 
 

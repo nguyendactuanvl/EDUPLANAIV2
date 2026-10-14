@@ -256,33 +256,94 @@ export function PdfToWord() {
       let finalResult = '';
 
       if (isPdf && selectedFile) {
-        // Multi-page PDF: Process page-by-page for 100% reliability, zero timeouts, and crisp progress tracking
-        const freshBuffer = await selectedFile.arrayBuffer();
-        const pageResults: string[] = [];
-        const pageImagesMap: { [pageNum: number]: string } = {};
+        // Multi-page PDF: Process page-by-page when possible for crisp progress tracking & cropping,
+        // with automatic fallback to direct multimodal PDF AI processing if page rendering encounters any issue
+        let pageConversionSuccess = false;
 
-        for (let p = startP; p <= endP; p++) {
-          const currentPageIndex = p - startP + 1;
-          const pct = Math.min(95, Math.round(((currentPageIndex - 1) / pagesToProcess) * 90) + 8);
-          setProgressPercent(pct);
-          setProgressStatus(`📄 Đang bóc tách & số hóa Trang ${p}/${endP} (Tiến độ ${currentPageIndex}/${pagesToProcess} trang)...`);
+        try {
+          const freshBuffer = await selectedFile.arrayBuffer();
+          const pageResults: string[] = [];
+          const pageImagesMap: { [pageNum: number]: string } = {};
 
-          // Render only this 1 page to high-res PNG
-          const { dataUrl } = await renderPdfPageToDataUrl(freshBuffer.slice(0), p, 1.5);
-          pageImagesMap[p] = dataUrl;
+          for (let p = startP; p <= endP; p++) {
+            const currentPageIndex = p - startP + 1;
+            const pct = Math.min(95, Math.round(((currentPageIndex - 1) / pagesToProcess) * 90) + 8);
+            setProgressPercent(pct);
+            setProgressStatus(`📄 Đang bóc tách & số hóa Trang ${p}/${endP} (Tiến độ ${currentPageIndex}/${pagesToProcess} trang)...`);
 
-          const singleFile = [{
-            data: dataUrl.split(',')[1],
-            type: 'image/png',
-            name: `Trang_${p}.png`
-          }];
+            // Render only this 1 page to high-res PNG
+            const { dataUrl } = await renderPdfPageToDataUrl(freshBuffer.slice(0), p, 1.5);
+            pageImagesMap[p] = dataUrl;
 
+            const singleFile = [{
+              data: dataUrl.split(',')[1],
+              type: 'image/png',
+              name: `Trang_${p}.png`
+            }];
+
+            const response = await apiFetch('/api/pdf-to-word', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                files: singleFile,
+                pageNum: p,
+                totalPages: pdfTotalPages
+              })
+            });
+
+            if (!response.ok) {
+              let errorData;
+              let errText = await response.text();
+              try {
+                 errorData = JSON.parse(errText);
+              } catch {
+                 errorData = { error: errText };
+              }
+              let errorMsg = errorData.error || `Có lỗi xảy ra khi xử lý Trang ${p}`;
+              if (typeof errorMsg === 'object') errorMsg = JSON.stringify(errorMsg);
+              throw new Error(errorMsg);
+            }
+
+            const text = await response.text();
+            const data = parseApiResponse<any>(text);
+            let pageText = typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || '');
+            
+            if (pageText) {
+              pageText = pageText.replace(/```(?:tikz|latex)?\s*\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}\s*```/gi, '\n[Hình vẽ minh họa]\n');
+              pageText = pageText.replace(/```tikz[\s\S]*?```/gi, '\n[Hình vẽ minh họa]\n');
+              pageText = pageText.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/gi, '\n[Hình vẽ minh họa]\n');
+              pageText = normalizeOcrChoicesAndFormatting(pageText);
+            }
+
+            pageResults.push(pageText.trim());
+          }
+
+          setPdfPageImages(pageImagesMap);
+
+          // Combine all pages with standard page separation markers
+          finalResult = pageResults.map((t, idx) => {
+            const currP = startP + idx;
+            const nextP = currP + 1;
+            const sep = idx < pageResults.length - 1 ? `\n\n--- [Hết Trang ${currP} / Sang Trang ${nextP}] ---\n\n` : '';
+            return t + sep;
+          }).join('');
+
+          pageConversionSuccess = true;
+        } catch (pageErr: any) {
+          console.warn('Page-by-page render failed, falling back to direct server-side PDF processing:', pageErr);
+          setProgressStatus('⚡ Đang xử lý bóc tách tài liệu PDF trực tiếp bằng AI...');
+          setProgressPercent(60);
+
+          const rawBase64 = await fileToBase64(selectedFile);
           const response = await apiFetch('/api/pdf-to-word', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              files: singleFile,
-              pageNum: p,
+              files: [{
+                data: rawBase64,
+                type: 'application/pdf',
+                name: selectedFile.name
+              }],
               totalPages: pdfTotalPages
             })
           });
@@ -290,44 +351,29 @@ export function PdfToWord() {
           if (!response.ok) {
             let errorData;
             let errText = await response.text();
-            try {
-               errorData = JSON.parse(errText);
-            } catch {
-               errorData = { error: errText };
-            }
-            let errorMsg = errorData.error || `Có lỗi xảy ra khi xử lý Trang ${p}`;
+            try { errorData = JSON.parse(errText); } catch { errorData = { error: errText }; }
+            let errorMsg = errorData.error || 'Có lỗi xảy ra khi số hóa tài liệu PDF';
             if (typeof errorMsg === 'object') errorMsg = JSON.stringify(errorMsg);
             throw new Error(errorMsg);
           }
 
           const text = await response.text();
           const data = parseApiResponse<any>(text);
-          let pageText = typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || '');
-          
-          if (pageText) {
-            pageText = pageText.replace(/```(?:tikz|latex)?\s*\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}\s*```/gi, '\n[Hình vẽ minh họa]\n');
-            pageText = pageText.replace(/```tikz[\s\S]*?```/gi, '\n[Hình vẽ minh họa]\n');
-            pageText = pageText.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/gi, '\n[Hình vẽ minh họa]\n');
-            pageText = normalizeOcrChoicesAndFormatting(pageText);
+          let rawRes = typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(data.result));
+          if (rawRes) {
+            rawRes = rawRes.replace(/```(?:tikz|latex)?\s*\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}\s*```/gi, '\n[Hình vẽ minh họa]\n');
+            rawRes = rawRes.replace(/```tikz[\s\S]*?```/gi, '\n[Hình vẽ minh họa]\n');
+            rawRes = rawRes.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/gi, '\n[Hình vẽ minh họa]\n');
           }
-
-          pageResults.push(pageText.trim());
+          finalResult = rawRes;
+          pageConversionSuccess = true;
         }
 
-        setPdfPageImages(pageImagesMap);
-
-        // Combine all pages with standard page separation markers
-        finalResult = pageResults.map((t, idx) => {
-          const currP = startP + idx;
-          const nextP = currP + 1;
-          const sep = idx < pageResults.length - 1 ? `\n\n--- [Hết Trang ${currP} / Sang Trang ${nextP}] ---\n\n` : '';
-          return t + sep;
-        }).join('');
-
-        finalResult = normalizeOcrChoicesAndFormatting(finalResult);
-
-        if (visualMode === 'auto_redraw') {
-          finalResult = autoEnrichTextWithVisuals(finalResult);
+        if (finalResult) {
+          finalResult = normalizeOcrChoicesAndFormatting(finalResult);
+          if (visualMode === 'auto_redraw') {
+            finalResult = autoEnrichTextWithVisuals(finalResult);
+          }
         }
 
       } else {
@@ -650,13 +696,13 @@ export function PdfToWord() {
                       className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
                     />
                     <div>
-                      <p className="font-bold text-indigo-950 flex items-center gap-1">
+                      <div className="font-bold text-indigo-950 flex items-center gap-1">
                         <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
                         <span>Tự động vẽ lại BBT & Đồ thị Vector (Khuyên dùng)</span>
-                      </p>
-                      <p className="font-normal text-slate-500 text-[11px] mt-1 leading-relaxed">
+                      </div>
+                      <div className="font-normal text-slate-500 text-[11px] mt-1 leading-relaxed">
                         Hệ thống tự động phát hiện hàm số và tái tạo BBT/Đồ thị dạng bảng vector sắc nét chuẩn 100% SGK.
-                      </p>
+                      </div>
                     </div>
                   </label>
 
@@ -669,13 +715,13 @@ export function PdfToWord() {
                       className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
                     />
                     <div>
-                      <p className="font-bold text-indigo-950 flex items-center gap-1">
+                      <div className="font-bold text-indigo-950 flex items-center gap-1">
                         <Scissors className="w-3.5 h-3.5 text-indigo-600" />
                         <span>Giữ vị trí [Hình vẽ] để tự Cắt ảnh gốc PDF</span>
-                      </p>
-                      <p className="font-normal text-slate-500 text-[11px] mt-1 leading-relaxed">
+                      </div>
+                      <div className="font-normal text-slate-500 text-[11px] mt-1 leading-relaxed">
                         Giữ thẻ đánh dấu hình vẽ/đồ thị để thầy/cô kéo cắt ảnh trực tiếp từ trang PDF đính kèm.
-                      </p>
+                      </div>
                     </div>
                   </label>
 
@@ -688,13 +734,13 @@ export function PdfToWord() {
                       className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
                     />
                     <div>
-                      <p className="font-bold text-indigo-950 flex items-center gap-1">
+                      <div className="font-bold text-indigo-950 flex items-center gap-1">
                         <Palette className="w-3.5 h-3.5 text-indigo-600" />
                         <span>Tự chọn vẽ lại BBT / Đồ thị tương tác</span>
-                      </p>
-                      <p className="font-normal text-slate-500 text-[11px] mt-1 leading-relaxed">
+                      </div>
+                      <div className="font-normal text-slate-500 text-[11px] mt-1 leading-relaxed">
                         Mở bộ công cụ vẽ BBT/Đồ thị tương tác để tự chọn dạng hàm số, tùy chỉnh tham số theo ý muốn.
-                      </p>
+                      </div>
                     </div>
                   </label>
                 </div>
