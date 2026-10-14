@@ -119,6 +119,42 @@ const TSA_QUESTION_BANK: PracticeQuestion[] = [
   }
 ];
 
+const CountdownClock = React.memo(({ initialSeconds, onTimeout, isSubmitted, isStarted }: { initialSeconds: number; onTimeout: () => void; isSubmitted: boolean; isStarted: boolean }) => {
+  const [seconds, setSeconds] = useState(initialSeconds);
+
+  useEffect(() => {
+    setSeconds(initialSeconds);
+  }, [initialSeconds]);
+
+  useEffect(() => {
+    let timer: any;
+    if (isStarted && !isSubmitted && seconds > 0) {
+      timer = setInterval(() => {
+        setSeconds(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            onTimeout();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [isStarted, isSubmitted, seconds, onTimeout]);
+
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  const timeStr = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+
+  return (
+    <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 rounded-xl font-mono font-bold text-sm">
+      <Clock className="w-4 h-4" />
+      <span>{timeStr}</span>
+    </div>
+  );
+});
+
 export function HsaTsaHub() {
   const [activeTab, setActiveTab] = useState<'overview' | 'materials' | 'practice' | 'generator' | 'progress' | 'analytics' | 'groups' | 'journal' | 'subjects' | 'ai_tutor'>('overview');
   const [selectedSubjectTab, setSelectedSubjectTab] = useState<'math' | 'literature' | 'science' | 'logic'>('math');
@@ -155,6 +191,41 @@ export function HsaTsaHub() {
   const [genExamCode, setGenExamCode] = useState<string>("101");
   const [generatedExamList, setGeneratedExamList] = useState<PracticeQuestion[]>([]);
   const [showAnswersInGen, setShowAnswersInGen] = useState<boolean>(true);
+
+  // Generator Online Quiz state
+  const [isGenQuizActive, setIsGenQuizActive] = useState(false);
+  const [genQuizAnswers, setGenQuizAnswers] = useState<Record<number, string>>({});
+  const [genQuizSubmitted, setGenQuizSubmitted] = useState(false);
+  const [genMistakeExplanations, setGenMistakeExplanations] = useState<Record<number, string>>({});
+  const [genExplainingId, setGenExplainingId] = useState<number | null>(null);
+
+  const handleExplainGenMistake = async (q: PracticeQuestion, studentAnswer: string) => {
+    setGenExplainingId(q.id);
+    try {
+      const res = await apiFetch('/api/explain-mistake', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: q.question,
+          options: q.options,
+          correctAnswer: q.correctAnswer,
+          studentAnswer: studentAnswer,
+          topic: q.topic
+        })
+      });
+      const data = await res.json();
+      if (data?.explanation) {
+        setGenMistakeExplanations(prev => ({ ...prev, [q.id]: data.explanation }));
+      } else {
+        setGenMistakeExplanations(prev => ({ ...prev, [q.id]: 'Không nhận được phản hồi phân tích từ AI.' }));
+      }
+    } catch (err) {
+      console.error(err);
+      setGenMistakeExplanations(prev => ({ ...prev, [q.id]: 'Lỗi kết nối khi gọi AI phân tích lỗ hổng kiến thức.' }));
+    } finally {
+      setGenExplainingId(null);
+    }
+  };
 
   interface ExamScanWarning {
     type: 'error' | 'warning' | 'success';
@@ -589,6 +660,27 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
     setNewScienceScore('');
   };
 
+  const handleExportCsv = () => {
+    const headers = ["Bai thi", "Tong diem", "Muc tieu", "Dinh luong (Toan)", "Dinh tinh (Van)", "Khoa hoc"];
+    const rows = progressHistory.map(item => [
+      `"${item.test}"`,
+      item.score,
+      item.target,
+      item.math,
+      item.lang,
+      item.science
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `HsaTsaHub_TienDo_HocTap_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleSendAiMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!aiQuery.trim() || isAiLoading) return;
@@ -928,10 +1020,12 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
                   </button>
                 ) : (
                   <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 rounded-xl font-mono font-bold text-sm">
-                      <Clock className="w-4 h-4" />
-                      <span>{formatTime(timeLeft)}</span>
-                    </div>
+                    <CountdownClock
+                      initialSeconds={selectedExamType === 'hsa' ? 195 * 60 : 150 * 60}
+                      onTimeout={() => setQuizSubmitted(true)}
+                      isSubmitted={quizSubmitted}
+                      isStarted={quizStarted}
+                    />
                     {!quizSubmitted ? (
                       <button
                         onClick={handleSubmitQuiz}
@@ -1177,6 +1271,17 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
                       <Printer className="w-4 h-4" />
                       <span>In đề / Xuất PDF</span>
                     </button>
+                    <button
+                      onClick={() => {
+                        setIsGenQuizActive(true);
+                        setGenQuizAnswers({});
+                        setGenQuizSubmitted(false);
+                      }}
+                      className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold rounded-xl text-sm transition-all cursor-pointer flex items-center gap-2 shadow"
+                    >
+                      <Play className="w-4 h-4" />
+                      <span>🚀 Cho học viên làm bài online</span>
+                    </button>
                   </>
                 )}
               </div>
@@ -1253,6 +1358,186 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
               <div className="text-center py-16 text-slate-400 space-y-3">
                 <FileText className="w-12 h-12 mx-auto opacity-40" />
                 <p className="text-sm">Chưa có đề nào được tạo. Bấm <strong>Trộn đề ngay</strong> để bắt đầu!</p>
+              </div>
+            ) : isGenQuizActive ? (
+              <div className="space-y-6 pt-4 animate-fadeIn">
+                <div className="p-4 bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 text-white rounded-2xl shadow-xl flex flex-col sm:flex-row justify-between items-center gap-4">
+                  <div className="space-y-1">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full text-xs font-semibold text-amber-300">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Chế độ thi thử trực tuyến cho học viên - Mã đề: {genExamCode}</span>
+                    </div>
+                    <h3 className="font-extrabold text-base">Đề thi thử trực tuyến ({generatedExamList.length} câu)</h3>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <CountdownClock
+                      initialSeconds={generatedExamList.length * 3 * 60}
+                      onTimeout={() => setGenQuizSubmitted(true)}
+                      isSubmitted={genQuizSubmitted}
+                      isStarted={isGenQuizActive}
+                    />
+                    {!genQuizSubmitted ? (
+                      <button
+                        onClick={() => setGenQuizSubmitted(true)}
+                        className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm cursor-pointer shadow"
+                      >
+                        Nộp bài
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setGenQuizAnswers({});
+                          setGenQuizSubmitted(false);
+                        }}
+                        className="px-5 py-2 bg-slate-600 hover:bg-slate-700 text-white font-bold rounded-xl text-sm cursor-pointer flex items-center gap-2"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        <span>Làm lại</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setIsGenQuizActive(false)}
+                      className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl text-xs cursor-pointer"
+                    >
+                      ✕ Thoát thi online
+                    </button>
+                  </div>
+                </div>
+
+                {genQuizSubmitted && (
+                  <div className="p-6 bg-slate-900 text-white rounded-2xl shadow-xl space-y-4">
+                    <h3 className="font-extrabold text-lg text-emerald-400">Kết quả bài thi trực tuyến</h3>
+                    <div className="grid grid-cols-3 gap-4 text-center">
+                      <div className="bg-white/10 p-3 rounded-xl">
+                        <p className="text-xs text-slate-300">Số câu đúng</p>
+                        <p className="text-xl font-black text-emerald-400">
+                          {Object.entries(genQuizAnswers).filter(([id, ans]) => generatedExamList.find(q => q.id === Number(id))?.correctAnswer === ans).length} / {generatedExamList.length}
+                        </p>
+                      </div>
+                      <div className="bg-white/10 p-3 rounded-xl">
+                        <p className="text-xs text-slate-300">Số câu sai</p>
+                        <p className="text-xl font-black text-rose-400">
+                          {Object.entries(genQuizAnswers).filter(([id, ans]) => {
+                            const q = generatedExamList.find(item => item.id === Number(id));
+                            return q && q.correctAnswer !== ans;
+                          }).length}
+                        </p>
+                      </div>
+                      <div className="bg-white/10 p-3 rounded-xl">
+                        <p className="text-xs text-slate-300">Điểm quy đổi (Thang 10)</p>
+                        <p className="text-xl font-black text-amber-300">
+                          {((Object.entries(genQuizAnswers).filter(([id, ans]) => generatedExamList.find(q => q.id === Number(id))?.correctAnswer === ans).length / generatedExamList.length) * 10).toFixed(1)} / 10
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-6">
+                  {generatedExamList.map((q, idx) => {
+                    const isCorrect = genQuizAnswers[q.id] === q.correctAnswer;
+                    return (
+                      <div key={q.id} className="p-5 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="space-y-2">
+                            <span className="inline-block px-2.5 py-1 bg-indigo-100 dark:bg-indigo-950 text-indigo-600 text-xs font-bold rounded-lg">
+                              {q.topic}
+                            </span>
+                            <h4 className="font-semibold text-sm text-slate-900 dark:text-white">
+                              Câu {idx + 1}: <MarkdownRenderer content={q.question} />
+                            </h4>
+                          </div>
+                          {genQuizSubmitted && (
+                            <div>
+                              {isCorrect ? (
+                                <span className="flex items-center gap-1 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold shrink-0">
+                                  <CheckCircle2 className="w-3.5 h-3.5" /> Đúng
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-1 px-3 py-1 bg-rose-100 text-rose-700 rounded-full text-xs font-bold shrink-0">
+                                  <XCircle className="w-3.5 h-3.5" /> Sai
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {q.options.map((opt, oIdx) => {
+                            const optionLetter = opt.charAt(0);
+                            const isSelected = genQuizAnswers[q.id] === optionLetter;
+                            let btnStyle = "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-indigo-500";
+                            if (isSelected) {
+                              btnStyle = "bg-indigo-600 text-white border-indigo-600 shadow-sm";
+                            }
+                            if (genQuizSubmitted) {
+                              if (optionLetter === q.correctAnswer) {
+                                btnStyle = "bg-emerald-600 text-white border-emerald-600 shadow-sm";
+                              } else if (isSelected && optionLetter !== q.correctAnswer) {
+                                btnStyle = "bg-rose-600 text-white border-rose-600 shadow-sm";
+                              }
+                            }
+                            return (
+                              <button
+                                key={oIdx}
+                                onClick={() => {
+                                  if (genQuizSubmitted) return;
+                                  setGenQuizAnswers(prev => ({ ...prev, [q.id]: optionLetter }));
+                                }}
+                                disabled={genQuizSubmitted}
+                                className={`p-3 rounded-xl border text-left text-xs font-medium transition-all cursor-pointer flex items-center gap-2 ${btnStyle}`}
+                              >
+                                <span className="w-6 h-6 rounded-lg bg-black/10 flex items-center justify-center font-bold text-xs shrink-0">{optionLetter}</span>
+                                <span className="flex-1"><MarkdownRenderer content={opt.slice(3)} /></span>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {genQuizSubmitted && (
+                          <div className="space-y-3">
+                            <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 text-xs space-y-1">
+                              <span className="font-bold text-indigo-600">Hướng dẫn giải chi tiết:</span>
+                              <MarkdownRenderer content={q.explanation} />
+                            </div>
+
+                            {!isCorrect && (
+                              <div className="pt-1">
+                                {genMistakeExplanations[q.id] ? (
+                                  <div className="p-4 bg-rose-50 dark:bg-rose-950/40 rounded-xl border border-rose-200 dark:border-rose-900 text-xs space-y-2">
+                                    <div className="flex items-center justify-between font-bold text-rose-700 dark:text-rose-300">
+                                      <span className="flex items-center gap-1.5"><Brain className="w-4 h-4" /> AI Phân tích chi tiết lỗ hổng kiến thức dẫn đến lựa chọn sai:</span>
+                                      <button onClick={() => setGenMistakeExplanations(prev => ({ ...prev, [q.id]: '' }))} className="text-rose-500 hover:text-rose-700 text-sm">×</button>
+                                    </div>
+                                    <MarkdownRenderer content={genMistakeExplanations[q.id]} />
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => handleExplainGenMistake(q, genQuizAnswers[q.id] || 'Chưa chọn')}
+                                    disabled={genExplainingId === q.id}
+                                    className="px-4 py-2.5 bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-700 hover:to-orange-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow transition-all flex items-center gap-2 cursor-pointer"
+                                  >
+                                    {genExplainingId === q.id ? (
+                                      <>
+                                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                        <span>AI đang phân tích lỗ hổng kiến thức...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Sparkles className="w-3.5 h-3.5" />
+                                        <span>🤖 Giải thích tại sao sai (Phân tích lỗi sai)</span>
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             ) : (
               <div className="space-y-8 pt-4">
@@ -1512,7 +1797,16 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
 
             {/* Add Score Form & History Table */}
             <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
-              <h3 className="font-bold text-base text-slate-900 dark:text-white">Thêm kết quả bài thi thử mới</h3>
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <h3 className="font-bold text-base text-slate-900 dark:text-white">Thêm kết quả bài thi thử mới & Quản lý điểm số</h3>
+                <button
+                  onClick={handleExportCsv}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow transition-all"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>📥 Xuất dữ liệu CSV (Excel / Google Sheets)</span>
+                </button>
+              </div>
               <form onSubmit={handleAddProgress} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
                 <input
                   type="text"
