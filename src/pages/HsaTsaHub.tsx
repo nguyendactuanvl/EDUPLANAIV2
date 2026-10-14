@@ -5,7 +5,7 @@ import {
   Play, RotateCcw, Check, XCircle, ChevronRight, ShieldCheck, 
   BookMarked, Lightbulb, Target, TrendingUp, BarChart3, RefreshCw,
   Printer, Download, Copy, Shuffle, Plus, PieChart, Activity,
-  Users, UserPlus, MessageSquare
+  Users, UserPlus, MessageSquare, Zap, Flame, Timer
 } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
@@ -76,6 +76,70 @@ const HSA_QUESTION_BANK: PracticeQuestion[] = [
     options: ["A. Sóng (Xuân Quỳnh)", "B. Tây Tiến (Quang Dũng)", "C. Việt Bắc (Tố Hữu)", "D. Đất nước (Nguyễn Đình Thi)"],
     correctAnswer: "D",
     explanation: "Bài thơ *Đất nước* của Nguyễn Đình Thi tiêu biểu cho thơ tự do giai đoạn kháng chiến chống Pháp."
+  },
+  {
+    id: 8,
+    topic: "Tư duy Định lượng (Toán học)",
+    question: "Cho hình lăng trụ tam giác đều $ABC.A'B'C'$ có cạnh đáy bằng $a$ và chiều cao bằng $2a$. Thể tích $V$ của khối lăng trụ đó là:",
+    options: ["A. $V = \\frac{a^3 \\sqrt{3}}{2}$", "B. $V = \\frac{a^3 \\sqrt{3}}{6}$", "C. $V = a^3 \\sqrt{3}$", "D. $V = \\frac{a^3 \\sqrt{3}}{4}$"],
+    correctAnswer: "A",
+    explanation: "Diện tích đáy tam giác đều là $S = \\frac{a^2 \\sqrt{3}}{4}$. Thể tích $V = S \\cdot h = \\frac{a^2 \\sqrt{3}}{4} \\cdot 2a = \\frac{a^3 \\sqrt{3}}{2}$."
+  },
+  {
+    id: 9,
+    topic: "Tư duy Định lượng (Toán học)",
+    question: "Tập nghiệm $S$ của bất phương trình $\\log_2 (x - 1) < 3$ là:",
+    options: ["A. $S = (1; 9)$", "B. $S = (-\\infty; 9)$", "C. $S = (1; 7)$", "D. $S = [1; 9)$"],
+    correctAnswer: "A",
+    explanation: "Điều kiện xác định $x - 1 > 0 \\Leftrightarrow x > 1$. Bất phương trình $\\log_2(x - 1) < 3 \\Leftrightarrow x - 1 < 2^3 = 8 \\Leftrightarrow x < 9$. Kết hợp điều kiện ta có $S = (1; 9)$."
+  },
+  {
+    id: 10,
+    topic: "Khoa học (Vật lý)",
+    question: "Một con lắc lò xo gồm vật nặng khối lượng $m = 100\\,\\text{g}$ và lò xo có độ cứng $k = 40\\,\\text{N/m}$. Tần số góc $\\omega$ của dao động điều hòa là:",
+    options: ["A. $20\\,\\text{rad/s}$", "B. $400\\,\\text{rad/s}$", "C. $2\\,\\text{rad/s}$", "D. $10\\,\\text{rad/s}$"],
+    correctAnswer: "A",
+    explanation: "Tần số góc của con lắc lò xo là $\\omega = \\sqrt{\\frac{k}{m}} = \\sqrt{\\frac{40}{0,1}} = 20\\,\\text{rad/s}$."
+  },
+  {
+    id: 11,
+    topic: "Khoa học (Hóa học)",
+    question: "Đốt cháy hoàn toàn $m$ gam $CH_4$ thu được $0,2\\,\\text{mol}\\,CO_2$. Giá trị của $m$ là:",
+    options: ["A. $3,2\\,\\text{g}$", "B. $1,6\\,\\text{g}$", "C. $4,8\\,\\text{g}$", "D. $6,4\\,\\text{g}$"],
+    correctAnswer: "A",
+    explanation: "Bảo toàn nguyên tố cacbon: $n_{CH_4} = n_{CO_2} = 0,2\\,\\text{mol}$. Khối lượng $m = 0,2 \\cdot 16 = 3,2\\,\\text{g}$."
+  },
+  {
+    id: 12,
+    topic: "Khoa học (Sinh học)",
+    question: "Gen $B$ có chiều dài $L = 5100\\,\\text{Å}$. Tổng số nuclêôtit $N$ của gen là:",
+    options: ["A. $3000$", "B. $1500$", "C. $6000$", "D. $2000$"],
+    correctAnswer: "A",
+    explanation: "Công thức liên hệ: $N = \\frac{2L}{3,4} = \\frac{2 \\cdot 5100}{3,4} = 3000$ nuclêôtit."
+  },
+  {
+    id: 13,
+    topic: "Tư duy Định lượng (Toán học)",
+    question: "Trong không gian $Oxyz$, vectơ pháp tuyến $\\vec{n}$ của mặt phẳng $(\\alpha): 3x - 2y + 4z - 1 = 0$ là:",
+    options: ["A. $\\vec{n} = (3; -2; 4)$", "B. $\\vec{n} = (3; 2; 4)$", "C. $\\vec{n} = (3; -2; -1)$", "D. $\\vec{n} = (-2; 4; -1)$"],
+    correctAnswer: "A",
+    explanation: "Mặt phẳng $Ax + By + Cz + D = 0$ có vectơ pháp tuyến $\\vec{n} = (A; B; C) = (3; -2; 4)$."
+  },
+  {
+    id: 14,
+    topic: "Tư duy Định tính (Ngữ văn)",
+    question: "Hình tượng \"sông Đà\" hung bạo và trữ tình được khắc họa trong tùy bút nổi tiếng nào của Nguyễn Tuân?",
+    options: ["A. Người lái đò Sông Đà", "B. Vợ nhặt", "C. Chiếc thuyền ngoài xa", "D. Rừng xà nu"],
+    correctAnswer: "A",
+    explanation: "Tùy bút *Người lái đò Sông Đà* in trong tập *Sông Đà* (1960) của nhà văn Nguyễn Tuân."
+  },
+  {
+    id: 15,
+    topic: "Khoa học (Vật lý)",
+    question: "Hạt nhân $^{235}_{92}\\text{U}$ có số hạt nơtron $N$ bằng:",
+    options: ["A. $143$", "B. $92$", "C. $235$", "D. $327$"],
+    correctAnswer: "A",
+    explanation: "Số khối $A = 235$, số proton $Z = 92$. Số hạt nơtron là $N = A - Z = 235 - 92 = 143$."
   }
 ];
 
@@ -116,6 +180,70 @@ const TSA_QUESTION_BANK: PracticeQuestion[] = [
     options: ["A. $39$", "B. $43$", "C. $36$", "D. $40$"],
     correctAnswer: "A",
     explanation: "$u_{10} = u_1 + 9d = 3 + 9(4) = 39$."
+  },
+  {
+    id: 5,
+    topic: "Tư duy Toán học",
+    question: "Một đội tuyển có $5$ học sinh nam và $4$ học sinh nữ. Chọn ngẫu nhiên $3$ học sinh tham gia hội thảo. Xác suất để chọn được ít nhất $1$ học sinh nữ là:",
+    options: ["A. $\\frac{37}{42}$", "B. $\\frac{5}{42}$", "C. $\\frac{1}{2}$", "D. $\\frac{25}{42}$"],
+    correctAnswer: "A",
+    explanation: "Số cách chọn bất kì $3$ học sinh là $C_9^3 = 84$. Số cách chọn $3$ học sinh nam là $C_5^3 = 10$. Xác suất cần tìm là $P = 1 - \\frac{10}{84} = \\frac{74}{84} = \\frac{37}{42}$."
+  },
+  {
+    id: 6,
+    topic: "Tư duy Logic & Xử lý số liệu",
+    question: "Biểu đồ cột chỉ ra doanh số quý I, II, III, IV lần lượt là $120$, $150$, $180$, $210$ triệu đồng. Tốc độ tăng trưởng doanh số từ quý I đến quý IV là:",
+    options: ["A. $75\\%$", "B. $50\\%$", "C. $80\\%$", "D. $60\\%$"],
+    correctAnswer: "A",
+    explanation: "Tốc độ tăng trưởng là $\\frac{210 - 120}{120} \\cdot 100\\% = \\frac{90}{120} \\cdot 100\\% = 75\\%$."
+  },
+  {
+    id: 7,
+    topic: "Tư duy Logic & Xử lý số liệu",
+    question: "Cho mệnh đề logic: \"Nếu trời mưa thì đường ướt\". Mệnh đề phản đảo tương đương logic với mệnh đề ban đầu là:",
+    options: ["A. Nếu đường không ướt thì trời không mưa", "B. Nếu đường ướt thì trời mưa", "C. Nếu trời không mưa thì đường không ướt", "D. Trời mưa và đường không ướt"],
+    correctAnswer: "A",
+    explanation: "Mệnh đề $P \\implies Q$ tương đương logic với mệnh đề phản đảo $\\neg Q \\implies \\neg P$."
+  },
+  {
+    id: 8,
+    topic: "Tư duy Toán học",
+    question: "Đạo hàm của hàm số $y = \\ln(x^2 + 1)$ với mọi $x \\in \\mathbb{R}$ là:",
+    options: ["A. $y' = \\frac{2x}{x^2 + 1}$", "B. $y' = \\frac{1}{x^2 + 1}$", "C. $y' = \\frac{x}{x^2 + 1}$", "D. $y' = \\frac{2}{x^2 + 1}$"],
+    correctAnswer: "A",
+    explanation: "Áp dụng công thức $(\\ln u)' = \\frac{u'}{u} = \\frac{(x^2+1)'}{x^2+1} = \\frac{2x}{x^2+1}$."
+  },
+  {
+    id: 9,
+    topic: "Tư duy Khoa học / GQVĐ",
+    question: "Cho $3$ chất hữu cơ: ancol etylic $C_2H_5OH$, axit axetic $CH_3COOH$, metyl axetat $CH_3COOCH_3$. Chất nào có nhiệt độ sôi cao nhất ở điều kiện tiêu chuẩn?",
+    options: ["A. Axit axetic ($CH_3COOH$)", "B. Ancol etylic ($C_2H_5OH$)", "C. Metyl axetat ($CH_3COOCH_3$)", "D. Cả 3 chất bằng nhau"],
+    correctAnswer: "A",
+    explanation: "Axit axetic có liên kết hiđro liên phân tử bền vững dạng đime nên có nhiệt độ sôi cao nhất."
+  },
+  {
+    id: 10,
+    topic: "Tư duy Khoa học / GQVĐ",
+    question: "Nếu tốc độ vũ trụ cấp I là $v = \\sqrt{\\frac{GM}{R}}$, bán kính Trái Đất $R$ tăng gấp đôi trong khi khối lượng Trái Đất $M$ không đổi thì tốc độ $v$ thay đổi như thế nào?",
+    options: ["A. Giảm $\\sqrt{2}$ lần", "B. Tăng $\\sqrt{2}$ lần", "C. Giảm $2$ lần", "D. Không đổi"],
+    correctAnswer: "A",
+    explanation: "Ta có $v \\sim \\frac{1}{\\sqrt{R}}$. Khi $R$ tăng $2$ lần thì tốc độ $v$ giảm $\\sqrt{2}$ lần."
+  },
+  {
+    id: 11,
+    topic: "Tư duy Toán học",
+    question: "Một người gửi $100$ triệu đồng vào ngân hàng với lãi suất kép $r = 8\\%/\\text{năm}$. Số tiền cả gốc và lãi sau $2$ năm là:",
+    options: ["A. $116,64$ triệu đồng", "B. $116,00$ triệu đồng", "C. $118,00$ triệu đồng", "D. $120,50$ triệu đồng"],
+    correctAnswer: "A",
+    explanation: "Số tiền nhận được: $S_2 = 100 \\cdot (1 + 0,08)^2 = 100 \\cdot 1,1664 = 116,64$ triệu đồng."
+  },
+  {
+    id: 12,
+    topic: "Tư duy Đọc hiểu",
+    question: "Phương pháp đọc quét (Scanning) trong bài thi TSA phát huy hiệu quả cao nhất khi học sinh cần làm gì?",
+    options: ["A. Tìm kiếm các số liệu cụ thể, mốc thời gian hoặc từ khóa kỹ thuật", "B. Nắm nội dung khái quát toàn bài", "C. Cảm thụ phong cách nghệ thuật của tác giả", "D. Tóm tắt luận điểm chính"],
+    correctAnswer: "A",
+    explanation: "Kỹ năng scanning giúp định vị nhanh các thông tin chi tiết cụ thể như con số, thuật ngữ, tên riêng trong văn bản khoa học."
   }
 ];
 
@@ -156,7 +284,7 @@ const CountdownClock = React.memo(({ initialSeconds, onTimeout, isSubmitted, isS
 });
 
 export function HsaTsaHub() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'materials' | 'practice' | 'generator' | 'progress' | 'analytics' | 'groups' | 'journal' | 'subjects' | 'ai_tutor'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'materials' | 'practice' | 'quick_drill' | 'generator' | 'progress' | 'analytics' | 'groups' | 'journal' | 'subjects' | 'ai_tutor'>('overview');
   const [selectedSubjectTab, setSelectedSubjectTab] = useState<'math' | 'literature' | 'science' | 'logic'>('math');
   const [selectedExamType, setSelectedExamType] = useState<'hsa' | 'tsa'>('hsa');
   const [isFocusMode, setIsFocusMode] = useState(false);
@@ -177,7 +305,6 @@ export function HsaTsaHub() {
     }
   });
   const [quizSubmitted, setQuizSubmitted] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(195 * 60);
 
   useEffect(() => {
     try {
@@ -185,6 +312,90 @@ export function HsaTsaHub() {
     } catch (e) {}
   }, [currentAnswers]);
 
+  // Quick Drill state (10 câu hỏi ngẫu nhiên, giới hạn 15 phút)
+  const [drillStarted, setDrillStarted] = useState(false);
+  const [drillQuestions, setDrillQuestions] = useState<PracticeQuestion[]>([]);
+  const [drillAnswers, setDrillAnswers] = useState<Record<number, string>>({});
+  const [drillSubmitted, setDrillSubmitted] = useState(false);
+  const [drillPool, setDrillPool] = useState<'hsa' | 'tsa' | 'both'>('both');
+  const [drillMistakeExplanations, setDrillMistakeExplanations] = useState<Record<number, string>>({});
+  const [drillExplainingId, setDrillExplainingId] = useState<number | null>(null);
+
+  const handleStartQuickDrill = (poolOverride?: 'hsa' | 'tsa' | 'both') => {
+    const poolType = poolOverride || drillPool;
+    const pool = poolType === 'hsa' 
+      ? HSA_QUESTION_BANK 
+      : poolType === 'tsa' 
+      ? TSA_QUESTION_BANK 
+      : [...HSA_QUESTION_BANK, ...TSA_QUESTION_BANK];
+    
+    const shuffled = [...pool].sort(() => 0.5 - Math.random());
+    const selected = shuffled.slice(0, Math.min(10, shuffled.length));
+    setDrillQuestions(selected);
+    setDrillAnswers({});
+    setDrillSubmitted(false);
+    setDrillMistakeExplanations({});
+    setDrillStarted(true);
+  };
+
+  const handleSelectDrillAnswer = (qId: number, optionLetter: string) => {
+    if (drillSubmitted) return;
+    setDrillAnswers(prev => ({ ...prev, [qId]: optionLetter }));
+  };
+
+  const handleSubmitDrill = () => {
+    setDrillSubmitted(true);
+    const correctCount = Object.entries(drillAnswers).filter(([id, ans]) => drillQuestions.find(q => q.id === Number(id))?.correctAnswer === ans).length;
+    const scaledScore = Math.round((correctCount / drillQuestions.length) * 150);
+    const testName = `Quick Drill 15' #${progressHistory.length + 1} (${correctCount}/10)`;
+    setProgressHistory(prev => [
+      ...prev,
+      { 
+        test: testName, 
+        score: scaledScore, 
+        target: 110, 
+        math: Math.round(scaledScore * 0.35), 
+        lang: Math.round(scaledScore * 0.35), 
+        science: Math.round(scaledScore * 0.3) 
+      }
+    ]);
+  };
+
+  const handleResetDrill = () => {
+    handleStartQuickDrill();
+  };
+
+  const handleSaveDrillToProgress = () => {
+    setActiveTab('progress');
+  };
+
+  const handleExplainDrillMistake = async (q: PracticeQuestion, studentAnswer: string) => {
+    setDrillExplainingId(q.id);
+    try {
+      const res = await apiFetch('/api/explain-mistake', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: q.question,
+          options: q.options,
+          correctAnswer: q.correctAnswer,
+          studentAnswer: studentAnswer,
+          topic: q.topic
+        })
+      });
+      const data = await res.json();
+      if (data?.explanation) {
+        setDrillMistakeExplanations(prev => ({ ...prev, [q.id]: data.explanation }));
+      } else {
+        setDrillMistakeExplanations(prev => ({ ...prev, [q.id]: 'Không nhận được phản hồi phân tích từ AI.' }));
+      }
+    } catch (err) {
+      console.error(err);
+      setDrillMistakeExplanations(prev => ({ ...prev, [q.id]: 'Lỗi kết nối khi gọi AI phân tích lỗ hổng kiến thức.' }));
+    } finally {
+      setDrillExplainingId(null);
+    }
+  };
 
   // Teacher Exam Generator state
   const [genCount, setGenCount] = useState<number>(5);
@@ -372,23 +583,6 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
   ]);
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  useEffect(() => {
-    let timer: any;
-    if (quizStarted && !quizSubmitted && timeLeft > 0) {
-      timer = setInterval(() => {
-        setTimeLeft(prev => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            setQuizSubmitted(true);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [quizStarted, quizSubmitted, timeLeft]);
-
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -417,7 +611,6 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
     setQuizStarted(false);
     setQuizSubmitted(false);
     setCurrentAnswers({});
-    setTimeLeft(selectedExamType === 'hsa' ? 195 * 60 : 150 * 60);
   };
 
   const [mistakeExplanations, setMistakeExplanations] = useState<Record<number, string>>({});
@@ -773,6 +966,16 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
               <span>Thi thử trực tuyến (Học sinh)</span>
             </button>
             <button
+              onClick={() => {
+                setActiveTab('quick_drill');
+                if (!drillStarted) handleStartQuickDrill();
+              }}
+              className={`flex items-center gap-2 px-5 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap cursor-pointer ${activeTab === 'quick_drill' ? 'border-amber-500 text-amber-600 dark:text-amber-400 font-bold' : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'}`}
+            >
+              <Zap className="w-4 h-4 text-amber-500 fill-amber-500" />
+              <span>⚡ Quick Drill (15 phút)</span>
+            </button>
+            <button
               onClick={() => setActiveTab('generator')}
               className={`flex items-center gap-2 px-5 py-3 font-semibold text-sm border-b-2 transition-colors whitespace-nowrap cursor-pointer ${activeTab === 'generator' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'}`}
             >
@@ -895,6 +1098,30 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
                   <span className="font-bold text-purple-600">60 phút</span>
                 </div>
               </div>
+            </div>
+
+            {/* Quick Drill Highlight Card in Overview */}
+            <div className="md:col-span-2 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 rounded-2xl p-6 sm:p-7 text-white shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-black/20 backdrop-blur-md rounded-full text-xs font-black uppercase tracking-wider text-amber-200">
+                  <Zap className="w-3.5 h-3.5 fill-amber-300 text-amber-300" />
+                  <span>Tính năng mới: Quick Drill</span>
+                </div>
+                <h3 className="text-xl font-extrabold tracking-tight">Thử thách 10 câu hỏi ngẫu nhiên trong 15 phút</h3>
+                <p className="text-xs sm:text-sm text-amber-100 max-w-2xl leading-relaxed">
+                  Rèn luyện phản xạ giải đề nhanh, củng cố kiến thức ngắn hạn với hệ thống chấm điểm tự động và AI giải thích chi tiết lỗ hổng kiến thức.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setActiveTab('quick_drill');
+                  handleStartQuickDrill();
+                }}
+                className="px-6 py-3 bg-white text-orange-950 font-black rounded-xl text-sm hover:bg-amber-50 transition-all shadow-lg flex items-center gap-2 cursor-pointer shrink-0"
+              >
+                <Flame className="w-4 h-4 text-orange-600 fill-orange-600" />
+                <span>Bắt đầu Quick Drill ngay</span>
+              </button>
             </div>
           </div>
         )}
@@ -1213,6 +1440,290 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
                                     className="px-4 py-2.5 bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-700 hover:to-orange-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow transition-all flex items-center gap-2 cursor-pointer"
                                   >
                                     {explainingId === q.id ? (
+                                      <>
+                                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                        <span>AI đang phân tích lỗ hổng kiến thức...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Sparkles className="w-3.5 h-3.5" />
+                                        <span>🤖 Giải thích tại sao sai (Phân tích lỗi sai)</span>
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab: Quick Drill (10 câu hỏi ngẫu nhiên trong 15 phút) */}
+        {activeTab === 'quick_drill' && (
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="space-y-1">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 rounded-full text-xs font-bold">
+                  <Zap className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                  <span>Chế độ Luyện tốc độ cao (Quick Drill)</span>
+                </div>
+                <h2 className="font-extrabold text-xl text-slate-900 dark:text-white">Thử thách 10 câu hỏi ngẫu nhiên trong 15 phút</h2>
+                <p className="text-xs text-slate-500">Rèn luyện phản xạ nhanh, bứt phá tư duy và củng cố kiến thức ngắn hạn cho kỳ thi HSA & TSA</p>
+              </div>
+
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  onClick={() => setIsFocusMode(!isFocusMode)}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm ${isFocusMode ? 'bg-amber-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'}`}
+                  title="Ẩn toàn bộ menu và sidebar để chống xao nhãng"
+                >
+                  <Target className="w-4 h-4" />
+                  <span>{isFocusMode ? 'Thoát Chế độ tập trung' : 'Chế độ tập trung'}</span>
+                </button>
+
+                {!drillStarted ? (
+                  <button
+                    onClick={() => handleStartQuickDrill()}
+                    className="px-6 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black rounded-xl text-sm transition-all cursor-pointer flex items-center gap-2 shadow"
+                  >
+                    <Play className="w-4 h-4 fill-slate-950" />
+                    <span>Bắt đầu 15 phút ngay</span>
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <CountdownClock
+                      initialSeconds={15 * 60}
+                      onTimeout={handleSubmitDrill}
+                      isSubmitted={drillSubmitted}
+                      isStarted={drillStarted}
+                    />
+                    {!drillSubmitted ? (
+                      <button
+                        onClick={handleSubmitDrill}
+                        className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm cursor-pointer shadow"
+                      >
+                        Nộp bài
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleResetDrill}
+                        className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm cursor-pointer flex items-center gap-2 shadow"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        <span>Bộ 10 câu mới</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Drill Pool Selection & Quick Stats Header */}
+            {!drillStarted ? (
+              <div className="text-center py-12 space-y-6 max-w-2xl mx-auto">
+                <div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-orange-500 text-slate-950 rounded-2xl flex items-center justify-center mx-auto shadow-lg shadow-orange-500/20">
+                  <Zap className="w-9 h-9 fill-slate-950" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="font-extrabold text-slate-900 dark:text-white text-xl">Sẵn sàng thử thách phản xạ ngắn hạn?</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                    Hệ thống sẽ lấy ngẫu nhiên <strong>10 câu hỏi</strong> từ ngân hàng đề thi chuẩn cấu trúc. Bạn có đúng <strong>15 phút</strong> để hoàn thành và nhận kết quả phân tích tức thì từ AI.
+                  </p>
+                </div>
+
+                <div className="flex justify-center items-center gap-3 pt-2">
+                  <span className="text-xs font-semibold text-slate-500">Nguồn câu hỏi:</span>
+                  <div className="inline-flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <button
+                      onClick={() => setDrillPool('both')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${drillPool === 'both' ? 'bg-white dark:bg-slate-900 text-indigo-600 shadow-sm' : 'text-slate-600 dark:text-slate-400'}`}
+                    >
+                      Tổng hợp (HSA + TSA)
+                    </button>
+                    <button
+                      onClick={() => setDrillPool('hsa')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${drillPool === 'hsa' ? 'bg-white dark:bg-slate-900 text-indigo-600 shadow-sm' : 'text-slate-600 dark:text-slate-400'}`}
+                    >
+                      HSA ĐHQGHN
+                    </button>
+                    <button
+                      onClick={() => setDrillPool('tsa')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${drillPool === 'tsa' ? 'bg-white dark:bg-slate-900 text-indigo-600 shadow-sm' : 'text-slate-600 dark:text-slate-400'}`}
+                    >
+                      TSA Bách Khoa
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => handleStartQuickDrill()}
+                  className="px-8 py-3.5 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-slate-950 font-black rounded-xl text-base cursor-pointer shadow-xl inline-flex items-center gap-2 transform hover:-translate-y-0.5 transition-all"
+                >
+                  <Play className="w-5 h-5 fill-slate-950" />
+                  <span>Bắt đầu Quick Drill (15 Phút)</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Result Overview Banner */}
+                {drillSubmitted && (
+                  <div className="p-6 bg-gradient-to-r from-slate-900 via-indigo-950 to-purple-950 text-white rounded-2xl shadow-xl space-y-4 animate-fadeIn border border-slate-800">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div className="space-y-1">
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/10 rounded-full text-xs font-bold text-amber-300">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Kết quả hoàn thành Quick Drill (15 Phút)</span>
+                        </div>
+                        <h3 className="text-xl font-extrabold tracking-tight">
+                          Đạt {Object.entries(drillAnswers).filter(([id, ans]) => drillQuestions.find(q => q.id === Number(id))?.correctAnswer === ans).length} / {drillQuestions.length} câu đúng
+                        </h3>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleSaveDrillToProgress}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow"
+                        >
+                          <TrendingUp className="w-4 h-4" />
+                          <span>Lưu vào Biểu đồ tiến độ</span>
+                        </button>
+                        <button
+                          onClick={handleResetDrill}
+                          className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                          <span>Thử thách 10 câu mới</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-white/10">
+                      <div className="bg-white/10 p-3 rounded-xl text-center">
+                        <p className="text-xs text-slate-300">Tỷ lệ chính xác</p>
+                        <p className="text-xl font-black text-amber-300">
+                          {Math.round((Object.entries(drillAnswers).filter(([id, ans]) => drillQuestions.find(q => q.id === Number(id))?.correctAnswer === ans).length / drillQuestions.length) * 100)}%
+                        </p>
+                      </div>
+                      <div className="bg-white/10 p-3 rounded-xl text-center">
+                        <p className="text-xs text-slate-300">Số câu đúng</p>
+                        <p className="text-xl font-black text-emerald-400">
+                          {Object.entries(drillAnswers).filter(([id, ans]) => drillQuestions.find(q => q.id === Number(id))?.correctAnswer === ans).length}
+                        </p>
+                      </div>
+                      <div className="bg-white/10 p-3 rounded-xl text-center">
+                        <p className="text-xs text-slate-300">Số câu sai</p>
+                        <p className="text-xl font-black text-rose-400">
+                          {Object.entries(drillAnswers).filter(([id, ans]) => {
+                            const q = drillQuestions.find(item => item.id === Number(id));
+                            return q && q.correctAnswer !== ans;
+                          }).length}
+                        </p>
+                      </div>
+                      <div className="bg-white/10 p-3 rounded-xl text-center">
+                        <p className="text-xs text-slate-300">Điểm quy đổi HSA/TSA</p>
+                        <p className="text-xl font-black text-purple-300">
+                          {Math.round((Object.entries(drillAnswers).filter(([id, ans]) => drillQuestions.find(q => q.id === Number(id))?.correctAnswer === ans).length / drillQuestions.length) * 150)} <span className="text-xs font-normal">/ 150</span>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Question List */}
+                <div className="space-y-6">
+                  {drillQuestions.map((q, idx) => {
+                    const isCorrect = drillAnswers[q.id] === q.correctAnswer;
+                    return (
+                      <div key={q.id} className="p-5 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2.5 py-1 bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 text-xs font-bold rounded-lg flex items-center gap-1">
+                                <Zap className="w-3 h-3 fill-amber-500 text-amber-500" />
+                                <span>Câu {idx + 1}/10</span>
+                              </span>
+                              <span className="px-2.5 py-1 bg-indigo-100 dark:bg-indigo-950 text-indigo-600 text-xs font-semibold rounded-lg">
+                                {q.topic}
+                              </span>
+                            </div>
+                            <h4 className="font-semibold text-sm text-slate-900 dark:text-white">
+                              <MarkdownRenderer content={q.question} />
+                            </h4>
+                          </div>
+                          {drillSubmitted && (
+                            <div>
+                              {isCorrect ? (
+                                <span className="flex items-center gap-1 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold shrink-0">
+                                  <CheckCircle2 className="w-3.5 h-3.5" /> Đúng
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-1 px-3 py-1 bg-rose-100 text-rose-700 rounded-full text-xs font-bold shrink-0">
+                                  <XCircle className="w-3.5 h-3.5" /> Sai
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {q.options.map((opt, oIdx) => {
+                            const optionLetter = opt.charAt(0);
+                            const isSelected = drillAnswers[q.id] === optionLetter;
+                            let btnStyle = "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-amber-500";
+                            if (isSelected) {
+                              btnStyle = "bg-amber-500 text-slate-950 font-bold border-amber-500 shadow-sm";
+                            }
+                            if (drillSubmitted) {
+                              if (optionLetter === q.correctAnswer) {
+                                btnStyle = "bg-emerald-600 text-white border-emerald-600 shadow-sm";
+                              } else if (isSelected && optionLetter !== q.correctAnswer) {
+                                btnStyle = "bg-rose-600 text-white border-rose-600 shadow-sm";
+                              }
+                            }
+                            return (
+                              <button
+                                key={oIdx}
+                                onClick={() => handleSelectDrillAnswer(q.id, optionLetter)}
+                                disabled={drillSubmitted}
+                                className={`p-3 rounded-xl border text-left text-xs font-medium transition-all cursor-pointer flex items-center gap-2 ${btnStyle}`}
+                              >
+                                <span className="w-6 h-6 rounded-lg bg-black/10 flex items-center justify-center font-bold text-xs shrink-0">{optionLetter}</span>
+                                <span className="flex-1"><MarkdownRenderer content={opt.slice(3)} /></span>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {drillSubmitted && (
+                          <div className="space-y-3">
+                            <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 text-xs space-y-1">
+                              <span className="font-bold text-indigo-600">Hướng dẫn giải chi tiết:</span>
+                              <MarkdownRenderer content={q.explanation} />
+                            </div>
+
+                            {!isCorrect && (
+                              <div className="pt-1">
+                                {drillMistakeExplanations[q.id] ? (
+                                  <div className="p-4 bg-rose-50 dark:bg-rose-950/40 rounded-xl border border-rose-200 dark:border-rose-900 text-xs space-y-2">
+                                    <div className="flex items-center justify-between font-bold text-rose-700 dark:text-rose-300">
+                                      <span className="flex items-center gap-1.5"><Brain className="w-4 h-4" /> AI Phân tích chi tiết lỗ hổng kiến thức:</span>
+                                      <button onClick={() => setDrillMistakeExplanations(prev => ({ ...prev, [q.id]: '' }))} className="text-rose-500 hover:text-rose-700 text-sm">×</button>
+                                    </div>
+                                    <MarkdownRenderer content={drillMistakeExplanations[q.id]} />
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => handleExplainDrillMistake(q, drillAnswers[q.id] || 'Chưa chọn')}
+                                    disabled={drillExplainingId === q.id}
+                                    className="px-4 py-2.5 bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-700 hover:to-orange-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow transition-all flex items-center gap-2 cursor-pointer"
+                                  >
+                                    {drillExplainingId === q.id ? (
                                       <>
                                         <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                                         <span>AI đang phân tích lỗ hổng kiến thức...</span>
