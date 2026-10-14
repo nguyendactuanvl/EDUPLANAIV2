@@ -597,7 +597,7 @@ export const VariationTableGenerator: React.FC = () => {
         // Sử dụng GoogleGenAI SDK với key cá nhân
         const ai = new GoogleGenAI({ apiKey: effectiveKey });
         const response = await ai.models.generateContent({
-          model: "gemini-3.8-flash",
+          model: "gemini-3.5-flash-lite",
           contents: [{ role: "user", parts: [{ text: finalPrompt }] }],
           config: {
             responseMimeType: "application/json",
@@ -840,7 +840,7 @@ export const VariationTableGenerator: React.FC = () => {
                 Chuẩn SGK GDPT Mới
               </span>
               <span className="px-3 py-1 rounded-full bg-emerald-400/20 text-emerald-300 text-xs font-semibold">
-                Gemini 2.5 Flash
+                Gemini 3.5 Flash Lite
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">

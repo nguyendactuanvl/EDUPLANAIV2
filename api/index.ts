@@ -686,21 +686,16 @@ function safeJsonParse<T = any>(text: string, fallback?: T): T {
 }
 
 function getValidGeminiModels(requestedModel?: string): string[] {
-  let primary = requestedModel || "gemini-3.8-flash";
-  if (
-    primary.includes("2.5") ||
-    primary.includes("2.0") ||
-    primary.includes("1.5") ||
-    primary.includes("pro-vision") ||
-    primary.includes("flash-latest")
-  ) {
-    primary = "gemini-3.8-flash";
-  }
-
+  let primary = requestedModel || "gemini-3.5-flash-lite";
   const list = [
     primary,
-    "gemini-3.8-flash",
-    "gemini-3.1-flash-lite"
+    "gemini-3.5-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-3.1-flash",
+    "gemini-3.5-pro",
+    "gemini-3.1-pro",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash"
   ];
   return Array.from(new Set(list));
 }
@@ -710,7 +705,7 @@ async function generateWithFallback(req: any, payloadOptions: any) {
   const models = getValidGeminiModels(payloadOptions?.model);
 
   let primaryError: any = null;
-  const maxRetries = 3;
+  const maxRetries = 4;
   
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     for (const model of models) {
@@ -752,7 +747,7 @@ async function generateWithFallback(req: any, payloadOptions: any) {
         
         if (is429) {
           primaryError = e;
-          await delay(500);
+          await delay(1000);
           continue; 
         }
         if (is404) {
@@ -764,7 +759,7 @@ async function generateWithFallback(req: any, payloadOptions: any) {
     }
     
     if (primaryError && attempt < maxRetries - 1) {
-      await delay(2000 * (attempt + 1) + Math.random() * 500);
+      await delay(1500 * (attempt + 1) + Math.random() * 500);
     }
   }
   
