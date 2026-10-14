@@ -74,6 +74,7 @@ const DeOnlinePdf = safeLazy(() => import('./pages/DeOnlinePdf'), "DeOnlinePdf")
 const AiStudioSuite = safeLazy(() => import('./pages/AiStudioSuite'), "AiStudioSuite");
 const EduPlanInkPage = safeLazy(() => import('./pages/EduPlanInkPage'), "EduPlanInkPage");
 const MathOCRPage = safeLazy(() => import('./pages/MathOCRPage'), "MathOCRPage");
+const HsaTsaHub = safeLazy(() => import('./pages/HsaTsaHub'), "HsaTsaHub");
 
 
 
@@ -88,6 +89,7 @@ export default function App() {
 
   // Theme State
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
+  const [isFocusMode, setIsFocusMode] = useState(false);
 
   useEffect(() => {
     applyTheme(theme);
@@ -109,10 +111,14 @@ export default function App() {
       setRetryStatus(e.detail);
       setTimeout(() => setRetryStatus(null), 14000);
     };
+    const handleFocusMode = (e: any) => {
+      setIsFocusMode(Boolean(e?.detail));
+    };
 
     window.addEventListener('show-api-key-modal', handleShowModal);
     window.addEventListener('show-user-guide-modal', handleShowGuide);
     window.addEventListener('api-retry-status', handleRetryStatus);
+    window.addEventListener('hsa-focus-mode', handleFocusMode);
     
     const storedKey = localStorage.getItem("eduplan_gemini_api_key_v2");
     if (!storedKey) {
@@ -123,6 +129,7 @@ export default function App() {
       window.removeEventListener('show-api-key-modal', handleShowModal);
       window.removeEventListener('show-user-guide-modal', handleShowGuide);
       window.removeEventListener('api-retry-status', handleRetryStatus);
+      window.removeEventListener('hsa-focus-mode', handleFocusMode);
     };
   }, []);
 
@@ -180,63 +187,68 @@ export default function App() {
       )}
 
       {/* Sidebar Container */}
-      <div className={`fixed inset-y-0 left-0 z-30 transform transition-transform duration-300 ease-in-out lg:static lg:translate-x-0 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
-        <Sidebar 
-          activeTab={activeTab} 
-          setActiveTab={(tab) => {
-            setActiveTab(tab);
-            setIsSidebarOpen(false);
-          }} 
-          onOpenSettings={() => {
-            setIsSettingsOpen(true);
-            setIsSidebarOpen(false);
-          }}
-          onOpenGuide={() => {
-            setIsGuideOpen(true);
-            setIsSidebarOpen(false);
-          }}
-          isDarkMode={theme === 'dark'}
-          onToggleTheme={toggleTheme}
-        />
-      </div>
+      {!isFocusMode && (
+        <div className={`fixed inset-y-0 left-0 z-30 transform transition-transform duration-300 ease-in-out lg:static lg:translate-x-0 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+          <Sidebar 
+            activeTab={activeTab} 
+            setActiveTab={(tab) => {
+              setActiveTab(tab);
+              setIsSidebarOpen(false);
+            }} 
+            onOpenSettings={() => {
+              setIsSettingsOpen(true);
+              setIsSidebarOpen(false);
+            }}
+            onOpenGuide={() => {
+              setIsGuideOpen(true);
+              setIsSidebarOpen(false);
+            }}
+            isDarkMode={theme === 'dark'}
+            onToggleTheme={toggleTheme}
+          />
+        </div>
+      )}
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden h-screen">
         {/* Mobile Header */}
-        <header className="lg:hidden flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0 shadow-sm z-10 relative">
-          <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
-             <Sparkles className="h-6 w-6" />
-             <span className="font-bold text-lg hidden sm:inline">EduPlan AI</span>
-             <span className="font-bold text-lg sm:hidden">EduPlan</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={toggleTheme}
-              className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-md text-xs transition-colors"
-              title="Chuyển giao diện Sáng/Tối"
-            >
-              {theme === 'dark' ? <Moon className="h-4 w-4 text-indigo-400" /> : <Sun className="h-4 w-4 text-amber-500" />}
-            </button>
-            <button 
-              onClick={() => setIsGuideOpen(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 text-slate-700 border border-slate-200 rounded-md text-xs font-medium hover:bg-slate-200 transition-colors"
-              title="Hướng dẫn sử dụng"
-            >
-              <HelpCircle className="h-3.5 w-3.5 text-emerald-600" />
-              <span>HDSD</span>
-            </button>
-            <button onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-md text-xs font-medium hover:bg-emerald-100 transition-colors">
-              <Key className="h-3.5 w-3.5" />
-              <span>API Key</span>
-            </button>
-            <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-md">
-              <Menu className="h-6 w-6" />
-            </button>
-          </div>
-        </header>
+        {!isFocusMode && (
+          <header className="lg:hidden flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0 shadow-sm z-10 relative">
+            <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+               <Sparkles className="h-6 w-6" />
+               <span className="font-bold text-lg hidden sm:inline">EduPlan AI</span>
+               <span className="font-bold text-lg sm:hidden">EduPlan</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={toggleTheme}
+                className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-md text-xs transition-colors"
+                title="Chuyển giao diện Sáng/Tối"
+              >
+                {theme === 'dark' ? <Moon className="h-4 w-4 text-indigo-400" /> : <Sun className="h-4 w-4 text-amber-500" />}
+              </button>
+              <button 
+                onClick={() => setIsGuideOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 text-slate-700 border border-slate-200 rounded-md text-xs font-medium hover:bg-slate-200 transition-colors"
+                title="Hướng dẫn sử dụng"
+              >
+                <HelpCircle className="h-3.5 w-3.5 text-emerald-600" />
+                <span>HDSD</span>
+              </button>
+              <button onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-md text-xs font-medium hover:bg-emerald-100 transition-colors">
+                <Key className="h-3.5 w-3.5" />
+                <span>API Key</span>
+              </button>
+              <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-md">
+                <Menu className="h-6 w-6" />
+              </button>
+            </div>
+          </header>
+        )}
 
         <div className="flex-1 overflow-y-auto relative w-full h-full">
           <ErrorBoundary key={activeTab}>
             <Suspense fallback={<div className="flex items-center justify-center h-full text-slate-500">Đang tải...</div>}>
+              {activeTab === "hsa_tsa" && <HsaTsaHub />}
               {activeTab === "math_ocr" && <MathOCRPage />}
               {activeTab === "ink" && <EduPlanInkPage />}
               {activeTab === "ai_studio" && <AiStudioSuite />}
