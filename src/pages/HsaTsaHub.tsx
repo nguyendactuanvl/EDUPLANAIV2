@@ -349,6 +349,37 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
     setTimeLeft(selectedExamType === 'hsa' ? 195 * 60 : 150 * 60);
   };
 
+  const [mistakeExplanations, setMistakeExplanations] = useState<Record<number, string>>({});
+  const [explainingId, setExplainingId] = useState<number | null>(null);
+
+  const handleExplainMistake = async (q: PracticeQuestion, studentAnswer: string) => {
+    setExplainingId(q.id);
+    try {
+      const res = await apiFetch('/api/explain-mistake', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: q.question,
+          options: q.options,
+          correctAnswer: q.correctAnswer,
+          studentAnswer: studentAnswer,
+          topic: q.topic
+        })
+      });
+      const data = await res.json();
+      if (data?.explanation) {
+        setMistakeExplanations(prev => ({ ...prev, [q.id]: data.explanation }));
+      } else {
+        setMistakeExplanations(prev => ({ ...prev, [q.id]: 'Không nhận được phản hồi phân tích từ AI.' }));
+      }
+    } catch (err) {
+      console.error(err);
+      setMistakeExplanations(prev => ({ ...prev, [q.id]: 'Lỗi kết nối khi gọi AI phân tích lỗ hổng kiến thức.' }));
+    } finally {
+      setExplainingId(null);
+    }
+  };
+
   const handleGenerateExam = () => {
     const bank = selectedExamType === 'hsa' ? HSA_QUESTION_BANK : TSA_QUESTION_BANK;
     const shuffled = [...bank].sort(() => 0.5 - Math.random());
@@ -1065,9 +1096,43 @@ Hãy trình bày rõ ràng, chuyên nghiệp bằng tiếng Việt và sử dụ
                         </div>
 
                         {quizSubmitted && (
-                          <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 text-xs space-y-1">
-                            <span className="font-bold text-indigo-600">Hướng dẫn giải chi tiết:</span>
-                            <MarkdownRenderer content={q.explanation} />
+                          <div className="space-y-3">
+                            <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 text-xs space-y-1">
+                              <span className="font-bold text-indigo-600">Hướng dẫn giải chi tiết:</span>
+                              <MarkdownRenderer content={q.explanation} />
+                            </div>
+
+                            {!isCorrect && (
+                              <div className="pt-1">
+                                {mistakeExplanations[q.id] ? (
+                                  <div className="p-4 bg-rose-50 dark:bg-rose-950/40 rounded-xl border border-rose-200 dark:border-rose-900 text-xs space-y-2">
+                                    <div className="flex items-center justify-between font-bold text-rose-700 dark:text-rose-300">
+                                      <span className="flex items-center gap-1.5"><Brain className="w-4 h-4" /> AI Phân tích chi tiết lỗ hổng kiến thức dẫn đến lựa chọn sai:</span>
+                                      <button onClick={() => setMistakeExplanations(prev => ({ ...prev, [q.id]: '' }))} className="text-rose-500 hover:text-rose-700 text-sm">×</button>
+                                    </div>
+                                    <MarkdownRenderer content={mistakeExplanations[q.id]} />
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => handleExplainMistake(q, currentAnswers[q.id] || 'Chưa chọn')}
+                                    disabled={explainingId === q.id}
+                                    className="px-4 py-2.5 bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-700 hover:to-orange-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow transition-all flex items-center gap-2 cursor-pointer"
+                                  >
+                                    {explainingId === q.id ? (
+                                      <>
+                                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                        <span>AI đang phân tích lỗ hổng kiến thức...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Sparkles className="w-3.5 h-3.5" />
+                                        <span>🤖 Giải thích tại sao sai (Phân tích lỗi sai)</span>
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

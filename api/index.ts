@@ -4409,6 +4409,40 @@ Hãy trình bày ngắn gọn, rõ ràng, thực tế.`;
   }
 });
 
+// Endpoint giải thích lỗ hổng kiến thức khi học sinh làm sai bài thi thử
+app.post("/api/explain-mistake", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  try {
+    const { question, options, correctAnswer, studentAnswer, topic } = req.body || {};
+
+    const promptText = `Bạn là Gia sư AI chuyên gia luyện thi ĐGNL (HSA) và Đánh giá tư duy (TSA). Học sinh vừa làm bài thi thử môn ${topic || 'Chung'} và trả lời SAI một câu hỏi.
+Nội dung câu hỏi: "${question}"
+Các phương án: ${JSON.stringify(options)}
+Đáp án đúng chính xác: "${correctAnswer}"
+Lựa chọn của học sinh (bị sai): "${studentAnswer}"
+
+Nhiệm vụ: Hãy phân tích chi tiết lỗ hổng kiến thức dẫn đến lựa chọn sai của học sinh.
+1. Chỉ ra tại sao phương án "${studentAnswer}" mà học sinh chọn lại sai (lỗi tư duy, nhầm lẫn công thức, bẫy đề thi).
+2. Phân tích bản chất kiến thức cốt lõi và hướng dẫn phương pháp giải đúng để học sinh khắc phục lỗ hổng.
+3. Trình bày rõ ràng, sư phạm, khích lệ và sử dụng định dạng LaTeX trong cặp dấu $...$ hoặc $$...$$ cho mọi công thức toán học.`;
+
+    const response = await generateWithFallback(req, {
+      contents: [{ role: "user", parts: [{ text: promptText }] }]
+    });
+
+    const explanation = response?.text?.trim() || "Không thể phân tích lỗi sai lúc này. Vui lòng thử lại sau.";
+    return res.json({ success: true, explanation });
+  } catch (error: any) {
+    console.error("Lỗi AI giải thích lỗi sai:", error);
+    return handleAiError(error, req, res);
+  }
+});
+
 app.use("/api", (req, res) => {
   res.status(404).json({ error: "API endpoint không tồn tại." });
 });
