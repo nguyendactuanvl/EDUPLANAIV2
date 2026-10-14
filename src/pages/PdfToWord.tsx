@@ -168,9 +168,16 @@ export function PdfToWord() {
       }
     };
 
+    const onOpenPdfCropper = (e: any) => {
+      const placeholder = e.detail?.placeholder;
+      handleOpenCropper(1, placeholder);
+    };
+
     window.addEventListener('paste', onGlobalPaste);
+    window.addEventListener('open-pdf-cropper', onOpenPdfCropper as any);
     return () => {
       window.removeEventListener('paste', onGlobalPaste);
+      window.removeEventListener('open-pdf-cropper', onOpenPdfCropper as any);
     };
   }, []);
 
@@ -464,7 +471,7 @@ export function PdfToWord() {
     setIsCropperOpen(false);
     if (!croppedDataUrl) return;
 
-    const imgTag = `\n\n<img src="${croppedDataUrl}" alt="Hình vẽ / Đồ thị minh họa" class="max-w-[420px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm" />\n\n`;
+    const imgTag = `\n\n<img src="${croppedDataUrl}" alt="Hình vẽ minh họa đề thi" class="w-full max-w-[600px] min-w-[360px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm block" data-width="580" data-height="340" />\n\n`;
 
     if (targetReplacePlaceholder && resultText.includes(targetReplacePlaceholder)) {
       setResultText(prev => prev.replace(targetReplacePlaceholder, imgTag));

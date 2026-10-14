@@ -161,18 +161,27 @@ export function ImageCropperModal({
 
     const cropX = Math.round(box.x * scaleX);
     const cropY = Math.round(box.y * scaleY);
-    const cropW = Math.round(box.width * scaleX);
-    const cropH = Math.round(box.height * scaleY);
+    const rawCropW = Math.round(box.width * scaleX);
+    const rawCropH = Math.round(box.height * scaleY);
+
+    if (!rawCropW || !rawCropH) return;
+
+    // Scale target canvas to high resolution (min 800px width) so cropped images are never tiny or pixelated
+    const minTargetW = 800;
+    const targetW = rawCropW < minTargetW ? minTargetW : rawCropW;
+    const targetH = Math.round(rawCropH * (targetW / Math.max(1, rawCropW)));
 
     const canvas = document.createElement('canvas');
-    canvas.width = cropW;
-    canvas.height = cropH;
+    canvas.width = targetW;
+    canvas.height = targetH;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, cropW, cropH);
-    ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+    ctx.fillRect(0, 0, targetW, targetH);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, cropX, cropY, rawCropW, rawCropH, 0, 0, targetW, targetH);
 
     const dataUrl = canvas.toDataURL('image/png');
     onCrop(dataUrl);

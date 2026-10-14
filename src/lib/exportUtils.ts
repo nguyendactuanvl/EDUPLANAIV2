@@ -755,20 +755,26 @@ function parseInlineContent(
       if (img.src && (img.src.startsWith('data:image/') || img.src.startsWith('blob:'))) {
         try {
           const bytes = dataUrlToUint8Array(img.src);
-          const origW =
+          const rawW =
             parseInt(img.getAttribute('data-width') || '', 10) ||
             parseInt(img.getAttribute('width') || '', 10) ||
             img.naturalWidth ||
-            480;
-          const origH =
+            560;
+          const rawH =
             parseInt(img.getAttribute('data-height') || '', 10) ||
             parseInt(img.getAttribute('height') || '', 10) ||
             img.naturalHeight ||
-            200;
-          const maxW = 480;
-          const scale = origW > maxW ? maxW / origW : 1;
-          const finalW = Math.round(origW * scale);
-          const finalH = Math.round(origH * scale);
+            340;
+
+          // Ensure images in Word are clear and appropriately sized: min width 480px (~12.5cm), max width 640px (~16cm)
+          let finalW = Math.max(rawW, 480);
+          let finalH = Math.round(rawH * (finalW / Math.max(1, rawW)));
+
+          if (finalW > 640) {
+            const downScale = 640 / finalW;
+            finalW = 640;
+            finalH = Math.round(finalH * downScale);
+          }
 
           return [
             new ImageRun({

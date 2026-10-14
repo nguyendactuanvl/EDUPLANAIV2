@@ -341,7 +341,8 @@ const CustomImageRenderer: React.FC<{ cleanSrc: string; alt?: string; [key: stri
           src={cleanSrc}
           alt={alt || 'Hình minh họa SGK'}
           loading="eager"
-          className="max-w-full h-auto rounded-lg mx-auto pt-1 sm:pt-2 cursor-zoom-in hover:ring-2 hover:ring-indigo-400 transition-all"
+          className="w-full max-w-[600px] min-w-[360px] h-auto rounded-lg mx-auto pt-1 sm:pt-2 cursor-zoom-in hover:ring-2 hover:ring-indigo-400 transition-all object-contain block"
+          style={{ minWidth: '360px' }}
           onClick={() => window.dispatchEvent(new CustomEvent('open-fullscreen-image', { detail: cleanSrc }))}
           onError={(e) => {
             (e.target as HTMLElement).style.display = 'none';
@@ -578,6 +579,28 @@ export const MarkdownRenderer = ({
             let cleanSrc = (src || '').trim();
             if (!cleanSrc || cleanSrc === '#' || cleanSrc === 'about:blank' || cleanSrc === '...' || cleanSrc === 'undefined') {
               return null;
+            }
+            if (cleanSrc.startsWith('[Hình') || cleanSrc.startsWith('[Đồ thị') || cleanSrc.includes('placeholder')) {
+              return (
+                <div className="no-print my-4 p-4 rounded-xl border-2 border-dashed border-indigo-200 bg-indigo-50/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg">
+                      <span className="text-xl">🖼️</span>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-800 text-sm">{alt || cleanSrc || 'Hình vẽ minh họa đề thi'}</p>
+                      <p className="text-xs text-slate-500">Chèn ảnh cắt từ trang PDF gốc hoặc vẽ đồ thị / hình 3D</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent('open-pdf-cropper', { detail: { placeholder: alt || cleanSrc } }))}
+                    className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all shadow-xs cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                  >
+                    <span>✂️ Cắt ảnh PDF gốc</span>
+                  </button>
+                </div>
+              );
             }
             // Auto convert Google Drive preview/view links to direct streaming image links
             if (cleanSrc.includes('drive.google.com/file/d/')) {
