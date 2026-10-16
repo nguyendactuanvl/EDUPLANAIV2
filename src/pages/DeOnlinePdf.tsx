@@ -233,43 +233,261 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
       });
   };
 
+  // Multi-Code PDF Exam Versions (GV tạo từ 1-4 mã đề)
+  const [numberOfCodes, setNumberOfCodes] = useState<number>(1);
+  const [activeCodeIndex, setActiveCodeIndex] = useState<number>(0);
+  const [studentAssignedCode, setStudentAssignedCode] = useState<string | null>(null);
+
+  const [codeVersions, setCodeVersions] = useState<Array<{
+    id: string;
+    code: string;
+    file: File | null;
+    pdfUrl: string | null;
+    pdfBase64: string;
+    part1Keys: Part1Key[];
+    part2Keys: Part2Key[];
+    part3Keys: Part3Key[];
+    isExtracting?: boolean;
+  }>>(() => [
+    {
+      id: "ver_1",
+      code: "101",
+      file: null,
+      pdfUrl: null,
+      pdfBase64: "",
+      part1Keys: Array.from({ length: 12 }, (_, i) => ({ question: i + 1, correct: "" })),
+      part2Keys: Array.from({ length: 4 }, (_, i) => ({ question: i + 1, statements: { a: null, b: null, c: null, d: null } })),
+      part3Keys: Array.from({ length: 6 }, (_, i) => ({ question: i + 1, correct: "" }))
+    }
+  ]);
+
   // Answer Keys Configuration (Teacher)
   const [numPart1, setNumPart1] = useState(12);
   const [numPart2, setNumPart2] = useState(4);
   const [numPart3, setNumPart3] = useState(6);
 
-  const [part1Keys, setPart1Keys] = useState<Part1Key[]>(() => 
-    Array.from({ length: 12 }, (_, i) => ({ question: i + 1, correct: "" }))
-  );
-  
-  const [part2Keys, setPart2Keys] = useState<Part2Key[]>(() => 
-    Array.from({ length: 4 }, (_, i) => ({ 
-      question: i + 1, 
-      statements: { a: null, b: null, c: null, d: null } 
-    }))
-  );
+  const activeVersion = codeVersions[activeCodeIndex] || codeVersions[0];
+  const part1Keys = activeVersion?.part1Keys || [];
+  const part2Keys = activeVersion?.part2Keys || [];
+  const part3Keys = activeVersion?.part3Keys || [];
 
-  const [part3Keys, setPart3Keys] = useState<Part3Key[]>(() => 
-    Array.from({ length: 6 }, (_, i) => ({ question: i + 1, correct: "" }))
-  );
+  const setPart1Keys = (keys: Part1Key[] | ((prev: Part1Key[]) => Part1Key[])) => {
+    setCodeVersions(prev => prev.map((v, idx) => {
+      if (idx === activeCodeIndex) {
+        const nextVal = typeof keys === 'function' ? keys(v.part1Keys) : keys;
+        return { ...v, part1Keys: nextVal };
+      }
+      return v;
+    }));
+  };
+
+  const setPart2Keys = (keys: Part2Key[] | ((prev: Part2Key[]) => Part2Key[])) => {
+    setCodeVersions(prev => prev.map((v, idx) => {
+      if (idx === activeCodeIndex) {
+        const nextVal = typeof keys === 'function' ? keys(v.part2Keys) : keys;
+        return { ...v, part2Keys: nextVal };
+      }
+      return v;
+    }));
+  };
+
+  const setPart3Keys = (keys: Part3Key[] | ((prev: Part3Key[]) => Part3Key[])) => {
+    setCodeVersions(prev => prev.map((v, idx) => {
+      if (idx === activeCodeIndex) {
+        const nextVal = typeof keys === 'function' ? keys(v.part3Keys) : keys;
+        return { ...v, part3Keys: nextVal };
+      }
+      return v;
+    }));
+  };
+
+  const handleNumberOfCodesChange = (count: number) => {
+    setNumberOfCodes(count);
+    setCodeVersions(prev => {
+      const defaultCodes = ["101", "102", "103", "104"];
+      const updated = [...prev];
+      while (updated.length < count) {
+        const newIdx = updated.length;
+        updated.push({
+          id: `ver_${Date.now()}_${newIdx}`,
+          code: defaultCodes[newIdx] || `${101 + newIdx}`,
+          file: null,
+          pdfUrl: null,
+          pdfBase64: "",
+          part1Keys: Array.from({ length: numPart1 }, (_, i) => ({ question: i + 1, correct: "" })),
+          part2Keys: Array.from({ length: numPart2 }, (_, i) => ({ question: i + 1, statements: { a: null, b: null, c: null, d: null } })),
+          part3Keys: Array.from({ length: numPart3 }, (_, i) => ({ question: i + 1, correct: "" }))
+        });
+      }
+      return updated.slice(0, count);
+    });
+    if (activeCodeIndex >= count) {
+      setActiveCodeIndex(0);
+    }
+  };
+
+  const handleFileChangeForVersion = (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type !== "application/pdf") {
+      alert("Vui lòng chỉ tải lên file định dạng PDF gốc!");
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const raw = reader.result as string;
+      const b64 = raw.split(',')[1] || "";
+      setCodeVersions(prev => prev.map((v, idx) => {
+        if (idx === index) {
+          if (v.pdfUrl) URL.revokeObjectURL(v.pdfUrl);
+          return {
+            ...v,
+            file: file,
+            pdfUrl: url,
+            pdfBase64: b64
+          };
+        }
+        return v;
+      }));
+      if (index === activeCodeIndex) {
+        setSelectedFile(file);
+        setPdfUrl(url);
+        setPdfBase64(b64);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleExtractAnswersByAiForVersion = async (index: number) => {
+    const version = codeVersions[index];
+    if (!version || (!version.file && !version.pdfBase64 && !selectedFile)) {
+      alert(`Vui lòng tải lên file PDF đề cho Mã ${version?.code || index + 1} trước khi trích xuất!`);
+      return;
+    }
+
+    setCodeVersions(prev => prev.map((v, idx) => idx === index ? { ...v, isExtracting: true } : v));
+    try {
+      let base64 = version.pdfBase64;
+      if (!base64 && version.file) {
+        base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(version.file!);
+          reader.onload = () => resolve((reader.result as string).split(',')[1]);
+          reader.onerror = error => reject(error);
+        });
+      }
+      if (!base64 && selectedFile) {
+        base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(selectedFile);
+          reader.onload = () => resolve((reader.result as string).split(',')[1]);
+          reader.onerror = error => reject(error);
+        });
+      }
+
+      const response = await fetch("/api/extract-answers-pdf", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem("eduplan_gemini_api_key_v2") || ""}`
+        },
+        body: JSON.stringify({
+          file: base64,
+          type: "application/pdf"
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || "Không thể phân tích dữ liệu đáp án từ tệp PDF.");
+      }
+
+      const data = await response.json();
+      
+      setCodeVersions(prev => prev.map((v, idx) => {
+        if (idx !== index) return v;
+
+        let newP1 = [...v.part1Keys];
+        if (Array.isArray(data.part1)) {
+          newP1 = v.part1Keys.map((k, kIdx) => {
+            const match = data.part1.find((p: any) => 
+              p.question === k.question || 
+              String(p.question).includes(String(k.question))
+            ) || data.part1[kIdx];
+            return match ? { ...k, correct: match.correct } : k;
+          });
+        }
+
+        let newP2 = [...v.part2Keys];
+        if (Array.isArray(data.part2)) {
+          newP2 = v.part2Keys.map((k, kIdx) => {
+            const match = data.part2.find((p: any) => 
+              p.question === k.question || 
+              p.question === k.question + 12 ||
+              String(p.question).includes(String(k.question)) ||
+              String(p.question).includes(String(k.question + 12))
+            ) || data.part2[kIdx];
+            return match ? { ...k, statements: { ...k.statements, ...match.statements } } : k;
+          });
+        }
+
+        let newP3 = [...v.part3Keys];
+        if (Array.isArray(data.part3)) {
+          newP3 = v.part3Keys.map((k, kIdx) => {
+            const match = data.part3.find((p: any) => 
+              p.question === k.question || 
+              p.question === k.question + 16 ||
+              String(p.question).includes(String(k.question)) ||
+              String(p.question).includes(String(k.question + 16))
+            ) || data.part3[kIdx];
+            return match ? { ...k, correct: String(match.correct) } : k;
+          });
+        }
+
+        return {
+          ...v,
+          part1Keys: newP1,
+          part2Keys: newP2,
+          part3Keys: newP3,
+          isExtracting: false
+        };
+      }));
+
+      alert(`🎉 Trích xuất và giải đáp án bằng AI cho Mã ${version.code} thành công! Toàn bộ bảng đáp án đã được tự động điền.`);
+    } catch (err: any) {
+      console.error(err);
+      alert(`Lỗi trích xuất đáp án bằng AI cho Mã ${version.code}: ` + err.message);
+      setCodeVersions(prev => prev.map((v, idx) => idx === index ? { ...v, isExtracting: false } : v));
+    }
+  };
 
   const [studentPart1, setStudentPart1] = useState<Record<number, string>>({});
   const [studentPart2, setStudentPart2] = useState<Record<number, any>>({});
   const [studentPart3, setStudentPart3] = useState<Record<number, string>>({});
 
   useEffect(() => {
-    setPart1Keys(Array.from({ length: numPart1 }, (_, i) => ({ question: i + 1, correct: "" })));
+    setCodeVersions(prev => prev.map(v => ({
+      ...v,
+      part1Keys: Array.from({ length: numPart1 }, (_, i) => ({ question: i + 1, correct: v.part1Keys[i]?.correct || "" }))
+    })));
   }, [numPart1]);
 
   useEffect(() => {
-    setPart2Keys(Array.from({ length: numPart2 }, (_, i) => ({ 
-      question: i + 1, 
-      statements: { a: null, b: null, c: null, d: null } 
+    setCodeVersions(prev => prev.map(v => ({
+      ...v,
+      part2Keys: Array.from({ length: numPart2 }, (_, i) => ({ 
+        question: i + 1, 
+        statements: v.part2Keys[i]?.statements || { a: null, b: null, c: null, d: null } 
+      }))
     })));
   }, [numPart2]);
 
   useEffect(() => {
-    setPart3Keys(Array.from({ length: numPart3 }, (_, i) => ({ question: i + 1, correct: "" })));
+    setCodeVersions(prev => prev.map(v => ({
+      ...v,
+      part3Keys: Array.from({ length: numPart3 }, (_, i) => ({ question: i + 1, correct: v.part3Keys[i]?.correct || "" }))
+    })));
   }, [numPart3]);
 
   // AI Extraction State
@@ -562,31 +780,62 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
       if (data.loginMethod) setLoginMethod(data.loginMethod);
       if (data.classRosterText) setClassRosterText(data.classRosterText);
       
-      if (Array.isArray(data.part1Keys)) setPart1Keys(data.part1Keys);
-      if (Array.isArray(data.part2Keys)) setPart2Keys(data.part2Keys);
-      if (Array.isArray(data.part3Keys)) setPart3Keys(data.part3Keys);
-      
-      setSharedRoomId(code.trim().toUpperCase());
+      // Multi-Code support: Randomly pick one code version if multiple versions exist!
+      if (Array.isArray(data.codeVersions) && data.codeVersions.length > 0) {
+        const randomIndex = Math.floor(Math.random() * data.codeVersions.length);
+        const assigned = data.codeVersions[randomIndex];
+        setStudentAssignedCode(assigned.code || `Mã ${randomIndex + 1}`);
+        if (Array.isArray(assigned.part1Keys)) setPart1Keys(assigned.part1Keys);
+        if (Array.isArray(assigned.part2Keys)) setPart2Keys(assigned.part2Keys);
+        if (Array.isArray(assigned.part3Keys)) setPart3Keys(assigned.part3Keys);
 
-      if (data.pdfBase64) {
-        setPdfBase64(data.pdfBase64);
-        try {
-          let base64Clean = data.pdfBase64;
-          if (base64Clean.startsWith("data:")) {
-            base64Clean = base64Clean.substring(base64Clean.indexOf(",") + 1);
+        if (assigned.pdfBase64) {
+          setPdfBase64(assigned.pdfBase64);
+          try {
+            let base64Clean = assigned.pdfBase64;
+            if (base64Clean.startsWith("data:")) {
+              base64Clean = base64Clean.substring(base64Clean.indexOf(",") + 1);
+            }
+            const binaryString = window.atob(base64Clean);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            const blob = new Blob([bytes], { type: "application/pdf" });
+            const url = URL.createObjectURL(blob);
+            setPdfUrl(url);
+          } catch (pdfErr) {
+            console.error("Lỗi chuyển đổi PDF Base64 mã đề sang Blob URL:", pdfErr);
           }
-          const binaryString = window.atob(base64Clean);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
+        }
+      } else {
+        setStudentAssignedCode("101");
+        if (Array.isArray(data.part1Keys)) setPart1Keys(data.part1Keys);
+        if (Array.isArray(data.part2Keys)) setPart2Keys(data.part2Keys);
+        if (Array.isArray(data.part3Keys)) setPart3Keys(data.part3Keys);
+
+        if (data.pdfBase64) {
+          setPdfBase64(data.pdfBase64);
+          try {
+            let base64Clean = data.pdfBase64;
+            if (base64Clean.startsWith("data:")) {
+              base64Clean = base64Clean.substring(base64Clean.indexOf(",") + 1);
+            }
+            const binaryString = window.atob(base64Clean);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            const blob = new Blob([bytes], { type: "application/pdf" });
+            const url = URL.createObjectURL(blob);
+            setPdfUrl(url);
+          } catch (pdfErr) {
+            console.error("Lỗi chuyển đổi PDF Base64 sang Blob URL:", pdfErr);
           }
-          const blob = new Blob([bytes], { type: "application/pdf" });
-          const url = URL.createObjectURL(blob);
-          setPdfUrl(url);
-        } catch (pdfErr) {
-          console.error("Lỗi chuyển đổi PDF Base64 sang Blob URL:", pdfErr);
         }
       }
+
+      setSharedRoomId(code.trim().toUpperCase());
       // Go directly to student screen but do not start timer yet (let them enter their name first!)
       setScreen("exam");
       setHasStartedExam(false);
@@ -653,31 +902,61 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
 
   // Share/Deploy Room to Cloud DB so students can join from anywhere
   const handleShareExam = async () => {
-    if (!selectedFile) {
-      alert("Vui lòng tải lên tệp PDF đề gốc trước khi tạo phòng thi trực tuyến!");
+    const hasAnyPdf = codeVersions.some(v => v.file || v.pdfBase64) || selectedFile;
+    if (!hasAnyPdf) {
+      alert("Vui lòng tải lên ít nhất 1 tệp PDF đề thi trước khi tạo phòng thi trực tuyến!");
       return;
     }
     setIsSharing(true);
     setSharedRoomId(null);
     try {
-      const base64Clean = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(selectedFile);
-        reader.onload = () => {
-          const raw = reader.result as string;
-          resolve(raw.split(',')[1]);
-        };
-        reader.onerror = error => reject(error);
-      });
+      const preparedVersions = await Promise.all(
+        codeVersions.map(async (v) => {
+          let b64 = v.pdfBase64;
+          if (!b64 && v.file) {
+            b64 = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.readAsDataURL(v.file!);
+              reader.onload = () => {
+                const raw = reader.result as string;
+                resolve(raw.split(',')[1]);
+              };
+              reader.onerror = err => reject(err);
+            });
+          }
+          if (!b64 && selectedFile) {
+            b64 = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.readAsDataURL(selectedFile);
+              reader.onload = () => {
+                const raw = reader.result as string;
+                resolve(raw.split(',')[1]);
+              };
+              reader.onerror = err => reject(err);
+            });
+          }
+          return {
+            id: v.id,
+            code: v.code || "101",
+            pdfBase64: b64,
+            part1Keys: v.part1Keys,
+            part2Keys: v.part2Keys,
+            part3Keys: v.part3Keys
+          };
+        })
+      );
+
+      const mainVersion = preparedVersions[0];
 
       const payload = {
         examTitle: examTitle.trim(),
         duration: duration,
         scriptUrl: scriptUrl.trim(),
-        part1Keys,
-        part2Keys,
-        part3Keys,
-        pdfBase64: base64Clean,
+        codeVersions: preparedVersions,
+        part1Keys: mainVersion.part1Keys,
+        part2Keys: mainVersion.part2Keys,
+        part3Keys: mainVersion.part3Keys,
+        pdfBase64: mainVersion.pdfBase64,
         createdAt: new Date().toISOString(),
         loginMethod,
         classRosterText: classRosterText.trim(),
@@ -791,6 +1070,7 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
         "STT": idx + 1,
         "Họ và tên": sub.studentName,
         "Lớp": sub.studentClass,
+        "Mã đề thi": sub.assignedCode || sub.examCode || "101",
         "Thời gian nộp": sub.submitTime,
         "Tổng điểm (10)": sub.totalScore,
         "Điểm Phần I": sub.scorePart1,
@@ -1157,6 +1437,7 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
       examTitle: examTitle.trim(),
       studentName: studentName.trim() || "Học sinh ẩn danh",
       studentClass: studentClass.trim() || "Lớp trống",
+      assignedCode: studentAssignedCode || activeVersion?.code || "101",
       submitTime: new Date().toLocaleString("vi-VN"),
       totalScore: scores.totalScore,
       scorePart1: scores.scorePart1,
@@ -1387,13 +1668,19 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
             ) : (
               /* TEACHER CONFIGURATION CONTAINER */
               <>
-                {/* Box 1: Core details & PDF selector */}
+                {/* Box 1: Core details & Multi-Code PDF setup */}
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
-                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block border-b border-slate-100 pb-2">
-                    Thông tin chung & Tệp Đề thi
-                  </span>
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-rose-500" />
+                      Thông tin chung & Cấu hình Mã đề thi
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                      Tùy chọn 1-4 mã đề
+                    </span>
+                  </div>
                   
-                  <div className="space-y-3.5">
+                  <div className="space-y-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
                         Tên kỳ thi / Đề kiểm tra
@@ -1410,7 +1697,7 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
-                          Thời gian (Phút)
+                          Thời gian làm bài (Phút)
                         </label>
                         <input 
                           type="number"
@@ -1419,43 +1706,126 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
                           className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:bg-white focus:ring-1 focus:ring-indigo-500 rounded-xl px-3.5 py-2.5 text-xs text-slate-700 focus:outline-none"
                         />
                       </div>
-                      
+
                       <div>
                         <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
-                          Tệp PDF Đề thi gốc
+                          Số lượng Mã đề thi
                         </label>
-                        <div className="relative">
-                          <input 
-                            type="file" 
-                            accept="application/pdf"
-                            onChange={handleFileChange}
-                            id="pdfFileUploader"
-                            className="hidden"
-                          />
-                          <label 
-                            htmlFor="pdfFileUploader"
-                            className="w-full bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold rounded-xl px-3.5 py-2.5 text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all truncate"
+                        <div className="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                          {[1, 2, 3, 4].map((num) => (
+                            <button
+                              key={num}
+                              type="button"
+                              onClick={() => handleNumberOfCodesChange(num)}
+                              className={`py-1.5 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                                numberOfCodes === num
+                                  ? "bg-purple-600 text-white shadow-xs"
+                                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                              }`}
+                            >
+                              {num} mã
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Multi-Code Versions List & Uploaders */}
+                    <div className="p-3.5 bg-purple-50/50 border border-purple-200/80 rounded-2xl space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
+                          <Sparkles className="w-4 h-4 text-purple-600" />
+                          Danh sách {numberOfCodes} Mã đề ({numberOfCodes > 1 ? "Học sinh thi sẽ được nhận 1 đề ngẫu nhiên" : "Mã duy nhất"})
+                        </span>
+                      </div>
+
+                      {/* Version Tabs */}
+                      <div className="flex flex-wrap gap-2">
+                        {codeVersions.map((v, idx) => (
+                          <button
+                            key={v.id}
+                            type="button"
+                            onClick={() => {
+                              setActiveCodeIndex(idx);
+                              if (v.pdfUrl) {
+                                setPdfUrl(v.pdfUrl);
+                                setPdfBase64(v.pdfBase64);
+                              }
+                            }}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border ${
+                              activeCodeIndex === idx
+                                ? "bg-purple-700 text-white border-purple-700 shadow-xs"
+                                : "bg-white text-slate-700 border-slate-200 hover:bg-purple-100/50"
+                            }`}
                           >
-                            <Upload className="w-4 h-4 shrink-0" />
-                            {selectedFile ? selectedFile.name : "Tải lên PDF đề gốc"}
-                          </label>
+                            <span>Mã {v.code || idx + 1}</span>
+                            {v.file || v.pdfBase64 ? (
+                              <CheckCircle2 className={`w-3.5 h-3.5 ${activeCodeIndex === idx ? "text-emerald-300" : "text-emerald-600"}`} />
+                            ) : (
+                              <span className="w-2 h-2 rounded-full bg-amber-400" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Active Version Config Card */}
+                      <div className="bg-white p-3.5 rounded-xl border border-purple-200 space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                              Mã đề thi (Nhập ký tự / số)
+                            </label>
+                            <input
+                              type="text"
+                              value={activeVersion.code}
+                              onChange={(e) => {
+                                const val = e.target.value.toUpperCase();
+                                setCodeVersions(prev => prev.map((v, idx) => idx === activeCodeIndex ? { ...v, code: val } : v));
+                              }}
+                              placeholder="VD: 101"
+                              className="w-full bg-slate-50 border border-slate-200 focus:border-purple-500 focus:bg-white rounded-lg px-3 py-1.5 text-xs font-bold text-purple-900 focus:outline-none"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                              Tệp PDF cho Mã đề {activeVersion.code || activeCodeIndex + 1}
+                            </label>
+                            <div className="relative">
+                              <input 
+                                type="file" 
+                                accept="application/pdf"
+                                onChange={(e) => handleFileChangeForVersion(e, activeCodeIndex)}
+                                id={`pdfFileUploader_${activeCodeIndex}`}
+                                className="hidden"
+                              />
+                              <label 
+                                htmlFor={`pdfFileUploader_${activeCodeIndex}`}
+                                className="w-full bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold rounded-lg px-3 py-1.5 text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all truncate"
+                              >
+                                <Upload className="w-3.5 h-3.5 shrink-0" />
+                                {activeVersion.file ? activeVersion.file.name : (activeVersion.pdfBase64 ? "✓ Đã chọn file PDF" : `Tải PDF cho Mã ${activeVersion.code}`)}
+                              </label>
+                            </div>
+                          </div>
                         </div>
 
-                        {selectedFile && (
-                          <button
-                            type="button"
-                            onClick={handleExtractAnswersByAi}
-                            disabled={isExtractingAnswers}
-                            className="w-full mt-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold rounded-xl px-3.5 py-2.5 text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all disabled:opacity-50"
-                          >
-                            {isExtractingAnswers ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Sparkles className="w-4 h-4" />
-                            )}
-                            {isExtractingAnswers ? "Đang trích xuất đáp án..." : "⚡ Trích xuất đáp án bằng AI"}
-                          </button>
-                        )}
+                        {/* AI Answer Extraction for Active Version */}
+                        <button
+                          type="button"
+                          onClick={() => handleExtractAnswersByAiForVersion(activeCodeIndex)}
+                          disabled={activeVersion.isExtracting}
+                          className="w-full bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-white font-bold rounded-xl px-3.5 py-2 text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all disabled:opacity-50 shadow-xs"
+                        >
+                          {activeVersion.isExtracting ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Sparkles className="w-4 h-4" />
+                          )}
+                          {activeVersion.isExtracting 
+                            ? `Đang giải & bóc tách đáp án AI cho Mã ${activeVersion.code}...` 
+                            : `⚡ Tự động giải & điền đáp án bằng AI cho Mã ${activeVersion.code}`}
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1840,6 +2210,33 @@ HS05 - Hoàng Văn Em`);
                 >
                   ⚡ Nhập nhanh đáp án mẫu
                 </button>
+              </div>
+
+              {/* Active Code Indicator Bar */}
+              <div className="flex flex-wrap items-center justify-between bg-purple-50 border border-purple-200 p-2.5 rounded-xl text-xs">
+                <span className="font-bold text-purple-900 flex items-center gap-1.5">
+                  <Zap className="w-4 h-4 text-purple-600" />
+                  Đang sửa Barem cho: <strong className="text-purple-700 font-black text-sm bg-purple-100/80 px-2 py-0.5 rounded border border-purple-300">Mã {activeVersion.code}</strong>
+                </span>
+                {numberOfCodes > 1 && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-slate-500 font-bold">Chuyển Mã:</span>
+                    {codeVersions.map((v, idx) => (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => setActiveCodeIndex(idx)}
+                        className={`px-2 py-0.5 rounded font-bold text-[10px] transition-all cursor-pointer ${
+                          activeCodeIndex === idx
+                            ? "bg-purple-700 text-white shadow-3xs"
+                            : "bg-white text-purple-900 border border-purple-200 hover:bg-purple-100"
+                        }`}
+                      >
+                        {v.code}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-6 max-h-[650px] overflow-y-auto pr-1">
@@ -2309,9 +2706,10 @@ HS05 - Hoàng Văn Em`);
                                 <table className="w-full border-collapse text-left text-xs">
                                   <thead>
                                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold">
-                                      <th className="py-2.5 px-3 w-12 text-center">STT</th>
+                                       <th className="py-2.5 px-3 w-12 text-center">STT</th>
                                       <th className="py-2.5 px-3">Họ và tên</th>
                                       <th className="py-2.5 px-3 w-20 text-center">Lớp</th>
+                                      <th className="py-2.5 px-3 w-16 text-center">Mã đề</th>
                                       <th className="py-2.5 px-3 text-center">Thời gian nộp</th>
                                       <th className="py-2.5 px-3 w-24 text-center">Tổng điểm</th>
                                       <th className="py-2.5 px-3 text-center hidden md:table-cell">Điểm các phần</th>
@@ -2325,7 +2723,8 @@ HS05 - Hoàng Văn Em`);
                                         if (!q) return true;
                                         return (
                                           (sub.studentName || "").toLowerCase().includes(q) ||
-                                          (sub.studentClass || "").toLowerCase().includes(q)
+                                          (sub.studentClass || "").toLowerCase().includes(q) ||
+                                          (sub.assignedCode || "").toLowerCase().includes(q)
                                         );
                                       })
                                       .map((sub: any, idx: number) => (
@@ -2333,6 +2732,11 @@ HS05 - Hoàng Văn Em`);
                                           <td className="py-2.5 px-3 text-center font-bold text-slate-400">{idx + 1}</td>
                                           <td className="py-2.5 px-3 font-bold text-slate-800">{sub.studentName}</td>
                                           <td className="py-2.5 px-3 text-center font-bold">{sub.studentClass}</td>
+                                          <td className="py-2.5 px-3 text-center">
+                                            <span className="px-2 py-0.5 bg-purple-50 text-purple-800 font-bold rounded text-[10px] border border-purple-200">
+                                              {sub.assignedCode || sub.examCode || "101"}
+                                            </span>
+                                          </td>
                                           <td className="py-2.5 px-3 text-center text-[10px] text-slate-400">{sub.submitTime}</td>
                                           <td className="py-2.5 px-3 text-center text-sm font-black font-mono text-emerald-600">
                                             {sub.totalScore.toFixed(2)}đ
@@ -2828,7 +3232,14 @@ HS05 - Hoàng Văn Em`);
                 <FileText className="w-6 h-6" />
               </div>
               <div>
-                <h2 className="font-bold text-slate-800 text-sm md:text-base">{examTitle}</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="font-bold text-slate-800 text-sm md:text-base">{examTitle}</h2>
+                  {studentAssignedCode && (
+                    <span className="px-2 py-0.5 bg-purple-100 text-purple-800 font-extrabold text-[11px] rounded-md border border-purple-300">
+                      Mã đề: {studentAssignedCode}
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Học sinh: <strong className="text-slate-700 font-semibold">{studentName}</strong> - Lớp: <strong className="text-slate-700 font-semibold">{studentClass}</strong>
                 </p>
