@@ -757,3 +757,301 @@ export const SAMPLE_MATH_QUESTIONS_11: SampleQuestion[] = [
     explanation: "Vì $SA \\perp (ABCD)$ nên $AC$ là hình chiếu vuông góc của đường thẳng $SC$ lên mặt phẳng đáy $(ABCD)$.\nDo đó, góc giữa đường thẳng $SC$ và mặt phẳng đáy $(ABCD)$ chính là góc giữa $SC$ và $AC$, tức là góc $\\widehat{SCA}$.\n\nXét đáy $ABCD$ là hình vuông cạnh $a$, đường chéo $AC$ bằng:\n$$AC = a\\sqrt{2}.$$\nXét tam giác $SAC$ vuông tại $A$ (vì $SA \\perp (ABCD) \\Rightarrow SA \\perp AC$):\n$$\\tan \\widehat{SCA} = \\frac{SA}{AC} = \\frac{a\\sqrt{2}}{a\\sqrt{2}} = 1.$$\n\nVì $\\tan \\widehat{SCA} = 1$ nên $\\widehat{SCA} = 45^\\circ$.\nVậy góc giữa đường thẳng $SC$ và mặt phẳng đáy là $45^\\circ$."
   }
 ];
+
+// ==================== BỘ ĐỀ CHUẨN MA TRẬN NĂNG LỰC TOÁN 11 (GIỮA HK1) ====================
+export const SAMPLE_COMPETENCY_EXAM_QUESTIONS_11: SampleQuestion[] = [
+  // PHẦN I: TRẮC NGHIỆM NHIỀU LỰA CHỌN (16 CÂU: I.1 ĐẾN I.16)
+  {
+    id: 1,
+    type: "mc",
+    level: "Nhận biết",
+    topic: "Hàm số lượng giác và phương trình lượng giác",
+    subtopic: "Giá trị lượng giác",
+    content: "Cho góc lượng giác $\\alpha$ thỏa mãn $0 < \\alpha < \\frac{\\pi}{2}$. Mệnh đề nào sau đây đúng?",
+    options: ["$\\sin \\alpha > 0$", "$\\cos \\alpha < 0$", "$\\tan \\alpha < 0$", "$\\cot \\alpha < 0$"],
+    correctOptionIndex: 0,
+    explanation: "Với góc lượng giác thuộc góc phần tư thứ nhất ($0 < \\alpha < \\frac{\\pi}{2}$), ta có $\\sin \\alpha > 0$, $\\cos \\alpha > 0$, $\\tan \\alpha > 0$ và $\\cot \\alpha > 0$."
+  },
+  {
+    id: 2,
+    type: "mc",
+    level: "Nhận biết",
+    topic: "Hàm số lượng giác và phương trình lượng giác",
+    subtopic: "Công thức lượng giác",
+    content: "Đẳng thức nào sau đây là công thức nhân đôi đúng với mọi góc $\\alpha$?",
+    options: ["$\\sin 2\\alpha = 2\\sin \\alpha \\cos \\alpha$", "$\\sin 2\\alpha = \\sin \\alpha \\cos \\alpha$", "$\\sin 2\\alpha = 2\\cos^2 \\alpha - 1$", "$\\sin 2\\alpha = \\cos^2 \\alpha - \\sin^2 \\alpha$"],
+    correctOptionIndex: 0,
+    explanation: "Công thức nhân đôi đối với hàm số sin là $\\sin 2\\alpha = 2\\sin \\alpha \\cos \\alpha$."
+  },
+  {
+    id: 3,
+    type: "mc",
+    level: "Nhận biết",
+    topic: "Hàm số lượng giác và phương trình lượng giác",
+    subtopic: "Công thức lượng giác",
+    content: "Công thức cộng nào sau đây là đúng với hai góc lượng giác $a$ và $b$?",
+    options: ["$\\cos(a + b) = \\cos a \\cos b - \\sin a \\sin b$", "$\\cos(a + b) = \\cos a \\cos b + \\sin a \\sin b$", "$\\cos(a + b) = \\sin a \\cos b + \\cos a \\sin b$", "$\\cos(a + b) = \\sin a \\cos b - \\cos a \\sin b$"],
+    correctOptionIndex: 0,
+    explanation: "Theo công thức cộng của hàm cosin: $\\cos(a + b) = \\cos a \\cos b - \\sin a \\sin b$."
+  },
+  {
+    id: 4,
+    type: "mc",
+    level: "Nhận biết",
+    topic: "Hàm số lượng giác và phương trình lượng giác",
+    subtopic: "Hàm số lượng giác",
+    content: "Tập xác định $D$ của hàm số $y = \\tan x$ là:",
+    options: [
+      "$D = \\mathbb{R} \\setminus \\{\\frac{\\pi}{2} + k\\pi, k \\in \\mathbb{Z}\\}$",
+      "$D = \\mathbb{R} \\setminus \\{k\\pi, k \\in \\mathbb{Z}\\}$",
+      "$D = \\mathbb{R}$",
+      "$D = \\mathbb{R} \\setminus \\{k2\\pi, k \\in \\mathbb{Z}\\}$"
+    ],
+    correctOptionIndex: 0,
+    explanation: "Hàm số $y = \\tan x = \\frac{\\sin x}{\\cos x}$ xác định khi $\\cos x \\neq 0 \\Leftrightarrow x \\neq \\frac{\\pi}{2} + k\\pi, k \\in \\mathbb{Z}$."
+  },
+  {
+    id: 5,
+    type: "mc",
+    level: "Thông hiểu",
+    topic: "Hàm số lượng giác và phương trình lượng giác",
+    subtopic: "Hàm số lượng giác",
+    content: "Giá trị lớn nhất $M$ và giá trị nhỏ nhất $m$ của hàm số $y = 3\\sin 2x - 1$ lần lượt là:",
+    options: ["$M = 2, m = -4$", "$M = 3, m = -3$", "$M = 4, m = -2$", "$M = 2, m = -2$"],
+    correctOptionIndex: 0,
+    explanation: "Vì $-1 \\le \\sin 2x \\le 1$ với mọi $x \\in \\mathbb{R}$, nên $-3 \\le 3\\sin 2x \\le 3 \\implies -4 \\le 3\\sin 2x - 1 \\le 2$. Do đó $M = 2$ và $m = -4$."
+  },
+  {
+    id: 6,
+    type: "mc",
+    level: "Nhận biết",
+    topic: "Hàm số lượng giác và phương trình lượng giác",
+    subtopic: "Phương trình lượng giác cơ bản",
+    content: "Công thức nghiệm của phương trình lượng giác $\\cos x = \\cos \\alpha$ là:",
+    options: [
+      "$x = \\pm \\alpha + k2\\pi, k \\in \\mathbb{Z}$",
+      "$x = \\alpha + k\\pi, k \\in \\mathbb{Z}$",
+      "$x = \\alpha + k2\\pi, k \\in \\mathbb{Z}$",
+      "$x = \\pm \\alpha + k\\pi, k \\in \\mathbb{Z}$"
+    ],
+    correctOptionIndex: 0,
+    explanation: "Phương trình $\\cos x = \\cos \\alpha$ có họ nghiệm là $x = \\pm \\alpha + k2\\pi, k \\in \\mathbb{Z}$."
+  },
+  {
+    id: 7,
+    type: "mc",
+    level: "Nhận biết",
+    topic: "Hàm số lượng giác và phương trình lượng giác",
+    subtopic: "Phương trình lượng giác cơ bản",
+    content: "Tập nghiệm của phương trình lượng giác cơ bản $\\tan x = 1$ là:",
+    options: [
+      "$x = \\frac{\\pi}{4} + k\\pi, k \\in \\mathbb{Z}$",
+      "$x = \\frac{\\pi}{4} + k2\\pi, k \\in \\mathbb{Z}$",
+      "$x = -\\frac{\\pi}{4} + k\\pi, k \\in \\mathbb{Z}$",
+      "$x = \\pm \\frac{\\pi}{4} + k\\pi, k \\in \\mathbb{Z}$"
+    ],
+    correctOptionIndex: 0,
+    explanation: "Ta có $1 = \\tan \\frac{\\pi}{4}$, do đó phương trình $\\tan x = 1 \\Leftrightarrow x = \\frac{\\pi}{4} + k\\pi, k \\in \\mathbb{Z}$."
+  },
+  {
+    id: 8,
+    type: "mc",
+    level: "Nhận biết",
+    topic: "Dãy số - Cấp số cộng - Cấp số nhân",
+    subtopic: "Dãy số",
+    content: "Cho dãy số $(u_n)$ có số hạng tổng quát $u_n = 2n + 1$. Số hạng thứ ba $u_3$ bằng:",
+    options: ["$7$", "$5$", "$9$", "$6$"],
+    correctOptionIndex: 0,
+    explanation: "Thay $n = 3$ vào công thức số hạng tổng quát: $u_3 = 2(3) + 1 = 7$."
+  },
+  {
+    id: 9,
+    type: "mc",
+    level: "Nhận biết",
+    topic: "Dãy số - Cấp số cộng - Cấp số nhân",
+    subtopic: "Dãy số",
+    content: "Trong các dãy số sau, dãy số nào là dãy số tăng?",
+    options: [
+      "$u_n = n^2$",
+      "$u_n = -2n + 5$",
+      "$u_n = \\frac{1}{n}$",
+      "$u_n = (-1)^n$"
+    ],
+    correctOptionIndex: 0,
+    explanation: "Dãy số $u_n = n^2$ có $u_{n+1} - u_n = (n+1)^2 - n^2 = 2n + 1 > 0$ với mọi $n \\ge 1$ nên là dãy số tăng."
+  },
+  {
+    id: 10,
+    type: "mc",
+    level: "Nhận biết",
+    topic: "Dãy số - Cấp số cộng - Cấp số nhân",
+    subtopic: "Cấp số cộng",
+    content: "Cho cấp số cộng $(u_n)$ có số hạng đầu $u_1 = 5$ và công sai $d = 3$. Số hạng thứ hai $u_2$ bằng:",
+    options: ["$8$", "$15$", "$2$", "$11$"],
+    correctOptionIndex: 0,
+    explanation: "Áp dụng định nghĩa cấp số cộng: $u_2 = u_1 + d = 5 + 3 = 8$."
+  },
+  {
+    id: 11,
+    type: "mc",
+    level: "Thông hiểu",
+    topic: "Dãy số - Cấp số cộng - Cấp số nhân",
+    subtopic: "Cấp số nhân",
+    content: "Cho cấp số nhân $(u_n)$ có $u_1 = 3$ và $u_2 = 6$. Công bội $q$ của cấp số nhân đó là:",
+    options: ["$q = 2$", "$q = 3$", "$q = \\frac{1}{2}$", "$q = -2$"],
+    correctOptionIndex: 0,
+    explanation: "Công bội của cấp số nhân: $q = \\frac{u_2}{u_1} = \\frac{6}{3} = 2$."
+  },
+  {
+    id: 12,
+    type: "mc",
+    level: "Thông hiểu",
+    topic: "Dãy số - Cấp số cộng - Cấp số nhân",
+    subtopic: "Cấp số nhân",
+    content: "Cho cấp số nhân $(u_n)$ có $u_1 = 2$ và công bội $q = 3$. Số hạng $u_4$ bằng:",
+    options: ["$54$", "$162$", "$18$", "$24$"],
+    correctOptionIndex: 0,
+    explanation: "Số hạng thứ 4 là $u_4 = u_1 \\cdot q^3 = 2 \\cdot 3^3 = 2 \\cdot 27 = 54$."
+  },
+  {
+    id: 13,
+    type: "mc",
+    level: "Nhận biết",
+    topic: "Quan hệ song song trong không gian",
+    subtopic: "Đường thẳng và mặt phẳng trong không gian",
+    content: "Một mặt phẳng trong không gian hoàn toàn được xác định khi biết:",
+    options: [
+      "Ba điểm không thẳng hàng thuộc mặt phẳng",
+      "Hai điểm phân biệt thuộc mặt phẳng",
+      "Một điểm và một đường thẳng đi qua điểm đó",
+      "Bốn điểm bất kì trong không gian"
+    ],
+    correctOptionIndex: 0,
+    explanation: "Theo tính chất thừa nhận của hình học không gian, có một và chỉ một mặt phẳng đi qua ba điểm không thẳng hàng."
+  },
+  {
+    id: 14,
+    type: "mc",
+    level: "Thông hiểu",
+    topic: "Quan hệ song song trong không gian",
+    subtopic: "Đường thẳng và mặt phẳng trong không gian",
+    content: "Cho tứ diện $ABCD$. Giao tuyến của hai mặt phẳng $(ABC)$ và $(ABD)$ là đường thẳng:",
+    options: ["$AB$", "$CD$", "$AC$", "$BC$"],
+    correctOptionIndex: 0,
+    explanation: "Hai điểm chung phân biệt của mặt phẳng $(ABC)$ và mặt phẳng $(ABD)$ là điểm $A$ và điểm $B$. Do đó giao tuyến là đường thẳng $AB$."
+  },
+  {
+    id: 15,
+    type: "mc",
+    level: "Nhận biết",
+    topic: "Quan hệ song song trong không gian",
+    subtopic: "Hai đường thẳng song song",
+    content: "Trong không gian, hai đường thẳng chéo nhau là hai đường thẳng:",
+    options: [
+      "Không cùng thuộc một mặt phẳng",
+      "Không có điểm chung",
+      "Cùng song song với một mặt phẳng",
+      "Vuông góc với nhau"
+    ],
+    correctOptionIndex: 0,
+    explanation: "Hai đường thẳng chéo nhau là hai đường thẳng không cùng nằm trong bất kì mặt phẳng nào."
+  },
+  {
+    id: 16,
+    type: "mc",
+    level: "Nhận biết",
+    topic: "Quan hệ song song trong không gian",
+    subtopic: "Đường thẳng và mặt phẳng song song",
+    content: "Nếu đường thẳng $d$ không nằm trong mặt phẳng $(P)$ và song song với đường thẳng $a$ nằm trong $(P)$ thì:",
+    options: ["$d \\parallel (P)$", "$d \\subset (P)$", "$d$ cắt $(P)$", "$d$ chéo với $(P)$"],
+    correctOptionIndex: 0,
+    explanation: "Theo dấu hiệu nhận biết đường thẳng song song mặt phẳng: nếu $d \\not\\subset (P)$ và $d \\parallel a \\subset (P)$ thì $d \\parallel (P)$."
+  },
+
+  // PHẦN II: TRẮC NGHIỆM ĐÚNG/SAI (2 CÂU: II.1 VÀ II.2)
+  {
+    id: 17,
+    type: "tf",
+    level: "Thông hiểu",
+    topic: "Hàm số lượng giác và phương trình lượng giác",
+    subtopic: "Công thức lượng giác",
+    content: "Cho biểu thức lượng giác $P = \\sin(x + \\frac{\\pi}{3}) - \\sin(x - \\frac{\\pi}{3})$. Xét tính đúng hoặc sai của các khẳng định sau:",
+    tfStatements: [
+      { statement: "Áp dụng công thức cộng: $\\sin(x + \\frac{\\pi}{3}) = \\sin x \\cos \\frac{\\pi}{3} + \\cos x \\sin \\frac{\\pi}{3}$.", correct: true },
+      { statement: "Giá trị của $\\cos \\frac{\\pi}{3}$ bằng $\\frac{1}{2}$ và $\\sin \\frac{\\pi}{3}$ bằng $\\frac{\\sqrt{3}}{2}$.", correct: true },
+      { statement: "Rút gọn biểu thức ta được $P = \\sqrt{3} \\cos x$.", correct: true },
+      { statement: "Với mọi $x \\in \\mathbb{R}$, giá trị lớn nhất của biểu thức $P$ bằng $3$.", correct: false }
+    ],
+    explanation: "a) Đúng: Công thức cộng $\\sin(a + b) = \\sin a \\cos b + \\cos a \\sin b$.\nb) Đúng: $\\cos \\frac{\\pi}{3} = \\frac{1}{2}$, $\\sin \\frac{\\pi}{3} = \\frac{\\sqrt{3}}{2}$.\nc) Đúng: $P = 2\\cos x \\sin \\frac{\\pi}{3} = 2\\cos x \\cdot \\frac{\\sqrt{3}}{2} = \\sqrt{3}\\cos x$.\nd) Sai: Vì $-1 \\le \\cos x \\le 1$ nên giá trị lớn nhất của $P$ là $\\sqrt{3}$ (chứ không phải 3)."
+  },
+  {
+    id: 18,
+    type: "tf",
+    level: "Thông hiểu",
+    topic: "Quan hệ song song trong không gian",
+    subtopic: "Hai đường thẳng song song và đường thẳng song song mặt phẳng",
+    content: "Cho hình chóp $S.ABCD$ có đáy $ABCD$ là hình bình hành tâm $O$. Gọi $M, N$ lần lượt là trung điểm của $SA$ và $SD$. Xét tính đúng hoặc sai của các mệnh đề sau:",
+    tfStatements: [
+      { statement: "Đoạn thẳng $MN$ là đường trung bình của tam giác $SAD$ nên $MN \\parallel AD$.", correct: true },
+      { statement: "Đường thẳng $MN$ song song với đường thẳng $BC$.", correct: true },
+      { statement: "Đường thẳng $MN$ song song với mặt phẳng đáy $(ABCD)$.", correct: true },
+      { statement: "Đường thẳng $ON$ cắt mặt phẳng $(SAB)$.", correct: true }
+    ],
+    explanation: "a) Đúng: $M, N$ là trung điểm của $SA, SD$ nên $MN$ là đường trung bình trong tam giác $SAD$, suy ra $MN \\parallel AD$.\nb) Đúng: Vì $MN \\parallel AD$ và $AD \\parallel BC$ nên $MN \\parallel BC$.\nc) Đúng: Vì $MN \\parallel AD$ và $AD \\subset (ABCD), MN \\not\\subset (ABCD)$ nên $MN \\parallel (ABCD)$.\nd) Đúng: $O$ là trung điểm $BD$, $N$ là trung điểm $SD$ nên $ON$ là đường trung bình trong tam giác $SBD$, do đó $ON \\parallel SB \\subset (SAB)$, tức $ON \\parallel (SAB)$ chứ không cắt (mệnh đề d phát biểu cắt là Sai, đúng là $ON$ song song)."
+  },
+
+  // PHẦN III: TRẢ LỜI NGẮN (2 CÂU: III.1 VÀ III.2)
+  {
+    id: 19,
+    type: "sa",
+    level: "Thông hiểu",
+    topic: "Hàm số lượng giác và phương trình lượng giác",
+    subtopic: "Hàm số lượng giác",
+    content: "Cho hàm số $y = 5\\cos(2x - \\frac{\\pi}{4}) + 7$. Tính giá trị nhỏ nhất của hàm số trên $\\mathbb{R}$.",
+    correctAnswer: "2",
+    explanation: "Vì $-1 \\le \\cos(2x - \\frac{\\pi}{4}) \\le 1$ nên giá trị nhỏ nhất đạt được khi $\\cos(2x - \\frac{\\pi}{4}) = -1$. Khi đó $y_{\\min} = 5(-1) + 7 = 2$."
+  },
+  {
+    id: 20,
+    type: "sa",
+    level: "Thông hiểu",
+    topic: "Quan hệ song song trong không gian",
+    subtopic: "Hai đường thẳng song song",
+    content: "Cho hình chóp $S.ABCD$ có đáy $ABCD$ là hình thang với đáy lớn $AB = 12\\text{ cm}$, đáy nhỏ $CD = 6\\text{ cm}$. Gọi $M$ là điểm trên cạnh $SA$ sao cho $\\frac{SM}{SA} = \\frac{2}{3}$. Mặt phẳng $(P)$ qua $M$ và song song với $AB$ cắt cạnh $SB$ tại điểm $N$. Độ dài đoạn thẳng $MN$ bằng bao nhiêu xăng-ti-mét?",
+    correctAnswer: "8",
+    explanation: "Vì mặt phẳng $(P) \\parallel AB$ và cắt $(SAB)$ theo giao tuyến $MN$ nên $MN \\parallel AB$. Áp dụng định lí Ta-lét trong tam giác $SAB$:\n$$\\frac{MN}{AB} = \\frac{SM}{SA} = \\frac{2}{3} \\implies MN = \\frac{2}{3} \\cdot 12 = 8\\text{ cm}.$$"
+  },
+
+  // PHẦN IV: TỰ LUẬN (3 CÂU: TL1, TL2, TL3)
+  {
+    id: 21,
+    type: "essay",
+    level: "Vận dụng",
+    topic: "Hàm số lượng giác và phương trình lượng giác",
+    subtopic: "Phương trình lượng giác cơ bản",
+    content: "(TL1 - 1,0 điểm): Giải phương trình lượng giác sau:\n$$2\\sin(2x - \\frac{\\pi}{6}) - \\sqrt{3} = 0.$$",
+    correctAnswer: "$x = \\frac{\\pi}{4} + k\\pi$ hoặc $x = \\frac{5\\pi}{12} + k\\pi, k \\in \\mathbb{Z}$",
+    explanation: "Phương trình đã cho tương đương với:\n$$2\\sin(2x - \\frac{\\pi}{6}) = \\sqrt{3} \\Leftrightarrow \\sin(2x - \\frac{\\pi}{6}) = \\frac{\\sqrt{3}}{2}.$$\nVì $\\sin \\frac{\\pi}{3} = \\frac{\\sqrt{3}}{2}$, phương trình trở thành:\n$$\\sin(2x - \\frac{\\pi}{6}) = \\sin \\frac{\\pi}{3}$$\n$$\\Leftrightarrow \\begin{cases} 2x - \\frac{\\pi}{6} = \\frac{\\pi}{3} + k2\\pi \\\\ 2x - \\frac{\\pi}{6} = \\pi - \\frac{\\pi}{3} + k2\\pi \\end{cases} \\Leftrightarrow \\begin{cases} 2x = \\frac{\\pi}{2} + k2\\pi \\\\ 2x = \\frac{5\\pi}{6} + k2\\pi \\end{cases} \\Leftrightarrow \\begin{cases} x = \\frac{\\pi}{4} + k\\pi \\\\ x = \\frac{5\\pi}{12} + k\\pi \\end{cases} (k \\in \\mathbb{Z}).$$\nVậy tập nghiệm của phương trình là $S = \\{\\frac{\\pi}{4} + k\\pi; \\frac{5\\pi}{12} + k\\pi, k \\in \\mathbb{Z}\\}$."
+  },
+  {
+    id: 22,
+    type: "essay",
+    level: "Vận dụng",
+    topic: "Dãy số - Cấp số cộng - Cấp số nhân",
+    subtopic: "Cấp số cộng",
+    content: "(TL2 - 1,0 điểm): Một hội trường có $20$ hàng ghế được xếp theo hình vòng cung. Hàng thứ nhất có $18$ ghế, mỗi hàng sau có nhiều hơn hàng liền trước nó $4$ ghế. Hỏi hội trường đó có tất cả bao nhiêu ghế ngồi?",
+    correctAnswer: "1120 ghế",
+    explanation: "Số ghế ở mỗi hàng tạo thành một cấp số cộng $(u_n)$ có số hạng đầu $u_1 = 18$, công sai $d = 4$ và số hàng ghế $n = 20$.\nTổng số ghế của hội trường là tổng của $20$ số hạng đầu của cấp số cộng đó:\n$$S_{20} = \\frac{n}{2}[2u_1 + (n-1)d] = \\frac{20}{2}[2(18) + (20-1) \\cdot 4].$$\nTính toán trong ngoặc:\n$$2(18) + 19 \\cdot 4 = 36 + 76 = 112.$$\nDo đó:\n$$S_{20} = 10 \\cdot 112 = 1120 \\text{ (ghế)}.$$\nVậy hội trường đó có tất cả $1120$ chiếc ghế ngồi."
+  },
+  {
+    id: 23,
+    type: "essay",
+    level: "Vận dụng",
+    topic: "Quan hệ song song trong không gian",
+    subtopic: "Đường thẳng và mặt phẳng song song",
+    content: "(TL3 - 1,0 điểm): Cho hình chóp $S.ABCD$ có đáy $ABCD$ là hình bình hành. Gọi $G$ là trọng tâm tam giác $SAB$ và $I$ là điểm trên đoạn $CD$ sao cho $CD = 3CI$. Chứng minh rằng đường thẳng $IG$ song song với mặt phẳng $(SAD)$.",
+    correctAnswer: "$IG \\parallel (SAD)$",
+    explanation: "Gọi $M$ là trung điểm của cạnh $AB$.\nVì $G$ là trọng tâm của tam giác $SAB$ nên ta có tỉ số:\n$$\\frac{MG}{MS} = \\frac{1}{3}.$$\n\nTrong mặt phẳng đáy $(ABCD)$, lấy điểm $K$ trên cạnh $AD$ sao cho đoạn thẳng $MI$ cắt $AD$ tại $K$, hoặc xét vị trí tương đối:\nVì $ABCD$ là hình bình hành, kẻ $MN \\parallel AD$ ($N \\in CD$), ta có $M$ là trung điểm $AB$ nên $N$ là trung điểm $CD$.\nTa có $CD = 3CI \\implies \\frac{CI}{CD} = \\frac{1}{3}$.\nXét đoạn $MN$: ta có tỉ lệ $\\frac{MI}{MK} = \\frac{1}{3}$.\nTừ đó trong tam giác $SMK$ ta có:\n$$\\frac{MG}{MS} = \\frac{MI}{MK} = \\frac{1}{3}.$$\nTheo định lý Ta-lét đảo trong tam giác $SMK$, ta suy ra $IG \\parallel SK$.\nMặt khác, điểm $S \\in (SAD)$ và $K \\in AD \\subset (SAD)$ nên đường thẳng $SK \\subset (SAD)$.\nVì $IG \\not\\subset (SAD)$ và $IG \\parallel SK \\subset (SAD)$, suy ra $IG \\parallel (SAD)$ (điều phải chứng minh)."
+  }
+];
+

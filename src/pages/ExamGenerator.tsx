@@ -27,7 +27,23 @@ import {
   ParameterOption
 } from '../lib/examConfig';
 import { OnlineExamConfigModal } from "../components/OnlineExamConfigModal";
-import { SAMPLE_MATH_QUESTIONS, SAMPLE_MATH_QUESTIONS_10, SAMPLE_MATH_QUESTIONS_11, SAMPLE_MATH_EXAM_NAME, SAMPLE_MATH_DURATION } from '../data/sampleMathExam';
+import { 
+  SAMPLE_MATH_QUESTIONS, 
+  SAMPLE_MATH_QUESTIONS_10, 
+  SAMPLE_MATH_QUESTIONS_11, 
+  SAMPLE_COMPETENCY_EXAM_QUESTIONS_11,
+  SAMPLE_MATH_EXAM_NAME, 
+  SAMPLE_MATH_DURATION 
+} from '../data/sampleMathExam';
+import { 
+  CompetencyMatrixModal, 
+  CompetencyMatrixInlineView,
+  SAMPLE_COMPETENCY_MATRIX_11, 
+  SAMPLE_SPEC_LIST_11,
+  MatrixRowItem,
+  SpecUnitItem 
+} from "../components/CompetencyMatrixModal";
+import { AiMatrixSuggestModal } from "../components/AiMatrixSuggestModal";
 import { FeatureQuickGuideBanner } from '../components/FeatureQuickGuideBanner';
 import { parseRawExamText, formatAiQuestionsToParsed } from '../lib/examParser';
 import { attachCroppedFiguresToQuestions } from '../lib/cropUtils';
@@ -57,7 +73,7 @@ import {
 } from '../lib/examMixer';
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import * as XLSX from 'xlsx';
-import { School, FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera, TrendingUp, BarChart2, Box, BarChart3, Calculator, Wand2, FileDiff, ShieldCheck } from "lucide-react";
+import { School, FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera, TrendingUp, BarChart2, Box, BarChart3, Calculator, Wand2, FileDiff, ShieldCheck, BookOpen } from "lucide-react";
 import { run1ClickMathFix } from "../components/math-tools/MathFormulaFixer";
 
 interface Question {
@@ -155,6 +171,11 @@ export function ExamGenerator() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [resultsSubTab, setResultsSubTab] = useState<"list" | "question_stats">("list");
   const [selectedStatsExamId, setSelectedStatsExamId] = useState<string>("");
+  const [showCompetencyMatrixModal, setShowCompetencyMatrixModal] = useState(false);
+  const [showAiMatrixSuggestModal, setShowAiMatrixSuggestModal] = useState(false);
+  const [matrixViewMode, setMatrixViewMode] = useState<'competency' | 'standard'>('competency');
+  const [competencyMatrixRows, setCompetencyMatrixRows] = useState<MatrixRowItem[]>(SAMPLE_COMPETENCY_MATRIX_11);
+  const [competencySpecRows, setCompetencySpecRows] = useState<SpecUnitItem[]>(SAMPLE_SPEC_LIST_11);
 
   // 1. Lấy danh sách các mã đề thi độc nhất để điền vào dropdown lọc thống kê
   const uniqueExamIds = useMemo(() => {
@@ -1435,6 +1456,38 @@ const [examName, setExamName] = useState("");
     setActiveTab("exam");
   };
 
+  const applyPresetCompetency11 = () => {
+    setQEnabled({ mc: true, tf: true, sa: true, essay: true });
+    setQCounts({ mc: 16, tf: 2, sa: 2, essay: 3 });
+    setQPoints({ mc: "0.25", tf: "1", sa: "0.5", essay: "1" });
+    setSchoolLevel("THPT");
+    setGrade("11");
+    setSubject("Toán học");
+    setExamType("Đề kiểm tra giữa kỳ 1");
+    setDuration(90);
+    setExamName("ĐỀ KIỂM TRA GIỮA HỌC KÌ I MÔN TOÁN - KHỐI 11 NĂM HỌC 2025-2026");
+    setLevels({ nb: 40, th: 30, vd: 30, vdc: 0 });
+    setMatrix("Hàm số lượng giác và PT lượng giác; Dãy số, cấp số cộng, cấp số nhân; Quan hệ song song trong không gian");
+    setToastMessage("✨ Đã áp dụng Ma trận Năng lực GDPT 11 (16 câu TN, 2 câu ĐS, 2 câu TLN, 3 câu Tự luận)!");
+  };
+
+  const handleLoadCompetencyExam11 = () => {
+    setError(null);
+    applyPresetCompetency11();
+    const enriched = (SAMPLE_COMPETENCY_EXAM_QUESTIONS_11 as Question[]).map((q: any) => ({
+      ...q,
+      content: autoEnrichTextWithVisuals(q.content || (q as any).question || (q as any).text || '', false),
+      solution: autoEnrichTextWithVisuals(q.solution || q.explanation || '', true),
+      explanation: autoEnrichTextWithVisuals(q.solution || q.explanation || '', true)
+    }));
+    setQuestions(enriched);
+    setExamName("ĐỀ KIỂM TRA GIỮA HỌC KÌ I MÔN TOÁN - KHỐI 11 NĂM HỌC 2025-2026");
+    setDuration(90);
+    setMatrixViewMode('competency');
+    setActiveTab("exam");
+    setToastMessage("✨ Đã nạp thành công bộ 23 câu hỏi chuẩn Ma trận Năng lực Khối 11 (Giữa HK1)!");
+  };
+
   const handleImportText = () => {
     const raw = importRawText.trim();
     if (!raw) return;
@@ -1964,6 +2017,59 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                    </button>
                 </div>
 
+                {/* BANNER MA TRẬN NĂNG LỰC & BẢN ĐẶC TẢ CHI TIẾT */}
+                <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-2xs">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 bg-indigo-600 text-white rounded text-[11px] font-bold uppercase tracking-wider">
+                        Khung chuẩn GDPT 2018
+                      </span>
+                      <h4 className="font-extrabold text-slate-900 text-sm sm:text-base">
+                        Ma trận theo Năng lực môn học & Bản đặc tả chi tiết (Mẫu hình ảnh)
+                      </h4>
+                    </div>
+                    <p className="text-xs text-slate-600 leading-relaxed max-w-2xl">
+                      Thiết lập ma trận đánh giá năng lực môn học & bảng đặc tả chi tiết kĩ thuật đề kiểm tra theo chuẩn chương trình GDPT 2018. Hệ thống tích hợp sẵn <strong>Thư viện Ma trận đa môn học</strong> (Toán, Vật lí, Hóa học, Sinh học, Tiếng Anh, Ngữ văn...) cho phép chọn nhanh, tùy chỉnh và xuất Word/Excel theo quy định của Bộ GD&ĐT.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setShowAiMatrixSuggestModal(true)}
+                      className="px-4 py-2 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white font-black rounded-lg text-xs flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                      title="AI tự động tính toán, phân bổ câu lệnh hỏi theo số câu, thời gian và mục tiêu năng lực GDPT 2018"
+                    >
+                      <Sparkles className="w-4 h-4 fill-white" />
+                      <span>🤖 AI Đề xuất Ma trận GDPT 2018</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowCompetencyMatrixModal(true)}
+                      className="px-4 py-2 bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-extrabold rounded-lg text-xs flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                    >
+                      <BookOpen className="w-4 h-4" />
+                      <span>📚 Thư viện Ma trận Đa Môn</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowCompetencyMatrixModal(true)}
+                      className="px-3.5 py-2 bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-200 font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                    >
+                      <Eye className="w-4 h-4 text-indigo-600" />
+                      <span>Xem & Tùy chỉnh</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleLoadCompetencyExam11}
+                      className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold rounded-lg text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                      title="Nạp ngay 23 câu hỏi mẫu Toán 11 chuẩn 100% theo các mã câu trong ma trận hình ảnh"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-600 fill-amber-500" />
+                      <span>⚡ Nạp Đề Mẫu Chuẩn Ma trận này</span>
+                    </button>
+                  </div>
+                </div>
+
                 {/* 1. THÔNG TIN ĐỀ */}
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                   <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4">
@@ -2155,9 +2261,10 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                   </h3>
                   <div className="flex flex-wrap gap-2 mb-4">
                      <span className="text-xs font-medium text-slate-500 flex items-center mr-1">Gợi ý nhanh:</span>
-                     <button onClick={applyPresetBGD3Phan} className="px-3 py-1 bg-blue-50 text-blue-600 border border-blue-200 rounded-md text-sm hover:bg-blue-100 transition-colors">Chuẩn BGD 3 phần (12 TN, 4 ĐS, 6 TLN)</button>
-                     <button onClick={applyPreset4Phan} className="px-3 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-md text-sm hover:bg-emerald-100 transition-colors">Đề 4 phần (có Tự luận)</button>
-                     <button onClick={applyPresetNguVan} className="px-3 py-1 bg-amber-50 text-amber-600 border border-amber-200 rounded-md text-sm hover:bg-amber-100 transition-colors">Đề Ngữ Văn (Đọc hiểu & Làm văn)</button>
+                     <button type="button" onClick={applyPresetCompetency11} className="px-3 py-1 bg-purple-50 text-purple-700 border border-purple-200 rounded-md text-sm hover:bg-purple-100 transition-colors font-bold flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5 text-purple-600" /> ⚡ Ma trận Năng lực 11 (16 TN, 2 ĐS, 2 TLN, 3 TL theo ảnh)</button>
+                     <button type="button" onClick={applyPresetBGD3Phan} className="px-3 py-1 bg-blue-50 text-blue-600 border border-blue-200 rounded-md text-sm hover:bg-blue-100 transition-colors">Chuẩn BGD 3 phần (12 TN, 4 ĐS, 6 TLN)</button>
+                     <button type="button" onClick={applyPreset4Phan} className="px-3 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-md text-sm hover:bg-emerald-100 transition-colors">Đề 4 phần (có Tự luận)</button>
+                     <button type="button" onClick={applyPresetNguVan} className="px-3 py-1 bg-amber-50 text-amber-600 border border-amber-200 rounded-md text-sm hover:bg-amber-100 transition-colors">Đề Ngữ Văn (Đọc hiểu & Làm văn)</button>
                   </div>
                   <div className="space-y-3">
                     <div className="grid grid-cols-12 gap-2 text-xs font-medium text-slate-500 items-center">
@@ -2765,26 +2872,73 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                   {/* MA TRẬN */}
                   {outputConfig.matrix && (
                     <div className="border border-slate-200 rounded-lg p-6 space-y-6 bg-white overflow-x-auto printable-matrix" id="matrix-container">
-                      <div className="flex justify-between items-center mb-4 no-print">
-                        <div className="flex-1 text-center">
-                          <h2 className="text-xl font-bold">MA TRẬN ĐỀ KIỂM TRA</h2>
-                          <p className="text-sm text-slate-500 font-normal no-print italic mt-1">💡 Mẹo: Bấm giữ và kéo thả các hàng (chủ đề hoặc nội dung) để sắp xếp lại thứ tự</p>
+                      {/* Control Bar: Chuyển đổi Ma trận theo Năng lực môn học (Khối 11 Chuẩn GDPT 2018 theo mẫu hình ảnh) vs Truyền thống */}
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-200 no-print">
+                        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => setMatrixViewMode('competency')}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${matrixViewMode === 'competency' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-700 hover:bg-white'}`}
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Ma trận Năng lực & Bảng đặc tả (Mẫu hình ảnh)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setMatrixViewMode('standard')}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${matrixViewMode === 'standard' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-700 hover:bg-white'}`}
+                          >
+                            <span>Ma trận theo dạng trắc nghiệm (Truyền thống)</span>
+                          </button>
                         </div>
-                        <div className="flex gap-2">
-                            <button onClick={() => {
-                                const wrap = document.getElementById('matrix-table-wrap');
-                                if (!wrap) return;
-                                exportHtmlToWord(wrap, 'Ma_Tran_De_Kiem_Tra.doc');
-                            }} className="px-3 py-1.5 bg-blue-50 text-blue-600 font-medium rounded hover:bg-blue-100 flex items-center gap-2 text-sm border border-blue-200 no-print">
-                              Xuất Word
-                            </button>
-                            <button onClick={() => window.print()} className="px-3 py-1.5 bg-slate-50 text-slate-600 font-medium rounded hover:bg-slate-200 flex items-center gap-2 text-sm border border-slate-300 no-print">
-                              <Printer className="w-4 h-4" /> In PDF
-                            </button>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => setShowAiMatrixSuggestModal(true)}
+                            className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white font-extrabold rounded-lg text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 fill-white" />
+                            <span>🤖 AI Phân Bổ Ma Trận</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowCompetencyMatrixModal(true)}
+                            className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>Mở Trình Thiết Lập Chuyên Sâu & Xuất Excel</span>
+                          </button>
                         </div>
                       </div>
-                      <div id="matrix-table-wrap">
-                          <table className="w-full border-collapse border border-black text-[13px] min-w-[1000px] font-serif text-black" style={{fontFamily: '"Times New Roman", Times, serif'}}>
+
+                      {matrixViewMode === 'competency' ? (
+                        <CompetencyMatrixInlineView
+                          examTitle={examName || "ĐỀ KIỂM TRA GIỮA HỌC KÌ I MÔN TOÁN - KHỐI 11 NĂM HỌC 2025-2026"}
+                          onOpenModal={() => setShowCompetencyMatrixModal(true)}
+                          onLoadSampleExam={handleLoadCompetencyExam11}
+                        />
+                      ) : (
+                        <>
+                          <div className="flex justify-between items-center mb-4 no-print">
+                            <div className="flex-1 text-center">
+                              <h2 className="text-xl font-bold">MA TRẬN ĐỀ KIỂM TRA</h2>
+                              <p className="text-sm text-slate-500 font-normal no-print italic mt-1">💡 Mẹo: Bấm giữ và kéo thả các hàng (chủ đề hoặc nội dung) để sắp xếp lại thứ tự</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => {
+                                    const wrap = document.getElementById('matrix-table-wrap');
+                                    if (!wrap) return;
+                                    exportHtmlToWord(wrap, 'Ma_Tran_De_Kiem_Tra.doc');
+                                }} className="px-3 py-1.5 bg-blue-50 text-blue-600 font-medium rounded hover:bg-blue-100 flex items-center gap-2 text-sm border border-blue-200 no-print">
+                                  Xuất Word
+                                </button>
+                                <button onClick={() => window.print()} className="px-3 py-1.5 bg-slate-50 text-slate-600 font-medium rounded hover:bg-slate-200 flex items-center gap-2 text-sm border border-slate-300 no-print">
+                                  <Printer className="w-4 h-4" /> In PDF
+                                </button>
+                            </div>
+                          </div>
+                          <div id="matrix-table-wrap">
+                              <table className="w-full border-collapse border border-black text-[13px] min-w-[1000px] font-serif text-black" style={{fontFamily: '"Times New Roman", Times, serif'}}>
                             <thead>
                               <tr>
                                 <th className="border border-black p-1 text-center font-bold" rowSpan={4}>TT</th>
@@ -3042,8 +3196,10 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
 
                           </table>
                       </div>
-                    </div>
+                    </>
                   )}
+                </div>
+              )}
 
                   {/* BẢN ĐẶC TẢ ĐỀ KIỂM TRA */}
                   {outputConfig.spec && (
@@ -6515,6 +6671,66 @@ Lời giải: Tiệm cận ngang là $y = 1$ nên ý c sai.`);
           }}
         />
       )}
+
+      {/* Competency Matrix and Specification Modal (Khung Chuẩn GDPT 2018 theo Mẫu Hình Ảnh) */}
+      <CompetencyMatrixModal
+        isOpen={showCompetencyMatrixModal}
+        onClose={() => setShowCompetencyMatrixModal(false)}
+        examTitle={examName || "ĐỀ KIỂM TRA GIỮA HỌC KÌ I MÔN TOÁN - KHỐI 11 NĂM HỌC 2025-2026"}
+        onApplyToExam={(cfg) => {
+          setExamName(cfg.examName);
+          if (cfg.subject) {
+            setSubject(cfg.subject);
+          }
+          setGrade(cfg.grade);
+          setQCounts(cfg.qCounts);
+          if (cfg.topics && cfg.topics.length > 0) {
+            setSelectedTopics(cfg.topics);
+          }
+          setMatrixViewMode('competency');
+          setShowCompetencyMatrixModal(false);
+          setToastMessage(`Đã áp dụng cấu hình Ma trận môn ${cfg.subject || 'Toán học'} Lớp ${cfg.grade} (${cfg.totalPoints} điểm) vào đề thi!`);
+        }}
+        onLoadSampleExamQuestions={() => {
+          handleLoadCompetencyExam11();
+          setShowCompetencyMatrixModal(false);
+        }}
+      />
+
+      {/* AI Matrix Suggestion Modal (Tự động đề xuất ma trận & bảng đặc tả GDPT 2018) */}
+      <AiMatrixSuggestModal
+        isOpen={showAiMatrixSuggestModal}
+        onClose={() => setShowAiMatrixSuggestModal(false)}
+        initialSubject={subject || "Toán học"}
+        initialGrade={grade || "11"}
+        onApplySuggestedMatrix={(data) => {
+          setExamName(data.title);
+          if (data.subject) {
+            setSubject(data.subject);
+          }
+          if (data.grade) {
+            setGrade(data.grade);
+          }
+          if (data.qCounts) {
+            setQCounts(data.qCounts);
+          }
+          if (data.topicsList && data.topicsList.length > 0) {
+            setSelectedTopics(data.topicsList);
+          }
+          if (data.durationMinutes) {
+            setDuration(data.durationMinutes);
+          }
+          if (data.matrixRows && data.matrixRows.length > 0) {
+            setCompetencyMatrixRows(data.matrixRows);
+          }
+          if (data.specUnits && data.specUnits.length > 0) {
+            setCompetencySpecRows(data.specUnits);
+          }
+          setMatrixViewMode('competency');
+          setShowAiMatrixSuggestModal(false);
+          setToastMessage(`Đã áp dụng thành công Ma trận & Bản đặc tả AI đề xuất cho môn ${data.subject} Lớp ${data.grade} (${data.durationMinutes} phút)!`);
+        }}
+      />
     </div>
     </div>
   );

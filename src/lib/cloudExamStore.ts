@@ -113,6 +113,28 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 2, ba
   }
 }
 
+// Helper to safely fetch raw string/JSON value without throwing SyntaxError on unexpected non-JSON tokens
+async function safeFetchKVValue(url: string): Promise<string> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return '';
+    const text = await res.text();
+    if (!text || !text.trim()) return '';
+    const trimmed = text.trim();
+    if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith('{') || trimmed.startsWith('['))) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return typeof parsed === 'string' ? parsed : JSON.stringify(parsed);
+      } catch (e) {
+        return trimmed.replace(/^"|"$/g, '');
+      }
+    }
+    return trimmed;
+  } catch (e) {
+    return '';
+  }
+}
+
 /**
  * Saves exam data persistently across:
  * 1. Client localStorage
@@ -209,29 +231,26 @@ export async function fetchExamFromCloud(examId: string): Promise<any> {
 
   // 3. Try Distributed Cloud KV with hex chunking
   try {
-    const countRes = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}_C`);
-    if (countRes.ok) {
-      const countVal = await countRes.json();
-      const readCount = parseInt(countVal, 10);
-      if (readCount && readCount > 0 && readCount < 100) {
-        const chunkPromises: Promise<any>[] = [];
-        for (let i = 0; i < readCount; i++) {
-          chunkPromises.push(
-            fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}_${i}`).then(r => r.json())
-          );
-        }
-        const chunks = await Promise.all(chunkPromises);
-        const hexReconstructed = chunks.join('');
-        if (hexReconstructed) {
-          const restoredUtf16 = hexToStr(hexReconstructed);
-          const decompressed = LZString.decompressFromUTF16(restoredUtf16);
-          if (decompressed) {
-            const parsed = JSON.parse(decompressed);
-            try {
-              localStorage.setItem(`examCache_${cleanId}`, JSON.stringify(parsed));
-            } catch (e) {}
-            return parsed;
-          }
+    const countVal = await safeFetchKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}_C`);
+    const readCount = parseInt(countVal, 10);
+    if (!isNaN(readCount) && readCount > 0 && readCount < 500) {
+      const chunkPromises: Promise<string>[] = [];
+      for (let i = 0; i < readCount; i++) {
+        chunkPromises.push(
+          safeFetchKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}_${i}`)
+        );
+      }
+      const chunks = await Promise.all(chunkPromises);
+      const hexReconstructed = chunks.join('');
+      if (hexReconstructed) {
+        const restoredUtf16 = hexToStr(hexReconstructed);
+        const decompressed = LZString.decompressFromUTF16(restoredUtf16);
+        if (decompressed) {
+          const parsed = JSON.parse(decompressed);
+          try {
+            localStorage.setItem(`examCache_${cleanId}`, JSON.stringify(parsed));
+          } catch (e) {}
+          return parsed;
         }
       }
     }
@@ -241,18 +260,15 @@ export async function fetchExamFromCloud(examId: string): Promise<any> {
 
   // 4. Try legacy single-key Cloud KV
   try {
-    const legacyRes = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}`);
-    if (legacyRes.ok) {
-      const val = await legacyRes.json();
-      if (val && typeof val === 'string') {
-        const decomp = LZString.decompressFromEncodedURIComponent(val);
-        if (decomp) {
-          const parsed = JSON.parse(decomp);
-          try {
-            localStorage.setItem(`examCache_${cleanId}`, JSON.stringify(parsed));
-          } catch (e) {}
-          return parsed;
-        }
+    const val = await safeFetchKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}`);
+    if (val && typeof val === 'string') {
+      const decomp = LZString.decompressFromEncodedURIComponent(val);
+      if (decomp) {
+        const parsed = JSON.parse(decomp);
+        try {
+          localStorage.setItem(`examCache_${cleanId}`, JSON.stringify(parsed));
+        } catch (e) {}
+        return parsed;
       }
     }
   } catch (e) {}

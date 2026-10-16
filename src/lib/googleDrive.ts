@@ -153,15 +153,51 @@ export async function syncExamDataToGoogleDrive(
 }
 
 /**
- * Lists all EduPlan files from the teacher's Google Drive
+ * Auto-saves matrix template JSON to Google Drive without prompt if authenticated
  */
-export async function listEduPlanDriveFiles(): Promise<DriveFileItem[]> {
+export async function autoSaveMatrixToGoogleDrive(
+  matrixTemplate: any,
+  titleStr: string
+): Promise<DriveFileItem | null> {
   const token = getCachedToken();
-  if (!token) return [];
+  if (!token) return null; // Silent skip if not logged in to avoid disturbing teacher
+
+  try {
+    const jsonString = JSON.stringify(matrixTemplate, null, 2);
+    const blob = new Blob([jsonString], { type: "application/json" });
+    const cleanTitle = (titleStr || "AutoSave_MaTran").replace(/[\/\\?%*:|"<>]/g, "_");
+    const fileName = `[AutoSave]_${cleanTitle}.matrix.json`;
+
+    return await uploadFileToGoogleDrive(
+      blob,
+      fileName,
+      "application/json",
+      "Ma Trận Auto-Save"
+    );
+  } catch (err) {
+    console.warn("Lỗi tự động lưu Google Drive:", err);
+    return null;
+  }
+}
+
+/**
+ * Lists matrix files (.json, .matrix.json) from the teacher's Google Drive
+ */
+export async function listMatrixDriveFiles(): Promise<DriveFileItem[]> {
+  let token = getCachedToken();
+  if (!token) {
+    const authResult = await googleSignIn();
+    if (!authResult?.accessToken) {
+      return [];
+    }
+    token = authResult.accessToken;
+  }
 
   try {
     const rootFolderId = await getOrCreateDriveFolder(token, EDUPLAN_ROOT_FOLDER);
-    const query = `'${rootFolderId}' in parents or mimeType = 'application/vnd.google-apps.folder'`;
+    const subFolderId = await getOrCreateDriveFolder(token, "Đề Thi & Ma Trận Sync", rootFolderId);
+    
+    const query = `'${subFolderId}' in parents or '${rootFolderId}' in parents or name contains '.json' or name contains '.matrix'`;
     const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,webViewLink,webContentLink,createdTime,size,parents)&orderBy=createdTime desc&pageSize=50`;
 
     const res = await fetch(url, {
@@ -170,17 +206,50 @@ export async function listEduPlanDriveFiles(): Promise<DriveFileItem[]> {
 
     if (!res.ok) return [];
     const data = await res.json();
-    return (data.files || []).map((f: any) => ({
-      id: f.id,
-      name: f.name,
-      mimeType: f.mimeType,
-      webViewLink: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`,
-      webContentLink: f.webContentLink,
-      createdTime: f.createdTime,
-      size: f.size
-    }));
+    return (data.files || [])
+      .filter((f: any) => f.mimeType !== 'application/vnd.google-apps.folder' && (f.name.endsWith('.json') || f.name.endsWith('.matrix.json')))
+      .map((f: any) => ({
+        id: f.id,
+        name: f.name,
+        mimeType: f.mimeType,
+        webViewLink: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`,
+        webContentLink: f.webContentLink,
+        createdTime: f.createdTime,
+        size: f.size
+      }));
   } catch (e) {
-    console.warn("Lỗi đọc danh sách tệp Google Drive:", e);
+    console.warn("Lỗi đọc danh sách tệp Ma trận từ Google Drive:", e);
     return [];
+  }
+}
+
+/**
+ * Downloads and parses JSON or text content from Google Drive by fileId
+ */
+export async function downloadFileFromGoogleDrive(fileId: string): Promise<any> {
+  let token = getCachedToken();
+  if (!token) {
+    const authResult = await googleSignIn();
+    if (!authResult?.accessToken) {
+      throw new Error("Cần đăng nhập Google Drive để tải tệp.");
+    }
+    token = authResult.accessToken;
+  }
+
+  const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`Không thể tải tệp từ Google Drive. Vui lòng kiểm tra quyền truy cập.`);
+  }
+
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    return text;
   }
 }

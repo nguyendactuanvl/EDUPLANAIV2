@@ -16,6 +16,7 @@ import { ScientificCalculatorModal } from "../components/math-tools/ScientificCa
 import { SvgAiIllustrator } from "../components/math-tools/SvgAiIllustrator";
 import { Advanced3DSimulator } from "../components/math-tools/Advanced3DSimulator";
 import { MathFormulaFixer } from "../components/math-tools/MathFormulaFixer";
+import { MathImageReproducerAnd3D } from "../components/math-tools/MathImageReproducerAnd3D";
 import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
 
 
@@ -105,8 +106,8 @@ export function MathTools() {
   const [showCalculator, setShowCalculator] = useState(false);
   const [showGeoGebra, setShowGeoGebra] = useState(false);
 
-  // Navigation: Sub-system Tab 1: Graphing & Analysis (KSHS) vs Tab 2: 3D Simulation vs Tab 3: SVG Simulation (AI) vs Tab 4: Bảng biến thiên AI vs Tab 5: Sửa lỗi Toán (1-Click) vs Tab 6: Statistics
-  const [mainSubsystem, setMainSubsystem] = useState<"graphing" | "sim_3d" | "svg_ai" | "bbt_ai" | "math_fixer" | "statistics">("graphing");
+  // Navigation: Sub-system Tab: Graphing | 3D Sim | SVG AI | Bảng biến thiên | Sửa lỗi Toán | Statistics | Vẽ lại hình theo ảnh (Reproduce)
+  const [mainSubsystem, setMainSubsystem] = useState<"graphing" | "sim_3d" | "svg_ai" | "bbt_ai" | "math_fixer" | "statistics" | "reproduce_image">("reproduce_image");
 
   // Main module view: Grade 10 (Ungrouped) or Grade 11-12 (Grouped)
   const [activeModule, setActiveModule] = useState<"grade10" | "grade11_12">("grade10");
@@ -812,6 +813,19 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
           {/* Sub-system Navigation Tabs (Tabs chính phân hệ - Nằm ngang vuốt trượt trên mobile) */}
           <div className="flex overflow-x-auto no-scrollbar items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80 gap-1 max-w-full">
             <button
+              onClick={() => setMainSubsystem("reproduce_image")}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 whitespace-nowrap",
+                mainSubsystem === "reproduce_image"
+                  ? "bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white shadow-md font-extrabold"
+                  : "text-indigo-800 hover:text-indigo-950 hover:bg-indigo-50 font-bold"
+              )}
+            >
+              <Sparkles className="w-4 h-4 text-amber-300 animate-bounce shrink-0" />
+              <span>📸 Vẽ lại hình theo ảnh & Mô hình 3D</span>
+            </button>
+
+            <button
               onClick={() => setMainSubsystem("graphing")}
               className={cn(
                 "flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 whitespace-nowrap",
@@ -906,6 +920,13 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
           </div>
           <div className="flex overflow-x-auto no-scrollbar items-center gap-2 pb-0.5 sm:pb-0">
             <button
+              onClick={() => setMainSubsystem("reproduce_image")}
+              className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-98 text-white rounded-lg text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer border border-blue-400/50 shrink-0 whitespace-nowrap"
+              title="Vẽ lại hình theo ảnh mẫu và xem mô hình 3D động trực quan"
+            >
+              <span>📸</span> Vẽ lại hình từ ảnh & 3D
+            </button>
+            <button
               onClick={() => setMainSubsystem("math_fixer")}
               className="px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 active:scale-98 text-slate-950 rounded-lg text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer border border-emerald-400/50 shrink-0 whitespace-nowrap"
               title="Mở công thức toán và sửa lỗi 1-Click tự động"
@@ -929,6 +950,13 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
           </div>
         </div>
       </div>
+
+      {/* RENDER PHÂN HỆ: VẼ LẠI HÌNH THEO ẢNH & MÔ HÌNH 3D ĐỘNG */}
+      {mainSubsystem === "reproduce_image" && (
+        <div className="flex-1 flex flex-col">
+          <MathImageReproducerAnd3D />
+        </div>
+      )}
 
       {/* RENDER PHÂN HỆ 1: VẼ HÌNH & KHẢO SÁT HÀM SỐ (KSHS) */}
       {mainSubsystem === "graphing" && (

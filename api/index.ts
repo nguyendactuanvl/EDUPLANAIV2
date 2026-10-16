@@ -3096,28 +3096,46 @@ async function saveToCloudKV(cleanId: string, data: any): Promise<boolean> {
   }
 }
 
+async function safeFetchServerKVValue(url: string): Promise<string> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return '';
+    const text = await res.text();
+    if (!text || !text.trim()) return '';
+    const trimmed = text.trim();
+    if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith('{') || trimmed.startsWith('['))) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return typeof parsed === 'string' ? parsed : JSON.stringify(parsed);
+      } catch (e) {
+        return trimmed.replace(/^"|"$/g, '');
+      }
+    }
+    return trimmed;
+  } catch (e) {
+    return '';
+  }
+}
+
 async function loadFromCloudKV(cleanId: string): Promise<any> {
   // 1. Try Distributed Cloud KV with hex chunking
   try {
-    const countRes = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}_C`);
-    if (countRes.ok) {
-      const countVal = await countRes.json();
-      const readCount = parseInt(countVal, 10);
-      if (readCount && readCount > 0 && readCount < 5000) {
-        const chunkPromises: Promise<any>[] = [];
-        for (let i = 0; i < readCount; i++) {
-          chunkPromises.push(
-            fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}_${i}`).then(r => r.json())
-          );
-        }
-        const chunks = await Promise.all(chunkPromises);
-        const hexReconstructed = chunks.join('');
-        if (hexReconstructed) {
-          const restoredUtf16 = hexToStr(hexReconstructed);
-          const decompressed = LZString.decompressFromUTF16(restoredUtf16);
-          if (decompressed) {
-            return JSON.parse(decompressed);
-          }
+    const countVal = await safeFetchServerKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}_C`);
+    const readCount = parseInt(countVal, 10);
+    if (!isNaN(readCount) && readCount > 0 && readCount < 5000) {
+      const chunkPromises: Promise<string>[] = [];
+      for (let i = 0; i < readCount; i++) {
+        chunkPromises.push(
+          safeFetchServerKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}_${i}`)
+        );
+      }
+      const chunks = await Promise.all(chunkPromises);
+      const hexReconstructed = chunks.join('');
+      if (hexReconstructed) {
+        const restoredUtf16 = hexToStr(hexReconstructed);
+        const decompressed = LZString.decompressFromUTF16(restoredUtf16);
+        if (decompressed) {
+          return JSON.parse(decompressed);
         }
       }
     }
@@ -3127,14 +3145,11 @@ async function loadFromCloudKV(cleanId: string): Promise<any> {
 
   // 2. Try legacy single-key Cloud KV
   try {
-    const legacyRes = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}`);
-    if (legacyRes.ok) {
-      const val = await legacyRes.json();
-      if (val && typeof val === 'string') {
-        const decomp = LZString.decompressFromEncodedURIComponent(val);
-        if (decomp) {
-          return JSON.parse(decomp);
-        }
+    const val = await safeFetchServerKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}`);
+    if (val && typeof val === 'string') {
+      const decomp = LZString.decompressFromEncodedURIComponent(val);
+      if (decomp) {
+        return JSON.parse(decomp);
       }
     }
   } catch (e) {}
@@ -3996,6 +4011,299 @@ Nhiệm vụ của bạn là đọc đề bài toán học và dựng một hìn
     });
   } catch (err: any) {
     console.error("Lỗi generate-math-simulation:", err);
+    handleAiError(err, req, res);
+  }
+});
+
+// Endpoint Tái tạo hình vẽ Toán học từ ảnh & Sinh mô hình động
+app.post("/api/reproduce-math-image", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  try {
+    const { imageBase64, mimeType = 'image/png', promptHint = '', modelType = 'auto' } = req.body || {};
+
+    if (!imageBase64) {
+      return res.status(400).json({ error: "Vui lòng tải lên ảnh bài toán để tái tạo hình vẽ." });
+    }
+
+    const cleanData = typeof imageBase64 === 'string' ? imageBase64.replace(/^data:image\/\w+;base64,/, '').trim() : '';
+
+    if (!cleanData) {
+      return res.status(400).json({ error: "Dữ liệu hình ảnh không hợp lệ." });
+    }
+
+    const systemPrompt = `Bạn là chuyên gia đồ họa hình học Toán học và lập trình SVG / TikZ / Three.js hàng đầu của Bộ GD&ĐT (Chương trình GDPT 2018).
+Nhiệm vụ của bạn là: Phân tích hình ảnh bài toán do giáo viên tải lên (gồm hình vẽ phẳng trải lưới, quy trình gấp hộp origami, hình học không gian 3D, vật thể xoắn ốc cắt lát tích phân...), trích xuất đề bài toán học và tái tạo lại hình vẽ toán học đẹp, chính xác 100% về mặt tỉ lệ hình học, thẩm mỹ chuẩn sách giáo khoa.
+
+BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON (không kèm markdown bên ngoài hoặc bọc trong \`\`\`json):
+{
+  "problemTitle": "Tiêu đề bài toán (Ví dụ: Cắt gấp chiếc hộp hoa từ tờ giấy hình vuông 10cm)",
+  "questionText": "Toàn bộ nội dung đề bài đọc được từ ảnh. Tất cả công thức toán học BẮT BUỘC đặt trong cặp dấu $...$ (ví dụ: $x$, $\\frac{x}{2}$, $10\\text{ cm}$, $V(x)$, $45^\\circ$)",
+  "mathModel": {
+    "type": "paper_folding" | "twisted_solid" | "cylinder_box" | "polyhedron" | "cross_section",
+    "parameters": {
+      "a": 10,
+      "variableName": "x",
+      "optimalX": 2.5,
+      "maxVolume": 28.5
+    },
+    "volumeFormula": "Công thức giải tích tính thể tích $V(x) = ...$",
+    "optimalSolution": "Lời giải toán học tìm giá trị lớn nhất $V_{\\\\max}$, đạo hàm $V'(x) = 0$, kết luận"
+  },
+  "colorSvg": "<svg viewBox=\\"0 0 850 500\\" xmlns=\\"http://www.w3.org/2000/svg\\" ...>...</svg>",
+  "bwSvg": "<svg viewBox=\\"0 0 850 500\\" xmlns=\\"http://www.w3.org/2000/svg\\" ...>...</svg>",
+  "tikzCode": "\\\\begin{tikzpicture}[...] ... \\\\end{tikzpicture}",
+  "foldingSteps": [
+    { "step": 1, "title": "Bước 1", "description": "Mô tả công đoạn phẳng ban đầu" },
+    { "step": 2, "title": "Bước 2", "description": "Gấp các thành đứng 90 độ" },
+    { "step": 3, "title": "Bước 3", "description": "Khép các nắp trên / uốn vòm cong" }
+  ]
+}
+
+QUY TẮC VẼ SVG CỰC KỲ CHÍNH XÁC:
+1. colorSvg (Bản vẽ màu chuẩn SGK):
+   - Kích thước viewBox="0 0 850 500" hoặc phù hợp với bố cục ảnh gốc.
+   - Màu sắc pastel đẹp, cao cấp: màu giấy cam nhạt (#fde2d4 hoặc #fed7aa), viền nét vẽ đen sắc nét (#1e293b, stroke-width: 1.5 - 2).
+   - Vẽ đầy đủ: Hình phẳng trải lưới (kèm các đường nét đứt biểu thị nếp gấp stroke-dasharray="4,4"), mũi tên uốn cong quy trình (marker-end="url(#arrow)"), các bước gấp thu nhỏ, và chiếc hộp 3D hoàn chỉnh được phóng to.
+   - Chữ ghi chú (labels): font-family: 'Times New Roman', serif, font-size: 13-14, rõ nét và căn chỉnh đúng tọa độ.
+2. bwSvg (Bản vẽ đen trắng in ấn):
+   - Chuẩn mực 100% dành cho in ấn đề thi trường học (không có màu, chỉ đen trắng và xám).
+   - Nền trắng (#ffffff), nét vẽ đen tuyền (#000000, stroke-width: 1.5).
+   - Các vùng tô màu trong bản gốc được thay bằng: gạch sọc chéo (hatching) thông qua <pattern id="hatch"> hoặc xám nhạt (#f1f5f9 với viền đen rõ).
+   - Nếp gấp dùng nét đứt chuẩn (stroke-dasharray="4,4").
+   - Cực kỳ tương phản, photo hoặc in ấn không bao giờ bị nhòe mực.
+3. ĐẢM BẢO SVG HỢP LỆ: Đóng đủ thẻ, có <defs> định nghĩa mũi tên marker và pattern.`;
+
+    const userMessage = promptHint
+      ? `Hãy tái tạo hình vẽ cho ảnh này với yêu cầu bổ sung: ${promptHint}. Tái tạo cả bản màu gốc và bản đen trắng in ấn kèm mô hình động.`
+      : `Hãy tái tạo hình vẽ toán học từ ảnh này với độ chính xác 100%, gồm bản màu sắc gốc, bản đen trắng in ấn, phân tích toán học và các bước mô phỏng.`;
+
+    const response = await generateWithFallback(req, {
+      contents: [{
+        role: "user",
+        parts: [
+          {
+            inlineData: {
+              data: cleanData,
+              mimeType: mimeType || 'image/png'
+            }
+          },
+          { text: userMessage }
+        ]
+      }],
+      config: {
+        systemInstruction: systemPrompt,
+        temperature: 0.15
+      }
+    });
+
+    if (!response || !response.text) {
+      throw new Error("Không nhận được phản hồi từ AI tái tạo hình ảnh.");
+    }
+
+    let rawText = response.text.trim();
+    if (rawText.startsWith("```json")) {
+      rawText = rawText.replace(/^```json\s*/i, "").replace(/\s*```$/, "").trim();
+    } else if (rawText.startsWith("```")) {
+      rawText = rawText.replace(/^```\s*/, "").replace(/\s*```$/, "").trim();
+    }
+
+    let parsedResult: any = null;
+    try {
+      parsedResult = JSON.parse(rawText);
+    } catch (parseErr) {
+      // Tìm khối JSON { ... }
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          parsedResult = JSON.parse(jsonMatch[0]);
+        } catch (e2) {
+          console.warn("Lỗi parse JSON cấp 2:", e2);
+        }
+      }
+    }
+
+    if (!parsedResult || !parsedResult.colorSvg) {
+      // Fallback: nếu AI trả về trực tiếp thẻ SVG
+      const svgMatch = rawText.match(/<svg[\s\S]*?<\/svg>/i);
+      if (svgMatch) {
+        parsedResult = {
+          problemTitle: "Hình vẽ toán học tái tạo từ ảnh",
+          questionText: "Hình vẽ toán học tái tạo từ ảnh gốc của giáo viên.",
+          colorSvg: svgMatch[0],
+          bwSvg: svgMatch[0].replace(/fill="#[a-fA-F0-9]{3,6}"/g, 'fill="#f8fafc"').replace(/stroke="#[a-fA-F0-9]{3,6}"/g, 'stroke="#000000"'),
+          mathModel: { type: "general_geometry" },
+          foldingSteps: [
+            { step: 1, title: "Mô hình", description: "Quan sát hình học 3D" }
+          ]
+        };
+      } else {
+        throw new Error("AI không thể phân tích cấu trúc hình học của bức ảnh này. Vui lòng thử ảnh rõ nét hơn.");
+      }
+    }
+
+    return res.json({
+      success: true,
+      result: parsedResult
+    });
+  } catch (err: any) {
+    console.error("Lỗi reproduce-math-image:", err);
+    handleAiError(err, req, res);
+  }
+});
+
+// ============================================================================
+// API: AI TỰ ĐỘNG ĐỀ XUẤT MA TRẬN & BẢNG ĐẶC TẢ GDPT 2018 THEO YÊU CẦU
+// ============================================================================
+app.post("/api/suggest-exam-matrix", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  try {
+    const {
+      subject = "Toán học",
+      grade = "11",
+      semester = "Giữa kì I",
+      durationMinutes = 90,
+      totalPoints = 10,
+      targetRatio = { biet: 40, hieu: 30, vd: 20, vdc: 10 },
+      qCounts = { mc: 16, tf: 2, sa: 2, essay: 3 },
+      customTopics = [],
+      pedagogicalNote = ""
+    } = req.body || {};
+
+    const systemPrompt = `Bạn là Chuyên gia Khảo thí và Đánh giá Giáo dục hàng đầu của Bộ Giáo dục & Đào tạo Việt Nam, am tường sâu sắc Chương trình Giáo dục Phổ thông 2018 (GDPT 2018).
+Nhiệm vụ của bạn là: Phân tích các thông số đề thi của giáo viên (Môn học, Khối lớp, Thời gian làm bài, Số lượng câu hỏi từng phần, Mục tiêu tỉ lệ cấp độ tư duy: Nhận biết, Thông hiểu, Vận dụng, Vận dụng cao), tự động tính toán, phân bổ các câu lệnh hỏi vào Ma trận đánh giá năng lực môn học và xây dựng Bảng đặc tả chi tiết kĩ thuật đề kiểm tra đạt chuẩn sư phạm 100%.
+
+QUY TẮC CỐT LÕI VỀ TOÁN HỌC & ĐẶC TẢ:
+1. Tất cả công thức, ký hiệu toán học, biến số đơn lẻ (x, y, m, a...) BẮT BUỘC đặt trong cặp dấu đô la: $công_thức$ (nội dòng) hoặc $$công_thức$$ (khối riêng).
+2. Dùng cú pháp LaTeX chuẩn: \\sin, \\cos, \\tan, \\cot, \\frac{a}{b}, \\sqrt{...}, \\pi, \\Leftrightarrow, \\ge, \\le, \\in. Dùng \\frac thay vì \\dfrac.
+3. Không viết tắt hay dùng text thường cho công thức (ví dụ: không viết "sin x = 0", phải viết "$\\sin x = 0$").
+4. Mã câu hỏi:
+   - Phần I: Trắc nghiệm 4 lựa chọn ký hiệu I.1, I.2, ... I.n
+   - Phần II: Trắc nghiệm Đúng/Sai ký hiệu II.1 (với các ý a, b, c, d gán vào các ô năng lực như II.1ab, II.1cd, II.2a...)
+   - Phần III: Trắc nghiệm Trả lời ngắn ký hiệu III.1, III.2, ... III.m
+   - Phần IV (nếu có): Tự luận ký hiệu TL1, TL2, TL3...
+5. Tỉ lệ nhận thức phải bám sát mục tiêu của giáo viên: Nhận biết: ${targetRatio.biet}%, Thông hiểu: ${targetRatio.hieu}%, Vận dụng: ${targetRatio.vd}%, Vận dụng cao: ${targetRatio.vdc}%.
+6. Tổng điểm phân bổ trên toàn bộ bảng đặc tả phải bằng đúng ${totalPoints} điểm.
+
+BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON (không kèm markdown bên ngoài hoặc bọc trong \`\`\`json):
+{
+  "title": "Tên đề kiểm tra (Ví dụ: ĐỀ KIỂM TRA GIỮA HỌC KÌ I MÔN TOÁN - KHỐI 11)",
+  "subject": "${subject}",
+  "grade": "${grade}",
+  "durationMinutes": ${durationMinutes},
+  "totalPoints": ${totalPoints},
+  "competencyHeaders": {
+    "c1": "Tên năng lực 1 phù hợp môn học",
+    "c2": "Tên năng lực 2 phù hợp môn học",
+    "c3": "Tên năng lực 3 phù hợp môn học"
+  },
+  "topicsList": ["Chủ đề 1", "Chủ đề 2", ...],
+  "matrixRows": [
+    {
+      "id": "row-1",
+      "topic": "TÊN CHỦ ĐỀ IN HOA",
+      "unit": "1. Tên bài / đơn vị kiến thức",
+      "gqvd": { "biet": "I.1, I.2", "hieu": "", "vd": "" },
+      "tuduy": { "biet": "I.3", "hieu": "II.1ab", "vd": "" },
+      "mohinh": { "biet": "", "hieu": "", "vd": "TL1" }
+    }
+  ],
+  "specUnits": [
+    {
+      "id": "spec-1",
+      "topic": "Tên chủ đề",
+      "unit": "1. Tên bài / đơn vị kiến thức",
+      "bietSpec": "- Yêu cầu cần đạt mức Nhận biết cụ thể...",
+      "hieuSpec": "- Yêu cầu cần đạt mức Thông hiểu cụ thể...",
+      "vdSpec": "- Yêu cầu cần đạt mức Vận dụng cụ thể...",
+      "assignedQuestions": {
+        "part1": "I.1, I.2",
+        "part2": "II.1 (ý a, b)",
+        "part3": "",
+        "essay": "TL1"
+      },
+      "points": 1.25
+    }
+  ],
+  "aiPedagogicalAdvice": "Lời khuyên sư phạm của chuyên gia về phân bố thời gian làm bài, cấu trúc đề và mức độ phân hóa...",
+  "timeBreakdown": {
+    "mcAverageMinutes": "1.5 phút/câu",
+    "tfAverageMinutes": "4.0 phút/câu (4 ý)",
+    "saAverageMinutes": "3.5 phút/câu",
+    "essayAverageMinutes": "10.0 phút/câu"
+  }
+}`;
+
+    const userPrompt = `Hãy tự động tính toán và đề xuất ma trận đề thi & bảng đặc tả chi tiết GDPT 2018 với các thông số sau:
+- Môn học: ${subject}
+- Khối lớp: ${grade}
+- Kì thi: ${semester}
+- Thời gian làm bài: ${durationMinutes} phút
+- Thang điểm: ${totalPoints} điểm
+- Cấu trúc số lượng câu hỏi mong muốn:
+  * Phần I (Trắc nghiệm nhiều lựa chọn): ${qCounts.mc} câu
+  * Phần II (Trắc nghiệm Đúng/Sai): ${qCounts.tf} câu (mỗi câu 4 ý a, b, c, d)
+  * Phần III (Trắc nghiệm Trả lời ngắn): ${qCounts.sa} câu
+  * Phần IV (Tự luận): ${qCounts.essay} câu
+- Mục tiêu tỉ lệ mức độ nhận thức:
+  * Nhận biết: ${targetRatio.biet}%
+  * Thông hiểu: ${targetRatio.hieu}%
+  * Vận dụng: ${targetRatio.vd}%
+  * Vận dụng cao: ${targetRatio.vdc}%
+- Các chủ đề trọng tâm cần có: ${customTopics.length > 0 ? customTopics.join(', ') : 'Tự động lấy theo phân phối chương trình GDPT 2018 của học kì này'}
+- Ghi chú bổ sung từ giáo viên: ${pedagogicalNote || 'Cân đối phân hóa học sinh khá giỏi'}`;
+
+    const response = await generateWithFallback(req, {
+      contents: [{
+        role: "user",
+        parts: [{ text: userPrompt }]
+      }],
+      config: {
+        systemInstruction: systemPrompt,
+        temperature: 0.2
+      }
+    });
+
+    if (!response || !response.text) {
+      throw new Error("Không nhận được phản hồi từ AI đề xuất ma trận.");
+    }
+
+    let rawText = response.text.trim();
+    if (rawText.startsWith("```json")) {
+      rawText = rawText.replace(/^```json\s*/i, "").replace(/\s*```$/, "").trim();
+    } else if (rawText.startsWith("```")) {
+      rawText = rawText.replace(/^```\s*/, "").replace(/\s*```$/, "").trim();
+    }
+
+    let parsedResult: any = null;
+    try {
+      parsedResult = JSON.parse(rawText);
+    } catch (parseErr) {
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        parsedResult = JSON.parse(jsonMatch[0]);
+      }
+    }
+
+    if (!parsedResult || !parsedResult.matrixRows || !Array.isArray(parsedResult.matrixRows)) {
+      throw new Error("Dữ liệu ma trận đề xuất từ AI không đúng cấu trúc yêu cầu. Vui lòng thử lại.");
+    }
+
+    return res.json({
+      success: true,
+      result: parsedResult
+    });
+  } catch (err: any) {
+    console.error("Lỗi suggest-exam-matrix:", err);
     handleAiError(err, req, res);
   }
 });
