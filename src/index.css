@@ -291,6 +291,71 @@ html.dark body,
   stroke: #f8fafc !important;
 }
 
+/* Enhanced MathJax and text styling in Solution Boxes */
+.solution-box-dark {
+  background-color: #0b1120 !important;
+  color: #f8fafc !important;
+}
+
+.solution-box-dark mjx-container,
+.solution-box-dark mjx-container svg * {
+  fill: #38bdf8 !important;
+  stroke: #38bdf8 !important;
+  color: #38bdf8 !important;
+}
+
+.solution-box-dark .markdown-body,
+.solution-box-dark .markdown-body p,
+.solution-box-dark .markdown-body li,
+.solution-box-dark .markdown-body span {
+  color: #f1f5f9 !important;
+}
+
+.solution-box-dark .markdown-body strong {
+  color: #fbbf24 !important;
+}
+
+.solution-box-dark .markdown-body h1,
+.solution-box-dark .markdown-body h2,
+.solution-box-dark .markdown-body h3,
+.solution-box-dark .markdown-body h4 {
+  color: #a5b4fc !important;
+  font-weight: 800 !important;
+}
+
+.solution-box-light {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+.solution-box-light mjx-container,
+.solution-box-light mjx-container svg * {
+  fill: #0f172a !important;
+  stroke: #0f172a !important;
+  color: #0f172a !important;
+}
+
+.solution-box-light .markdown-body,
+.solution-box-light .markdown-body p,
+.solution-box-light .markdown-body li,
+.solution-box-light .markdown-body span {
+  color: #0f172a !important;
+  font-weight: 500;
+}
+
+.solution-box-light .markdown-body strong {
+  color: #1e1b4b !important;
+  font-weight: 700;
+}
+
+.solution-box-light .markdown-body h1,
+.solution-box-light .markdown-body h2,
+.solution-box-light .markdown-body h3,
+.solution-box-light .markdown-body h4 {
+  color: #1e1b4b !important;
+  font-weight: 800 !important;
+}
+
 /* --- PRINT & PDF EXPORT STYLING --- */
 @media print {
   body {

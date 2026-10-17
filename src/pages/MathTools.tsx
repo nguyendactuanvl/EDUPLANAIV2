@@ -17,6 +17,7 @@ import { SvgAiIllustrator } from "../components/math-tools/SvgAiIllustrator";
 import { Advanced3DSimulator } from "../components/math-tools/Advanced3DSimulator";
 import { MathFormulaFixer } from "../components/math-tools/MathFormulaFixer";
 import { MathImageReproducerAnd3D } from "../components/math-tools/MathImageReproducerAnd3D";
+import { VectorChapterTools } from "../components/math-tools/VectorChapterTools";
 import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
 
 
@@ -106,8 +107,8 @@ export function MathTools() {
   const [showCalculator, setShowCalculator] = useState(false);
   const [showGeoGebra, setShowGeoGebra] = useState(false);
 
-  // Navigation: Sub-system Tab: Graphing | 3D Sim | SVG AI | Bảng biến thiên | Sửa lỗi Toán | Statistics | Vẽ lại hình theo ảnh (Reproduce)
-  const [mainSubsystem, setMainSubsystem] = useState<"graphing" | "sim_3d" | "svg_ai" | "bbt_ai" | "math_fixer" | "statistics" | "reproduce_image">("reproduce_image");
+  // Navigation: Sub-system Tab: Graphing | 3D Sim | SVG AI | Bảng biến thiên | Sửa lỗi Toán | Statistics | Vẽ lại hình theo ảnh | Chương Vectơ 10
+  const [mainSubsystem, setMainSubsystem] = useState<"graphing" | "sim_3d" | "svg_ai" | "bbt_ai" | "math_fixer" | "statistics" | "reproduce_image" | "vectors">("vectors");
 
   // Main module view: Grade 10 (Ungrouped) or Grade 11-12 (Grouped)
   const [activeModule, setActiveModule] = useState<"grade10" | "grade11_12">("grade10");
@@ -902,6 +903,19 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
               <BarChart3 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>6. Thống kê 10, 11, 12</span>
             </button>
+
+            <button
+              onClick={() => setMainSubsystem("vectors")}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 whitespace-nowrap",
+                mainSubsystem === "vectors"
+                  ? "bg-purple-600 text-white shadow-md font-bold"
+                  : "text-purple-700 hover:text-purple-950 hover:bg-purple-50 font-bold"
+              )}
+            >
+              <Compass className="w-4 h-4 text-purple-400 shrink-0" />
+              <span>7. Minh Họa Toán 10 (Vectơ & Hệ Thức Lượng)</span>
+            </button>
           </div>
         </div>
       </header>
@@ -990,6 +1004,13 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
       {mainSubsystem === "math_fixer" && (
         <div className="flex-1 flex flex-col p-4 max-w-7xl mx-auto w-full">
           <MathFormulaFixer />
+        </div>
+      )}
+
+      {/* RENDER PHÂN HỆ VECTƠ 10: MINH HỌA CHƯƠNG VECTƠ TOÁN 10 KNTT */}
+      {mainSubsystem === "vectors" && (
+        <div className="flex-1 flex flex-col p-4 max-w-7xl mx-auto w-full">
+          <VectorChapterTools />
         </div>
       )}
 
