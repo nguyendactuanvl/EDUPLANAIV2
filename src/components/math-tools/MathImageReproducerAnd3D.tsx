@@ -34,6 +34,9 @@ export interface MathReproducedItem {
     step: number;
     title: string;
     desc: string;
+    animProgress?: number;
+    sliceX?: number;
+    formula?: string;
   }[];
 }
 
@@ -46,9 +49,34 @@ const PRESET_CAU_43: MathReproducedItem = {
   questionText: 'Một tờ giấy hình vuông có cạnh bằng $10\\text{ cm}$. Người ta vẽ ở chính giữa tờ giấy một hình vuông có độ dài cạnh bằng $x$. Sau đó, vẽ ra phía ngoài bốn hình chữ nhật bằng nhau có kích thước là $x\\text{ cm} \\times \\frac{x}{2}\\text{ cm}$. Sau đó, vẽ tiếp ra phía ngoài bốn hình thang cân có đáy lớn dài $x$ và đáy nhỏ dài $\\frac{x}{2}$, góc ở đáy của hình thang cân là $45^\\circ$. Sau đó, vẽ tiếp ra phía ngoài sao cho ở phía ngoài cùng là nửa hình tròn và ở giữa hình thang cân và nửa hình tròn đó là một hình chữ nhật. Toàn bộ phần được tô màu được cắt ra, sau đó được gấp lại để thành một hình như trong hình vẽ. Người ta đổ nước vào hình này, giả sử các chỗ nối được làm kín và không thấm nước. Tính thể tích nước tối đa người ta có thể đổ vào một khối hình như vậy.',
   mathModel: {
     type: 'paper_folding_flower',
-    formula: 'V(x) = x^2 \\cdot \\frac{x}{2} + V_{\\text{vòm}} = \\frac{x^3}{2} + \\dots',
-    optimalSolution: 'Khảo sát hàm số $V(x)$ trên khoảng $(0; \\frac{10}{1 + 2\\sqrt{2}})$. Đạo hàm $V\'(x) = 0$ để tìm độ dài cạnh đáy $x$ tối ưu giúp khối hình đạt thể tích nước chứa lớn nhất $V_{\\max}$.',
-    variablesDesc: '$x$: độ dài cạnh hình vuông đáy ($0 < x < 4\\text{ cm}$)'
+    formula: 'V(x) = V_{\\text{hộp đáy}} + V_{\\text{cổ nắp}} = \\frac{x^3}{2} + \\frac{x^2}{4} \\cdot h_1',
+    optimalSolution: `**1. Xác định điều kiện cạnh đáy $x$ từ kích thước tờ giấy $10\\text{ cm} \\times 10\\text{ cm}$:**
+- Khoảng cách từ tâm tờ giấy đến mép ngoài: $\\frac{10}{2} = 5\\text{ cm}$.
+- Dọc theo trục đối xứng, phôi trải phẳng từ tâm gồm:
+  + Nửa đáy hình vuông: $\\frac{x}{2}$
+  + Chiều cao thành đứng hình chữ nhật: $\\frac{x}{2}$
+  + Chiều cao hình thang cân (đáy lớn $x$, đáy nhỏ $\\frac{x}{2}$, góc đáy $45^\\circ$):
+    $$h_{\\text{thang}} = \\frac{x - \\frac{x}{2}}{2} \\cdot \\tan 45^\\circ = \\frac{x}{4}$$
+  + Chiều cao phần hình chữ nhật nhỏ: $h_1$
+  + Bán kính của nửa hình tròn ngoài cùng: $R = \\frac{x/2}{2} = \\frac{x}{4}$
+- Do toàn bộ phôi nằm trọn trong tờ giấy $10\\text{ cm} \\times 10\\text{ cm}$ nên:
+  $$\\frac{x}{2} + \\frac{x}{2} + \\frac{x}{4} + h_1 + \\frac{x}{4} \\le 5 \\iff \\frac{3x}{2} + h_1 \\le 5 \\implies h_1 = 5 - \\frac{3x}{2}$$
+- Điều kiện $h_1 > 0 \\implies 0 < x < \\frac{10}{3} \\approx 3.33\\text{ cm}$.
+
+**2. Công thức thể tích nước chứa tối đa trong khối hình:**
+- Thể tích khối hộp chữ nhật thân dưới (đáy $x \\times x$, chiều cao $\\frac{x}{2}$):
+  $$V_1 = x \\cdot x \\cdot \\frac{x}{2} = \\frac{x^3}{2}$$
+- Thể tích phần cổ miệng trên (đáy hình vuông $\\frac{x}{2} \\times \\frac{x}{2}$, chiều cao $h_1$):
+  $$V_2 = \\left(\\frac{x}{2}\\right)^2 \\cdot h_1 = \\frac{x^2}{4} \\cdot \\left(5 - \\frac{3x}{2}\\right) = \\frac{5x^2}{4} - \\frac{3x^3}{8}$$
+- Tổng thể tích nước chứa lớn nhất:
+  $$V(x) = V_1 + V_2 = \\frac{x^3}{2} + \\left(\\frac{5x^2}{4} - \\frac{3x^3}{8}\\right) = \\frac{x^3}{8} + \\frac{5x^2}{4}$$
+
+**3. Khảo sát cực trị thể tích $V(x)$:**
+- Đạo hàm: $V'(x) = \\frac{3x^2}{8} + \\frac{5x}{2} = x \\cdot \\left(\\frac{3x}{8} + \\frac{5}{2}\\right) > 0 \\quad \\forall x \\in \\left(0; \\frac{10}{3}\\right)$.
+- Do $V'(x) > 0$, hàm số $V(x)$ đồng biến trên khoảng $\\left(0; \\frac{10}{3}\\right)$.
+- Thể tích đạt giá trị lớn nhất khi $x \\to \\frac{10}{3}\\text{ cm}$:
+  $$V_{\\max} = V\\left(\\frac{10}{3}\\right) = \\frac{1}{8}\\left(\\frac{10}{3}\\right)^3 + \\frac{5}{4}\\left(\\frac{10}{3}\\right)^2 = \\frac{1000}{216} + \\frac{500}{36} = \\frac{500}{27} \\approx 18.52\\text{ cm}^3$$.`,
+    variablesDesc: '$x$: độ dài cạnh đáy hình vuông ($0 < x < \\frac{10}{3}\\text{ cm}$), $h_1 = 5 - \\frac{3x}{2}$: chiều cao cổ hộp'
   },
   colorSvg: `<svg viewBox="0 0 880 500" xmlns="http://www.w3.org/2000/svg" style="background:#ffffff; font-family:'Times New Roman', serif;">
   <defs>
@@ -360,10 +388,41 @@ const PRESET_CAU_43: MathReproducedItem = {
   \\draw[<->] (6.5,3.2) -- node[below]{$\\frac{x}{2}$} (8,3.2);
 \\end{tikzpicture}`,
   steps: [
-    { step: 1, title: 'Bước 1: Trải phẳng trên tờ giấy', desc: 'Cắt theo đường bao viền nét liền, giữ lại phần nếp gấp nét đứt.' },
-    { step: 2, title: 'Bước 2: Gập 4 thành đứng', desc: 'Nâng 4 hình chữ nhật kích thước x × x/2 vuông góc 90 độ so với đáy.' },
-    { step: 3, title: 'Bước 3: Nghiêng 4 hình thang cân', desc: 'Bẻ gập 4 hình thang góc 45 độ nghiêng chụm dần vào tâm hộp.' },
-    { step: 4, title: 'Bước 4: Khép cánh hoa vòm', desc: 'Uốn 4 dải vòm nửa hình tròn khép kín lại thành chiếc hộp hoa hoàn chỉnh.' }
+    { 
+      step: 1, 
+      title: 'Bước 1: Trải phẳng trên tờ giấy $10\\text{ cm} \\times 10\\text{ cm}$', 
+      desc: 'Phôi trải phẳng ban đầu nằm trọn trong hình vuông cạnh $10\\text{ cm}$. Đáy hộp là hình vuông chính giữa có độ dài cạnh bằng $x$, xung quanh là $4$ hình chữ nhật kích thước $x \\times \\frac{x}{2}$, tiếp theo là $4$ hình thang cân góc đáy $45^\\circ$ (đáy lớn $x$, đáy nhỏ $\\frac{x}{2}$) và $4$ cánh nắp ngoài cùng (gồm hình chữ nhật $\\frac{x}{2} \\times h_1$ và nửa hình tròn đường kính $\\frac{x}{2}$).',
+      animProgress: 0,
+      formula: 'a = x, \\quad h_{\\text{thành}} = \\frac{x}{2}, \\quad h_{\\text{thang}} = \\frac{x}{4}'
+    },
+    { 
+      step: 2, 
+      title: 'Bước 2: Gập đứng $4$ thành hộp vuông góc $90^\\circ$', 
+      desc: 'Nâng $4$ hình chữ nhật kích thước $x \\times \\frac{x}{2}$ lên một góc $90^\\circ$ so với đáy hình vuông, tạo thành phần thân dưới của khối hộp chữ nhật có kích thước đáy $x \\times x$ và chiều cao $h_{\\text{thành}} = \\frac{x}{2}$. Thể tích phần thân dưới là $V_1 = x \\cdot x \\cdot \\frac{x}{2} = \\frac{x^3}{2}$.',
+      animProgress: 35,
+      formula: 'V_1 = x \\cdot x \\cdot \\frac{x}{2} = \\frac{x^3}{2}'
+    },
+    { 
+      step: 3, 
+      title: 'Bước 3: Gập $4$ hình thang cân nằm ngang vào tâm', 
+      desc: 'Gập $4$ hình thang cân vuông góc $90^\\circ$ vào trong (song song với đáy). Nhờ góc đáy $45^\\circ$, các cạnh bên nghiêng tiếp xúc khít vào nhau theo $4$ đường chéo $45^\\circ$, tạo thành mặt trên phẳng của hộp và chừa ra một miệng lỗ hình vuông ở chính giữa có kích thước $\\frac{x}{2} \\times \\frac{x}{2}$.',
+      animProgress: 70,
+      formula: 'S_{\\text{miệng}} = \\left(\\frac{x}{2}\\right)^2 = \\frac{x^2}{4}'
+    },
+    { 
+      step: 4, 
+      title: 'Bước 4: Dựng đứng $4$ cánh nắp tạo cổ miệng hộp', 
+      desc: 'Dựng $4$ cánh nắp lên vuông góc $90^\\circ$ quanh $4$ cạnh của lỗ vuông $\\frac{x}{2} \\times \\frac{x}{2}$. Bốn đoạn hình chữ nhật có chiều rộng $\\frac{x}{2}$ và chiều cao $h_1 = 5 - \\frac{3x}{2}$ tạo thành phần cổ lăng trụ chứa nước. Phía trên cùng là $4$ vòm nửa hình tròn bán kính $R = \\frac{x}{4}$ uốn cong tạo miệng loe.',
+      animProgress: 90,
+      formula: 'h_1 = 5 - \\frac{3x}{2}, \\quad V_2 = \\frac{x^2}{4} \\cdot h_1 = \\frac{5x^2}{4} - \\frac{3x^3}{8}'
+    },
+    { 
+      step: 5, 
+      title: 'Bước 5: Rót nước tối đa & Tối ưu thể tích cực trị', 
+      desc: 'Khi đổ nước vào, nước lấp đầy thân hộp $V_1$ và dâng lên tối đa đến mép trên của cổ hộp lăng trụ chữ nhật (độ cao $h_1$), trước khi tràn qua các khe hở của vòm nửa hình tròn. Tổng thể tích nước tối đa $V(x) = V_1 + V_2 = \\frac{x^3}{8} + \\frac{5x^2}{4}$. Đạo hàm $V\'(x) > 0$ đồng biến, thể tích lớn nhất đạt tại $x \\to \\frac{10}{3}\\text{ cm}$ với $V_{\\max} = \\frac{500}{27} \\approx 18.52\\text{ cm}^3$.',
+      animProgress: 100,
+      formula: 'V(x) = \\frac{x^3}{8} + \\frac{5x^2}{4} \\implies V_{\\max} = \\frac{500}{27} \\approx 18.52\\text{ cm}^3'
+    }
   ]
 };
 
@@ -377,7 +436,28 @@ const PRESET_CAU_37: MathReproducedItem = {
   mathModel: {
     type: 'cylinder_box',
     formula: 'V(x) = V_{\\text{hộp}} + V_{\\text{trụ}} = x^2 \\cdot h_1 + \\pi R^2 \\cdot h_2',
-    optimalSolution: 'Từ kích thước tấm bìa $40 \\times 80\\text{ cm}$, thiết lập mối quan hệ giữa $x$, $y$, bán kính $R = \\frac{y}{2}$, chiều cao $h_1 = \\frac{40 - x}{2}$. Tìm nghiệm cực đại $V\'(x) = 0$ để tối đa hoá tổng thể tích $V_{\\max}$.',
+    optimalSolution: `**1. Xác định kích thước phần thân hộp chữ nhật bên dưới:**
+- Nửa dưới tấm bìa là hình vuông kích thước $40\\text{ cm} \\times 40\\text{ cm}$.
+- Đáy hộp là hình vuông chính giữa có cạnh bằng $x$ ($0 < x < 40\\text{ cm}$).
+- Bốn mặt bên là các hình chữ nhật có kích thước $x \\times h_1$ với chiều cao:
+  $$h_1 = \\frac{40 - x}{2}\\text{ cm}.$$
+- Thể tích của khối hộp chữ nhật bên dưới:
+  $$V_{\\text{hộp}}(x) = x \\cdot x \\cdot h_1 = x^2 \\cdot \\frac{40 - x}{2} = 20x^2 - \\frac{x^3}{2}.$$
+
+**2. Xác định kích thước phần hình trụ tròn bên trên:**
+- Nửa trên tấm bìa gồm nắp hộp hình vuông cạnh $x$, hình tròn đáy đường kính $y$ (bán kính $R = \\frac{y}{2}$) và dải chữ nhật cuộn làm mặt xung quanh hình trụ có chiều cao thẳng đứng $y$.
+- Dọc theo chiều thẳng đứng: $x + y + y \\le 40 \\iff x + 2y \\le 40 \\implies y \\le \\frac{40 - x}{2}$.
+- Để thể tích lớn nhất, ta chọn $y = \\frac{40 - x}{2}$. Bán kính đáy hình trụ: $R = \\frac{y}{2} = \\frac{40 - x}{4}$.
+- Chu vi đáy hình trụ $C = 2\\pi R = \\pi y$. Dải chữ nhật có bề ngang tối đa $40\\text{ cm}$, điều kiện cuộn kín: $\\pi y \\le 40 \\iff y \\le \\frac{40}{\\pi} \\approx 12.73\\text{ cm}$.
+- Thể tích khối hình trụ không nắp bên trên:
+  $$V_{\\text{trụ}} = \\pi R^2 \\cdot y = \\pi \\left(\\frac{y}{2}\\right)^2 y = \\frac{\\pi y^3}{4} = \\frac{\\pi}{4}\\left(\\frac{40 - x}{2}\\right)^3 = \\frac{\\pi}{32}(40 - x)^3.$$
+
+**3. Tổng thể tích và khảo sát cực trị:**
+- Tổng thể tích của hai khối hình:
+  $$V(x) = V_{\\text{hộp}} + V_{\\text{trụ}} = 20x^2 - \\frac{x^3}{2} + \\frac{\\pi}{32}(40 - x)^3 \\quad \\text{với } x \\in (0; 40).$$
+- Lấy đạo hàm theo biến $x$:
+  $$V'(x) = 40x - \\frac{3x^2}{2} - \\frac{3\\pi}{32}(40 - x)^2.$$
+- Cho $V'(x) = 0$, giải phương trình bậc hai tìm được nghiệm tối ưu $x_0$ thỏa mãn điều kiện thực tế, từ đó suy ra thể tích cực đại $V_{\\max}$.`,
     variablesDesc: '$x$: cạnh đáy hình vuông của hộp chữ nhật, $y$: chiều cao dải cuộn vỏ trụ'
   },
   colorSvg: `<svg viewBox="0 0 920 520" xmlns="http://www.w3.org/2000/svg" style="background:#ffffff; font-family:'Times New Roman', serif;">
@@ -598,10 +678,41 @@ const PRESET_CAU_37: MathReproducedItem = {
   \\node[below] at (2,0) {$40\\text{ cm}$};
 \\end{tikzpicture}`,
   steps: [
-    { step: 1, title: 'Bước 1: Cắt tấm bìa 40 × 80 cm', desc: 'Bóc tách các phần tô màu theo đúng kích thước x và y.' },
-    { step: 2, title: 'Bước 2: Gấp hộp chữ nhật dưới', desc: 'Dựng 4 vách đứng cạnh x × (40-x)/2 và nắp đậy trên.' },
-    { step: 3, title: 'Bước 3: Cuộn vỏ hình trụ', desc: 'Uốn cong dải chữ nhật rộng y tạo thành mặt xung quanh trụ tròn.' },
-    { step: 4, title: 'Bước 4: Gắn đáy trụ vào nắp hộp', desc: 'Lắp đáy tròn và gắn chắc chắn khối trụ không nắp lên khối hộp.' }
+    { 
+      step: 1, 
+      title: 'Bước 1: Trải phẳng tấm bìa $40\\text{ cm} \\times 80\\text{ cm}$', 
+      desc: 'Tấm bìa chia làm $2$ hình vuông $40\\text{ cm} \\times 40\\text{ cm}$. Nửa dưới vẽ đáy hộp $x \\times x$, $4$ thành hộp $x \\times \\frac{40 - x}{2}$ và nắp vuông $x \\times x$. Nửa trên vẽ dải chữ nhật $\\pi y \\times y$ và hình tròn đáy đường kính $y$ (bán kính $R = \\frac{y}{2}$).',
+      animProgress: 0,
+      formula: '0 < x < 40, \\quad 0 < y \\le \\frac{40 - x}{2}, \\quad R = \\frac{y}{2}'
+    },
+    { 
+      step: 2, 
+      title: 'Bước 2: Dựng đứng $4$ vách hộp chữ nhật thân dưới', 
+      desc: 'Cắt bỏ các góc thừa, gập $4$ hình chữ nhật kích thước $x \\times \\frac{40 - x}{2}$ lên một góc $90^\\circ$ so với mặt đáy hình vuông, tạo thành phần thân dưới của khối hộp chữ nhật có chiều cao $h_1 = \\frac{40 - x}{2}$.',
+      animProgress: 30,
+      formula: 'V_{\\text{thân}} = x^2 \\cdot \\frac{40 - x}{2}'
+    },
+    { 
+      step: 3, 
+      title: 'Bước 3: Đậy nắp hình vuông cạnh $x$ hoàn chỉnh khối hộp', 
+      desc: 'Gập nắp vuông cạnh $x$ đậy kín miệng trên của hình hộp chữ nhật. Khối hộp chữ nhật dưới có kích thước $x \\times x \\times \\frac{40 - x}{2}$, thể tích $V_{\\text{hộp}} = x^2 \\left(20 - \\frac{x}{2}\\right) = 20x^2 - \\frac{x^3}{2}$.',
+      animProgress: 50,
+      formula: 'V_{\\text{hộp}}(x) = x^2 \\cdot \\frac{40 - x}{2} = 20x^2 - \\frac{x^3}{2}'
+    },
+    { 
+      step: 4, 
+      title: 'Bước 4: Cuộn dải chữ nhật thành mặt xung quanh hình trụ', 
+      desc: 'Uốn cong dải chữ nhật có chiều cao $y$ và chiều dài chu vi $C = \\pi y$ quanh đường tròn đáy bán kính $R = \\frac{y}{2}$ để tạo thành khối hình trụ tròn rỗng không nắp. Thể tích hình trụ: $V_{\\text{trụ}} = \\pi R^2 \\cdot y = \\pi \\left(\\frac{y}{2}\\right)^2 y = \\frac{\\pi y^3}{4}$.',
+      animProgress: 80,
+      formula: 'V_{\\text{trụ}} = \\pi R^2 \\cdot y = \\frac{\\pi y^3}{4}'
+    },
+    { 
+      step: 5, 
+      title: 'Bước 5: Gắn khối trụ lên nắp hộp & Khảo sát cực trị', 
+      desc: 'Gắn đáy hình tròn của khối trụ lên trên mặt nắp của khối hộp chữ nhật. Để thể tích lớn nhất với điều kiện $x + 2y = 40 \\implies y = \\frac{40 - x}{2}$, ta khảo sát tổng thể tích $V(x) = V_{\\text{hộp}} + V_{\\text{trụ}} = x^2 \\cdot \\frac{40 - x}{2} + \\frac{\\pi}{4} \\left(\\frac{40 - x}{2}\\right)^3$. Đạo hàm $V\'(x) = 0$ cho nghiệm tối ưu toàn khối.',
+      animProgress: 100,
+      formula: 'V(x) = x^2 \\left(\\frac{40 - x}{2}\\right) + \\frac{\\pi}{32} (40 - x)^3'
+    }
   ]
 };
 
@@ -725,9 +836,34 @@ const PRESET_CAU_591: MathReproducedItem = {
   \\draw[fill=cyan!30] (0,0,-1) -- (0,1,-0.5) -- (0,1,0.5) -- (0,0,1) -- (0,-1,0.5) -- (0,-1,-0.5) -- cycle;
 \\end{tikzpicture}`,
   steps: [
-    { step: 1, title: 'Bước 1: Xác định trục Ox', desc: 'Vật thể nằm giới hạn bởi 2 mặt phẳng vuông góc Ox tại x = 0 và x = 20.' },
-    { step: 2, title: 'Bước 2: Diện tích mặt cắt S(x)', desc: 'Tại hoành độ x, thiết diện là lục giác đều cạnh y = 9 - x/6. S(x) = 3√3/2 · y^2.' },
-    { step: 3, title: 'Bước 3: Tích phân thể tích', desc: 'Tích phân V = ∫[0..20] S(x) dx cho giá trị thể tích chính xác 100%.' }
+    { 
+      step: 1, 
+      title: 'Bước 1: Thiết lập hệ tọa độ $Ox$ dọc trục đối xứng', 
+      desc: 'Chọn trục $Ox$ dọc theo chiều dài của vật thể, vật thể nằm hoàn toàn giữa hai mặt phẳng vuông góc với trục $Ox$ tại hoành độ $x = 0$ và $x = 20\\text{ cm}$.',
+      sliceX: 0,
+      formula: 'x \\in [0; 20], \\quad L = 20\\text{ cm}'
+    },
+    { 
+      step: 2, 
+      title: 'Bước 2: Xác định quy luật thiết diện lục giác đều', 
+      desc: 'Mặt phẳng bất kỳ vuông góc với trục $Ox$ tại điểm có hoành độ $x$ cắt khối vật thể theo một thiết diện là hình lục giác đều có độ dài cạnh $y(x) = 9 - \\frac{x}{6}\\text{ cm}$. Khi $x = 0$ thì cạnh $y(0) = 9\\text{ cm}$; khi $x = 20$ thì cạnh $y(20) = 9 - \\frac{20}{6} = \\frac{17}{3} \\approx 5.67\\text{ cm}$.',
+      sliceX: 7,
+      formula: 'y(x) = 9 - \\frac{x}{6} \\quad (5.67 \\le y \\le 9)'
+    },
+    { 
+      step: 3, 
+      title: 'Bước 3: Thiết lập hàm diện tích thiết diện $S(x)$', 
+      desc: 'Một hình lục giác đều cạnh $y$ được chia thành $6$ tam giác đều cạnh $y$. Diện tích của mỗi tam giác đều là $\\frac{y^2 \\sqrt{3}}{4}$. Do đó, diện tích thiết diện tại hoành độ $x$ là: $S(x) = 6 \\cdot \\frac{y^2 \\sqrt{3}}{4} = \\frac{3\\sqrt{3}}{2} y^2 = \\frac{3\\sqrt{3}}{2} \\left(9 - \\frac{x}{6}\\right)^2$.',
+      sliceX: 14,
+      formula: 'S(x) = \\frac{3\\sqrt{3}}{2} \\left(9 - \\frac{x}{6}\\right)^2'
+    },
+    { 
+      step: 4, 
+      title: 'Bước 4: Tính tích phân thể tích toàn phần của vật thể', 
+      desc: 'Theo công thức tính thể tích vật thể theo thiết diện vuông góc với trục $Ox$:\\n$$V = \\int_0^{20} S(x)\\,dx = \\int_0^{20} \\frac{3\\sqrt{3}}{2} \\left(9 - \\frac{x}{6}\\right)^2 dx = \\frac{3\\sqrt{3}}{2} \\left[ -2\\left(9 - \\frac{x}{6}\\right)^3 \\right]_0^{20} = 735\\sqrt{3} \\approx 1273.06\\text{ cm}^3.$$',
+      sliceX: 20,
+      formula: 'V = \\int_0^{20} S(x)\\,dx = 735\\sqrt{3} \\approx 1273.06\\text{ cm}^3'
+    }
   ]
 };
 
@@ -832,9 +968,34 @@ const PRESET_CAU_592: MathReproducedItem = {
   \\draw[thick, fill=blue!20] (-0.33,-1) rectangle (0.33,1);
 \\end{tikzpicture}`,
   steps: [
-    { step: 1, title: 'Bước 1: Thiết diện dấu cộng', desc: 'Thiết diện gồm 5 ô vuông cạnh l, diện tích S(x) = 5l^2.' },
-    { step: 2, title: 'Bước 2: Thay l = 9 - x/6', desc: 'Hàm diện tích thiết diện S(x) = 5(9 - x/6)^2.' },
-    { step: 3, title: 'Bước 3: Tích phân thể tích', desc: 'V = ∫[0..20] 5(9 - x/6)^2 dx = 2450 cm³.' }
+    { 
+      step: 1, 
+      title: 'Bước 1: Giới hạn vật thể trên hệ trục $Ox$', 
+      desc: 'Khối vật thể xoắn ốc nằm dọc theo trục $Ox$ và được giới hạn bởi hai mặt phẳng vuông góc với trục $Ox$ tại $x = 0$ và $x = 20\\text{ cm}$.',
+      sliceX: 0,
+      formula: 'x \\in [0; 20], \\quad L = 20\\text{ cm}'
+    },
+    { 
+      step: 2, 
+      title: 'Bước 2: Cấu tạo thiết diện hình dấu cộng đối xứng', 
+      desc: 'Thiết diện cắt bởi mặt phẳng vuông góc với trục $Ox$ tại điểm có hoành độ $x$ là một hình dấu cộng cân xứng, cấu tạo từ $5$ hình vuông bằng nhau có cạnh bằng $l(x) = 9 - \\frac{x}{6}\\text{ cm}$. Bề rộng ngang và bề dọc của hình dấu cộng đều bằng $5l$.',
+      sliceX: 7,
+      formula: 'l(x) = 9 - \\frac{x}{6}, \\quad B_{\\text{rộng}} = 5l'
+    },
+    { 
+      step: 3, 
+      title: 'Bước 3: Thiết lập hàm diện tích thiết diện $S(x)$', 
+      desc: 'Tổng diện tích thiết diện hình dấu cộng bằng tổng diện tích của $5$ hình vuông nhỏ cạnh $l$:\\n$$S(x) = 5 \\cdot l^2 = 5\\left(9 - \\frac{x}{6}\\right)^2.$$',
+      sliceX: 14,
+      formula: 'S(x) = 5l^2 = 5\\left(9 - \\frac{x}{6}\\right)^2'
+    },
+    { 
+      step: 4, 
+      title: 'Bước 4: Tính tích phân thể tích toàn phần vật thể', 
+      desc: 'Thể tích của khối vật thể hình xoắn ốc là:\\n$$V = \\int_0^{20} S(x)\\,dx = \\int_0^{20} 5\\left(9 - \\frac{x}{6}\\right)^2 dx = 5 \\left[ -2\\left(9 - \\frac{x}{6}\\right)^3 \\right]_0^{20} = -10\\left[ \\left(\\frac{17}{3}\\right)^3 - 9^3 \\right] = 2450\\text{ cm}^3.$$',
+      sliceX: 20,
+      formula: 'V = \\int_0^{20} 5\\left(9 - \\frac{x}{6}\\right)^2 dx = 2450\\text{ cm}^3'
+    }
   ]
 };
 
@@ -875,6 +1036,50 @@ export function MathImageReproducerAnd3D({ onInsertToExam }: { onInsertToExam?: 
     if (customItem) return customItem;
     return REPRODUCED_PRESETS.find(p => p.id === selectedPresetId) || PRESET_CAU_43;
   }, [customItem, selectedPresetId]);
+
+  // Xác định chỉ số bước hiện tại đồng bộ 100% với animProgress hoặc sliceX
+  const currentStepIndex = useMemo(() => {
+    if (!currentItem.steps || currentItem.steps.length === 0) return 0;
+    if (currentItem.mathModel.type === 'twisted_hexagon' || currentItem.mathModel.type === 'twisted_cross') {
+      for (let i = currentItem.steps.length - 1; i >= 0; i--) {
+        const targetX = currentItem.steps[i].sliceX ?? (i / Math.max(1, currentItem.steps.length - 1)) * 20;
+        if (sliceX >= targetX - 0.5) return i;
+      }
+      return 0;
+    } else {
+      for (let i = currentItem.steps.length - 1; i >= 0; i--) {
+        const targetP = currentItem.steps[i].animProgress ?? (i / Math.max(1, currentItem.steps.length - 1)) * 100;
+        if (animProgress >= targetP - 5) return i;
+      }
+      return 0;
+    }
+  }, [currentItem.steps, currentItem.mathModel.type, animProgress, sliceX]);
+
+  const handleSelectStep = (stepIdx: number) => {
+    setIsPlaying(false);
+    const target = currentItem.steps[stepIdx];
+    if (!target) return;
+    setActiveStepIndex(stepIdx);
+    if (target.animProgress !== undefined) {
+      setAnimProgress(target.animProgress);
+    } else if (target.sliceX !== undefined) {
+      setSliceX(target.sliceX);
+    } else {
+      setAnimProgress(Math.round((stepIdx / Math.max(1, currentItem.steps.length - 1)) * 100));
+    }
+  };
+
+  const handlePrevStep = () => {
+    if (currentStepIndex > 0) {
+      handleSelectStep(currentStepIndex - 1);
+    }
+  };
+
+  const handleNextStep = () => {
+    if (currentStepIndex < currentItem.steps.length - 1) {
+      handleSelectStep(currentStepIndex + 1);
+    }
+  };
 
   // Xử lý tự động chạy chuyển động Play / Pause
   useEffect(() => {
@@ -948,82 +1153,178 @@ export function MathImageReproducerAnd3D({ onInsertToExam }: { onInsertToExam?: 
 
     // TẠO MÔ HÌNH 3D TÙY THUỘC LOẠI BÀI TOÁN
     if (currentItem.mathModel.type === 'paper_folding_flower') {
-      // DẠNG CÂU 43: Đáy hình vuông x và 4 cánh hoa khum
-      const bottomSize = 4;
-      const wallHeight = 2;
+      // DẠNG CÂU 43: Đáy hình vuông x, 4 thành x * x/2, 4 hình thang cân 45 độ, 4 cánh nắp (chữ nhật + nửa hình tròn)
+      const x = 3.6; // Kích thước cạnh đáy hình vuông
+      const h_wall = x / 2; // 1.8: Chiều cao thành đứng
+      const h_trap = x / 4; // 0.9: Chiều cao hình thang cân
+      const h_rect = 0.6; // Chiều cao đoạn hình chữ nhật nhỏ
+      const r_semi = x / 4; // 0.9: Bán kính nửa hình tròn
 
-      // Đáy hộp (Floor)
-      const baseGeo = new THREE.BoxGeometry(bottomSize, 0.05, bottomSize);
-      const baseMat = new THREE.MeshStandardMaterial({ color: secondaryColor, roughness: 0.4 });
+      // Phân chia tiến trình thành 4 giai đoạn rõ rệt (0..1):
+      // Giai đoạn 1 (0%..35%): Nâng 4 vách chữ nhật x * x/2 từ 0 đến 90 độ (dựng đứng thành hộp)
+      const stage1 = Math.min(1, Math.max(0, progressRatio / 0.35));
+
+      // Giai đoạn 2 (35%..70%): Gập 4 hình thang cân vào trong 90 độ (tạo mặt trên phẳng với lỗ vuông x/2)
+      const stage2 = Math.min(1, Math.max(0, (progressRatio - 0.35) / 0.35));
+      const angleTrap = stage2 * (Math.PI / 2);
+
+      // Giai đoạn 3 (70%..100%): Dựng 4 cánh nắp (hình chữ nhật + nửa hình tròn) thẳng đứng lên
+      const stage3 = Math.min(1, Math.max(0, (progressRatio - 0.70) / 0.30));
+      const angleFlap = stage3 * (Math.PI / 2);
+
+      // 1. Đáy hình vuông x * x
+      const baseGeo = new THREE.PlaneGeometry(x, x);
+      const baseMat = new THREE.MeshStandardMaterial({ 
+        color: secondaryColor, 
+        roughness: 0.3, 
+        side: THREE.DoubleSide 
+      });
       const baseMesh = new THREE.Mesh(baseGeo, baseMat);
-      baseMesh.position.y = 0;
+      baseMesh.rotation.x = -Math.PI / 2;
+      baseMesh.position.y = 0.01;
       modelGroup.add(baseMesh);
 
-      // Viền đáy
+      // Viền đáy nét đen
       const baseEdges = new THREE.LineSegments(
         new THREE.EdgesGeometry(baseGeo),
         new THREE.LineBasicMaterial({ color: edgeColor, linewidth: 2 })
       );
       baseMesh.add(baseEdges);
 
-      // 4 Vách gập (Phía trước, sau, trái, phải)
-      const wallGeo = new THREE.BoxGeometry(bottomSize, wallHeight, 0.05);
-      const wallMat = new THREE.MeshStandardMaterial({ color: primaryColor, roughness: 0.3 });
+      // 2. Hình thang cân geometry (Shape)
+      // Đáy lớn = x, đáy nhỏ = x/2, chiều cao = h_trap
+      const trapShape = new THREE.Shape();
+      trapShape.moveTo(-x / 2, 0);
+      trapShape.lineTo(x / 2, 0);
+      trapShape.lineTo(x / 4, h_trap);
+      trapShape.lineTo(-x / 4, h_trap);
+      trapShape.closePath();
+      const trapGeo = new THREE.ShapeGeometry(trapShape);
+      const trapMat = new THREE.MeshStandardMaterial({
+        color: renderMode === 'color' ? 0xfdba74 : 0xf1f5f9,
+        roughness: 0.3,
+        side: THREE.DoubleSide
+      });
 
-      // Pivot 1: Trước (Z+)
-      const pivotFront = new THREE.Group();
-      pivotFront.position.set(0, 0, bottomSize / 2);
-      const wallFront = new THREE.Mesh(wallGeo, wallMat);
-      wallFront.position.set(0, wallHeight / 2, 0);
-      pivotFront.add(wallFront);
-      pivotFront.rotation.x = (1 - progressRatio) * (Math.PI / 2);
-      modelGroup.add(pivotFront);
+      // 3. Cánh nắp (Hình chữ nhật x/2 * h_rect + Nửa hình tròn bán kính r_semi = x/4)
+      const flapShape = new THREE.Shape();
+      flapShape.moveTo(-x / 4, 0);
+      flapShape.lineTo(x / 4, 0);
+      flapShape.lineTo(x / 4, h_rect);
+      // Nửa hình tròn từ (x/4, h_rect) qua đỉnh (0, h_rect + r_semi) đến (-x/4, h_rect)
+      flapShape.absarc(0, h_rect, r_semi, 0, Math.PI, false);
+      flapShape.lineTo(-x / 4, 0);
+      flapShape.closePath();
+      const flapGeo = new THREE.ShapeGeometry(flapShape);
+      const flapMat = new THREE.MeshStandardMaterial({
+        color: renderMode === 'color' ? 0xfb923c : 0xffffff,
+        roughness: 0.3,
+        side: THREE.DoubleSide
+      });
 
-      // Pivot 2: Sau (Z-)
-      const pivotBack = new THREE.Group();
-      pivotBack.position.set(0, 0, -bottomSize / 2);
-      const wallBack = new THREE.Mesh(wallGeo, wallMat);
-      wallBack.position.set(0, wallHeight / 2, 0);
-      pivotBack.add(wallBack);
-      pivotBack.rotation.x = -(1 - progressRatio) * (Math.PI / 2);
-      modelGroup.add(pivotBack);
+      // Hàm tạo một cánh hoàn chỉnh gồm: Vách chữ nhật -> Hình thang cân -> Cánh nắp vòm
+      const createFullWing = () => {
+        const wingRoot = new THREE.Group();
 
-      // Pivot 3: Phải (X+)
-      const pivotRight = new THREE.Group();
-      pivotRight.position.set(bottomSize / 2, 0, 0);
-      const wallRight = new THREE.Mesh(wallGeo, wallMat);
-      wallRight.rotation.y = Math.PI / 2;
-      wallRight.position.set(0, wallHeight / 2, 0);
-      pivotRight.add(wallRight);
-      pivotRight.rotation.z = -(1 - progressRatio) * (Math.PI / 2);
-      modelGroup.add(pivotRight);
-
-      // Pivot 4: Trái (X-)
-      const pivotLeft = new THREE.Group();
-      pivotLeft.position.set(-bottomSize / 2, 0, 0);
-      const wallLeft = new THREE.Mesh(wallGeo, wallMat);
-      wallLeft.rotation.y = Math.PI / 2;
-      wallLeft.position.set(0, wallHeight / 2, 0);
-      pivotLeft.add(wallLeft);
-      pivotLeft.rotation.z = (1 - progressRatio) * (Math.PI / 2);
-      modelGroup.add(pivotLeft);
-
-      // 4 Cánh hoa khum ở trên đỉnh (Khi progress > 50%)
-      if (progressRatio > 0.4) {
-        const petalRatio = (progressRatio - 0.4) / 0.6; // 0..1
-        const petalGeo = new THREE.CylinderGeometry(0.1, 1.2, 2.5, 16, 1, true, 0, Math.PI);
-        const petalMat = new THREE.MeshStandardMaterial({ 
-          color: renderMode === 'color' ? 0xfb923c : 0xf1f5f9, 
-          side: THREE.DoubleSide 
+        // Vách chữ nhật (x * h_wall)
+        const wallShape = new THREE.Shape();
+        wallShape.moveTo(-x / 2, 0);
+        wallShape.lineTo(x / 2, 0);
+        wallShape.lineTo(x / 2, h_wall);
+        wallShape.lineTo(-x / 2, h_wall);
+        wallShape.closePath();
+        const wallGeo = new THREE.ShapeGeometry(wallShape);
+        const wallMat = new THREE.MeshStandardMaterial({
+          color: primaryColor,
+          roughness: 0.3,
+          side: THREE.DoubleSide
         });
+        const wallMesh = new THREE.Mesh(wallGeo, wallMat);
+        const wallEdges = new THREE.LineSegments(
+          new THREE.EdgesGeometry(wallGeo),
+          new THREE.LineBasicMaterial({ color: edgeColor, linewidth: 1.5 })
+        );
+        wallMesh.add(wallEdges);
+        wingRoot.add(wallMesh);
 
-        for (let i = 0; i < 4; i++) {
-          const petalMesh = new THREE.Mesh(petalGeo, petalMat);
-          petalMesh.rotation.y = (i * Math.PI) / 2;
-          petalMesh.position.set(0, wallHeight + 1.2, 0);
-          petalMesh.scale.set(petalRatio, petalRatio, petalRatio);
-          modelGroup.add(petalMesh);
-        }
+        // Khớp xoay 2: Hình thang cân gắn tại đỉnh vách (y = h_wall)
+        const trapPivot = new THREE.Group();
+        trapPivot.position.set(0, h_wall, 0);
+
+        const trapMesh = new THREE.Mesh(trapGeo, trapMat);
+        const trapEdges = new THREE.LineSegments(
+          new THREE.EdgesGeometry(trapGeo),
+          new THREE.LineBasicMaterial({ color: edgeColor, linewidth: 1.5 })
+        );
+        trapMesh.add(trapEdges);
+        trapPivot.add(trapMesh);
+        wingRoot.add(trapPivot);
+
+        // Khớp xoay 3: Cánh nắp gắn tại đỉnh hình thang (y = h_trap)
+        const flapPivot = new THREE.Group();
+        flapPivot.position.set(0, h_trap, 0);
+
+        const flapMesh = new THREE.Mesh(flapGeo, flapMat);
+        const flapEdges = new THREE.LineSegments(
+          new THREE.EdgesGeometry(flapGeo),
+          new THREE.LineBasicMaterial({ color: edgeColor, linewidth: 1.5 })
+        );
+        flapMesh.add(flapEdges);
+        flapPivot.add(flapMesh);
+        trapMesh.add(flapPivot); // Gắn flapPivot vào trapMesh để xoay đồng bộ
+
+        return { wingRoot, trapPivot, flapPivot };
+      };
+
+      // Dựng 4 Cánh quanh 4 cạnh của hình vuông đáy:
+      // Cánh Trước (+Z):
+      const frontWing = createFullWing();
+      frontWing.wingRoot.position.set(0, 0, x / 2);
+      frontWing.wingRoot.rotation.x = (1 - stage1) * (Math.PI / 2);
+      frontWing.trapPivot.rotation.x = -angleTrap;
+      frontWing.flapPivot.rotation.x = angleFlap;
+      modelGroup.add(frontWing.wingRoot);
+
+      // Cánh Sau (-Z):
+      const backWing = createFullWing();
+      backWing.wingRoot.position.set(0, 0, -x / 2);
+      backWing.wingRoot.rotation.y = Math.PI;
+      backWing.wingRoot.rotation.x = (1 - stage1) * (Math.PI / 2);
+      backWing.trapPivot.rotation.x = -angleTrap;
+      backWing.flapPivot.rotation.x = angleFlap;
+      modelGroup.add(backWing.wingRoot);
+
+      // Cánh Phải (+X):
+      const rightWing = createFullWing();
+      rightWing.wingRoot.position.set(x / 2, 0, 0);
+      rightWing.wingRoot.rotation.y = -Math.PI / 2;
+      rightWing.wingRoot.rotation.x = (1 - stage1) * (Math.PI / 2);
+      rightWing.trapPivot.rotation.x = -angleTrap;
+      rightWing.flapPivot.rotation.x = angleFlap;
+      modelGroup.add(rightWing.wingRoot);
+
+      // Cánh Trái (-X):
+      const leftWing = createFullWing();
+      leftWing.wingRoot.position.set(-x / 2, 0, 0);
+      leftWing.wingRoot.rotation.y = Math.PI / 2;
+      leftWing.wingRoot.rotation.x = (1 - stage1) * (Math.PI / 2);
+      leftWing.trapPivot.rotation.x = -angleTrap;
+      leftWing.flapPivot.rotation.x = angleFlap;
+      modelGroup.add(leftWing.wingRoot);
+
+      // Nước đổ vào hộp khi progress > 70%
+      if (progressRatio > 0.7) {
+        const waterRatio = (progressRatio - 0.7) / 0.3;
+        const waterGeo = new THREE.BoxGeometry(x - 0.08, h_wall * waterRatio, x - 0.08);
+        const waterMat = new THREE.MeshStandardMaterial({
+          color: 0x38bdf8,
+          transparent: true,
+          opacity: 0.55,
+          roughness: 0.1
+        });
+        const waterMesh = new THREE.Mesh(waterGeo, waterMat);
+        waterMesh.position.set(0, (h_wall * waterRatio) / 2, 0);
+        modelGroup.add(waterMesh);
       }
 
     } else if (currentItem.mathModel.type === 'cylinder_box') {
@@ -1594,7 +1895,19 @@ export function MathImageReproducerAnd3D({ onInsertToExam }: { onInsertToExam?: 
                   ref={threeMountRef} 
                   className="w-full h-[360px] rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 relative bg-slate-50 dark:bg-slate-950 cursor-grab active:cursor-grabbing"
                   title="Dùng chuột kéo để xoay 360°, lăn chuột để zoom xa/gần"
-                />
+                >
+                  {/* Floating Step HUD Badge */}
+                  <div className="absolute top-3 left-3 z-10 pointer-events-none bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-200/90 dark:border-slate-700/90 shadow-sm flex items-center gap-2 max-w-[85%]">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                      {currentItem.steps[currentStepIndex]?.title ? (
+                        <MathSpan content={currentItem.steps[currentStepIndex].title} />
+                      ) : (
+                        'Mô hình 3D tương tác'
+                      )}
+                    </span>
+                  </div>
+                </div>
 
                 {/* THANH ĐIỀU KHIỂN CHUYỂN ĐỘNG / SLIDER TIẾN TRÌNH */}
                 <div className="mt-3 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl space-y-3">
@@ -1739,40 +2052,137 @@ export function MathImageReproducerAnd3D({ onInsertToExam }: { onInsertToExam?: 
             </div>
           </div>
 
-          {/* CỘT 3: CÁC BƯỚC GẤP & MÔ TẢ QUY TRÌNH */}
+          {/* CỘT 3: CÁC BƯỚC GẤP & MÔ TẢ QUY TRÌNH CHUẨN XÁC 100% */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4">
-            <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
-              <Scissors className="w-5 h-5 text-amber-500" />
-              <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
-                Các bước thực hiện
-              </h3>
-            </div>
-
-            <div className="space-y-3">
-              {currentItem.steps.map((st, sIdx) => (
-                <div 
-                  key={st.step}
-                  className={`p-3 rounded-xl border text-xs transition-all ${
-                    animProgress >= ((sIdx + 1) / currentItem.steps.length) * 80
-                      ? 'bg-indigo-50/80 border-indigo-200 dark:bg-indigo-950/40 dark:border-indigo-800'
-                      : 'bg-slate-50 border-slate-200 dark:bg-slate-800/40 dark:border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="w-5 h-5 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-[10px]">
-                      {st.step}
-                    </span>
-                    <strong className="text-slate-900 dark:text-white font-bold">{st.title}</strong>
-                  </div>
-                  <p className="text-slate-600 dark:text-slate-400 pl-7">
-                    {st.desc}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <Scissors className="w-5 h-5 text-amber-500" />
+                <div>
+                  <h3 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">
+                    Quy trình từng bước chuẩn 100%
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Khớp chuẩn hình gốc SGK & Mô hình động 3D
                   </p>
                 </div>
-              ))}
+              </div>
+              <span className="text-xs font-mono font-bold text-indigo-700 bg-indigo-50 dark:bg-indigo-950/70 dark:text-indigo-300 px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                Bước {currentStepIndex + 1}/{currentItem.steps.length}
+              </span>
+            </div>
+
+            {/* Thanh điều hướng nhanh giữa các bước */}
+            <div className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
+              <button
+                type="button"
+                onClick={handlePrevStep}
+                disabled={currentStepIndex === 0}
+                className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
+                  currentStepIndex === 0
+                    ? 'opacity-40 cursor-not-allowed text-slate-400'
+                    : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 shadow-2xs hover:bg-slate-100 cursor-pointer'
+                }`}
+                title="Quay lại bước trước"
+              >
+                ◀ Bước trước
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsPlaying(prev => !prev)}
+                className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                  isPlaying 
+                    ? 'bg-amber-500 text-white shadow-xs' 
+                    : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-xs'
+                }`}
+                title={isPlaying ? 'Tạm dừng tự động' : 'Tự động chạy các bước'}
+              >
+                {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                <span>{isPlaying ? 'Dừng' : 'Chạy'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleNextStep}
+                disabled={currentStepIndex === currentItem.steps.length - 1}
+                className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
+                  currentStepIndex === currentItem.steps.length - 1
+                    ? 'opacity-40 cursor-not-allowed text-slate-400'
+                    : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 shadow-2xs hover:bg-slate-100 cursor-pointer'
+                }`}
+                title="Chuyển sang bước tiếp theo"
+              >
+                Bước sau ▶
+              </button>
+            </div>
+
+            {/* Danh sách từng bước - Clickable để chuyển 3D ngay lập tức */}
+            <div className="space-y-3">
+              {currentItem.steps.map((st, sIdx) => {
+                const isActive = currentStepIndex === sIdx;
+                const isPassed = currentStepIndex > sIdx;
+
+                return (
+                  <div 
+                    key={st.step}
+                    onClick={() => handleSelectStep(sIdx)}
+                    className={`p-3.5 rounded-xl border text-xs transition-all cursor-pointer relative ${
+                      isActive
+                        ? 'ring-2 ring-indigo-500 bg-indigo-50/90 dark:bg-indigo-950/70 border-indigo-400 dark:border-indigo-600 shadow-sm'
+                        : isPassed
+                        ? 'bg-emerald-50/50 border-emerald-200/80 dark:bg-emerald-950/20 dark:border-emerald-900/60 hover:bg-slate-100 dark:hover:bg-slate-800/80'
+                        : 'bg-slate-50 border-slate-200 dark:bg-slate-800/40 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-5 h-5 rounded-full font-bold flex items-center justify-center text-[11px] ${
+                          isActive
+                            ? 'bg-indigo-600 text-white animate-pulse'
+                            : isPassed
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-400 text-white'
+                        }`}>
+                          {st.step}
+                        </span>
+                        <div className="font-bold text-slate-900 dark:text-white">
+                          <MathSpan content={st.title} />
+                        </div>
+                      </div>
+
+                      {isActive && (
+                        <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-900/80 px-2 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-700 animate-pulse">
+                          🎯 Đang xem
+                        </span>
+                      )}
+                      {isPassed && !isActive && (
+                        <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-0.5">
+                          ✓ Đã xong
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="text-slate-700 dark:text-slate-300 pl-7 leading-relaxed">
+                      <MarkdownRenderer content={st.desc} />
+                    </div>
+
+                    {st.formula && (
+                      <div className="mt-2.5 pt-2 border-t border-slate-200/70 dark:border-slate-700/70 pl-7 flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-slate-500 shrink-0">
+                          Công thức áp dụng:
+                        </span>
+                        <div className="font-mono text-[11px] text-indigo-700 dark:text-indigo-300 font-bold bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                          <MathSpan content={`$${st.formula}$`} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-900 dark:text-amber-200 space-y-1">
-              <strong className="block font-bold">✨ Ý nghĩa sư phạm:</strong>
+              <strong className="block font-bold">✨ Ý nghĩa sư phạm & Trực quan:</strong>
               <p className="leading-relaxed">
                 Mô hình động giúp học sinh kết nối trực tiếp giữa <strong>hình học phẳng</strong> (tấm bìa trải lưới 2D) và <strong>hình học không gian</strong> (chiếc hộp 3D), giải quyết triệt để sự trừu tượng trong các câu hỏi vận dụng cao.
               </p>
