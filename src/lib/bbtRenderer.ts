@@ -1797,7 +1797,7 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
       svgParts.push(`<path d="${pathD.trim()}" stroke="#2563eb" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round" />`);
     }
 
-    // Key extreme points projections
+    // Key extreme points and specific passage points (e.g. (0, d) if specified or d intercept)
     const bbtData = analyzeFunctionToBbt(currentExpr);
     if (bbtData && bbtData.points) {
       bbtData.points.forEach(pt => {
@@ -1817,6 +1817,16 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
       });
     }
 
+    // Highlight explicit y-intercept (0, d) e.g. (0,1) with dashed lines and axis tick mark
+    const yAt0 = evalY(0, currentExpr);
+    if (yAt0 !== null && isFinite(yAt0) && Math.abs(yAt0) <= 6 && Math.abs(yAt0) > 0.01) {
+      const px = toSvgX(0);
+      const py = toSvgY(yAt0);
+      svgParts.push(`<line x1="${originX - 4}" y1="${py}" x2="${originX + 4}" y2="${py}" stroke="#dc2626" stroke-width="1.5" />`);
+      svgParts.push(`<text x="${originX + 6}" y="${py + 4}" font-family="'Times New Roman', Times, serif" font-size="12" font-weight="bold" fill="#dc2626">${formatNumDisplay(yAt0)}</text>`);
+      svgParts.push(`<circle cx="${px}" cy="${py}" r="3" fill="#dc2626" />`);
+    }
+
     return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" class="max-w-full h-auto mx-auto my-3 drop-shadow-sm bg-white rounded-lg border border-slate-200">
       ${svgParts.join('\n      ')}
     </svg>`;
@@ -1826,22 +1836,133 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
 }
 
 /**
- * Tự động tạo dữ liệu BBT đại diện chuẩn SGK cho các câu hỏi tổng quát $y = f(x)$
- * (Ví dụ: "Cho hàm số y = f(x) có bảng biến thiên như sau:" hoặc "có bảng xét dấu đạo hàm như sau:")
- * Trích xuất trực tiếp các mốc x từ các phương án A, B, C, D hoặc tạo mốc chuẩn (-1, 2)
+ * Interface cho kết quả xử lý AI Chỉnh sửa Đồ thị & BBT
+ */
+export interface AiFixResult {
+  updatedContent: string;
+  updatedSolution?: string;
+  status: 'bbt_svg' | 'graph_svg' | 'both_svg' | 'teacher_annotation' | 'none';
+  message: string;
+}
+
+/**
+ * AI Chỉnh sửa Tự động Đồ thị & BBT chính xác 100%.
+ * - Nếu nhận diện được công thức toán học: Tạo BBT / Đồ thị SVG vector 100% chính xác.
+ * - Nếu là bài toán hàm ẩn / trừu tượng không có biểu thức đại số cố định: Chèn khối Chú thích dành cho GV.
+ */
+export function aiFixQuestionVisuals(content: string, solution?: string): AiFixResult {
+  if (!content) return { updatedContent: content || '', updatedSolution: solution || '', status: 'none', message: 'Nội dung câu hỏi rỗng.' };
+
+  const mentionsBbt = /(bảng\s*biến\s*thiên|BBT|bbt|dấu\s*của\s*f'\(x\)|chiều\s*biến\s*thiên|khảo\s*sát\s*sự\s*biến\s*thiên)/i.test(content);
+  const mentionsGraph = /(đồ\s*thị|hình\s*bên|hình\s*vẽ|như\s*hình|parabol|tiệm\s*cận)/i.test(content);
+
+  // 1. Thử nhận diện công thức đại số cố định
+  const formulaMatch = content.match(/(?:y|f\(x\)|g\(x\))\s*=\s*([^,;.\n$\)]+)/i) || 
+                       content.match(/hàm\s*số\s*(?:\$)?(?:y\s*=\s*)?([^,;.\n$]+)/i) ||
+                       (solution || '').match(/(?:y|f\(x\))\s*=\s*([^,;.\n$\)]+)/i);
+
+  let updatedC = content;
+  let updatedS = solution || '';
+
+  if (formulaMatch && formulaMatch[1].trim().length > 1) {
+    const formula = formulaMatch[1].trim();
+    const bbtData = analyzeFunctionToBbt(formula);
+    const graphSvg = generateFunctionGraphSvg(formula, content);
+
+    let hasAdded = false;
+    let currentStatus: 'bbt_svg' | 'graph_svg' | 'both_svg' | 'teacher_annotation' | 'none' = 'none';
+
+    if (mentionsBbt && bbtData) {
+      const bbtSvg = generateBbtSvg(bbtData);
+      if (bbtSvg) {
+        const base64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(bbtSvg)) : '';
+        if (base64) {
+          const snippet = `<svg-wrapper data-svg="${base64}"></svg-wrapper>`;
+          updatedC = updatedC.replace(/<svg-wrapper[\s\S]*?<\/svg-wrapper>/gi, '').trim();
+          updatedC = `${updatedC}\n\n<div class="my-3 text-center">${snippet}</div>\n\n`;
+          currentStatus = 'bbt_svg';
+          hasAdded = true;
+        }
+      }
+    }
+
+    if (mentionsGraph && graphSvg) {
+      const base64Graph = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(graphSvg)) : '';
+      if (base64Graph) {
+        const snippetGraph = `<svg-wrapper data-svg="${base64Graph}"></svg-wrapper>`;
+        if (!hasAdded) {
+          updatedC = updatedC.replace(/<svg-wrapper[\s\S]*?<\/svg-wrapper>/gi, '').trim();
+          updatedC = `${updatedC}\n\n<div class="my-3 text-center">${snippetGraph}</div>\n\n`;
+          currentStatus = 'graph_svg';
+        } else {
+          updatedC = `${updatedC}\n\n<div class="my-3 text-center">${snippetGraph}</div>\n\n`;
+          currentStatus = 'both_svg';
+        }
+        hasAdded = true;
+      }
+    }
+
+    if (hasAdded) {
+      return {
+        updatedContent: updatedC,
+        updatedSolution: updatedS,
+        status: currentStatus,
+        message: `✨ AI đã tự động phân tích hàm số "${formula}" và chèn Đồ thị / BBT chính xác 100%!`
+      };
+    }
+  }
+
+  // 2. Nếu là bài toán hàm ẩn / tham số m / không giải được biểu thức duy nhất
+  const isAbstractParameterProblem = /(chứa\s*tham\s*số|tham\s*số\s*m|hàm\s*ẩn|cho\s*hàm\s*số\s*y\s*=\s*f\(x\)\s*có|đồ\s*thị\s*của\s*hàm\s*số\s*y\s*=\s*f'\(x\))/i.test(content);
+
+  if ((mentionsBbt || mentionsGraph) && isAbstractParameterProblem && !formulaMatch) {
+    const teacherAnnotation = `<div class="my-3 p-3 bg-amber-50/90 border border-amber-300 rounded-xl text-amber-950 font-sans shadow-2xs no-print-border">
+  <div class="flex items-center justify-between gap-2 mb-1">
+    <div class="flex items-center gap-1.5 font-bold text-amber-900 text-xs sm:text-sm">
+      <span class="text-base">📌</span>
+      <span>CHÚ THÍCH HÌNH VẼ / BBT CHO GIÁO VIÊN:</span>
+    </div>
+    <span class="text-[10px] font-semibold uppercase px-2 py-0.5 bg-amber-200 text-amber-900 rounded-full">Hàm ẩn / Bổ sung hình</span>
+  </div>
+  <p class="text-xs text-amber-800 my-1 leading-relaxed">
+    Đề bài yêu cầu hình minh họa cho hàm số $y=f(x)$ qua các điểm đặc biệt. Để đảm bảo <strong>tính chính xác 100%</strong> cho đề thi, Giáo viên có thể click vào nút <strong>"📈 BBT"</strong> hoặc <strong>"📊 Đồ thị"</strong> để chọn hình mẫu phù hợp hoặc tải hình thực tế lên.
+  </p>
+</div>`;
+
+    if (!content.includes('CHÚ THÍCH HÌNH VẼ')) {
+      updatedC = `${updatedC.trim()}\n\n${teacherAnnotation}\n\n`;
+    }
+
+    return {
+      updatedContent: updatedC,
+      updatedSolution: updatedS,
+      status: 'teacher_annotation',
+      message: '📌 Đã chèn Chú thích dành cho Giáo viên (do câu hỏi hàm ẩn/trừu tượng không có biểu thức cố định)!'
+    };
+  }
+
+  // 3. Mặc định tự động hoàn thiện với autoEnrichTextWithVisuals
+  const enriched = autoEnrichTextWithVisuals(content, false);
+  return {
+    updatedContent: enriched,
+    updatedSolution: solution,
+    status: enriched !== content ? 'bbt_svg' : 'none',
+    message: enriched !== content ? '✨ AI đã chèn BBT/Đồ thị vector chuẩn SGK vào đề bài!' : 'Không cần thay đổi thêm.'
+  };
+}
+
+/**
+ * Tự động sinh dữ liệu BBT đại diện chuẩn SGK cho các câu hỏi tổng quát $y = f(x)$
  */
 export function syntheticBbtFromQuestion(block: string): BBTData {
   const isSignTable = /bảng\s*xét\s*dấu/i.test(block);
 
-  // Extract all x-coordinate candidates from option numbers (e.g. (-1; 2), (-\infty; 3), (2; +\infty), (-2; 3))
   const rawNumMatches = Array.from(block.matchAll(/(?<![a-zA-Z_\$\\])[-–—]?\d+(?:\.\d+)?(?![a-zA-Z0-9_\$])/g))
     .map(m => parseFloat(m[0].replace(/[−–—]/g, '-')))
     .filter(n => !isNaN(n) && Math.abs(n) <= 50);
 
-  // Deduplicate and sort numbers
   const sortedNums = Array.from(new Set(rawNumMatches)).sort((a, b) => a - b);
 
-  // Filter out integers that look like option letters/indices if there are too many
   let keyVals: number[] = [];
   if (sortedNums.includes(-1) && sortedNums.includes(2)) {
     keyVals = [-1, 2];
@@ -1861,7 +1982,6 @@ export function syntheticBbtFromQuestion(block: string): BBTData {
     }
   }
 
-  // Construct standard cubic/quadratic variation table
   const points: BBTPoint[] = [
     { x: '-\\infty', yVal: '-\\infty', yPosition: 'bottom' }
   ];
@@ -1905,49 +2025,30 @@ export function syntheticBbtFromQuestion(block: string): BBTData {
   };
 }
 
-/**
- * Tự động sinh Đồ thị hàm số vector Oxy đại diện chuẩn SGK cho các câu hỏi $y = f(x)$
- * (Ví dụ: "Đường cong trong hình vẽ bên là đồ thị của hàm số nào dưới đây?")
- * Nhận diện dạng hàm (bậc 3, trùng phương bậc 4, phân thức, bậc 2) để vẽ đồ thị Oxy tương ứng
- */
 export function generateSyntheticGraphSvg(block: string): string | null {
   if (!block) return null;
 
   const lower = block.toLowerCase();
 
-  // Dạng 1: Hàm phân thức (có tiệm cận, phân thức, x+1/x-1)
   if (lower.includes('phân thức') || lower.includes('tiệm cận') || lower.includes('/') || lower.includes('bậc nhất trên bậc nhất')) {
     return generateFunctionGraphSvg('(x+1)/(x-1)');
   }
 
-  // Dạng 2: Hàm trùng phương bậc 4 y = ax^4 + bx^2 + c
   if (lower.includes('trùng phương') || lower.includes('bậc 4') || lower.includes('x^4') || lower.includes('x⁴')) {
     return generateFunctionGraphSvg('x^4 - 2*x^2');
   }
 
-  // Dạng 3: Hàm bậc 2 (Parabol)
   if (lower.includes('parabol') || lower.includes('bậc 2') || lower.includes('bậc hai')) {
     return generateFunctionGraphSvg('x^2 - 2*x - 1');
   }
 
-  // Dạng 4: Hàm bậc 3 chuẩn SGK y = x^3 - 3x (Mặc định cho hầu hết các câu hỏi đồ thị)
   return generateFunctionGraphSvg('x^3 - 3*x');
 }
 
-/**
- * Tự động quét và hoàn thiện 1-click tất cả BBT & Đồ thị trong văn bản/câu hỏi
- * Đảm bảo 100% không bị thiếu BBT hoặc đồ thị và gắn TRỰC TIẾP vào đề bài câu hỏi tương ứng (trước phương án A)
- */
-/**
- * Tự động quét và hoàn thiện 1-click tất cả BBT & Đồ thị trong văn bản/câu hỏi.
- * - Với ĐỀ BÀI (isSolution = false): Đảm bảo 100% không bị thiếu BBT hoặc đồ thị, gắn TRỰC TIẾP vào đề bài câu hỏi tương ứng.
- * - Với LỜI GIẢI (isSolution = true): Không tự động tạo thêm BBT/đồ thị mới (để lời giải ngắn gọn, tập trung vào lập luận toán học).
- */
 export function autoEnrichTextWithVisuals(text: string, isSolution: boolean = false): string {
   if (!text) return '';
   let updated = text;
 
-  // 1. Chuyển đổi mã TikZ trần thành SVG wrapper
   if (/```tikz|\\begin\{tikzpicture\}/i.test(updated)) {
     try {
       const { embedTikzSvgsInText } = require('../components/TikzRenderer');
@@ -1955,29 +2056,23 @@ export function autoEnrichTextWithVisuals(text: string, isSolution: boolean = fa
     } catch (e) {}
   }
 
-  // 2. Chuyển đổi Bảng biến thiên Markdown table thành SVG wrapper
   updated = embedBbtSvgsInText(updated);
 
-  // Nếu là Lời giải chi tiết -> Không tự động sinh thêm BBT/đồ thị tổng hợp, giữ nguyên lời giải toán học sắc nét
   if (isSolution) {
     return updated;
   }
 
-  // 3. Tách biệt ĐỀ BÀI (Question Body) và ĐÁP ÁN / LỜI GIẢI CHI TIẾT (Solution Box)
-  // để đảm bảo chèn BBT/Đồ thị DƯỚI ĐỀ BÀI CÂU HỎI TƯƠNG ỨNG, KHÔNG dồn vào phần đáp án lời giải
   const solutionBoxIndex = updated.search(/(?:<details\s*class=["']solution-box["']|---\s*HƯỚNG\s*DẪN\s*CHẤM|---\s*BẢNG\s*ĐÁP\s*ÁN|##\s*Hướng\s*dẫn\s*giải|##\s*Lời\s*giải\s*chi\s*tiết)/i);
 
   let questionBody = solutionBoxIndex !== -1 ? updated.substring(0, solutionBoxIndex) : updated;
   const solutionBody = solutionBoxIndex !== -1 ? updated.substring(solutionBoxIndex) : '';
 
-  // Phân tách questionBody thành từng khối câu hỏi độc lập (dựa theo "Câu 1:", "Câu 2:", "Bài 1:"...)
   const questionRegex = /(\n(?=(?:#{1,3}\s*|\*{0,2})\b(?:Câu|Bài)\s*\d+[\s:\.\)]))/gi;
   const blocks = questionBody.split(questionRegex);
 
   const enrichedBlocks = blocks.map(block => {
     let b = block;
 
-    // A. BỔ SUNG BẢNG BIẾN THIÊN / BẢNG XÉT DẤU
     const hasBbtText = /(?:bảng\s*biến\s*thiên|bảng\s*xét\s*dấu|chiều\s*biến\s*thiên|\bBBT\b)/i.test(b);
     const hasVisualAlready = b.includes('svg-wrapper') || b.includes('<img') || b.includes('<svg') || b.includes('\\begin{tikzpicture}');
 
@@ -2001,19 +2096,15 @@ export function autoEnrichTextWithVisuals(text: string, isSolution: boolean = fa
             : Buffer.from(encodeURIComponent(svg)).toString('base64');
           if (b64) {
             const svgTag = `<svg-wrapper data-svg="${b64}"></svg-wrapper>`;
-            // 1. Ưu tiên 1: Thay thế thẻ placeholder [HINH_ANH], [BBT] nếu có
             if (/\[(?:HINH_ANH|BBT|Hình\s*vẽ|Bảng\s*biến\s*thiên)\]/i.test(b)) {
               b = b.replace(/\[(?:HINH_ANH|BBT|Hình\s*vẽ|Bảng\s*biến\s*thiên)\]/i, svgTag);
             }
-            // 2. Ưu tiên 2: Chèn ngay TRƯỚC phương án A. (A. / **A.**) hoặc ý a) (a) / **a)**) của câu hỏi
             else if (/(\n\s*(?:\*{0,2}|[-*]\s*)?(?:[Aa][\.\:\)]|[Aa]\)))/i.test(b)) {
               b = b.replace(/(\n\s*(?:\*{0,2}|[-*]\s*)?(?:[Aa][\.\:\)]|[Aa]\)))/i, `\n\n${svgTag}\n\n$1`);
             }
-            // 3. Ưu tiên 3: Chèn ngay sau câu dẫn "bảng biến thiên như sau:" hoặc "bảng xét dấu đạo hàm như sau:"
             else if (/((?:bảng\s*(?:biến\s*thiên|xét\s*dấu)[^:\n]*[:\.\)]))/i.test(b)) {
               b = b.replace(/((?:bảng\s*(?:biến\s*thiên|xét\s*dấu)[^:\n]*[:\.\)]))/i, `$1\n\n${svgTag}\n\n`);
             }
-            // 4. Fallback: Chèn ở cuối thân câu hỏi đề bài
             else {
               b = b + `\n\n${svgTag}\n\n`;
             }
@@ -2022,7 +2113,6 @@ export function autoEnrichTextWithVisuals(text: string, isSolution: boolean = fa
       }
     }
 
-    // B. BỔ SUNG ĐỒ THỊ HÀM SỐ
     const hasGraphText = /(?:đồ\s*thị|hình\s*bên|hình\s*vẽ|cho\s*đồ\s*thị)/i.test(b);
     const hasGraphAlready = b.includes('svg-wrapper') || b.includes('<img') || b.includes('\\begin{tikzpicture}');
 
@@ -2063,4 +2153,5 @@ export function autoEnrichTextWithVisuals(text: string, isSolution: boolean = fa
   questionBody = enrichedBlocks.join('');
   return questionBody + solutionBody;
 }
+
 

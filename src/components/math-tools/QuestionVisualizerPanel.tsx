@@ -20,6 +20,7 @@ import {
   cleanMathText 
 } from "../../lib/bbtRenderer";
 import { InteractivePlot } from "./InteractivePlot";
+import { JsxGraphPlotter } from "./JsxGraphPlotter";
 import { Geometry3DViewer } from "./Geometry3DViewer";
 import { FunctionPlotData, Point2D, AsymptoteLine, InequalityConstraint, PolygonVertex } from "./types";
 import { MarkdownRenderer } from "../MarkdownRenderer";
@@ -312,6 +313,7 @@ export const QuestionVisualizerPanel: React.FC<QuestionVisualizerPanelProps> = (
   // GRAPHING (ĐỒ THỊ) MODULE STATE & COMPUTATIONS
   // -------------------------------------------------------------
   const [graphType, setGraphType] = useState<"cubic" | "rational1_1" | "rational2_1" | "parabola" | "quartic" | "linear" | "exp_log" | "single_ineq" | "system_ineq">("cubic");
+  const [graphEngine, setGraphEngine] = useState<"jsxgraph" | "interactive">("jsxgraph");
 
   // Coefficients
   const [c3A, setC3A] = useState<number>(1);
@@ -1477,20 +1479,69 @@ export const QuestionVisualizerPanel: React.FC<QuestionVisualizerPanelProps> = (
             </div>
           </div>
 
-          {/* Interactive Plot Viewport */}
+          {/* Engine Selector */}
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs">
+            <span className="font-bold text-slate-700 flex items-center gap-1.5">
+              <span>⚙️ Thư viện Đồ thị:</span>
+            </span>
+            <div className="flex items-center bg-slate-200/80 p-0.5 rounded-lg font-semibold">
+              <button
+                type="button"
+                onClick={() => setGraphEngine("jsxgraph")}
+                className={`px-3 py-1.5 rounded-md transition-all cursor-pointer ${
+                  graphEngine === "jsxgraph" ? "bg-indigo-600 text-white shadow-2xs font-bold" : "text-slate-700 hover:text-slate-900"
+                }`}
+              >
+                ✨ JSXGraph Engine (100% Chính xác)
+              </button>
+              <button
+                type="button"
+                onClick={() => setGraphEngine("interactive")}
+                className={`px-3 py-1.5 rounded-md transition-all cursor-pointer ${
+                  graphEngine === "interactive" ? "bg-blue-600 text-white shadow-2xs font-bold" : "text-slate-700 hover:text-slate-900"
+                }`}
+              >
+                📊 HTML5 Canvas Plotter
+              </button>
+            </div>
+          </div>
+
+          {/* Graph Viewport */}
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
-            <InteractivePlot
-              title={`Đồ thị: $${graphAnalysis.formulaLatex}$`}
-              subtitle="Kéo chuột để di chuyển hệ trục, lăn chuột để phóng to / thu nhỏ"
-              functions={graphAnalysis.functions}
-              points={graphAnalysis.points}
-              asymptotes={graphAnalysis.asymptotes}
-              inequalities={graphAnalysis.inequalities}
-              feasiblePolygon={graphAnalysis.feasiblePolygon}
-              height={380}
-              onInsertImage={handleInsertGraph}
-              insertButtonLabel={`Chèn vào ${targetField === "content" ? "Đề bài" : "Lời giải"}`}
-            />
+            {graphEngine === "jsxgraph" ? (
+              <JsxGraphPlotter
+                title={`Đồ thị Chuyên dụng JSXGraph: $${graphAnalysis.formulaLatex}$`}
+                expression={graphAnalysis.formulaLatex}
+                fnType={graphType as any}
+                params={
+                  graphType === "cubic" ? { a: c3A, b: c3B, c: c3C, d: c3D } :
+                  graphType === "rational1_1" ? { a: r1A, b: r1B, c: r1C, d: r1D } :
+                  graphType === "rational2_1" ? { a: r2A, b: r2B, c: r2C, d: r2D, e: r2E } :
+                  graphType === "parabola" ? { a: pA, b: pB, c: pC } :
+                  graphType === "quartic" ? { a: qA, b: qB, c: qC } :
+                  { a: 1, b: 0, c: 0, d: 0 }
+                }
+                specialPoints={graphAnalysis.points as any}
+                asymptotes={graphAnalysis.asymptotes as any}
+                bbtData={bbtData}
+                height={400}
+                onInsertImage={handleInsertGraph}
+                insertLabel={`Chèn vào ${targetField === "content" ? "Đề bài" : "Lời giải"}`}
+              />
+            ) : (
+              <InteractivePlot
+                title={`Đồ thị: $${graphAnalysis.formulaLatex}$`}
+                subtitle="Kéo chuột để di chuyển hệ trục, lăn chuột để phóng to / thu nhỏ"
+                functions={graphAnalysis.functions}
+                points={graphAnalysis.points}
+                asymptotes={graphAnalysis.asymptotes}
+                inequalities={graphAnalysis.inequalities}
+                feasiblePolygon={graphAnalysis.feasiblePolygon}
+                height={380}
+                onInsertImage={handleInsertGraph}
+                insertButtonLabel={`Chèn vào ${targetField === "content" ? "Đề bài" : "Lời giải"}`}
+              />
+            )}
           </div>
         </div>
       )}

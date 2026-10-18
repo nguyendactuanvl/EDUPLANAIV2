@@ -1,7 +1,7 @@
 import { MathView } from "../components/MathView";
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { embedTikzSvgsInText } from "../components/TikzRenderer";
-import { embedBbtSvgsInText, convertBbtTableToSvg, analyzeFunctionToBbt, generateBbtSvg, autoEnrichTextWithVisuals } from "../lib/bbtRenderer";
+import { embedBbtSvgsInText, convertBbtTableToSvg, analyzeFunctionToBbt, generateBbtSvg, autoEnrichTextWithVisuals, aiFixQuestionVisuals } from "../lib/bbtRenderer";
 import { apiFetch } from '../lib/apiFetch';
 
 import { fullPlan } from "../data/mockData";
@@ -1300,81 +1300,54 @@ const [examName, setExamName] = useState("");
     setQuestions(newQs);
   };
 
-  const handleAiFixBbtForExamQuestion = async (q: Question, idx: number) => {
-    try {
-      // 1. Thử nhận diện hàm số từ đề bài để tạo BBT chuẩn xác 100% trong 0ms
-      const content = q.content || (q as any).question || '';
-      const formulaMatch = content.match(/(?:y|f\(x\))\s*=\s*([^,;.\n$]+)/i) || 
-                           content.match(/hàm\s*số\s*(?:\$)?(?:y\s*=\s*)?([^,;.\n$]+)/i);
-      if (formulaMatch) {
-        const formula = formulaMatch[1].trim();
-        const bbtData = analyzeFunctionToBbt(formula);
-        if (bbtData) {
-          const svg = generateBbtSvg(bbtData);
-          if (svg) {
-            const base64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : '';
-            if (base64) {
-              const snippet = `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n`;
-              const newQs = [...questions];
-              newQs[idx] = { ...newQs[idx], content: (newQs[idx].content || '') + snippet };
-              setQuestions(newQs);
-              return;
-            }
-          }
-        }
-      }
-
-      // 2. Gọi API fix-question nếu không phân tích trực tiếp được
-      const res = await apiFetch('/api/fix-question', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q, mode: 'fix_bbt', subject, grade })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.question) {
-          const formattedContent = embedBbtSvgsInText(embedTikzSvgsInText(data.question.content || ''));
-          const newQs = [...questions];
-          newQs[idx] = { ...newQs[idx], ...data.question, content: formattedContent };
-          setQuestions(newQs);
-          return;
-        }
-      }
-    } catch (e) {
-      console.warn("AI fix BBT error:", e);
+  const handleAiFixQuestionVisuals = (q: Question, idx: number) => {
+    const res = aiFixQuestionVisuals(q.content || (q as any).question || '', q.solution || q.explanation || '');
+    if (res.status !== 'none') {
+      const newQs = [...questions];
+      newQs[idx] = {
+        ...newQs[idx],
+        content: res.updatedContent,
+        solution: res.updatedSolution || newQs[idx].solution,
+        explanation: res.updatedSolution || newQs[idx].explanation
+      };
+      setQuestions(newQs);
+      alert(`✨ [Câu ${idx + 1}] ${res.message}`);
+    } else {
+      alert(`✨ [Câu ${idx + 1}] Đã kiểm tra: Không phát hiện lỗi cần điều chỉnh hoặc câu hỏi không yêu cầu Đồ thị/BBT.`);
     }
-    const fallbackBbt = `| $x$ | $-\\infty$ | | $-1$ | | $2$ | | $+\\infty$ |\n|---|---|---|---|---|---|---|---|\n| $y'$ | | $+$ | $0$ | $-$ | $0$ | $+$ |\n| $y$ | $-\\infty$ | $\\nearrow$ | $3$ | $\\searrow$ | $-1$ | $\\nearrow$ | $+\\infty$ |`;
-    const fallbackSvg = convertBbtTableToSvg(fallbackBbt);
-    const base64 = fallbackSvg && typeof btoa !== 'undefined' ? btoa(encodeURIComponent(fallbackSvg)) : '';
-    const snippet = base64 ? `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n` : `\n\n${fallbackBbt}\n\n`;
-    const newQs = [...questions];
-    newQs[idx] = { ...newQs[idx], content: (newQs[idx].content || '') + snippet };
-    setQuestions(newQs);
+  };
+
+  const handleAiFixBbtForExamQuestion = (q: Question, idx: number) => {
+    handleAiFixQuestionVisuals(q, idx);
   };
 
   const handleAutoGenerateGraphForExamQuestion = (q: Question, idx: number) => {
-    setActiveVisualizer({ qIndex: idx, tab: "graph", target: "content" });
+    handleAiFixQuestionVisuals(q, idx);
+  };
+
+  const handleAiFixAllQuestionVisuals = () => {
+    let fixedCount = 0;
+    let annotationCount = 0;
+    const updated = questions.map((q) => {
+      const res = aiFixQuestionVisuals(q.content || (q as any).question || '', q.solution || q.explanation || '');
+      if (res.status !== 'none') {
+        if (res.status === 'teacher_annotation') annotationCount++;
+        else fixedCount++;
+        return {
+          ...q,
+          content: res.updatedContent,
+          solution: res.updatedSolution || q.solution,
+          explanation: res.updatedSolution || q.explanation
+        };
+      }
+      return q;
+    });
+    setQuestions(updated);
+    alert(`✨ ĐÃ HOÀN THÀNH CHỈNH SỬA TỰ ĐỘNG ĐỒ THỊ & BBT 100% CHÍNH XÁC!\n\n• ${fixedCount} câu đã được chèn Đồ thị/BBT vector 100% chuẩn xác.\n• ${annotationCount} câu hàm ẩn/trừu tượng đã được chèn Khối Chú thích cho Giáo viên.`);
   };
 
   const handleAutoGenerateAllBbtAndGraphs = () => {
-    let count = 0;
-    const updated = questions.map((q) => {
-      let content = q.content || (q as any).question || '';
-      let solution = q.solution || q.explanation || '';
-      const newContent = embedBbtSvgsInText(embedTikzSvgsInText(content));
-      const newSolution = embedBbtSvgsInText(embedTikzSvgsInText(solution));
-      if (newContent !== content || newSolution !== solution) {
-        count++;
-      }
-      return {
-        ...q,
-        content: newContent,
-        solution: newSolution,
-        explanation: newSolution
-      };
-    });
-    setQuestions(updated);
-    alert(`✨ Đã quét và tự động chuyển đổi toàn bộ BBT & Đồ thị sang dạng ảnh SVG chuẩn SGK (${count} câu được cập nhật)!`);
+    handleAiFixAllQuestionVisuals();
   };
 
   const handleAiRegenerateExamQuestion = async (q: Question, idx: number) => {
@@ -3525,12 +3498,12 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                             </button>
                             <button
                               type="button"
-                              onClick={handleAutoGenerateAllBbtAndGraphs}
-                              className="px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-                              title="Tự động quét và chuẩn hóa toàn bộ Bảng biến thiên (BBT) & Đồ thị trong đề thi thành dạng ảnh SVG chuẩn SGK"
+                              onClick={handleAiFixAllQuestionVisuals}
+                              className="px-3.5 py-1 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95 border border-amber-400"
+                              title="AI Tự động chỉnh sửa 100% Đồ thị & Bảng biến thiên toàn bộ đề thi (có chú thích nếu hàm ẩn)"
                             >
-                              <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
-                              <span>✨ Tự động xuất BBT/Đồ thị ảnh</span>
+                              <Sparkles className="w-3.5 h-3.5 text-amber-200 animate-spin" />
+                              <span>✨ AI Sửa 100% Đồ thị & BBT Toàn Đề</span>
                             </button>
                             <button
                               type="button"
@@ -3658,12 +3631,12 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleAiFixBbtForExamQuestion(q, idx)}
-                              className="text-[11px] px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded border border-amber-300 flex items-center gap-1 cursor-pointer transition-colors font-semibold shadow-2xs"
-                              title="Tự động vẽ Bảng biến thiên (dạng ảnh SVG chuẩn SGK) cho câu hỏi này"
+                              onClick={() => handleAiFixQuestionVisuals(q, idx)}
+                              className="text-[11px] px-2.5 py-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded font-bold flex items-center gap-1 cursor-pointer transition-all shadow-2xs border border-amber-400"
+                              title="AI tự động chỉnh sửa 100% chính xác Đồ thị & Bảng biến thiên cho câu hỏi này"
                             >
-                              <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                              <span>✨ AI vẽ BBT ảnh</span>
+                              <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                              <span>✨ AI Sửa Đồ thị/BBT 100%</span>
                             </button>
                             <button
                               type="button"

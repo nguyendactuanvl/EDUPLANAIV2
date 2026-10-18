@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef } from "react";
 import { InteractivePlot } from "./InteractivePlot";
+import { JsxGraphPlotter } from "./JsxGraphPlotter";
 import { VariationTable, VariationTablePoint, VariationInterval } from "./VariationTable";
 import { MarkdownRenderer, MathSpan } from "../MarkdownRenderer";
 import { MathView } from "../MathView";
@@ -1544,66 +1545,31 @@ $$\\lim_{x \\to \\pm\\infty} y = ${a > 0 ? "+\\infty" : "-\\infty"}$$`;
               <MathView content={section3Markdown} />
             </div>
 
-            {/* KHUNG ĐỒ THỊ MÔ PHỎNG TƯƠNG TÁC (INTERACTIVE PLOT) LỒNG TRỰC TIẾP TRONG MỤC III - KÍCH THƯỚC TO RỘNG (580px) */}
+            {/* KHUNG ĐỒ THỊ CHUYÊN DỤNG JSXGRAPH (100% CHÍNH XÁC TẠI CÁC ĐIỂM ĐẶC BIỆT) */}
             <div className="pt-2">
-              {funcType === "cubic" && (
-                <InteractivePlot
-                  title={`Đồ thị hàm bậc ba: y = ${c3A}x³ ${c3B >= 0 ? "+ " + c3B : "- " + Math.abs(c3B)}x² ${c3C >= 0 ? "+ " + c3C : "- " + Math.abs(c3C)}x ${c3D >= 0 ? "+ " + c3D : "- " + Math.abs(c3D)}`}
-                  subtitle="Tâm đối xứng (điểm uốn) và các điểm cực đại / cực tiểu"
-                  functions={[cubicAnalysis.fnPlot]}
-                  points={cubicAnalysis.points}
-                  defaultXRange={[-5, 5]}
-                  defaultYRange={[-6, 6]}
-                  height={580}
-                />
-              )}
-              {funcType === "rational1_1" && (
-                <InteractivePlot
-                  title={`Đồ thị hàm số: y = (${r1A}x ${r1B >= 0 ? "+ " + r1B : "- " + Math.abs(r1B)}) / (${r1C}x ${r1D >= 0 ? "+ " + r1D : "- " + Math.abs(r1D)})`}
-                  subtitle="Tiệm cận đứng (đỏ), tiệm cận ngang (xanh) và tâm đối xứng I"
-                  functions={[rational1Analysis.fnPlot]}
-                  points={rational1Analysis.points}
-                  asymptotes={rational1Analysis.asymptotes}
-                  defaultXRange={[-7, 7]}
-                  defaultYRange={[-6, 6]}
-                  height={580}
-                />
-              )}
-              {funcType === "rational2_1" && (
-                <InteractivePlot
-                  title={`Đồ thị hàm số: y = (${r2A}x² ${r2B >= 0 ? "+ " + r2B : "- " + Math.abs(r2B)}x ${r2C >= 0 ? "+ " + r2C : "- " + Math.abs(r2C)}) / (${r2D}x ${r2E >= 0 ? "+ " + r2E : "- " + Math.abs(r2E)})`}
-                  subtitle="Tiệm cận đứng, tiệm cận xiên và tâm đối xứng I"
-                  functions={[rational2Analysis.fnPlot]}
-                  points={rational2Analysis.points}
-                  asymptotes={rational2Analysis.asymptotes}
-                  defaultXRange={[-7, 7]}
-                  defaultYRange={[-7, 7]}
-                  height={580}
-                />
-              )}
-              {funcType === "quartic" && (
-                <InteractivePlot
-                  title={`Đồ thị hàm trùng phương: y = ${c4A}x⁴ ${c4B >= 0 ? "+ " + c4B : "- " + Math.abs(c4B)}x² ${c4C >= 0 ? "+ " + c4C : "- " + Math.abs(c4C)}`}
-                  subtitle="Trục đối xứng Oy và các điểm cực trị"
-                  functions={[quarticAnalysis.fnPlot]}
-                  points={quarticAnalysis.points}
-                  defaultXRange={[-5, 5]}
-                  defaultYRange={[-6, 6]}
-                  height={580}
-                />
-              )}
-              {funcType === "parabola" && (
-                <InteractivePlot
-                  title={`Đồ thị Parabol: y = ${pA}x² ${pB >= 0 ? "+ " + pB : "- " + Math.abs(pB)}x ${pC >= 0 ? "+ " + pC : "- " + Math.abs(pC)}`}
-                  subtitle="Đỉnh I, trục đối xứng và các giao điểm tọa độ"
-                  functions={[parabolaAnalysis.fnPlot]}
-                  points={parabolaAnalysis.points}
-                  asymptotes={parabolaAnalysis.asymptotes}
-                  defaultXRange={[-6, 6]}
-                  defaultYRange={[-6, 6]}
-                  height={580}
-                />
-              )}
+              <JsxGraphPlotter
+                fnType={funcType as any}
+                params={
+                  funcType === "cubic" ? { a: c3A, b: c3B, c: c3C, d: c3D } :
+                  funcType === "rational1_1" ? { a: r1A, b: r1B, c: r1C, d: r1D } :
+                  funcType === "rational2_1" ? { a: r2A, b: r2B, c: r2C, d: r2D, e: r2E } :
+                  funcType === "quartic" ? { a: c4A, b: c4B, c: c4C } :
+                  { a: pA, b: pB, c: pC }
+                }
+                specialPoints={
+                  funcType === "cubic" ? (cubicAnalysis.points as any) :
+                  funcType === "rational1_1" ? (rational1Analysis.points as any) :
+                  funcType === "rational2_1" ? (rational2Analysis.points as any) :
+                  funcType === "quartic" ? (quarticAnalysis.points as any) :
+                  (parabolaAnalysis.points as any)
+                }
+                asymptotes={
+                  funcType === "rational1_1" ? (rational1Analysis.asymptotes as any) :
+                  funcType === "rational2_1" ? (rational2Analysis.asymptotes as any) :
+                  []
+                }
+                height={500}
+              />
             </div>
           </div>
         </div>

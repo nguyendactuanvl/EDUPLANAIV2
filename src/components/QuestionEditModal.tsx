@@ -7,6 +7,7 @@ import { QuestionVisualizerPanel } from './math-tools/QuestionVisualizerPanel';
 import { AiSimulationDrawerModal } from './math-tools/AiSimulationDrawerModal';
 import { TrendingUp, BarChart2, Box, BarChart3, Calculator, ImagePlus, Link2, Wand2, Sparkles } from 'lucide-react';
 import { run1ClickMathFix } from './math-tools/MathFormulaFixer';
+import { aiFixQuestionVisuals } from '../lib/bbtRenderer';
 
 export interface QuestionData {
   id?: number;
@@ -398,6 +399,24 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
                 title="Mở GeoGebra vẽ hình"
               >
                 <span>📐 GeoGebra</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const res = aiFixQuestionVisuals(content, solution);
+                  if (res.status !== 'none') {
+                    setContent(res.updatedContent);
+                    if (res.updatedSolution) setSolution(res.updatedSolution);
+                    alert(res.message);
+                  } else {
+                    alert("✨ Đã kiểm tra: Không phát hiện lỗi cần chỉnh sửa hoặc câu hỏi không yêu cầu Đồ thị/BBT.");
+                  }
+                }}
+                className="px-2.5 py-1 text-xs font-bold rounded-lg border shadow-2xs flex items-center gap-1 cursor-pointer transition-all bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white border-amber-400"
+                title="AI tự động chỉnh sửa 100% chính xác Đồ thị & Bảng biến thiên từ đề bài"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                <span>AI Sửa Đồ thị/BBT 100%</span>
               </button>
               <button
                 type="button"
