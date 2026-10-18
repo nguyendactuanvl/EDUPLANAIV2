@@ -2913,7 +2913,10 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
 
                       {matrixViewMode === 'competency' ? (
                         <CompetencyMatrixInlineView
-                          examTitle={examName || "ĐỀ KIỂM TRA GIỮA HỌC KÌ I MÔN TOÁN - KHỐI 11 NĂM HỌC 2025-2026"}
+                          examTitle={examName || `ĐỀ KIỂM TRA MÔN TOÁN - KHỐI ${grade} NĂM HỌC 2025-2026`}
+                          grade={grade}
+                          matrixRows={competencyMatrixRows}
+                          specUnits={competencySpecRows}
                           onOpenModal={() => setShowCompetencyMatrixModal(true)}
                           onLoadSampleExam={handleLoadCompetencyExam11}
                         />
@@ -6686,7 +6689,7 @@ Lời giải: Tiệm cận ngang là $y = 1$ nên ý c sai.`);
       <CompetencyMatrixModal
         isOpen={showCompetencyMatrixModal}
         onClose={() => setShowCompetencyMatrixModal(false)}
-        examTitle={examName || "ĐỀ KIỂM TRA GIỮA HỌC KÌ I MÔN TOÁN - KHỐI 11 NĂM HỌC 2025-2026"}
+        examTitle={examName || `ĐỀ KIỂM TRA MÔN TOÁN - KHỐI ${grade} NĂM HỌC 2025-2026`}
         onApplyToExam={(cfg) => {
           setExamName(cfg.examName);
           if (cfg.subject) {

@@ -12,6 +12,7 @@ import {
   ALL_MATRIX_TEMPLATES, 
   ExamMatrixTemplate, 
   TEMPLATE_TOAN_11_GK1,
+  TEMPLATE_TOAN_12_GK1,
   MatrixRowItem,
   SpecUnitItem,
   SAMPLE_COMPETENCY_MATRIX_11,
@@ -107,6 +108,9 @@ export function CompetencyMatrixModal({
     if (initialTemplateId) {
       const found = ALL_MATRIX_TEMPLATES.find(t => t.id === initialTemplateId);
       if (found) return found;
+    }
+    if (examTitle && (examTitle.includes('12') || examTitle.includes('Khối 12') || examTitle.includes('Lớp 12'))) {
+      return TEMPLATE_TOAN_12_GK1;
     }
     return TEMPLATE_TOAN_11_GK1;
   });
@@ -1795,13 +1799,36 @@ export function CompetencyMatrixModal({
 export function CompetencyMatrixInlineView({
   examTitle,
   onOpenModal,
-  onLoadSampleExam
+  onLoadSampleExam,
+  grade = '11',
+  matrixRows,
+  specUnits
 }: {
   examTitle: string;
   onOpenModal: () => void;
   onLoadSampleExam?: () => void;
+  grade?: string;
+  matrixRows?: MatrixRowItem[];
+  specUnits?: SpecUnitItem[];
 }) {
   const [showSpecTable, setShowSpecTable] = useState(true);
+
+  // Dynamic matrix and spec data selection based on props or grade
+  const activeMatrix = useMemo(() => {
+    if (matrixRows && matrixRows.length > 0) return matrixRows;
+    if (grade === '12') return TEMPLATE_TOAN_12_GK1.matrixRows;
+    if (grade === '10') return ALL_MATRIX_TEMPLATES.find(t => t.grade === '10')?.matrixRows || SAMPLE_COMPETENCY_MATRIX_11;
+    return SAMPLE_COMPETENCY_MATRIX_11;
+  }, [matrixRows, grade]);
+
+  const activeSpec = useMemo(() => {
+    if (specUnits && specUnits.length > 0) return specUnits;
+    if (grade === '12') return TEMPLATE_TOAN_12_GK1.specUnits;
+    if (grade === '10') return ALL_MATRIX_TEMPLATES.find(t => t.grade === '10')?.specUnits || SAMPLE_SPEC_LIST_11;
+    return SAMPLE_SPEC_LIST_11;
+  }, [specUnits, grade]);
+
+  const gradeDisplay = grade === '12' ? 'KHỐI 12' : grade === '10' ? 'KHỐI 10' : 'KHỐI 11';
 
   const handleExportWord = () => {
     const el = document.getElementById('competency-matrix-inline-container');
@@ -2287,7 +2314,7 @@ export function CompetencyMatrixInlineView({
         <div className="overflow-x-auto bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="text-center mb-3">
             <h3 className="text-base sm:text-lg font-bold uppercase text-black" style={{ fontFamily: '"Times New Roman", Times, serif' }}>
-              II. BẢN ĐẶC TẢ ĐỀ KIỂM TRA GIỮA HỌC KÌ I MÔN TOÁN - KHỐI 11 NĂM HỌC 2025-2026
+              II. BẢN ĐẶC TẢ ĐỀ KIỂM TRA MÔN TOÁN - {gradeDisplay} NĂM HỌC 2025-2026
             </h3>
           </div>
 
@@ -2306,8 +2333,8 @@ export function CompetencyMatrixInlineView({
               </tr>
             </thead>
             <tbody>
-              {SAMPLE_SPEC_LIST_11.map((s, idx) => (
-                <tr key={s.id} className="hover:bg-slate-50">
+              {activeSpec.map((s, idx) => (
+                <tr key={s.id || idx} className="hover:bg-slate-50">
                   <td className="border border-black p-2 text-center font-bold">{idx + 1}</td>
                   <td className="border border-black p-2 font-bold">{s.topic}</td>
                   <td className="border border-black p-2">{s.unit}</td>
@@ -2316,11 +2343,11 @@ export function CompetencyMatrixInlineView({
                     <p><strong className="text-indigo-700">Thông hiểu:</strong><br/>{s.hieuSpec}</p>
                     <p><strong className="text-rose-700">Vận dụng:</strong><br/>{s.vdSpec}</p>
                   </td>
-                  <td className="border border-black p-2 text-center font-bold text-blue-700">{s.assignedQuestions.part1 || '-'}</td>
-                  <td className="border border-black p-2 text-center font-bold text-indigo-700">{s.assignedQuestions.part2 || '-'}</td>
-                  <td className="border border-black p-2 text-center font-bold text-purple-700">{s.assignedQuestions.part3 || '-'}</td>
-                  <td className="border border-black p-2 text-center font-bold text-rose-700">{s.assignedQuestions.essay || '-'}</td>
-                  <td className="border border-black p-2 text-center font-bold text-emerald-800">{s.points.toFixed(2)}đ</td>
+                  <td className="border border-black p-2 text-center font-bold text-blue-700">{s.assignedQuestions?.part1 || '-'}</td>
+                  <td className="border border-black p-2 text-center font-bold text-indigo-700">{s.assignedQuestions?.part2 || '-'}</td>
+                  <td className="border border-black p-2 text-center font-bold text-purple-700">{s.assignedQuestions?.part3 || '-'}</td>
+                  <td className="border border-black p-2 text-center font-bold text-rose-700">{s.assignedQuestions?.essay || '-'}</td>
+                  <td className="border border-black p-2 text-center font-bold text-emerald-800">{s.points ? `${s.points.toFixed(2)}đ` : '1.0đ'}</td>
                 </tr>
               ))}
               <tr className="bg-slate-100 font-bold text-center">

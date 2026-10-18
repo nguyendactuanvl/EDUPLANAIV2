@@ -474,22 +474,39 @@ export const InteractivePlot: React.FC<InteractivePlotProps> = ({
       ctx.restore();
     });
 
-    // 6. Draw Functions Curves
+    // 6. Draw Functions Curves with High Precision Landmark Sampling
+    // Collect landmark X coordinates from points (e.g. 0, extrema, inflection)
+    const landmarkXs = new Set<number>([0]);
+    points.forEach(pt => landmarkXs.add(pt.x));
+
     functions.forEach((fnData) => {
       ctx.save();
       ctx.lineWidth = fnData.width || 2.5;
       ctx.strokeStyle = fnData.color || "#2563eb"; // blue-600
       if (fnData.dashed) ctx.setLineDash([5, 4]);
 
-      const totalPoints = w * 2; // high-density sampling
+      const totalPoints = w * 3; // Ultra high-density sampling
       const dx = (xMax - xMin) / totalPoints;
       const discontinuities = fnData.discontinuities || [];
+
+      // Generate sorted list of x values including exact landmark X coordinates
+      const xSamplesSet = new Set<number>();
+      for (let i = 0; i <= totalPoints; i++) {
+        xSamplesSet.add(xMin + i * dx);
+      }
+      landmarkXs.forEach(lx => {
+        if (lx >= xMin && lx <= xMax) {
+          xSamplesSet.add(lx);
+        }
+      });
+
+      const xSamples = Array.from(xSamplesSet).sort((a, b) => a - b);
 
       let isDrawing = false;
       ctx.beginPath();
 
-      for (let i = 0; i <= totalPoints; i++) {
-        const x = xMin + i * dx;
+      for (let i = 0; i < xSamples.length; i++) {
+        const x = xSamples[i];
 
         // Skip if x is near a discontinuity
         const isNearDiscontinuity = discontinuities.some(d => Math.abs(x - d) < dx * 1.5);

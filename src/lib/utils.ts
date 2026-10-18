@@ -2269,7 +2269,7 @@ export function cleanQuestionStem(content: any, options?: any[], tfStatements?: 
   const visualTokens: string[] = [];
   const protectVisual = (m: string) => {
     visualTokens.push(m);
-    return `\n\n___VISUAL_TOKEN_${visualTokens.length - 1}___\n\n`;
+    return `\n\n\uE000VT_${visualTokens.length - 1}\uE001\n\n`;
   };
 
   text = text.replace(/<svg-wrapper[\s\S]*?<\/svg-wrapper>/gi, protectVisual);
@@ -2360,14 +2360,24 @@ export function cleanQuestionStem(content: any, options?: any[], tfStatements?: 
 
   let cleaned = sanitizeExamQuestion(text.trim());
 
-  // Khôi phục các hình vẽ BBT & đồ thị nguyên vẹn 100%
-  cleaned = cleaned.replace(/___?VISUAL\\?_TOKEN_(\d+)___?/gi, (_m, idx) => {
+  // Khôi phục các hình vẽ BBT & đồ thị nguyên vẹn 100% bằng Unicode private tokens
+  cleaned = cleaned.replace(/\uE000VT_(\d+)\uE001/g, (_m, idx) => {
     const raw = visualTokens[Number(idx)];
     return raw ? `\n\n${raw}\n\n` : '';
   });
 
-  // Triệt tiêu hoàn toàn bất kỳ chuỗi token hình vẽ mồ côi nào sót lại
-  cleaned = cleaned.replace(/___?VISUAL\\?_TOKEN_\d+___?/gi, '');
+  // Hỗ trợ khôi phục fallback cho bất kỳ token định dạng legacy nào
+  cleaned = cleaned.replace(/(?:\\_|_){3}VISUAL(?:\\_|_)*TOKEN(?:\\_|_)*(\d+)(?:\\_|_)*\d*/gi, (_m, idx) => {
+    const raw = visualTokens[Number(idx)];
+    return raw ? `\n\n${raw}\n\n` : '';
+  });
+
+  // Triệt tiêu hoàn toàn bất kỳ chuỗi token hình vẽ mồ côi nào sót lại ở mọi biến thể
+  cleaned = cleaned
+    .replace(/\uE000VT_\d+\uE001/g, '')
+    .replace(/(?:\\_|_){3}VISUAL(?:\\_|_)*TOKEN(?:\\_|_)*\d+(?:\\_|_)*/gi, '')
+    .replace(/___VISUAL_TOKEN_\d+___/gi, '')
+    .replace(/___VISUAL_TOKEN_\d+/gi, '');
 
   // Fallback an toàn tuyệt đối: Nếu cleaned bị rỗng hoặc ngắn bất thường (< 10 ký tự) trong khi đề gốc dài,
   // bảo toàn 100% nội dung gốc của câu hỏi để câu hỏi (đặc biệt câu 21, 22) không bao giờ bị mất!
