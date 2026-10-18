@@ -4240,6 +4240,16 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                         <div className="flex flex-wrap gap-2 w-full md:w-auto justify-end">
                           <button
                             onClick={() => {
+                              window.dispatchEvent(new CustomEvent('open-exam-stats', { detail: { examId: sharePin } }));
+                            }}
+                            className="px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg hover:bg-indigo-700 flex items-center gap-1.5 shadow-sm cursor-pointer"
+                            title="Mở Dashboard theo dõi số lượng học sinh hoàn thành và điểm trung bình"
+                          >
+                            <BarChart3 className="w-4 h-4" /> 📊 Xem Dashboard Thống Kê
+                          </button>
+
+                          <button
+                            onClick={() => {
                               navigator.clipboard.writeText(shareLink);
                               alert('Đã copy link bài thi vào clipboard!');
                             }}

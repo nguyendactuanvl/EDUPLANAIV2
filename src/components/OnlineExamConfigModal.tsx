@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, Share2, Clock, Calendar, CheckCircle2, Copy, ExternalLink, Download, 
-  QrCode as QrIcon, Sparkles, Check, AlertCircle, RefreshCw 
+  QrCode as QrIcon, Sparkles, Check, AlertCircle, RefreshCw, ShieldAlert, BarChart3
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import LZString from 'lz-string';
@@ -55,6 +55,7 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
 
   // Code selection
   const [selectedCodeOption, setSelectedCodeOption] = useState<string>('all');
+  const [antiCheatMode, setAntiCheatMode] = useState<boolean>(true);
 
   // Step state
   const [step, setStep] = useState<'config' | 'success'>('config');
@@ -91,6 +92,7 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
       setCopiedLink(false);
       setCopiedPin(false);
       setCopiedZalo(false);
+      setAntiCheatMode(true);
     }
   }, [isOpen, initialExamName, initialExamType, initialDuration, schoolLevel, grade, subject]);
 
@@ -181,6 +183,7 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
         isUnlimitedTime: isUnlimitedTime || finalDuration === 0,
         startTime: hasSchedule && startTime ? startTime : undefined,
         endTime: hasSchedule && endTime ? endTime : undefined,
+        antiCheatMode: antiCheatMode,
         createdAt: new Date().toISOString()
       };
 
@@ -192,6 +195,7 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
         isUnlimitedTime: isUnlimitedTime || finalDuration === 0,
         startTime: hasSchedule && startTime ? startTime : undefined,
         endTime: hasSchedule && endTime ? endTime : undefined,
+        antiCheatMode: antiCheatMode,
         codes: optimizedCodes
       };
 
@@ -519,6 +523,46 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
                 )}
               </div>
 
+              {/* 5. Chế độ giám sát chống rời tab */}
+              <div className="bg-gradient-to-r from-rose-50 via-red-50 to-amber-50 border border-rose-200 rounded-xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                      <ShieldAlert className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-900 uppercase">
+                          Chế độ chống rời tab tra cứu đáp án
+                        </span>
+                        {antiCheatMode && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-600 text-white animate-pulse">
+                            Đang bật
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+                        Tự động nộp bài ngay lập tức khi học sinh chuyển tab sang Google/Zalo hoặc thu nhỏ màn hình thi.
+                      </p>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                    <input
+                      type="checkbox"
+                      checked={antiCheatMode}
+                      onChange={e => setAntiCheatMode(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
+                  </label>
+                </div>
+                <div className="text-[10px] text-rose-700 bg-white/80 p-2 rounded-lg border border-rose-200/60 font-medium">
+                  {antiCheatMode
+                    ? "⚡ Nghiêm ngặt: Học sinh thoát khỏi tab làm bài dù 1 lần sẽ bị hệ thống tự động thu bài và nộp điểm ngay."
+                    : "Đang tắt: Học sinh có thể chuyển đổi giữa các tab trình duyệt mà không bị thu bài."}
+                </div>
+              </div>
+
               {/* Summary Pill */}
               <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-900 flex items-center justify-between">
                 <span className="flex items-center gap-1.5 font-medium">
@@ -545,6 +589,35 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
                 <p className="text-xs text-emerald-800 max-w-md mx-auto">
                   Đề thi <strong>"{modalExamName}"</strong> ({modalExamType} - {isUnlimitedTime ? 'Không giới hạn' : `${modalDuration} phút`}) đã được lưu trữ trên máy chủ và sẵn sàng.
                 </p>
+              </div>
+
+              {/* Quick Jump to Statistics Dashboard Banner */}
+              <div className="bg-gradient-to-r from-indigo-600 via-indigo-700 to-slate-800 text-white p-4 rounded-2xl shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center font-bold shrink-0">
+                    <BarChart3 className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
+                      <span>Dashboard Thống Kê Học Sinh</span>
+                      <span className="text-[10px] bg-emerald-400 text-slate-900 font-extrabold px-1.5 py-0.2 rounded">Trực tiếp</span>
+                    </h4>
+                    <p className="text-xs text-indigo-100 mt-0.5">
+                      Theo dõi số lượng hoàn thành, điểm trung bình và biểu đồ phổ điểm của học sinh.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent('open-exam-stats', { detail: { examId: sharePin } }));
+                    onClose();
+                  }}
+                  className="w-full sm:w-auto px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  <BarChart3 className="w-4 h-4" />
+                  <span>Xem Dashboard Thống Kê</span>
+                </button>
               </div>
 
               {/* PIN Code Box */}
@@ -688,13 +761,27 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
                 <RefreshCw className="w-3.5 h-3.5" /> Chỉnh sửa cấu hình
               </button>
 
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-6 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-sm rounded-xl shadow-xs transition-colors"
-              >
-                Hoàn tất & Đóng
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent('open-exam-stats', { detail: { examId: sharePin } }));
+                    onClose();
+                  }}
+                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm rounded-xl flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                >
+                  <BarChart3 className="w-4 h-4" />
+                  <span>Mở Dashboard Thống Kê</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-6 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-sm rounded-xl shadow-xs transition-colors cursor-pointer"
+                >
+                  Hoàn tất & Đóng
+                </button>
+              </div>
             </>
           )}
         </div>

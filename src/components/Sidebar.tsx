@@ -1,7 +1,7 @@
 import { 
   Trophy, BookOpen, Calendar, FileText, Settings, Sparkles, Clock, 
   ClipboardList, FileEdit, FileCheck, Users, ShieldCheck, CalendarDays, 
-  Key, Calculator, HelpCircle, PlayCircle, PenTool, ScanLine, Sun, Moon, GraduationCap
+  Key, Calculator, HelpCircle, PlayCircle, PenTool, ScanLine, Sun, Moon, GraduationCap, BarChart3
 } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -28,13 +28,14 @@ export function Sidebar({
       items: [
         { id: "math_tools", label: "Công cụ Toán học", icon: Calculator },
         { id: "de_online_pdf", label: "Đề online từ file PDF của GV", icon: FileText },
+        { id: "exam", label: "Tạo & Trộn đề", icon: FileCheck },
+        { id: "exam_stats", label: "Dashboard Thống kê kết quả thi", icon: BarChart3 },
         { id: "hsa_tsa", label: "Ôn thi HSA & TSA (ĐGNL)", icon: GraduationCap },
         { id: "khgd", label: "Kế hoạch giáo dục", icon: Calendar },
         { id: "khdh", label: "Kế hoạch dạy học", icon: BookOpen },
         { id: "worksheets", label: "Phiếu học tập", icon: ClipboardList },
         { id: "exercise", label: "Giải bài tập", icon: Sparkles },
         { id: "pdf2word", label: "Chuyển PDF sang Word", icon: FileEdit },
-        { id: "exam", label: "Tạo & Trộn đề", icon: FileCheck },
         { id: "ai_studio", label: "AI Studio & Sáng tạo", icon: Sparkles },
         { id: "math_ocr", label: "Math OCR & LaTeX (Word)", icon: ScanLine },
         { id: "ink", label: "EduPlan AI Ink (Bảng vẽ)", icon: PenTool },

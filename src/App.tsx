@@ -75,12 +75,22 @@ const AiStudioSuite = safeLazy(() => import('./pages/AiStudioSuite'), "AiStudioS
 const EduPlanInkPage = safeLazy(() => import('./pages/EduPlanInkPage'), "EduPlanInkPage");
 const MathOCRPage = safeLazy(() => import('./pages/MathOCRPage'), "MathOCRPage");
 const HsaTsaHub = safeLazy(() => import('./pages/HsaTsaHub'), "HsaTsaHub");
+const ExamStatsDashboard = safeLazy(() => import('./pages/ExamStatsDashboard'), "ExamStatsDashboard");
 
 
 
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("math_tools");
+  const [activeTab, setActiveTab] = useState(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tabParam = urlParams.get('tab') || urlParams.get('view');
+    if (tabParam === 'exam_stats' || tabParam === 'stats') return 'exam_stats';
+    return "math_tools";
+  });
+  const [statsExamId, setStatsExamId] = useState<string | undefined>(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('examId') || urlParams.get('pin') || urlParams.get('code') || undefined;
+  });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
@@ -115,10 +125,18 @@ export default function App() {
       setIsFocusMode(Boolean(e?.detail));
     };
 
+    const handleOpenStats = (e: any) => {
+      if (e?.detail?.examId) {
+        setStatsExamId(e.detail.examId);
+      }
+      setActiveTab("exam_stats");
+    };
+
     window.addEventListener('show-api-key-modal', handleShowModal);
     window.addEventListener('show-user-guide-modal', handleShowGuide);
     window.addEventListener('api-retry-status', handleRetryStatus);
     window.addEventListener('hsa-focus-mode', handleFocusMode);
+    window.addEventListener('open-exam-stats', handleOpenStats);
     
     const storedKey = localStorage.getItem("eduplan_gemini_api_key_v2");
     if (!storedKey) {
@@ -130,6 +148,7 @@ export default function App() {
       window.removeEventListener('show-user-guide-modal', handleShowGuide);
       window.removeEventListener('api-retry-status', handleRetryStatus);
       window.removeEventListener('hsa-focus-mode', handleFocusMode);
+      window.removeEventListener('open-exam-stats', handleOpenStats);
     };
   }, []);
 
@@ -262,6 +281,7 @@ export default function App() {
               {activeTab === "homeroom" && <HomeroomManagement />}
               {activeTab === "timetable" && <WeeklyTimetable />}
               {activeTab === "exam" && <ExamGenerator />}
+              {activeTab === "exam_stats" && <ExamStatsDashboard initialExamId={statsExamId} onBackToExam={() => setActiveTab("exam")} />}
               {activeTab === "pdf2word" && <PdfToWord />}
               {activeTab === "de_online_pdf" && <DeOnlinePdf />}
               {activeTab === "circulars" && <Circulars />}

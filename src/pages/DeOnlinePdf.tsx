@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { 
   FileText, Clock, FileCheck, CheckCircle2, XCircle, ChevronLeft, ChevronRight, Download,
   HelpCircle, Settings, Send, Code, Play, RefreshCw, Upload, Copy, Info, Check, AlertCircle, AlertTriangle, Loader2, Sparkles,
-  User, Users, BarChart, Search, Trash2, FileSpreadsheet, ShieldCheck, KeyRound, Zap, CheckCircle
+  User, Users, BarChart, Search, Trash2, FileSpreadsheet, ShieldCheck, KeyRound, Zap, CheckCircle, ShieldAlert, Maximize2, Minimize2, Lock
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import mammoth from "mammoth";
@@ -672,7 +672,55 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
     part2: number;
     part3: number;
     details: any;
+    isViolation?: boolean;
+    violationReason?: string;
   } | null>(null);
+
+  // Anti-Cheat & Exam Proctoring States (Chống thoát tab tra cứu đáp án)
+  const [antiCheatMode, setAntiCheatMode] = useState<boolean>(true);
+  const [hasAcknowledgedAntiCheat, setHasAcknowledgedAntiCheat] = useState<boolean>(false);
+  const [showViolationModal, setShowViolationModal] = useState<boolean>(false);
+  const [violationReasonText, setViolationReasonText] = useState<string>("");
+  const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
+
+  const toggleFullScreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().then(() => setIsFullScreen(true)).catch(() => {});
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().then(() => setIsFullScreen(false)).catch(() => {});
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullScreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener("fullscreenchange", handleFsChange);
+    return () => document.removeEventListener("fullscreenchange", handleFsChange);
+  }, []);
+
+  const isSubmittingRef = useRef(false);
+  const screenRef = useRef(screen);
+  const hasStartedExamRef = useRef(hasStartedExam);
+  const antiCheatModeRef = useRef(antiCheatMode);
+
+  useEffect(() => {
+    isSubmittingRef.current = isSubmitting;
+  }, [isSubmitting]);
+
+  useEffect(() => {
+    screenRef.current = screen;
+  }, [screen]);
+
+  useEffect(() => {
+    hasStartedExamRef.current = hasStartedExam;
+  }, [hasStartedExam]);
+
+  useEffect(() => {
+    antiCheatModeRef.current = antiCheatMode;
+  }, [antiCheatMode]);
 
   // Load configuration and Apps Script URL from localStorage
   useEffect(() => {
@@ -779,6 +827,12 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
       setScriptUrl(data.scriptUrl || "");
       if (data.loginMethod) setLoginMethod(data.loginMethod);
       if (data.classRosterText) setClassRosterText(data.classRosterText);
+      if (data.antiCheatMode !== undefined) {
+        setAntiCheatMode(Boolean(data.antiCheatMode));
+      } else {
+        setAntiCheatMode(true);
+      }
+      setHasAcknowledgedAntiCheat(false);
       
       // Multi-Code support: Randomly pick one code version if multiple versions exist!
       if (Array.isArray(data.codeVersions) && data.codeVersions.length > 0) {
@@ -960,7 +1014,8 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
         createdAt: new Date().toISOString(),
         loginMethod,
         classRosterText: classRosterText.trim(),
-        allowedStudents: parseRoster(classRosterText)
+        allowedStudents: parseRoster(classRosterText),
+        antiCheatMode: antiCheatMode
       };
 
       const res = await fetch("/api/exams/share", {
@@ -1075,7 +1130,9 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
         "Tổng điểm (10)": sub.totalScore,
         "Điểm Phần I": sub.scorePart1,
         "Điểm Phần II": sub.scorePart2,
-        "Điểm Phần III": sub.scorePart3
+        "Điểm Phần III": sub.scorePart3,
+        "Trạng thái giám sát": sub.isViolation ? "🚨 Vi phạm: Thoát tab thi (Tự động nộp)" : "✅ Hợp lệ",
+        "Chi tiết vi phạm": sub.violationReason || ""
       };
     });
 
@@ -1428,12 +1485,21 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
     submitExam();
   };
 
-  const submitExam = async () => {
+  const autoSubmitOnViolation = async (reason: string) => {
+    if (isSubmittingRef.current || screenRef.current !== "exam" || !hasStartedExamRef.current) return;
+    setViolationReasonText(reason);
+    setShowViolationModal(true);
+    await submitExam({ isViolation: true, violationReason: reason });
+  };
+
+  const submitExam = async (violationInfo?: { isViolation: boolean; violationReason: string }) => {
     setIsSubmitting(true);
+    isSubmittingRef.current = true;
     const scores = calculateScores();
+    const violationTimeStr = new Date().toLocaleTimeString("vi-VN") + " - " + new Date().toLocaleDateString("vi-VN");
 
     // Prepare Payload
-    const payload = {
+    const payload: any = {
       examTitle: examTitle.trim(),
       studentName: studentName.trim() || "Học sinh ẩn danh",
       studentClass: studentClass.trim() || "Lớp trống",
@@ -1445,6 +1511,12 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
       scorePart3: scores.scorePart3,
       details: scores.details
     };
+
+    if (violationInfo?.isViolation) {
+      payload.isViolation = true;
+      payload.violationReason = violationInfo.violationReason;
+      payload.violationTime = violationTimeStr;
+    }
 
     // Cache scriptUrl to localStorage
     if (scriptUrl.trim()) {
@@ -1483,11 +1555,60 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
       part1: scores.scorePart1,
       part2: scores.scorePart2,
       part3: scores.scorePart3,
-      details: scores.details
+      details: scores.details,
+      isViolation: Boolean(violationInfo?.isViolation),
+      violationReason: violationInfo?.violationReason
     });
     setScreen("result");
     setIsSubmitting(false);
   };
+
+  // Anti-Cheat Proctoring: Auto-submit if student leaves/switches tabs or blurs browser
+  useEffect(() => {
+    if (screen !== "exam" || !hasStartedExam || isSubmitting || !antiCheatMode) return;
+
+    let hasTriggered = false;
+
+    const handleTabViolation = (reason: string) => {
+      if (hasTriggered || isSubmittingRef.current || screenRef.current !== "exam" || !hasStartedExamRef.current) {
+        return;
+      }
+      hasTriggered = true;
+      autoSubmitOnViolation(reason);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden || document.visibilityState === "hidden") {
+        handleTabViolation("Học sinh chuyển tab trình duyệt hoặc ẩn cửa sổ làm bài thi.");
+      }
+    };
+
+    const handleWindowBlur = () => {
+      // Buffer check to prevent accidental rapid input changes, but trigger if focus left window
+      setTimeout(() => {
+        if ((document.hidden || !document.hasFocus()) && !hasTriggered && !isSubmittingRef.current && screenRef.current === "exam" && hasStartedExamRef.current) {
+          handleTabViolation("Học sinh thoát/rời khỏi cửa sổ thi (mở tab hoặc ứng dụng khác tra cứu).");
+        }
+      }, 350);
+    };
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      handleTabViolation("Học sinh cố gắng tải lại hoặc thoát trang làm bài.");
+      e.preventDefault();
+      e.returnValue = "Nếu bạn rời khỏi trang, bài thi sẽ bị tự động nộp ngay lập tức!";
+      return e.returnValue;
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("blur", handleWindowBlur);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("blur", handleWindowBlur);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [screen, hasStartedExam, isSubmitting, antiCheatMode]);
 
   if (isLoadingExam) {
     return (
@@ -1727,6 +1848,47 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
                             </button>
                           ))}
                         </div>
+                      </div>
+                    </div>
+
+                    {/* Chế độ Giám sát Chống gian lận & Rời tab */}
+                    <div className="bg-gradient-to-r from-rose-50 via-red-50 to-amber-50 p-4 rounded-xl border border-rose-200 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                            <ShieldAlert className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-slate-900 uppercase tracking-wide flex items-center gap-1.5">
+                              Giám sát chống thoát tab tra cứu đáp án
+                              {antiCheatMode && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-600 text-white animate-pulse">
+                                  Đang bật
+                                </span>
+                              )}
+                            </span>
+                            <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+                              Tự động nộp bài ngay lập tức khi học sinh chuyển tab sang Google/Zalo, thu nhỏ trình duyệt hoặc mở ứng dụng khác.
+                            </p>
+                          </div>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                          <input
+                            type="checkbox"
+                            checked={antiCheatMode}
+                            onChange={(e) => setAntiCheatMode(e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
+                        </label>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] text-rose-700 bg-white/80 p-2 rounded-lg border border-rose-200/60 font-medium">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                        <span>
+                          {antiCheatMode 
+                            ? "Khuyên dùng: Học sinh thoát màn hình thi dù chỉ 1 giây sẽ bị thu bài và nộp điểm tự động kèm biên bản vi phạm gửi về giáo viên." 
+                            : "Đang tắt: Học sinh có thể tự do chuyển đổi giữa các tab mà không bị thu bài tự động."}
+                        </span>
                       </div>
                     </div>
 
@@ -2113,6 +2275,20 @@ HS05 - Hoàng Văn Em`);
                             </button>
                           </div>
                         </div>
+
+                        <div className="pt-1.5 border-t border-slate-700">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              window.dispatchEvent(new CustomEvent('open-exam-stats', { detail: { examId: sharedRoomId } }));
+                            }}
+                            className="w-full py-2 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-black text-xs rounded-lg shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <BarChart className="w-4 h-4" />
+                            <span>📊 Mở Dashboard Thống Kê Kết Quả Ngay</span>
+                          </button>
+                        </div>
+
                         <p className="text-[10px] text-slate-400 leading-relaxed">
                           💡 Giáo viên sao chép đường link này gửi qua Zalo/Facebook. Học sinh mở link sẽ thấy đề thi PDF và phiếu trả lời trắc nghiệm trực quan để nộp điểm trực tiếp.
                         </p>
@@ -2514,6 +2690,15 @@ HS05 - Hoàng Văn Em`);
 
                   <div className="flex flex-wrap items-center gap-2">
                     <button
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent('open-exam-stats', { detail: { examId: selectedRoomForResults } }));
+                      }}
+                      className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                      title="Mở Dashboard phân tích phổ điểm và xếp loại học sinh toàn diện"
+                    >
+                      <BarChart className="w-4 h-4" /> Mở Dashboard Thống Kê
+                    </button>
+                    <button
                       onClick={handleExportResultsToExcel}
                       disabled={isLoadingResults || !selectedRoomResultsData?.submissions?.length}
                       className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
@@ -2730,7 +2915,16 @@ HS05 - Hoàng Văn Em`);
                                       .map((sub: any, idx: number) => (
                                         <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
                                           <td className="py-2.5 px-3 text-center font-bold text-slate-400">{idx + 1}</td>
-                                          <td className="py-2.5 px-3 font-bold text-slate-800">{sub.studentName}</td>
+                                          <td className="py-2.5 px-3 font-bold text-slate-800">
+                                            <div className="flex flex-col items-start gap-1">
+                                              <span>{sub.studentName}</span>
+                                              {sub.isViolation && (
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-100 text-rose-700 border border-rose-300" title={sub.violationReason || "Rời tab thi"}>
+                                                  🚨 Rời tab thi (Tự động nộp)
+                                                </span>
+                                              )}
+                                            </div>
+                                          </td>
                                           <td className="py-2.5 px-3 text-center font-bold">{sub.studentClass}</td>
                                           <td className="py-2.5 px-3 text-center">
                                             <span className="px-2 py-0.5 bg-purple-50 text-purple-800 font-bold rounded text-[10px] border border-purple-200">
@@ -3172,6 +3366,44 @@ HS05 - Hoàng Văn Em`);
               </div>
             )}
 
+            {/* CẢNH BÁO GIÁM SÁT THI & CHỐNG RỜI TAB DÀNH CHO HỌC SINH */}
+            {antiCheatMode && (
+              <div className="mb-5 p-4 bg-rose-50 border-2 border-rose-400 rounded-2xl text-left space-y-2.5 animate-in fade-in">
+                <div className="flex items-center gap-2 text-rose-800 font-extrabold text-xs uppercase tracking-wide">
+                  <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0 animate-bounce" />
+                  <span>Quy chế phòng thi: Đang bật giám sát chống rời tab!</span>
+                </div>
+                <div className="text-xs text-rose-700 space-y-1.5 font-medium leading-relaxed">
+                  <p className="flex items-start gap-1.5">
+                    <span className="text-rose-600 font-bold">•</span>
+                    <span><strong>TUYỆT ĐỐI KHÔNG CHUYỂN TAB</strong> sang bất kỳ tab trình duyệt hoặc ứng dụng nào khác (Zalo, Facebook, Google tra đáp án...).</span>
+                  </p>
+                  <p className="flex items-start gap-1.5">
+                    <span className="text-rose-600 font-bold">•</span>
+                    <span className="text-rose-900 font-black underline">
+                      NẾU RỜI KHỎI TAB THI HOẶC ẨN CỬA SỔ, BÀI THI SẼ TỰ ĐỘNG THU & NỘP NGAY LẬP TỨC!
+                    </span>
+                  </p>
+                  <p className="flex items-start gap-1.5">
+                    <span className="text-rose-600 font-bold">•</span>
+                    <span>Biên bản vi phạm rời tab kèm thời gian chính xác sẽ được gửi trực tiếp về bảng điểm của Thầy/Cô.</span>
+                  </p>
+                </div>
+
+                <label className="flex items-center gap-2.5 pt-2.5 border-t border-rose-200 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={hasAcknowledgedAntiCheat}
+                    onChange={(e) => setHasAcknowledgedAntiCheat(e.target.checked)}
+                    className="w-4 h-4 text-rose-600 rounded border-rose-400 focus:ring-rose-500 cursor-pointer"
+                  />
+                  <span className="text-xs text-rose-950 font-bold">
+                    Em đã đọc kỹ quy chế và cam kết KHÔNG RỜI KHỎI TAB THI trong suốt thời gian làm bài.
+                  </span>
+                </label>
+              </div>
+            )}
+
             <button
               type="button"
               onClick={() => {
@@ -3201,6 +3433,11 @@ HS05 - Hoàng Văn Em`);
                   }
                 }
 
+                if (antiCheatMode && !hasAcknowledgedAntiCheat) {
+                  alert("⚠️ Vui lòng tích chọn xác nhận cam kết 'Không rời khỏi tab thi' trước khi bắt đầu làm bài!");
+                  return;
+                }
+
                 setStudentPart1({});
                 setStudentPart2(() => {
                   const init: Record<number, any> = {};
@@ -3225,6 +3462,33 @@ HS05 - Hoàng Văn Em`);
         ) : (
           <div className="flex flex-col gap-4">
             
+            {/* ANTI-CHEAT MONITORING WARNING BAR */}
+            {antiCheatMode && (
+              <div className="bg-gradient-to-r from-rose-600 via-red-600 to-rose-700 text-white px-4 py-2.5 rounded-2xl shadow-md flex flex-wrap items-center justify-between gap-3 text-xs font-bold border border-rose-400">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1.5 bg-white/20 rounded-lg shrink-0">
+                    <ShieldAlert className="w-5 h-5 text-amber-300 animate-bounce" />
+                  </div>
+                  <div>
+                    <span className="font-black tracking-wide text-amber-200 uppercase">
+                      Chế độ giám sát tab đang hoạt động:
+                    </span>
+                    <span className="ml-1 text-white font-medium">
+                      TUYỆT ĐỐI KHÔNG CHUYỂN TAB HOẶC RỜI KHỎI MÀN HÌNH NÀY! Nếu rời tab tra cứu đáp án, hệ thống sẽ tự động thu bài và nộp bài ngay lập tức.
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={toggleFullScreen}
+                  className="px-3 py-1.5 bg-white text-rose-700 hover:bg-rose-50 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer shrink-0"
+                >
+                  {isFullScreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                  {isFullScreen ? "Thoát toàn màn hình" : "Bật Toàn màn hình (Khuyên dùng)"}
+                </button>
+              </div>
+            )}
+
             {/* Student Exam Header info */}
           <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 shadow-2xs">
             <div className="flex items-center gap-3">
@@ -3577,17 +3841,40 @@ HS05 - Hoàng Văn Em`);
 
       {/* C. POPUP RESULTS VIEW */}
       {screen === "result" && submitResult && (
-        <div className="bg-white p-6 md:p-8 rounded-2xl border border-emerald-200 shadow-lg text-center max-w-2xl mx-auto relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-2 bg-emerald-500"></div>
+        <div className={`bg-white p-6 md:p-8 rounded-2xl border ${submitResult.isViolation ? "border-rose-400" : "border-emerald-200"} shadow-lg text-center max-w-2xl mx-auto relative overflow-hidden`}>
+          <div className={`absolute top-0 left-0 w-full h-2 ${submitResult.isViolation ? "bg-rose-600" : "bg-emerald-500"}`}></div>
           
-          <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle2 className="w-10 h-10 text-emerald-600" />
+          <div className={`w-16 h-16 ${submitResult.isViolation ? "bg-rose-100 text-rose-600" : "bg-emerald-100 text-emerald-600"} rounded-full flex items-center justify-center mx-auto mb-4`}>
+            {submitResult.isViolation ? (
+              <ShieldAlert className="w-10 h-10 text-rose-600 animate-bounce" />
+            ) : (
+              <CheckCircle2 className="w-10 h-10 text-emerald-600" />
+            )}
           </div>
 
-          <h2 className="text-2xl font-bold text-slate-800 mb-1">Kết quả nộp bài thi thành công!</h2>
-          <p className="text-slate-500 text-xs mb-6">
-            Bài làm của <strong className="text-slate-700">{studentName}</strong> (lớp {studentClass}) đã được chấm và đẩy ngầm lên Sheets.
-          </p>
+          {submitResult.isViolation ? (
+            <div className="mb-5 space-y-2">
+              <span className="inline-block px-3 py-1 bg-rose-100 text-rose-800 rounded-full text-xs font-black uppercase tracking-wider">
+                🚨 Bài thi bị thu & tự động nộp do vi phạm
+              </span>
+              <h2 className="text-xl md:text-2xl font-black text-rose-700">
+                PHÁT HIỆN HỌC SINH RỜI KHỎI TAB THI!
+              </h2>
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-left text-xs text-rose-900 space-y-1">
+                <p><strong>Lý do:</strong> {submitResult.violationReason || "Học sinh chuyển tab trình duyệt hoặc ẩn cửa sổ làm bài thi."}</p>
+                <p className="text-[11px] text-slate-600">
+                  Hệ thống đã tự động dừng bài làm, tính điểm các câu đã làm tính đến thời điểm vi phạm và gửi kết quả kèm biên bản vi phạm về cho Thầy/Cô.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <h2 className="text-2xl font-bold text-slate-800 mb-1">Kết quả nộp bài thi thành công!</h2>
+              <p className="text-slate-500 text-xs mb-6">
+                Bài làm của <strong className="text-slate-700">{studentName}</strong> (lớp {studentClass}) đã được chấm và đẩy ngầm lên Sheets.
+              </p>
+            </>
+          )}
 
           <div className="bg-slate-950 text-white rounded-2xl p-5 mb-6">
             <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">TỔNG ĐIỂM CHẤM</div>
@@ -3699,6 +3986,49 @@ HS05 - Hoàng Văn Em`);
         </div>
       )}
 
+      {/* ANTI-CHEAT VIOLATION POPUP ALERT MODAL */}
+      {showViolationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border-2 border-rose-500 text-center p-6 space-y-4">
+            <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto animate-bounce">
+              <ShieldAlert className="w-10 h-10" />
+            </div>
+
+            <div>
+              <span className="px-3 py-1 bg-rose-100 text-rose-800 rounded-full text-xs font-black uppercase tracking-wider">
+                Vi phạm quy chế phòng thi
+              </span>
+              <h3 className="text-xl font-black text-rose-700 mt-2">
+                BÀI THI ĐÃ BỊ TỰ ĐỘNG THU & NỘP!
+              </h3>
+            </div>
+
+            <div className="bg-rose-50 p-4 rounded-2xl border border-rose-200 text-left text-xs space-y-2 text-rose-900 leading-relaxed font-medium">
+              <p>
+                <strong>Lý do vi phạm:</strong> {violationReasonText || "Học sinh đã thoát/chuyển khỏi tab làm bài thi online."}
+              </p>
+              <p>
+                <strong>Quy chế:</strong> Phòng thi được giáo viên thiết lập chế độ giám sát chống chuyển tab tra cứu đáp án. Khi học sinh rời khỏi tab thi, hệ thống sẽ tự động thu bài và nộp kết quả ngay lập tức.
+              </p>
+              <p className="text-rose-700 text-[11px] italic">
+                * Điểm số các câu hỏi đã làm tính đến thời điểm vi phạm đã được tính và gửi về cho Thầy/Cô kèm biên bản vi phạm rời tab.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowViolationModal(false);
+                setScreen("result");
+              }}
+              className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs uppercase cursor-pointer shadow-md transition-colors"
+            >
+              Xem bảng điểm chi tiết đã nộp
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* CODE EXPORTER EXPLANATION MODAL */}
       {showCodeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
@@ -3784,6 +4114,26 @@ HS05 - Hoàng Văn Em`);
 
             <div className="p-5 overflow-y-auto space-y-5 flex-1 bg-slate-50">
               
+              {/* Violation report banner if student exited tab */}
+              {activeStudentDetails.isViolation && (
+                <div className="p-3.5 bg-rose-50 border-2 border-rose-300 rounded-xl flex items-start gap-3 text-xs text-rose-900 shadow-2xs">
+                  <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0 mt-0.5 animate-bounce" />
+                  <div className="space-y-1">
+                    <strong className="block text-rose-950 uppercase font-black tracking-wide">
+                      🚨 Biên bản vi phạm: Học sinh đã thoát tab trong lúc làm bài thi!
+                    </strong>
+                    <p>
+                      <strong>Lý do:</strong> {activeStudentDetails.violationReason || "Học sinh thoát/chuyển tab trình duyệt hoặc mở ứng dụng khác tra cứu đáp án."}
+                    </p>
+                    {activeStudentDetails.violationTime && (
+                      <p className="text-[11px] text-rose-700 font-mono">
+                        Thời gian ghi nhận vi phạm: {activeStudentDetails.violationTime}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Score summary panel */}
               <div className="bg-slate-950 text-white rounded-2xl p-4 text-center">
                 <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Tổng điểm đạt được</div>

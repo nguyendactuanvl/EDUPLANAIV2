@@ -1,6 +1,6 @@
 import { MathView } from "../components/MathView";
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Loader2, FileText, Trophy, CheckCircle2, XCircle, Clock, Copy, Camera, X, Image as ImageIcon, Calculator, BarChart3, RefreshCw, Download, ExternalLink, Eye, UserCheck, Award, Search } from 'lucide-react';
+import { Loader2, FileText, Trophy, CheckCircle2, XCircle, Clock, Copy, Camera, X, Image as ImageIcon, Calculator, BarChart3, RefreshCw, Download, ExternalLink, Eye, UserCheck, Award, Search, ShieldAlert, AlertTriangle, Maximize2, Minimize2 } from 'lucide-react';
 import { ScientificCalculatorModal } from '../components/math-tools/ScientificCalculatorModal';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -606,6 +606,31 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
   const [timeSpent, setTimeSpent] = useState<number>(0);
   const [showCalculator, setShowCalculator] = useState(false);
 
+  // Anti-Cheat & Proctoring States
+  const [hasAcknowledgedAntiCheat, setHasAcknowledgedAntiCheat] = useState(false);
+  const [showViolationModal, setShowViolationModal] = useState(false);
+  const [violationReasonText, setViolationReasonText] = useState("");
+  const [isViolationSubmission, setIsViolationSubmission] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
+  const toggleFullScreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().then(() => setIsFullScreen(true)).catch(() => {});
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().then(() => setIsFullScreen(false)).catch(() => {});
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullScreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener("fullscreenchange", handleFsChange);
+    return () => document.removeEventListener("fullscreenchange", handleFsChange);
+  }, []);
+
   // Teacher Live Results Dashboard States
   const [showTeacherModal, setShowTeacherModal] = useState(false);
   const [teacherSubmissions, setTeacherSubmissions] = useState<any[]>([]);
@@ -833,6 +858,62 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
   const isBeforeStart = startTimeStr ? nowTimestamp < new Date(startTimeStr).getTime() : false;
   const isAfterEnd = endTimeStr ? nowTimestamp > new Date(endTimeStr).getTime() : false;
 
+  const isAntiCheatEnabled = Boolean(
+    examData?.antiCheatMode !== undefined 
+      ? examData.antiCheatMode 
+      : examData?.examData?.antiCheatMode !== undefined 
+        ? examData.examData.antiCheatMode 
+        : true
+  );
+
+  const handleSubmitRef = React.useRef<(info?: any) => void>(() => {});
+
+  // Anti-Cheat & Auto-Submit on tab switch / window blur
+  useEffect(() => {
+    if (!isStarted || isSubmitted || !isAntiCheatEnabled) return;
+
+    let hasViolated = false;
+
+    const triggerViolationSubmit = (reason: string) => {
+      if (hasViolated || isSubmitted) return;
+      hasViolated = true;
+      setViolationReasonText(reason);
+      setShowViolationModal(true);
+      handleSubmitRef.current?.({ isViolation: true, violationReason: reason });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden || document.visibilityState === 'hidden') {
+        triggerViolationSubmit('Học sinh chuyển tab trình duyệt hoặc ẩn cửa sổ làm bài thi.');
+      }
+    };
+
+    const handleBlur = () => {
+      setTimeout(() => {
+        if ((document.hidden || !document.hasFocus()) && !hasViolated && !isSubmitted) {
+          triggerViolationSubmit('Học sinh thoát/rời khỏi cửa sổ làm bài thi (mở tab hoặc ứng dụng khác).');
+        }
+      }, 350);
+    };
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      triggerViolationSubmit('Học sinh cố gắng tải lại hoặc thoát trang thi.');
+      e.preventDefault();
+      e.returnValue = 'Nếu bạn rời khỏi trang, bài thi sẽ bị tự động nộp ngay lập tức!';
+      return e.returnValue;
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isStarted, isSubmitted, isAntiCheatEnabled]);
+
   const [translatedQuestions, setTranslatedQuestions] = useState<any[] | null>(null);
   const [examLanguage, setExamLanguage] = useState<'vi' | 'en'>('vi');
 
@@ -958,7 +1039,7 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
     );
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = (violationInfo?: { isViolation: boolean; violationReason: string }) => {
     if (!currentExam || !currentExam.questions) return;
     
     // Check if fully answered
@@ -980,7 +1061,7 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
       }
     });
 
-    if (answeredCount < currentExam.questions.length) {
+    if (!violationInfo && answeredCount < currentExam.questions.length) {
       if (!confirm("Bạn chưa làm hết các câu hỏi. Bạn có chắc chắn muốn nộp bài?")) return;
     }
     
@@ -1241,7 +1322,7 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
     const calculatedScore = Number(finalScore.toFixed(2));
     const uploadedEssayImages: string[] = Object.values(essayImages).flat();
 
-    const submitPayload = {
+    const submitPayload: any = {
       examId: currentExamId,
       examName: examTitle,
       examType: examType || 'Đề kiểm tra',
@@ -1260,6 +1341,13 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
       essayImages: JSON.stringify(uploadedEssayImages || []),
       ...resultToSave
     };
+
+    if (violationInfo?.isViolation) {
+      submitPayload.isViolation = true;
+      submitPayload.violationReason = violationInfo.violationReason;
+      submitPayload.violationTime = new Date().toLocaleTimeString('vi-VN') + ' ' + new Date().toLocaleDateString('vi-VN');
+      setIsViolationSubmission(true);
+    }
 
     // 1. Save to Student's LocalStorage & Room Cache
     try {
@@ -1508,6 +1596,44 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
                   </div>
                 )}
 
+                {/* CẢNH BÁO GIÁM SÁT THI & CHỐNG RỜI TAB */}
+                {isAntiCheatEnabled && (
+                  <div className="mb-5 p-4 bg-rose-50 border-2 border-rose-400 rounded-2xl text-left space-y-2.5 animate-in fade-in">
+                    <div className="flex items-center gap-2 text-rose-800 font-extrabold text-xs uppercase tracking-wide">
+                      <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0 animate-bounce" />
+                      <span>Quy chế thi: Đang bật giám sát chống rời tab!</span>
+                    </div>
+                    <div className="text-xs text-rose-700 space-y-1.5 font-medium leading-relaxed">
+                      <p className="flex items-start gap-1.5">
+                        <span className="text-rose-600 font-bold">•</span>
+                        <span><strong>TUYỆT ĐỐI KHÔNG CHUYỂN TAB</strong> sang bất kỳ tab trình duyệt hoặc ứng dụng nào khác (Zalo, Google, Facebook,...).</span>
+                      </p>
+                      <p className="flex items-start gap-1.5">
+                        <span className="text-rose-600 font-bold">•</span>
+                        <span className="text-rose-900 font-black underline">
+                          NẾU RỜI KHỎI TAB THI HOẶC ẨN CỬA SỔ, BÀI THI SẼ TỰ ĐỘNG THU & NỘP NGAY LẬP TỨC!
+                        </span>
+                      </p>
+                      <p className="flex items-start gap-1.5">
+                        <span className="text-rose-600 font-bold">•</span>
+                        <span>Biên bản vi phạm rời tab kèm thời gian sẽ được gửi trực tiếp về cho Thầy/Cô.</span>
+                      </p>
+                    </div>
+
+                    <label className="flex items-center gap-2.5 pt-2.5 border-t border-rose-200 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={hasAcknowledgedAntiCheat}
+                        onChange={(e) => setHasAcknowledgedAntiCheat(e.target.checked)}
+                        className="w-4 h-4 text-rose-600 rounded border-rose-400 focus:ring-rose-500 cursor-pointer"
+                      />
+                      <span className="text-xs text-rose-950 font-bold">
+                        Em đã đọc kỹ quy chế và cam kết KHÔNG RỜI KHỎI TAB THI trong suốt thời gian làm bài.
+                      </span>
+                    </label>
+                  </div>
+                )}
+
                 <button 
                   disabled={
                     !studentInfo.name.trim() || 
@@ -1524,6 +1650,11 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
                     }
                     if (endTimeStr && currentNow > new Date(endTimeStr).getTime()) {
                       alert(`Đã hết thời hạn làm bài thi! Phòng thi đã đóng lúc ${new Date(endTimeStr).toLocaleString('vi-VN')}`);
+                      return;
+                    }
+
+                    if (isAntiCheatEnabled && !hasAcknowledgedAntiCheat) {
+                      alert("⚠️ Vui lòng tích chọn xác nhận cam kết 'Không rời khỏi tab thi' trước khi bắt đầu làm bài!");
                       return;
                     }
 
@@ -1599,7 +1730,7 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
               )
             )}
             {!isSubmitted && (
-              <button onClick={handleSubmit} className="px-5 py-2 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 text-sm shadow-sm">
+              <button onClick={() => handleSubmit()} className="px-5 py-2 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 text-sm shadow-sm cursor-pointer">
                 Nộp Bài
               </button>
             )}
@@ -1612,9 +1743,53 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
           <span>💡 <strong>Mẹo làm bài trên Zalo:</strong> Để công thức hiển thị mượt mà nhất, bạn có thể bấm <strong>(···)</strong> góc trên và chọn <em>"Mở bằng trình duyệt"</em>.</span>
         </div>
 
+        {/* Anti-cheat proctoring active banner */}
+        {!isSubmitted && isAntiCheatEnabled && (
+          <div className="bg-gradient-to-r from-rose-600 via-red-600 to-rose-700 text-white px-4 py-3 rounded-2xl shadow-md flex flex-wrap items-center justify-between gap-3 text-xs font-bold border border-rose-400">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 bg-white/20 rounded-lg shrink-0">
+                <ShieldAlert className="w-5 h-5 text-amber-300 animate-bounce" />
+              </div>
+              <div>
+                <span className="font-black tracking-wide text-amber-200 uppercase">
+                  Chế độ giám sát tab đang hoạt động:
+                </span>
+                <span className="ml-1 text-white font-medium">
+                  TUYỆT ĐỐI KHÔNG CHUYỂN TAB HOẶC RỜI KHỎI MÀN HÌNH NÀY! Nếu rời tab tra cứu đáp án, bài thi sẽ bị tự động nộp ngay lập tức.
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={toggleFullScreen}
+              className="px-3 py-1.5 bg-white text-rose-700 hover:bg-rose-50 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer shrink-0"
+            >
+              {isFullScreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+              {isFullScreen ? "Thoát toàn màn hình" : "Bật Toàn màn hình (Khuyên dùng)"}
+            </button>
+          </div>
+        )}
+
         {isSubmitted && (
-          <div className="bg-white p-8 rounded-2xl shadow-sm border border-emerald-200 text-center relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-2 bg-emerald-500"></div>
+          <div className={`bg-white p-8 rounded-2xl shadow-sm border ${isViolationSubmission ? 'border-rose-400' : 'border-emerald-200'} text-center relative overflow-hidden`}>
+            <div className={`absolute top-0 left-0 w-full h-2 ${isViolationSubmission ? 'bg-rose-600' : 'bg-emerald-500'}`}></div>
+
+            {isViolationSubmission && (
+              <div className="mb-6 p-4 bg-rose-50 border-2 border-rose-400 rounded-2xl text-left space-y-2">
+                <div className="flex items-center gap-2 text-rose-700 font-black text-sm uppercase">
+                  <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0 animate-bounce" />
+                  <span>BÀI THI BỊ TỰ ĐỘNG THU & NỘP DO VI PHẠM RỜI KHỎI TAB THI ONLINE</span>
+                </div>
+                <p className="text-xs text-rose-800 font-medium leading-relaxed">
+                  Hệ thống phát hiện học sinh đã thoát khỏi màn hình thi (chuyển tab hoặc ẩn cửa sổ trình duyệt).
+                  Theo quy định phòng thi chống gian lận, bài thi đã bị kết thúc và nộp tự động về cho Thầy/Cô kèm biên bản vi phạm.
+                </p>
+                <p className="text-[11px] text-rose-600 font-mono">
+                  Lý do vi phạm: {violationReasonText || "Học sinh chuyển tab trình duyệt tra cứu đáp án"}
+                </p>
+              </div>
+            )}
+
             <Trophy className="w-16 h-16 mx-auto text-yellow-500 mb-4" />
             <h2 className="text-3xl font-bold text-slate-800 mb-2">
               {currentExam?.questions?.some((q: any) => q.type === 'essay' || String(q.type || '').toUpperCase() === 'ESSAY')
@@ -1829,7 +2004,14 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
                               <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors">
                                 <td className="py-2.5 px-3 text-slate-500 font-mono">{idx + 1}</td>
                                 <td className="py-2.5 px-3 font-medium text-slate-900 dark:text-white">
-                                  {sub.studentName || sub.name || "Ẩn danh"}
+                                  <div className="flex flex-col items-start gap-0.5">
+                                    <span>{sub.studentName || sub.name || "Ẩn danh"}</span>
+                                    {sub.isViolation && (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-300" title={sub.violationReason || "Rời tab thi"}>
+                                        🚨 Rời tab thi (Tự nộp)
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="py-2.5 px-3 text-slate-600 dark:text-slate-300 font-semibold">
                                   {sub.studentClass || sub.className || "Mặc định"}
@@ -1960,6 +2142,48 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
               className="max-h-[85vh] max-w-full object-contain rounded-lg"
               onClick={(e) => e.stopPropagation()}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Anti-Cheat Violation Auto-Submit Modal */}
+      {showViolationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border-2 border-rose-500 text-center p-6 space-y-4">
+            <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto animate-bounce">
+              <ShieldAlert className="w-10 h-10" />
+            </div>
+
+            <div>
+              <span className="px-3 py-1 bg-rose-100 text-rose-800 rounded-full text-xs font-black uppercase tracking-wider">
+                Vi phạm quy chế phòng thi
+              </span>
+              <h3 className="text-xl font-black text-rose-700 mt-2">
+                BÀI THI ĐÃ BỊ TỰ ĐỘNG THU & NỘP!
+              </h3>
+            </div>
+
+            <div className="bg-rose-50 dark:bg-rose-950/40 p-4 rounded-2xl border border-rose-200 text-left text-xs space-y-2 text-rose-900 dark:text-rose-200 leading-relaxed font-medium">
+              <p>
+                <strong>Lý do vi phạm:</strong> {violationReasonText || "Học sinh đã thoát/chuyển khỏi tab làm bài thi online."}
+              </p>
+              <p>
+                <strong>Quy chế:</strong> Phòng thi được giáo viên thiết lập chế độ giám sát chống chuyển tab tra cứu đáp án. Khi học sinh rời khỏi tab thi, hệ thống sẽ tự động thu bài và nộp kết quả ngay lập tức.
+              </p>
+              <p className="text-rose-700 dark:text-rose-400 text-[11px] italic">
+                * Điểm số các câu hỏi đã làm tính đến thời điểm vi phạm đã được ghi nhận và gửi về cho Thầy/Cô kèm biên bản vi phạm.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowViolationModal(false);
+              }}
+              className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs uppercase cursor-pointer shadow-md transition-colors"
+            >
+              Xem chi tiết kết quả đã nộp
+            </button>
           </div>
         </div>
       )}
