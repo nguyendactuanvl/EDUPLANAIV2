@@ -10,7 +10,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import LZString from 'lz-string';
 import { Link } from 'lucide-react';
-import { exportHtmlToWord } from '../lib/exportUtils';
+import { exportHtmlToWord, downloadAllExamImagesFromElement } from '../lib/exportUtils';
 import { cn, fixMath, cleanQuestionStem, parseApiResponse, cleanOptionText, getPublicAppUrl, isRealWorldQuestion, sanitizeShortAnswerInput, validateShortAnswer, compareShortAnswers, sanitizeLatexString } from '../lib/utils';
 import { ensureMathRendered } from '../lib/print';
 import { saveExamToCloud, SYSTEM_EXAM_WEBHOOK } from '../lib/cloudExamStore';
@@ -73,7 +73,7 @@ import {
 } from '../lib/examMixer';
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import * as XLSX from 'xlsx';
-import { School, FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera, TrendingUp, BarChart2, Box, BarChart3, Calculator, Wand2, FileDiff, ShieldCheck, BookOpen } from "lucide-react";
+import { School, FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera, TrendingUp, BarChart2, Box, BarChart3, Calculator, Wand2, FileDiff, ShieldCheck, BookOpen, Image as ImageIcon } from "lucide-react";
 import { run1ClickMathFix } from "../components/math-tools/MathFormulaFixer";
 
 interface Question {
@@ -1855,6 +1855,78 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
     const printContent = document.getElementById(contentId);
     if (!printContent) return;
     exportHtmlToWord(printContent, `De_kiem_tra_Ma_${code}_Anh.doc`, 'image');
+  };
+
+  const handleDownloadExamImages = async (contentId: string, code: string): Promise<number> => {
+    const printContent = document.getElementById(contentId);
+    if (!printContent) return 0;
+    const count = await downloadAllExamImagesFromElement(printContent, `De_Kiem_Tra_Ma_${code}`);
+    if (count > 0) {
+      alert(`🖼️ Đã xuất và tải về thành công ${count} hình ảnh (BBT, Đồ thị, Bảng xét dấu) HD cho Mã đề ${code}!`);
+    } else {
+      alert(`ℹ️ Mã đề ${code} không có hình ảnh hay BBT dạng vẽ.`);
+    }
+    return count;
+  };
+
+  const handleExportWordAndImages = async (contentId: string, code: string) => {
+    const printContent = document.getElementById(contentId);
+    if (!printContent) return;
+    // 1. Export Word file
+    await exportHtmlToWord(printContent, `De_kiem_tra_Ma_${code}.doc`);
+    // 2. Export HD images (PNG)
+    const count = await downloadAllExamImagesFromElement(printContent, `De_Kiem_Tra_Ma_${code}`);
+    if (count > 0) {
+      alert(`✨ Đã tải file Word (.docx) VÀ ${count} file hình ảnh BBT / Đồ thị HD cho Mã đề ${code}!`);
+    } else {
+      alert(`✨ Đã tải thành công file Word (.docx) cho Mã đề ${code}.`);
+    }
+  };
+
+  const handleExportAllWord = async () => {
+    if (shuffledExams.length === 0) {
+      alert('Chưa có mã đề nào được trộn.');
+      return;
+    }
+    alert(`🚀 Đang chuẩn bị đóng gói và xuất Word (.docx) cho trọn bộ ${shuffledExams.length} mã đề (${shuffledExams.map(e => e.code).join(', ')})...`);
+    for (const exam of shuffledExams) {
+      const printContent = document.getElementById(`print-exam-${exam.code}`);
+      if (printContent) {
+        await exportHtmlToWord(printContent, `De_kiem_tra_Ma_${exam.code}.doc`);
+        await new Promise(r => setTimeout(r, 600));
+      }
+    }
+  };
+
+  const handleDownloadAllExamImages = async () => {
+    if (shuffledExams.length === 0) {
+      alert('Chưa có mã đề nào được trộn.');
+      return;
+    }
+    let totalImages = 0;
+    for (const exam of shuffledExams) {
+      const printContent = document.getElementById(`print-exam-${exam.code}`);
+      if (printContent) {
+        const count = await downloadAllExamImagesFromElement(printContent, `De_Kiem_Tra_Ma_${exam.code}`);
+        totalImages += count;
+        await new Promise(r => setTimeout(r, 400));
+      }
+    }
+    if (totalImages > 0) {
+      alert(`🎉 Đã trích xuất và tải về tổng cộng ${totalImages} hình ảnh (BBT, Đồ thị, Bảng xét dấu) HD cho tất cả các mã đề!`);
+    } else {
+      alert('ℹ️ Các mã đề hiện tại không chứa hình ảnh hay BBT dạng vẽ.');
+    }
+  };
+
+  const handleExportAllWordAndImages = async () => {
+    if (shuffledExams.length === 0) {
+      alert('Chưa có mã đề nào được trộn.');
+      return;
+    }
+    alert(`🚀 Đang tải trọn bộ File Word (.docx) VÀ Bộ ảnh HD (BBT/Đồ thị) cho tất cả ${shuffledExams.length} mã đề...`);
+    await handleExportAllWord();
+    await handleDownloadAllExamImages();
   };
 
   const handlePrint = async (contentId: string) => {
@@ -4140,16 +4212,40 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                     </div>
                     
                     <div className="flex flex-wrap gap-2 sm:gap-3">
+                      <button 
+                        type="button"
+                        onClick={handleExportAllWordAndImages} 
+                        className="px-3 sm:px-4 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold rounded-lg flex items-center gap-2 shadow-md transition-all cursor-pointer active:scale-95"
+                        title="Tải về cả File Word (.docx) VÀ Bộ ảnh HD (BBT, Đồ thị, Bảng xét dấu) cho TẤT CẢ các mã đề cùng lúc"
+                      >
+                        <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" /> <span>📦 Tải Trọn Bộ Word & Ảnh HD Tất Cả Mã Đề</span>
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={handleExportAllWord} 
+                        className="px-3 sm:px-4 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                        title="Tải file Word (.docx) cho tất cả các mã đề đã trộn"
+                      >
+                        <Download className="w-4 h-4" /> <span>📄 Tải Word Tất Cả Mã Đề (.docx)</span>
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={handleDownloadAllExamImages} 
+                        className="px-3 sm:px-4 py-2 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-700 flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                        title="Tải bộ ảnh PNG HD chứa BBT, Đồ thị, Bảng xét dấu cho tất cả các mã đề"
+                      >
+                        <ImageIcon className="w-4 h-4 text-purple-200" /> <span>🖼️ Tải Tất Cả Ảnh BBT & Đồ Thị (HD)</span>
+                      </button>
                       <button onClick={handleShare} className="px-3 sm:px-4 py-2 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 flex items-center gap-2 shadow-sm">
                         <Share2 className="w-4 h-4" /> <span className="hidden sm:inline">Chia sẻ Online</span>
                       </button>
                       <button 
                         type="button"
                         onClick={() => setShowDiffViewer(true)} 
-                        className="px-3 sm:px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                        className="px-3 sm:px-4 py-2 bg-indigo-50 border border-indigo-300 text-indigo-800 font-bold rounded-lg hover:bg-indigo-100 flex items-center gap-2 shadow-2xs transition-all cursor-pointer"
                         title="Mở giao diện so sánh song song giữa Đề gốc và Đề đã trộn, kiểm định MathJax và định dạng Word"
                       >
-                        <FileDiff className="w-4 h-4" /> <span>So Sánh Diff</span>
+                        <FileDiff className="w-4 h-4 text-indigo-600" /> <span>So Sánh Diff</span>
                       </button>
                       <button 
                         type="button"
@@ -4544,8 +4640,10 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                               <span>AI Kiểm Tra</span>
                             </button>
                             <button onClick={() => handlePrint(`print-exam-${exam.code}`)} className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-sm font-medium rounded hover:bg-slate-50 flex items-center gap-2">
-
                               <Printer className="w-4 h-4" /> In / PDF
+                            </button>
+                            <button onClick={() => handleExportWordAndImages(`print-exam-${exam.code}`, exam.code)} className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-sm rounded shadow-sm flex items-center gap-1.5 transition-all cursor-pointer active:scale-95" title="Tải đồng thời file Word (.docx) VÀ bộ ảnh PNG HD (BBT, đồ thị, bảng xét dấu) tránh lỗi định dạng">
+                              <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" /> Tải Word + Bộ Ảnh HD
                             </button>
                             <button onClick={() => handleExportWord(`print-exam-${exam.code}`, exam.code)} className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-sm font-medium rounded hover:bg-slate-50 flex items-center gap-2" title="Xuất Word định dạng chuẩn OMML, công thức có thể chỉnh sửa trực tiếp">
                               <Download className="w-4 h-4" /> Xuất Word (Chuẩn)
@@ -4555,6 +4653,9 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                             </button>
                             <button onClick={() => handleExportWordImage(`print-exam-${exam.code}`, exam.code)} className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-sm font-medium rounded hover:bg-slate-50 flex items-center gap-2" title="Xuất Word với công thức dạng ảnh chất lượng cao (không lo lỗi hiển thị)">
                               <Download className="w-4 h-4" /> Xuất Word (Ảnh)
+                            </button>
+                            <button onClick={() => handleDownloadExamImages(`print-exam-${exam.code}`, exam.code)} className="px-3 py-1.5 bg-indigo-50 border border-indigo-300 text-indigo-800 font-bold text-sm rounded hover:bg-indigo-100 flex items-center gap-2 shadow-2xs transition-colors cursor-pointer" title="Xuất và tải về bộ hình ảnh BBT, Đồ thị, Bảng xét dấu dạng PNG HD sắc nét">
+                              <ImageIcon className="w-4 h-4 text-indigo-600" /> Tải Bộ Ảnh HD (PNG)
                             </button>
                           </div>
                         </div>

@@ -14,11 +14,12 @@ import {
   Edit3,
   Check,
   Zap,
-  ArrowRight
+  ArrowRight,
+  Image as ImageIcon
 } from 'lucide-react';
 import { MathView } from './MathView';
 import { cleanQuestionStem, sanitizeExamQuestion } from '../lib/utils';
-import { exportHtmlToWord } from '../lib/exportUtils';
+import { exportHtmlToWord, downloadAllExamImagesFromElement } from '../lib/exportUtils';
 
 export interface Question {
   id: number;
@@ -382,6 +383,19 @@ export function ExamDiffViewer({
     }
   };
 
+  const handleDownloadImages = async () => {
+    const printContainerId = `print-exam-${activeExam.code}`;
+    const printEl = document.getElementById(printContainerId);
+    if (printEl) {
+      const count = await downloadAllExamImagesFromElement(printEl, `${examTitle}_Ma_${activeExam.code}`);
+      if (count > 0) {
+        alert(`🖼️ Đã xuất và tải về thành công ${count} hình ảnh (BBT, Đồ thị, Bảng xét dấu) HD cho Mã đề ${activeExam.code}!`);
+      } else {
+        alert(`ℹ️ Mã đề ${activeExam.code} không chứa hình ảnh hay BBT dạng vẽ.`);
+      }
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-md flex flex-col justify-between overflow-hidden animate-in fade-in duration-200">
       {/* HEADER TOP BAR */}
@@ -459,9 +473,18 @@ export function ExamDiffViewer({
           {/* Download Word */}
           <button
             onClick={handleDownloadWord}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium rounded-lg flex items-center gap-1.5 transition-all"
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 text-emerald-400" /> Tải Word Mã {selectedCode}
+          </button>
+
+          {/* Download Images */}
+          <button
+            onClick={handleDownloadImages}
+            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+            title="Tải về bộ hình ảnh BBT, Đồ thị, Bảng xét dấu dạng PNG HD sắc nét cho Mã đề này"
+          >
+            <ImageIcon className="w-3.5 h-3.5 text-indigo-200" /> Tải Bộ Ảnh Mã {selectedCode}
           </button>
 
           {/* Close */}

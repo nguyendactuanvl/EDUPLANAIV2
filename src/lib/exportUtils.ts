@@ -188,7 +188,7 @@ function mathmlToOmmlComponent(mathmlHtml: string): ParagraphChild | null {
 /**
  * Converts an SVG element (e.g. from TikZ / geometry diagram / BBT) into a high-res PNG data URL with accurate dimensions.
  */
-async function svgToPngDataUrl(
+export async function svgToPngDataUrl(
   svgNode: SVGSVGElement
 ): Promise<{ dataUrl: string; width: number; height: number }> {
   const rect = svgNode.getBoundingClientRect();
@@ -2271,6 +2271,156 @@ ${body}
   if (typeof window !== 'undefined') {
     saveAs(blob, filename.endsWith('.tex') ? filename : `${filename}.tex`);
   }
+}
+
+/**
+ * Tự động trích xuất và tải về toàn bộ hình ảnh (BBT, Đồ thị, Bảng xét dấu, Hình 3D) 
+ * từ vùng hiển thị đề thi/phiếu học tập dưới dạng bộ ảnh PNG HD sắc nét.
+ */
+export async function downloadAllExamImagesFromElement(
+  element: HTMLElement,
+  prefix: string = 'Hinh_Anh_De_Thi'
+): Promise<number> {
+  if (!element) return 0;
+
+  let count = 0;
+  const downloadedHashes = new Set<string>();
+
+  // 0. Chuyển đổi các bảng BBT / Bảng xét dấu dạng HTML table sang SVG trước khi trích xuất
+  const tables = Array.from(element.querySelectorAll('table'));
+  for (const tableEl of tables) {
+    const text = tableEl.textContent || '';
+    if (/(?:y'|f'\(x\)|\\searrow|\\nearrow|\+|\-)/i.test(text) && /\b(?:x|y)\b/i.test(text)) {
+      try {
+        const rows = Array.from(tableEl.querySelectorAll('tr')).map(tr => {
+          const cells = Array.from(tr.querySelectorAll('th, td')).map(td => td.textContent?.trim() || '');
+          return `| ${cells.join(' | ')} |`;
+        });
+        if (rows.length >= 2) {
+          const tableMd = rows.join('\n');
+          const svgCode = convertBbtTableToSvg(tableMd);
+          if (svgCode) {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = svgCode.trim();
+            const svgEl = tempDiv.querySelector('svg');
+            if (svgEl) {
+              const { dataUrl } = await svgToPngDataUrl(svgEl);
+              if (dataUrl && !downloadedHashes.has(dataUrl.slice(0, 100))) {
+                downloadedHashes.add(dataUrl.slice(0, 100));
+                count++;
+                const link = document.createElement('a');
+                link.download = `${prefix}_Cau_${count < 10 ? '0' + count : count}_BangBienThien.png`;
+                link.href = dataUrl;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to extract table as BBT SVG:', e);
+      }
+    }
+  }
+
+  // 1. Tải các thẻ svg-wrapper / tikz-wrapper / svg (loại trừ các biểu tượng MathJax/KaTeX nhỏ)
+  const svgWrappers = Array.from(element.querySelectorAll('svg-wrapper, .svg-wrapper, tikz-diagram, .tikz-wrapper, svg')).filter(el => {
+    return !el.closest('.katex, .katex-html, .katex-mathml, math, mjx-container, .MathJax, .omml-math-node');
+  });
+
+  for (let i = 0; i < svgWrappers.length; i++) {
+    const wrap = svgWrappers[i];
+    let svgCode = '';
+
+    const base64 = wrap.getAttribute('data-svg') || wrap.getAttribute('data-tikz');
+    if (base64) {
+      try {
+        svgCode = decodeURIComponent(typeof atob !== 'undefined' ? atob(base64) : Buffer.from(base64, 'base64').toString('utf8'));
+      } catch (e) {}
+    }
+
+    if (!svgCode) {
+      const innerSvg = wrap.tagName === 'SVG' ? (wrap as SVGSVGElement) : wrap.querySelector('svg');
+      if (innerSvg) {
+        svgCode = new XMLSerializer().serializeToString(innerSvg);
+      }
+    }
+
+    if (svgCode) {
+      try {
+        const tempDiv = document.createElement('div');
+        tempDiv.style.position = 'absolute';
+        tempDiv.style.left = '-9999px';
+        tempDiv.style.top = '-9999px';
+        tempDiv.innerHTML = svgCode.trim();
+        document.body.appendChild(tempDiv);
+
+        const svgEl = tempDiv.querySelector('svg') as SVGSVGElement | null;
+        if (svgEl) {
+          const { dataUrl } = await svgToPngDataUrl(svgEl);
+          if (dataUrl && !downloadedHashes.has(dataUrl.slice(0, 100))) {
+            downloadedHashes.add(dataUrl.slice(0, 100));
+            count++;
+            const link = document.createElement('a');
+            link.download = `${prefix}_Hinh_${count < 10 ? '0' + count : count}_DoThi_BBT.png`;
+            link.href = dataUrl;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          }
+        }
+        document.body.removeChild(tempDiv);
+      } catch (e) {
+        console.error('Error downloading SVG image:', e);
+      }
+    }
+  }
+
+  // 2. Trích xuất các khung JSXGraph hoặc Canvas vẽ đồ thị
+  const canvases = Array.from(element.querySelectorAll('canvas, .jxgbox'));
+  for (const cvs of canvases) {
+    try {
+      let dataUrl = '';
+      if (cvs instanceof HTMLCanvasElement) {
+        dataUrl = cvs.toDataURL('image/png');
+      } else {
+        const renderedCvs = await html2canvas(cvs as HTMLElement, { scale: 2, backgroundColor: '#ffffff' });
+        dataUrl = renderedCvs.toDataURL('image/png');
+      }
+
+      if (dataUrl && !downloadedHashes.has(dataUrl.slice(0, 100))) {
+        downloadedHashes.add(dataUrl.slice(0, 100));
+        count++;
+        const link = document.createElement('a');
+        link.download = `${prefix}_VeDoThi_JSXGraph_${count < 10 ? '0' + count : count}.png`;
+        link.href = dataUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    } catch (e) {
+      console.warn('Canvas rasterization failed:', e);
+    }
+  }
+
+  // 3. Tải các thẻ <img> chứa dataUrl hoặc blob
+  const imgElements = Array.from(element.querySelectorAll('img')).filter(img => img.src && (img.src.startsWith('data:') || img.src.startsWith('blob:')));
+  for (let i = 0; i < imgElements.length; i++) {
+    const img = imgElements[i];
+    if (!downloadedHashes.has(img.src.slice(0, 100))) {
+      downloadedHashes.add(img.src.slice(0, 100));
+      count++;
+      const link = document.createElement('a');
+      link.download = `${prefix}_Anh_${count < 10 ? '0' + count : count}.png`;
+      link.href = img.src;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  }
+
+  return count;
 }
 
 

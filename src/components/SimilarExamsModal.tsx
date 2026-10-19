@@ -22,13 +22,14 @@ import {
   FileDown,
   Edit,
   Trash2,
-  RefreshCw
+  RefreshCw,
+  Image as ImageIcon
 } from 'lucide-react';
 import mammoth from 'mammoth';
 import { apiFetch } from '../lib/apiFetch';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { parseRawExamText, parseExamWithAI, ParsedQuestion } from '../lib/examParser';
-import { exportHtmlToWord } from '../lib/exportUtils';
+import { exportHtmlToWord, downloadAllExamImagesFromElement } from '../lib/exportUtils';
 import { formatMathContent, sanitizeLatexString } from '../lib/utils';
 import { QuestionEditModal, QuestionData } from './QuestionEditModal';
 import { getHeaderConfig } from '../lib/headerConfig';
@@ -661,6 +662,20 @@ export function SimilarExamsModal({
       alert('Lỗi xuất file Word: ' + (err?.message || ''));
     } finally {
       setExportingWord(false);
+    }
+  };
+
+  // Download all image diagrams for the current active exam
+  const handleDownloadExamImages = async () => {
+    if (!singleExamContainerRef.current || !currentExam) return;
+    const count = await downloadAllExamImagesFromElement(
+      singleExamContainerRef.current,
+      `De_Tuong_Tu_Ma_${currentExam.code}`
+    );
+    if (count > 0) {
+      alert(`🖼️ Đã xuất và tải về thành công ${count} hình ảnh (BBT, Đồ thị, Bảng xét dấu) HD cho Mã đề ${currentExam.code}!`);
+    } else {
+      alert(`ℹ️ Mã đề ${currentExam.code} không chứa hình ảnh hay BBT dạng vẽ.`);
     }
   };
 
