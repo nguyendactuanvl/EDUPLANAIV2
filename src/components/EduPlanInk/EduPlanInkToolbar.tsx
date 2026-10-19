@@ -3,7 +3,7 @@ import {
   PenTool, Highlighter, Sparkles, Eraser, Shapes, Ruler, Type, 
   Hand, Undo2, Redo2, Trash2, Download, FileText, Layers, 
   ChevronLeft, ChevronRight, Palette, Sliders, ShieldCheck, 
-  Maximize2, Plus, Check, ChevronDown, Rotate3d
+  Maximize2, Plus, Check, ChevronDown, Rotate3d, FolderOpen
 } from 'lucide-react';
 import { InkTool, ShapeType, BackgroundType } from './types';
 
@@ -574,6 +574,16 @@ export const EduPlanInkToolbar: React.FC<EduPlanInkToolbarProps> = ({
         </button>
 
         <div className="h-6 w-[1px] bg-slate-700 mx-0.5" />
+
+        {/* Open PDF / Image Document Button */}
+        <label
+          className="p-2 sm:p-2.5 rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer bg-slate-800/50 border border-slate-700/60"
+          title="Mở tài liệu PDF bài giảng hoặc Ảnh lên bảng vẽ"
+        >
+          <FolderOpen className="w-5 h-5 text-indigo-400" />
+          <span className="text-xs font-semibold hidden lg:inline text-indigo-200">Mở PDF/Ảnh</span>
+          <input type="file" accept="image/*,.pdf,application/pdf" onChange={handleFileUpload} className="hidden" />
+        </label>
 
         {/* Background Selector Toggle */}
         <button

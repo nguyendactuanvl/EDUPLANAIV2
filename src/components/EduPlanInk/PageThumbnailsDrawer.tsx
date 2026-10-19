@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Trash2, Layers, Check, X, MoveUp, MoveDown } from 'lucide-react';
+import { Plus, Trash2, Layers, Check, X, MoveUp, MoveDown, FolderOpen } from 'lucide-react';
 import { BoardPage, BackgroundType } from './types';
 
 interface PageThumbnailsDrawerProps {
@@ -11,6 +11,7 @@ interface PageThumbnailsDrawerProps {
   onAddPage: () => void;
   onDeletePage: (index: number) => void;
   onChangeBackground: (bg: BackgroundType) => void;
+  onUploadBackground?: (file: File) => void;
 }
 
 export const PageThumbnailsDrawer: React.FC<PageThumbnailsDrawerProps> = ({
@@ -21,7 +22,8 @@ export const PageThumbnailsDrawer: React.FC<PageThumbnailsDrawerProps> = ({
   onSelectPage,
   onAddPage,
   onDeletePage,
-  onChangeBackground
+  onChangeBackground,
+  onUploadBackground
 }) => {
   if (!isOpen) return null;
 
@@ -96,9 +98,17 @@ export const PageThumbnailsDrawer: React.FC<PageThumbnailsDrawerProps> = ({
             >
               {/* Thumbnail Container */}
               <div className={`w-full h-28 rounded-lg overflow-hidden border border-slate-700/80 mb-2 relative flex items-center justify-center ${previewBgClass}`}>
-                <div className="text-xs opacity-60 font-medium">
-                  {page.strokes.length} nét vẽ, {page.texts.length} văn bản
-                </div>
+                {page.backgroundType === 'custom' && page.customBgUrl ? (
+                  <img
+                    src={page.customBgUrl}
+                    alt={page.title}
+                    className="w-full h-full object-contain bg-slate-900"
+                  />
+                ) : (
+                  <div className="text-xs opacity-60 font-medium">
+                    {page.strokes.length} nét vẽ, {page.texts.length} văn bản
+                  </div>
+                )}
                 <div className="absolute top-2 left-2 bg-slate-900/80 backdrop-blur px-2 py-0.5 rounded text-[10px] font-bold text-emerald-400 border border-slate-700">
                   Trang {idx + 1}
                 </div>
@@ -106,7 +116,7 @@ export const PageThumbnailsDrawer: React.FC<PageThumbnailsDrawerProps> = ({
 
               {/* Info & Actions */}
               <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold text-slate-200">Trang {idx + 1}</span>
+                <span className="font-semibold text-slate-200 truncate max-w-[180px]">{page.title || `Trang ${idx + 1}`}</span>
                 {pages.length > 1 && (
                   <button
                     onClick={(e) => {
@@ -125,8 +135,24 @@ export const PageThumbnailsDrawer: React.FC<PageThumbnailsDrawerProps> = ({
         })}
       </div>
 
-      {/* Footer Add Page */}
-      <div className="p-4 border-t border-slate-800">
+      {/* Footer Add Page & Open PDF */}
+      <div className="p-4 border-t border-slate-800 space-y-2">
+        {onUploadBackground && (
+          <label className="w-full py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl flex items-center justify-center gap-2 text-xs font-semibold cursor-pointer transition-all">
+            <FolderOpen className="w-4 h-4 text-indigo-400" />
+            <span>Mở tệp PDF / Ảnh bài giảng</span>
+            <input
+              type="file"
+              accept="image/*,.pdf,application/pdf"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) onUploadBackground(file);
+                e.target.value = '';
+              }}
+              className="hidden"
+            />
+          </label>
+        )}
         <button
           onClick={onAddPage}
           className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition-all cursor-pointer active:scale-[0.98]"

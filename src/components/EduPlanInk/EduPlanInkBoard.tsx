@@ -13,7 +13,8 @@ import { Shape3DLibraryModal } from './Shape3DLibraryModal';
 import { Object3DRotationToolbar } from './Object3DRotationToolbar';
 import { render3DShapeOnCanvas } from './render3DShape';
 import { MathView } from '../MathView';
-import { X, Check } from 'lucide-react';
+import { X, Check, Loader2, FileText, Sparkles, FolderOpen } from 'lucide-react';
+import { renderPdfPageRange, getPdfTotalPages } from '../../lib/pdfUtils';
 
 export const EduPlanInkBoard: React.FC = () => {
   // Canvas Refs
@@ -51,6 +52,11 @@ export const EduPlanInkBoard: React.FC = () => {
   const [scale, setScale] = useState(1);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
+
+  // Background Image Cache & PDF Loading
+  const imageCache = useRef<Map<string, HTMLImageElement>>(new Map());
+  const [isLoadingPdf, setIsLoadingPdf] = useState(false);
+  const [pdfLoadingStatus, setPdfLoadingStatus] = useState<string>('');
 
   // Virtual Ruler
   const [rulerState, setRulerState] = useState<RulerState>({
@@ -255,11 +261,58 @@ export const EduPlanInkBoard: React.FC = () => {
         ctx.stroke();
       }
     } else if (bgType === 'custom' && currentPage.customBgUrl) {
-      const img = new Image();
-      img.src = currentPage.customBgUrl;
-      img.onload = () => {
-        ctx.drawImage(img, 0, 0, width / scale, height / scale);
-      };
+      // 1. Phông nền tối êm dịu bao quanh trang tài liệu
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(-panX / scale, -panY / scale, width / scale, height / scale);
+
+      let img = imageCache.current.get(currentPage.customBgUrl);
+      if (!img) {
+        img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          renderBackground();
+          renderStaticStrokes();
+        };
+        img.src = currentPage.customBgUrl;
+        imageCache.current.set(currentPage.customBgUrl, img);
+      }
+
+      if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+        const aspect = img.naturalWidth / img.naturalHeight;
+        let docW: number;
+        let docH: number;
+
+        if (aspect >= 1) {
+          // Khổ ngang (slide bài giảng, ảnh ngang)
+          docW = Math.max(900, Math.min(1600, width * 0.95));
+          docH = docW / aspect;
+        } else {
+          // Khổ dọc (trang PDF, đề thi, phiếu bài tập khổ A4)
+          docW = Math.max(820, Math.min(1150, width * 0.85));
+          docH = docW / aspect;
+        }
+
+        // Căn giữa trang giấy trên bảng vẽ theo chiều ngang
+        const docX = Math.max(40, (width - docW) / 2);
+        const docY = 40;
+
+        // Đổ bóng chân thực cho trang giấy
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+        ctx.shadowBlur = 24;
+        ctx.shadowOffsetY = 10;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(docX, docY, docW, docH);
+        ctx.restore();
+
+        // Vẽ nội dung trang PDF / Ảnh lên trang giấy
+        ctx.drawImage(img, docX, docY, docW, docH);
+
+        // Viền trang giấy thanh lịch
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(docX, docY, docW, docH);
+      }
     }
 
     ctx.restore();
@@ -1310,18 +1363,139 @@ export const EduPlanInkBoard: React.FC = () => {
   };
 
   // Custom File Upload Background (Image/PDF)
-  const handleUploadBackground = (file: File) => {
-    if (file.type.startsWith('image/')) {
-      const url = URL.createObjectURL(file);
-      const updatedPages = [...pages];
-      updatedPages[currentPageIndex] = {
-        ...currentPage,
-        backgroundType: 'custom',
-        customBgUrl: url
+  const handleUploadBackground = async (file: File) => {
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+
+    if (isPdf) {
+      try {
+        setIsLoadingPdf(true);
+        setPdfLoadingStatus('Đang đọc tệp PDF bài giảng...');
+
+        const arrayBuffer = await file.arrayBuffer();
+        setPdfLoadingStatus('Đang phân tích cấu trúc trang PDF...');
+
+        const totalPages = await getPdfTotalPages(arrayBuffer);
+        const maxPagesToLoad = Math.min(totalPages, 30);
+        setPdfLoadingStatus(`Đang chuyển đổi ${maxPagesToLoad} trang PDF sang hình ảnh HD...`);
+
+        const { pages: renderedPages } = await renderPdfPageRange(arrayBuffer, 1, maxPagesToLoad, 2.0);
+
+        if (!renderedPages || renderedPages.length === 0) {
+          alert('Không thể trích xuất trang từ tệp PDF này. Vui lòng kiểm tra lại file.');
+          return;
+        }
+
+        // Preload images into cache
+        renderedPages.forEach((dataUrl) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.src = dataUrl;
+          imageCache.current.set(dataUrl, img);
+        });
+
+        const baseTitle = file.name.replace(/\.[^/.]+$/, '');
+        const isCurrentEmpty =
+          currentPage.strokes.length === 0 &&
+          currentPage.texts.length === 0 &&
+          currentPage.backgroundType !== 'custom';
+
+        const updatedPages = [...pages];
+
+        if (isCurrentEmpty) {
+          // Gán trang đầu tiên của PDF vào trang hiện tại
+          updatedPages[currentPageIndex] = {
+            ...currentPage,
+            title: `${baseTitle} - Trang 1`,
+            backgroundType: 'custom',
+            customBgUrl: renderedPages[0]
+          };
+
+          // Thêm các trang tiếp theo của PDF ngay sau trang hiện tại
+          for (let i = 1; i < renderedPages.length; i++) {
+            updatedPages.splice(currentPageIndex + i, 0, {
+              id: `pdf-page-${Date.now()}-${i + 1}`,
+              title: `${baseTitle} - Trang ${i + 1}`,
+              backgroundType: 'custom',
+              customBgUrl: renderedPages[i],
+              strokes: [],
+              texts: [],
+              objects3D: [],
+              undoStack: [],
+              redoStack: []
+            });
+          }
+        } else {
+          // Trang hiện tại đã có nội dung vẽ, chèn tất cả các trang PDF sau trang hiện tại
+          const insertIndex = currentPageIndex + 1;
+          renderedPages.forEach((pUrl, idx) => {
+            updatedPages.splice(insertIndex + idx, 0, {
+              id: `pdf-page-${Date.now()}-${idx + 1}`,
+              title: `${baseTitle} - Trang ${idx + 1}`,
+              backgroundType: 'custom',
+              customBgUrl: pUrl,
+              strokes: [],
+              texts: [],
+              objects3D: [],
+              undoStack: [],
+              redoStack: []
+            });
+          });
+          setCurrentPageIndex(insertIndex);
+        }
+
+        setPages(updatedPages);
+        setPanX(0);
+        setPanY(0);
+        setScale(1);
+        if (currentColor === '#ffffff') {
+          setCurrentColor('#0f172a');
+        }
+
+        // Trigger immediate render
+        setTimeout(() => {
+          renderBackground();
+          renderStaticStrokes();
+        }, 60);
+      } catch (err) {
+        console.error('Error importing PDF to whiteboard:', err);
+        alert('Có lỗi xảy ra khi mở tệp PDF. Vui lòng thử lại.');
+      } finally {
+        setIsLoadingPdf(false);
+        setPdfLoadingStatus('');
+      }
+    } else if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target?.result as string;
+        if (dataUrl) {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            renderBackground();
+            renderStaticStrokes();
+          };
+          img.src = dataUrl;
+          imageCache.current.set(dataUrl, img);
+
+          const updatedPages = [...pages];
+          updatedPages[currentPageIndex] = {
+            ...currentPage,
+            title: file.name.replace(/\.[^/.]+$/, ''),
+            backgroundType: 'custom',
+            customBgUrl: dataUrl
+          };
+          setPages(updatedPages);
+          setPanX(0);
+          setPanY(0);
+          setScale(1);
+          if (currentColor === '#ffffff') {
+            setCurrentColor('#0f172a');
+          }
+        }
       };
-      setPages(updatedPages);
+      reader.readAsDataURL(file);
     } else {
-      alert('Đã hỗ trợ file hình ảnh bài giảng (PNG/JPG). File PDF sẽ được tự động trích xuất các trang.');
+      alert('Vui lòng chọn tệp PDF (.pdf) hoặc tệp hình ảnh (.png, .jpg, .webp).');
     }
   };
 
@@ -1604,7 +1778,27 @@ export const EduPlanInkBoard: React.FC = () => {
         onAddPage={handleAddPage}
         onDeletePage={handleDeletePage}
         onChangeBackground={handleChangeBackground}
+        onUploadBackground={handleUploadBackground}
       />
+
+      {/* PDF Document Loading Overlay */}
+      {isLoadingPdf && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl p-6 shadow-2xl max-w-sm w-full flex flex-col items-center text-center space-y-4">
+            <div className="relative">
+              <div className="w-14 h-14 rounded-full border-4 border-indigo-500/20 border-t-indigo-500 animate-spin flex items-center justify-center" />
+              <FileText className="w-6 h-6 text-indigo-400 absolute inset-0 m-auto" />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-100 text-base">Đang tải tài liệu PDF bài giảng</h3>
+              <p className="text-xs text-slate-400 mt-1">{pdfLoadingStatus || 'Vui lòng chờ trong giây lát...'}</p>
+            </div>
+            <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+              <div className="bg-gradient-to-r from-indigo-500 to-emerald-400 h-full w-2/3 animate-pulse rounded-full" />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Text / Math Formula Modal */}
       {textModalState.isOpen && (
