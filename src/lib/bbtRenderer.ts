@@ -1548,24 +1548,207 @@ export function analyzeFunctionToBbt(expression: string): BBTData | null {
   return null;
 }
 
+export interface MappedGraphPoint {
+  x: number;
+  y: number;
+  label?: string;
+  isExtremum?: boolean;
+  isIntercept?: boolean;
+}
+
+export interface MappedGraphProperties {
+  formula: string;
+  xAsymptote: number | null;
+  yAsymptote: number | null;
+  slantAsymptote: { m: number; n: number } | null;
+  extrema: MappedGraphPoint[];
+  intercepts: MappedGraphPoint[];
+}
+
+/**
+ * Khử hoàn toàn sai số dấu phẩy động (floating-point error rounding)
+ * Làm tròn giá trị tọa độ về số nguyên gần nhất nếu chênh lệch < 1e-4,
+ * hoặc giữ tối đa 4 chữ số thập phân chuẩn xác.
+ */
+export function snapCoordinateToGrid(val: number, epsilon: number = 1e-4): number {
+  if (!isFinite(val) || isNaN(val)) return 0;
+  const nearestInt = Math.round(val);
+  if (Math.abs(val - nearestInt) < epsilon) {
+    return nearestInt;
+  }
+  return Number(val.toFixed(4));
+}
+
+export interface ExtremaValidationResult {
+  validExtrema: MappedGraphPoint[];
+  invalidExtrema: MappedGraphPoint[];
+  correctionsCount: number;
+}
+
+/**
+ * Bộ kiểm tra (Validator) đối chiếu tọa độ các điểm cực trị truyền vào với các giá trị
+ * được tính toán trực tiếp từ hàm số y(x), đảm bảo điểm cực đại/cực tiểu luôn nằm 100% chính xác
+ * trên đường cong và khớp đúng vị trí ô lưới tọa độ.
+ */
+export function validateExtremaCoordinates(
+  extrema: MappedGraphPoint[],
+  evalYFunc: (xVal: number) => number | null,
+  gridBounds: { minX: number; maxX: number; minY: number; maxY: number } = { minX: -6.5, maxX: 6.5, minY: -6.5, maxY: 6.5 }
+): ExtremaValidationResult {
+  const validExtrema: MappedGraphPoint[] = [];
+  const invalidExtrema: MappedGraphPoint[] = [];
+  let correctionsCount = 0;
+
+  if (!Array.isArray(extrema)) {
+    return { validExtrema: [], invalidExtrema: [], correctionsCount: 0 };
+  }
+
+  extrema.forEach(pt => {
+    const snappedX = snapCoordinateToGrid(pt.x);
+    const expectedY = evalYFunc(snappedX);
+
+    if (expectedY !== null && isFinite(expectedY) && !isNaN(expectedY)) {
+      const snappedExpectedY = snapCoordinateToGrid(expectedY);
+      const diffY = Math.abs(pt.y - snappedExpectedY);
+
+      // Nếu y truyền vào sai lệch so với y(x) tính từ hàm số -> tự động hiệu chỉnh chính xác
+      let finalY = pt.y;
+      if (diffY > 0.05) {
+        finalY = snappedExpectedY;
+        correctionsCount++;
+        invalidExtrema.push({ ...pt });
+      }
+
+      if (
+        snappedX >= gridBounds.minX && snappedX <= gridBounds.maxX &&
+        finalY >= gridBounds.minY && finalY <= gridBounds.maxY
+      ) {
+        validExtrema.push({
+          x: snappedX,
+          y: finalY,
+          label: pt.label,
+          isExtremum: true,
+          isIntercept: pt.isIntercept
+        });
+      }
+    } else {
+      if (
+        snappedX >= gridBounds.minX && snappedX <= gridBounds.maxX &&
+        pt.y >= gridBounds.minY && pt.y <= gridBounds.maxY
+      ) {
+        validExtrema.push({
+          ...pt,
+          x: snappedX,
+          y: snapCoordinateToGrid(pt.y)
+        });
+      } else {
+        invalidExtrema.push(pt);
+      }
+    }
+  });
+
+  return { validExtrema, invalidExtrema, correctionsCount };
+}
+
+/**
+ * Hàm ánh xạ dữ liệu hợp nhất (Unified Data-Mapping Function)
+ * Tự động đồng bộ chính xác 100% tọa độ điểm cực trị (min/max), đường tiệm cận, điểm cắt
+ * giữa thuộc tính toán học trong đề bài và khung vẽ vector SVG, khử nhiễu sai số điểm nổi.
+ */
+export function mapMathPropertiesToSvgCoordinates(expression: string, contextBlock?: string): MappedGraphProperties {
+  let clean = (expression || '').trim()
+    .replace(/\s+/g, '')
+    .replace(/\$/g, '')
+    .replace(/^y\s*=\s*/i, '')
+    .replace(/^f\([a-z]\)\s*=\s*/i, '')
+    .replace(/^g\([a-z]\)\s*=\s*/i, '')
+    .replace(/\\frac\s*\{([^}]+)\}\s*\{([^}]+)\}/g, '($1)/($2)')
+    .replace(/\\cdot|\\times/g, '*')
+    .replace(/[−–—]/g, '-')
+    .replace(/²/g, '^2')
+    .replace(/³/g, '^3')
+    .replace(/⁴/g, '^4');
+
+  let xAsymptote: number | null = null;
+  let yAsymptote: number | null = null;
+  let slantAsymptote: { m: number; n: number } | null = null;
+  const extrema: MappedGraphPoint[] = [];
+  const intercepts: MappedGraphPoint[] = [];
+
+  // 1. Phân tích Tiệm cận (Asymptotes)
+  if (clean.includes('/')) {
+    const slashIndex = clean.indexOf('/');
+    const numPart = clean.substring(0, slashIndex).replace(/^\(+|\)+$/g, '');
+    const denPart = clean.substring(slashIndex + 1).replace(/^\(+|\)+$/g, '');
+    const numCoeffs = parsePolynomialCoeffs(numPart);
+    const denCoeffs = parsePolynomialCoeffs(denPart);
+    if (denCoeffs[1] && denCoeffs[1] !== 0) {
+      xAsymptote = snapCoordinateToGrid(-(denCoeffs[0] || 0) / denCoeffs[1]);
+      if (numCoeffs[2] === undefined || numCoeffs[2] === 0) {
+        yAsymptote = snapCoordinateToGrid((numCoeffs[1] || 0) / denCoeffs[1]);
+      } else if (numCoeffs[2]) {
+        const d = denCoeffs[1];
+        const e = denCoeffs[0] || 0;
+        const a = numCoeffs[2];
+        const b = numCoeffs[1] || 0;
+        const m = snapCoordinateToGrid(a / d);
+        const n = snapCoordinateToGrid((b * d - a * e) / (d * d));
+        slantAsymptote = { m, n };
+      }
+    }
+  }
+
+  // 2. Trích xuất Cực trị từ BBT và công thức
+  const bbtData = analyzeFunctionToBbt(clean);
+  if (bbtData && Array.isArray(bbtData.points)) {
+    bbtData.points.forEach(pt => {
+      if (pt.yPrime === '0' && pt.x && pt.yVal) {
+        const numX = snapCoordinateToGrid(parseFloat(pt.x.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/, '$1/$2')));
+        const numY = snapCoordinateToGrid(parseFloat(pt.yVal.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/, '$1/$2')));
+        if (!isNaN(numX) && !isNaN(numY) && Math.abs(numX) <= 6.5 && Math.abs(numY) <= 6.5) {
+          extrema.push({
+            x: numX,
+            y: numY,
+            isExtremum: true,
+            label: pt.yPosition === 'top' ? 'Max' : 'Min'
+          });
+        }
+      }
+    });
+  }
+
+  // Trích xuất điểm đặc biệt từ ngữ cảnh đề bài nếu có
+  if (contextBlock) {
+    const ptMatches = Array.from(contextBlock.matchAll(/\(\s*([-–—]?\d+(?:\.\d+)?)\s*;\s*([-–—]?\d+(?:\.\d+)?)\s*\)/g));
+    ptMatches.forEach(m => {
+      const px = snapCoordinateToGrid(parseFloat(m[1].replace(/[−–—]/g, '-')));
+      const py = snapCoordinateToGrid(parseFloat(m[2].replace(/[−–—]/g, '-')));
+      if (!isNaN(px) && !isNaN(py) && Math.abs(px) <= 6.5 && Math.abs(py) <= 6.5) {
+        if (!extrema.some(e => Math.abs(e.x - px) < 1e-3 && Math.abs(e.y - py) < 1e-3)) {
+          extrema.push({ x: px, y: py, isExtremum: true });
+        }
+      }
+    });
+  }
+
+  return {
+    formula: clean,
+    xAsymptote,
+    yAsymptote,
+    slantAsymptote,
+    extrema,
+    intercepts
+  };
+}
+
 /**
  * Sinh đồ thị hàm số vector SVG chuẩn SGK Toán 10, 11, 12 GDPT 2018
  * Hiển thị đầy đủ hệ trục Oxy, điểm cực trị, tiệm cận và đường cong sắc nét
  */
 export function generateFunctionGraphSvg(expression: string, contextBlock?: string): string | null {
   try {
-    let clean = (expression || '').trim()
-      .replace(/\s+/g, '')
-      .replace(/\$/g, '')
-      .replace(/^y\s*=\s*/i, '')
-      .replace(/^f\([a-z]\)\s*=\s*/i, '')
-      .replace(/^g\([a-z]\)\s*=\s*/i, '')
-      .replace(/\\frac\s*\{([^}]+)\}\s*\{([^}]+)\}/g, '($1)/($2)')
-      .replace(/\\cdot|\\times/g, '*')
-      .replace(/[−–—]/g, '-')
-      .replace(/²/g, '^2')
-      .replace(/³/g, '^3')
-      .replace(/⁴/g, '^4');
+    const mapped = mapMathPropertiesToSvgCoordinates(expression, contextBlock);
+    let currentExpr = mapped.formula;
 
     const width = 420;
     const height = 300;
@@ -1573,8 +1756,8 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
     const originY = 150;
     const scale = 26; // 26 pixels per unit
 
-    const toSvgX = (x: number) => originX + x * scale;
-    const toSvgY = (y: number) => originY - y * scale;
+    const toSvgX = (x: number) => snapCoordinateToGrid(originX + x * scale, 1e-2);
+    const toSvgY = (y: number) => snapCoordinateToGrid(originY - y * scale, 1e-2);
 
     const sanitizeExprForMathJs = (expr: string): string => {
       let clean = (expr || '').trim()
@@ -1599,8 +1782,6 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
         .replace(/\)\s*([a-zA-Z])/g, ')*$1');
       return clean;
     };
-
-    let currentExpr = clean;
 
     const evalY = (xVal: number, exprStr: string): number | null => {
       try {
@@ -1657,32 +1838,9 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
     let pathD = '';
     let validPointsCount = 0;
 
-    let xAsym: number | null = null;
-    let yAsym: number | null = null;
-    let slantAsym: { m: number; n: number } | null = null;
-
-    if (currentExpr.includes('/')) {
-      const slashIndex = currentExpr.indexOf('/');
-      const numPart = currentExpr.substring(0, slashIndex).replace(/^\(+|\)+$/g, '');
-      const denPart = currentExpr.substring(slashIndex + 1).replace(/^\(+|\)+$/g, '');
-      const numCoeffs = parsePolynomialCoeffs(numPart);
-      const denCoeffs = parsePolynomialCoeffs(denPart);
-      if (denCoeffs[1] && denCoeffs[1] !== 0) {
-        xAsym = -(denCoeffs[0] || 0) / denCoeffs[1];
-        if (numCoeffs[2] === undefined || numCoeffs[2] === 0) {
-          yAsym = (numCoeffs[1] || 0) / denCoeffs[1];
-        } else if (numCoeffs[2]) {
-          // Hàm phân thức bậc 2 trên bậc 1 (Toán 12 GDPT 2018): tiệm cận xiên y = mx + n
-          const d = denCoeffs[1];
-          const e = denCoeffs[0] || 0;
-          const a = numCoeffs[2];
-          const b = numCoeffs[1] || 0;
-          const m = a / d;
-          const n = (b * d - a * e) / (d * d);
-          slantAsym = { m, n };
-        }
-      }
-    }
+    let xAsym: number | null = mapped.xAsymptote;
+    let yAsym: number | null = mapped.yAsymptote;
+    let slantAsym: { m: number; n: number } | null = mapped.slantAsymptote;
 
     let inSubpath = false;
     for (let xVal = minX; xVal <= maxX; xVal += step) {
@@ -1792,7 +1950,7 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
     svgParts.push(`<rect width="${width}" height="${height}" fill="#ffffff" />`);
     svgParts.push(`<rect width="${width}" height="${height}" fill="url(#graph-grid)" />`);
 
-    // Asymptotes (Đường tiệm cận đứng, ngang, xiên nét đứt màu đỏ, vạch tọa độ trên trục, không ghi nhãn phương trình)
+    // Asymptotes (Đường tiệm cận đứng, ngang, xiên nét đứt màu đỏ, vạch tọa độ trên trục)
     if (xAsym !== null && isFinite(xAsym)) {
       const sx = toSvgX(xAsym);
       svgParts.push(`<line x1="${sx.toFixed(1)}" y1="10" x2="${sx.toFixed(1)}" y2="${height - 10}" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="5,4" />`);
@@ -1860,25 +2018,19 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
       svgParts.push(`<path d="${pathD.trim()}" stroke="#2563eb" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round" />`);
     }
 
-    // Key extreme points and specific passage points (e.g. (0, d) if specified or d intercept)
-    const bbtData = analyzeFunctionToBbt(currentExpr);
-    if (bbtData && bbtData.points) {
-      bbtData.points.forEach(pt => {
-        if (pt.yPrime === '0' && pt.x && pt.yVal) {
-          const numX = parseFloat(pt.x.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/, '$1/$2'));
-          const numY = parseFloat(pt.yVal.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/, '$1/$2'));
-          if (!isNaN(numX) && !isNaN(numY) && Math.abs(numX) <= 6 && Math.abs(numY) <= 6) {
-            const px = toSvgX(numX);
-            const py = toSvgY(numY);
-            if (px > 20 && px < width - 20 && py > 20 && py < height - 20) {
-              svgParts.push(`<line x1="${px}" y1="${originY}" x2="${px}" y2="${py}" stroke="#64748b" stroke-dasharray="3,3" stroke-width="1" />`);
-              svgParts.push(`<line x1="${originX}" y1="${py}" x2="${px}" y2="${py}" stroke="#64748b" stroke-dasharray="3,3" stroke-width="1" />`);
-              svgParts.push(`<circle cx="${px}" cy="${py}" r="3.5" fill="#1e293b" />`);
-            }
-          }
+    // Key extreme points validated against mathematical function evalY
+    const validationResult = validateExtremaCoordinates(mapped.extrema, (x) => evalY(x, currentExpr));
+    validationResult.validExtrema.forEach(pt => {
+      if (Math.abs(pt.x) <= 6 && Math.abs(pt.y) <= 6) {
+        const px = toSvgX(pt.x);
+        const py = toSvgY(pt.y);
+        if (px > 20 && px < width - 20 && py > 20 && py < height - 20) {
+          svgParts.push(`<line x1="${px}" y1="${originY}" x2="${px}" y2="${py}" stroke="#64748b" stroke-dasharray="3,3" stroke-width="1" />`);
+          svgParts.push(`<line x1="${originX}" y1="${py}" x2="${px}" y2="${py}" stroke="#64748b" stroke-dasharray="3,3" stroke-width="1" />`);
+          svgParts.push(`<circle cx="${px}" cy="${py}" r="3.5" fill="#1e293b" />`);
         }
-      });
-    }
+      }
+    });
 
     // Highlight explicit y-intercept (0, d) e.g. (0,1) with dashed lines and axis tick mark
     const yAt0 = evalY(0, currentExpr);
@@ -2182,10 +2334,10 @@ export function generateSyntheticGraphSvg(block: string, options?: string[]): st
   // 1. Kiểm tra nếu có công thức trong các phương án Lựa chọn (từ options truyền vào hoặc trong thân block)
   if (Array.isArray(options) && options.length > 0) {
     for (const opt of options) {
-      const optMatch = opt.match(/(?:y|f\(x\))\s*=\s*([^,;.\n$]+)/i) ||
-                       opt.match(/(?:\$)?([^$]+)(?:\$)?/);
+      let rawOpt = opt.replace(/^[A-Da-d][\.\:\)]\s*/, '').replace(/^\$|\$$/g, '').trim();
+      const optMatch = rawOpt.match(/(?:y|f\(x\))\s*=\s*([^,;.\n$]+)/i) || rawOpt.match(/([^$]+)/);
       if (optMatch && (optMatch[1].includes('x') || optMatch[1].includes('X')) && !/nào\s*dưới\s*đây/i.test(optMatch[1])) {
-        const expr = optMatch[1].trim().replace(/^\$|\$$/g, '');
+        const expr = optMatch[1].replace(/^[A-Da-d][\.\:\)]\s*/, '').replace(/^y\s*=\s*/i, '').trim();
         const svg = generateFunctionGraphSvg(expr, block);
         if (svg) return svg;
       }
@@ -2194,14 +2346,14 @@ export function generateSyntheticGraphSvg(block: string, options?: string[]): st
 
   const optAMatch = block.match(/(?:^|\n)\s*(?:\*{0,2}|[-*]\s*)?A[\.\:\)]\s*(?:\$)?(?:y\s*=\s*)?([^,\n\$\|]+)/i);
   if (optAMatch) {
-    const candidate = optAMatch[1].trim();
+    const candidate = optAMatch[1].replace(/^[A-Da-d][\.\:\)]\s*/, '').replace(/^y\s*=\s*/i, '').trim();
     if ((candidate.includes('x') || candidate.includes('X')) && !/nào\s*dưới\s*đây/i.test(candidate)) {
       const svg = generateFunctionGraphSvg(candidate, block);
       if (svg) return svg;
     }
   }
 
-  // 2. Kiểm tra nếu đề bài mô tả các điểm cực trị (ví dụ: cực trị (0;0) và (2;-4), dạng chữ N)
+  // 2. Kiểm tra nếu đề bài mô tả các điểm cực trị (ví dụ: cực trị (0;2) và (2;-2), dạng chữ N)
   const ptRegex = /\(\s*([-–—]?\d+(?:\.\d+)?)\s*;\s*([-–—]?\d+(?:\.\d+)?)\s*\)/g;
   const pts: [number, number][] = [];
   let m: RegExpExecArray | null;
@@ -2230,10 +2382,49 @@ export function generateSyntheticGraphSvg(block: string, options?: string[]): st
     }
   }
 
+  // 3. Xử lý hàm phân thức dạng tổng quát $y = \frac{ax+b}{cx+d}$ dựa trên các thông số tiệm cận và giao điểm từ đề bài
   const lower = block.toLowerCase();
+  if (lower.includes('phân thức') || lower.includes('tiệm cận') || lower.includes('/') || lower.includes('ax+b')) {
+    const xAsymMatch = block.match(/(?:tiệm\s*cận\s*đứng|x\s*=)\s*([-–—]?\d+(?:\.\d+)?)/i);
+    const yAsymMatch = block.match(/(?:tiệm\s*cận\s*ngang|y\s*=)\s*([-–—]?\d+(?:\.\d+)?)/i);
+    const yIntMatch = block.match(/(?:trục\s*tung|cắt\s*trục\s*tung|điểm)\s*\(\s*0\s*;\s*([-–—]?\d+(?:\.\d+)?)\s*\)/i);
 
-  if (lower.includes('phân thức') || lower.includes('tiệm cận') || lower.includes('/') || lower.includes('bậc nhất trên bậc nhất')) {
-    return generateFunctionGraphSvg('(x+1)/(x-1)', block);
+    const x0 = xAsymMatch ? parseFloat(xAsymMatch[1].replace(/[−–—]/g, '-')) : 1;
+    const y0 = yAsymMatch ? parseFloat(yAsymMatch[1].replace(/[−–—]/g, '-')) : 1;
+    const yInt = yIntMatch ? parseFloat(yIntMatch[1].replace(/[−–—]/g, '-')) : 2;
+
+    if (!isNaN(x0) && !isNaN(y0) && !isNaN(yInt) && x0 !== 0) {
+      // y = (y0 * x - yInt * x0) / (x - x0)
+      const numConst = -yInt * x0;
+      const numStr = numConst >= 0 ? `${y0 === 1 ? '' : y0}x + ${numConst}` : `${y0 === 1 ? '' : y0}x - ${Math.abs(numConst)}`;
+      const denStr = x0 >= 0 ? `x - ${x0}` : `x + ${Math.abs(x0)}`;
+      const ratioExpr = `(${numStr})/(${denStr})`;
+      const svg = generateFunctionGraphSvg(ratioExpr, block);
+      if (svg) return svg;
+    }
+
+    return generateFunctionGraphSvg('(x-2)/(x-1)', block);
+  }
+
+  // 4. Xử lý hàm số liên tục trên đoạn [a; b] với cực trị trong đề bài
+  const domainMatch = block.match(/(?:trên\s*đoạn|liên\s*tục\s*trên)\s*\[\s*([-–—]?\d+)\s*;\s*([-–—]?\d+)\s*\]/i);
+  if (domainMatch) {
+    const cdMatch = block.match(/(?:lớn\s*nhất|cực\s*đại)\s*tại\s*x\s*=\s*([-–—]?\d+)\s*bằng\s*([-–—]?\d+)/i);
+    const ctMatch = block.match(/(?:nhỏ\s*nhất|cực\s*tiểu)\s*tại\s*x\s*=\s*([-–—]?\d+)\s*bằng\s*([-–—]?\d+)/i);
+    if (cdMatch && ctMatch) {
+      const xMax = parseFloat(cdMatch[1].replace(/[−–—]/g, '-'));
+      const yMax = parseFloat(cdMatch[2].replace(/[−–—]/g, '-'));
+      const xMin = parseFloat(ctMatch[1].replace(/[−–—]/g, '-'));
+      const yMin = parseFloat(ctMatch[2].replace(/[−–—]/g, '-'));
+
+      if (!isNaN(xMax) && !isNaN(yMax) && !isNaN(xMin) && !isNaN(yMin) && xMax !== xMin) {
+        const k = (yMax - yMin) / Math.pow(xMax - xMin, 2);
+        const kStr = Number(k.toFixed(3));
+        const quadExpr = `${yMax} - ${kStr}*(x - ${xMax})^2`;
+        const svg = generateFunctionGraphSvg(quadExpr, block);
+        if (svg) return svg;
+      }
+    }
   }
 
   if (lower.includes('trùng phương') || lower.includes('bậc 4') || lower.includes('x^4') || lower.includes('x⁴')) {
