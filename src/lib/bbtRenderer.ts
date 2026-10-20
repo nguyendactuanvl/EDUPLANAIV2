@@ -346,30 +346,28 @@ export function unflattenMarkdownTables(text: string): string {
   // Kiểm tra xem văn bản có chứa cấu trúc bảng Markdown / BBT hay không
   const hasMarkdownTable = /\|[ \t]*:?-{2,}:?[ \t]*\|/.test(s) ||
     /(?:^|\n)[ \t]*\|[ \t]*\$?[xt]\$?[ \t]*\|/i.test(s) ||
-    /(?:^|\n)[ \t]*\$?[xt]\$?[ \t]*\|/i.test(s) ||
-    /\|\s*(?:y['’′]|f['’′]|f\([a-z]\))\s*\|/i.test(s) ||
-    /(?:^|\n)\s*(?:y['’′]|f['’′]|f\([a-z]\))\s*\|/i.test(s);
+    /\|\s*(?:y['’′]|f['’′]|f\([a-z]\))\s*\|/i.test(s);
 
   if (!hasMarkdownTable) {
-    return text;
+    return s;
   }
 
   // 1. Tách văn bản đứng trước bảng nếu dính liền vào | x |:
-  s = s.replace(/([^\n|])\s*(\|(?:\s*\$?[xt]\$?|\s*[xt]\s*)\s*\|(?=[^\n|]+\|))/gi, '$1\n\n$2');
+  s = s.replace(/([^\n|])[ \t]*(\|(?:\s*\$?[xt]\$?|\s*[xt]\s*)\s*\|(?=[^\n|]+\|))/gi, '$1\n\n$2');
 
   // 2. Tách giữa hàng đầu (x) và hàng phân cách |---| nếu bị dính liền trên 1 dòng với || hoặc |:
   s = s.replace(/(\|[ \t]*)(?:\|\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)+\|?)/g, '$1\n|---|---|---|---|---|---|---|');
-  s = s.replace(/(\|)\s*(\|[\s:-]*-{2,}[\s|:-]*\|)/g, '$1\n$2');
+  s = s.replace(/(\|)[ \t]*(\|[:\- \t]*-{2,}[:\- \t]*\|)/g, '$1\n$2');
 
   // 3. Tách trước hàng y' / f'(x) nếu cùng 1 dòng với hàng phân cách:
-  s = s.replace(/(\|[\s:-]*-{2,}[\s|:-]*\|)[ \t]*(?:\|{0,3}[ \t]*)(\$?(?:y['’′]|f['’′]\(x\)|f['’′]|y\^\\prime)\$?)[ \t]*\|{1,3}/gi, '$1\n| $2 | ');
+  s = s.replace(/(\|[:\- \t]*-{2,}[:\- \t]*\|)[ \t]*(?:\|{0,3}[ \t]*)(\$?(?:y['’′]|f['’′]\(x\)|f['’′]|y\^\\prime)\$?)[ \t]*\|{1,3}/gi, '$1\n| $2 | ');
 
   // 4. Chuẩn hóa dòng bắt đầu bằng x hoặc y' mà thiếu dấu | ở đầu:
-  s = s.replace(/(^|\n)\s*(\$?[xt]\$?)\s*\|/gi, '$1| $2 |');
+  s = s.replace(/(^|\n)[ \t]*(\$?[xt]\$?)[ \t]*\|/gi, '$1| $2 |');
   s = s.replace(/(^|\n)[ \t]*\|{0,3}[ \t]*(\$?(?:y['’′]|f['’′]\(x\)|f['’′]|y\^\\prime)\$?)[ \t]*\|{1,3}/gi, '$1| $2 | ');
 
   // 5. Tách trước hàng y / f(x) nếu cùng 1 dòng với hàng y':
-  s = s.replace(/(\|[ \t]*)(?:\|{1,4}[ \t]*)(\$?(?:y(?![’'′\^])|f\(x\)|g\(x\))\$?)[ \t]*\|{1,3}/gi, '$1\n| $2 | ');
+  s = s.replace(/(\|[ \t]*)[ \t]*(?:\|{1,4}[ \t]*)(\$?(?:y(?![’'′\^])|f\(x\)|g\(x\))\$?)[ \t]*\|{1,3}/gi, '$1\n| $2 | ');
   s = s.replace(/(^|\n)[ \t]*\|{0,3}[ \t]*(\$?(?:y(?![’'′\^])|f\(x\)|g\(x\))\$?)[ \t]*\|{1,3}/gi, '$1| $2 | ');
 
   // 6. Tách văn bản sau bảng nếu bị dính liền với hàng cuối:
@@ -391,7 +389,7 @@ export function unflattenMarkdownTables(text: string): string {
       if (isTableRow) {
         inTable = true;
         tableBuffer.push(line);
-      } else if (inTable && (line === '' || /^(?:Câu|Bài|Giá trị|Đáp án|##|\d+[\.\)]|[A-Da-d][\.\)])/i.test(line))) {
+      } else if (inTable && (line === '' || /^(?:Câu|Bài|Giá trị|Đáp án|Mệnh đề|##|\d+[\.\)]|[A-Da-d][\.\)])/i.test(line))) {
         resultLines.push(collapseMultilineTableLines(tableBuffer));
         resultLines.push(line);
         tableBuffer = [];
@@ -423,13 +421,13 @@ function collapseMultilineTableLines(tblLines: string[]): string {
     return trimmed;
   };
 
-  // Nếu tblLines đã có các hàng riêng biệt và có cả x lẫn hàng phân cách:
-  const isCleanMulti = tblLines.length >= 3 &&
-    tblLines.some(l => /\|[ \t]*\$?[xt]\$?[ \t]*\|/i.test(l)) &&
-    tblLines.some(l => /\|[ \t]*:?-{2,}:?[ \t]*\|/.test(l));
-
-  if (isCleanMulti) {
-    return tblLines.map(ensureRowPipes).filter(Boolean).join('\n');
+  // Nếu tblLines đã là các hàng riêng biệt:
+  if (tblLines.length >= 2) {
+    const cleanLines = tblLines.map(ensureRowPipes).filter(Boolean);
+    const hasHeader = cleanLines.some(l => /\|[ \t]*\$?[xt]\$?[ \t]*\|/i.test(l));
+    if (hasHeader) {
+      return cleanLines.join('\n');
+    }
   }
 
   const joined = tblLines.join(' ');
@@ -444,7 +442,6 @@ function collapseMultilineTableLines(tblLines: string[]): string {
   const afterSep = joined.substring(sepIdx + sepMatch[0].length).trim();
 
   // Tìm vị trí phân cách giữa hàng đạo hàm (y') và hàng hàm số (y)
-  // Chỉ khớp 'y' hoặc 'f(x)' khi KHÔNG theo sau bởi dấu ' / prime / ^
   const row4Match = afterSep.match(/(?:\|{1,4}\s*|\s+)(?:\$?(?:y(?![’'′\^])|f\s*\([a-z]\))\$?)\s*\|/i);
   let row2 = afterSep;
   let row3 = '';
@@ -901,7 +898,13 @@ export function embedBbtSvgsInText(text: string): string {
   const unflattened = unflattenMarkdownTables(text);
   return unflattened.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
     try {
-      const svg = convertBbtTableToSvg(match);
+      let svg = convertBbtTableToSvg(match);
+      if (!svg && (match.includes('x') || match.includes("y'") || match.includes('f('))) {
+        const synthData = syntheticBbtFromQuestion(match);
+        if (synthData) {
+          svg = generateBbtSvg(synthData);
+        }
+      }
       if (svg) {
         const base64 = typeof btoa !== 'undefined' 
           ? btoa(encodeURIComponent(svg)) 
@@ -1775,9 +1778,9 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
 
     const svgParts: string[] = [];
 
-    // Grid definition
+    // Grid definition (aligned with origin for 1-to-1 grid coordinate mapping)
     svgParts.push(`<defs>
-      <pattern id="graph-grid" width="${scale}" height="${scale}" patternUnits="userSpaceOnUse">
+      <pattern id="graph-grid" width="${scale}" height="${scale}" patternUnits="userSpaceOnUse" x="${originX}" y="${originY}">
         <path d="M ${scale} 0 L 0 0 0 ${scale}" fill="none" stroke="#f1f5f9" stroke-width="1" />
       </pattern>
       <marker id="graph-arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
@@ -1789,20 +1792,16 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
     svgParts.push(`<rect width="${width}" height="${height}" fill="#ffffff" />`);
     svgParts.push(`<rect width="${width}" height="${height}" fill="url(#graph-grid)" />`);
 
-    // Asymptotes (Đầy đủ tiệm cận đứng, ngang, xiên với màu đỏ nét đứt, nhãn phương trình và tâm đối xứng I)
+    // Asymptotes (Đường tiệm cận đứng, ngang, xiên nét đứt màu đỏ, vạch tọa độ trên trục, không ghi nhãn phương trình)
     if (xAsym !== null && isFinite(xAsym)) {
       const sx = toSvgX(xAsym);
       svgParts.push(`<line x1="${sx.toFixed(1)}" y1="10" x2="${sx.toFixed(1)}" y2="${height - 10}" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="5,4" />`);
-      const lx = sx + (sx > width - 70 ? -55 : 6);
-      svgParts.push(`<text x="${lx.toFixed(1)}" y="22" font-family="'Times New Roman', Times, serif" font-size="13" font-style="italic" font-weight="bold" fill="#dc2626">x = ${formatNumDisplay(xAsym)}</text>`);
       // Vạch tọa độ trên trục Ox
       svgParts.push(`<line x1="${sx.toFixed(1)}" y1="${originY - 4}" x2="${sx.toFixed(1)}" y2="${originY + 4}" stroke="#dc2626" stroke-width="1.5" />`);
     }
     if (yAsym !== null && isFinite(yAsym)) {
       const sy = toSvgY(yAsym);
       svgParts.push(`<line x1="10" y1="${sy.toFixed(1)}" x2="${width - 10}" y2="${sy.toFixed(1)}" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="5,4" />`);
-      const ly = Math.max(sy - 6, 20);
-      svgParts.push(`<text x="${width - 55}" y="${ly.toFixed(1)}" font-family="'Times New Roman', Times, serif" font-size="13" font-style="italic" font-weight="bold" fill="#dc2626">y = ${formatNumDisplay(yAsym)}</text>`);
       // Vạch tọa độ trên trục Oy
       svgParts.push(`<line x1="${originX - 4}" y1="${sy.toFixed(1)}" x2="${originX + 4}" y2="${sy.toFixed(1)}" stroke="#dc2626" stroke-width="1.5" />`);
     }
@@ -1812,9 +1811,6 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
       const sx2 = toSvgX(maxX);
       const sy2 = toSvgY(slantAsym.m * maxX + slantAsym.n);
       svgParts.push(`<line x1="${sx1.toFixed(1)}" y1="${sy1.toFixed(1)}" x2="${sx2.toFixed(1)}" y2="${sy2.toFixed(1)}" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="5,4" />`);
-      const mStr = slantAsym.m === 1 ? '' : (slantAsym.m === -1 ? '-' : formatNumDisplay(slantAsym.m));
-      const nStr = slantAsym.n > 0 ? `+ ${formatNumDisplay(slantAsym.n)}` : (slantAsym.n < 0 ? `- ${formatNumDisplay(Math.abs(slantAsym.n))}` : '');
-      svgParts.push(`<text x="${Math.min(sx2 - 75, width - 85).toFixed(1)}" y="${Math.max(sy2 - 8, 26).toFixed(1)}" font-family="'Times New Roman', Times, serif" font-size="13" font-style="italic" font-weight="bold" fill="#dc2626">y = ${mStr}x ${nStr}</text>`);
     }
     // Tâm đối xứng I (giao điểm hai đường tiệm cận)
     if (xAsym !== null && isFinite(xAsym)) {
@@ -2019,7 +2015,7 @@ export function aiFixQuestionVisuals(content: string, solution?: string, options
   }
 
   // 3. Mặc định tự động hoàn thiện với autoEnrichTextWithVisuals
-  const enriched = autoEnrichTextWithVisuals(content, false);
+  const enriched = autoEnrichTextWithVisuals(content, false, options);
   return {
     updatedContent: enriched,
     updatedSolution: solution,
@@ -2124,6 +2120,24 @@ export function syntheticBbtFromQuestion(block: string, options?: string[]): BBT
 
   const actualKeys = validKeyVals.length > 0 ? validKeyVals : [0];
 
+  // Trích xuất các giá trị cực trị từ văn bản nếu có (ví dụ: cực đại 4, cực tiểu 1)
+  const cdMatch = block.match(/(?:cực\s*đại|y_\{?cđ\}?|y_\{?CĐ\}?)\s*(?:bằng|=\s*|là\s*|tại\s*[^;\n]*;\s*|y\s*=\s*)([-–—]?\d+(?:\.\d+)?)/i);
+  const ctMatch = block.match(/(?:cực\s*tiểu|y_\{?ct\}?|y_\{?CT\}?)\s*(?:bằng|=\s*|là\s*|tại\s*[^;\n]*;\s*|y\s*=\s*)([-–—]?\d+(?:\.\d+)?)/i);
+  const ptMatches = Array.from(block.matchAll(/\(\s*([-–—]?\d+(?:\.\d+)?)\s*;\s*([-–—]?\d+(?:\.\d+)?)\s*\)/g));
+
+  let extractedTopY = cdMatch ? cdMatch[1].replace(/[−–—]/g, '-') : '';
+  let extractedBotY = ctMatch ? ctMatch[1].replace(/[−–—]/g, '-') : '';
+
+  if (!extractedTopY && ptMatches.length >= 1) {
+    const yVals = ptMatches.map(m => parseFloat(m[2].replace(/[−–—]/g, '-'))).filter(n => !isNaN(n));
+    if (yVals.length >= 2) {
+      extractedTopY = String(Math.max(...yVals));
+      extractedBotY = String(Math.min(...yVals));
+    } else if (yVals.length === 1) {
+      extractedTopY = String(yVals[0]);
+    }
+  }
+
   actualKeys.forEach((xv, idx) => {
     intervals.push({
       sign: currentSign,
@@ -2131,10 +2145,12 @@ export function syntheticBbtFromQuestion(block: string, options?: string[]): BBT
     });
 
     const isTop = (idx % 2 === 0 && currentSign === '+') || (idx % 2 === 1 && currentSign === '-');
+    let valY = isTop ? (extractedTopY || '4') : (extractedBotY || '1');
+
     points.push({
       x: String(xv),
       yPrime: '0',
-      yVal: isTop ? '5' : '-1',
+      yVal: valY,
       yPosition: isTop ? 'top' : 'bottom'
     });
 
