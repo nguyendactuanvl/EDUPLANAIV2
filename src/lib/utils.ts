@@ -979,8 +979,7 @@ export const rescueCodeAndNestedText = (text: string): string => {
   s = s.replace(/\bundefined\b/gi, '');
   s = s.replace(/=\s*undefined/gi, '=');
 
-  // 0.1 Triệt tiêu mọi token hoặc placeholder rò rỉ từ các bước tokenizer
-  s = s.replace(/[\uE000\uE001]/g, '');
+  // 0.1 Triệt tiêu các token khối cũ rò rỉ (không can thiệp vào Unicode private delimiters \uE000,\uE001 đang được sử dụng bảo vệ tài nguyên visual/math)
   s = s.replace(/___?(?:MATH|ENV|SET_MATH|WRAPPED_MATH|TEXT|CODE)_BLOCK_(\d+)___?/g, '');
   s = s.replace(/___SET_MATH_TOKEN_\d+___/g, '');
   s = s.replace(/(?<![a-zA-Z0-9_\$])(?:MATH|ENV|SET_MATH|WRAPPED_MATH)_BLOCK_\d+(?![a-zA-Z0-9_\$])/g, '');
@@ -1715,7 +1714,7 @@ export const sanitizeExamQuestion = (rawContent: string): string => {
   content = content.replace(/\\begin\s*\{cases\*?\}([\s\S]*?)\\end\s*\{cases\*?\}/g, (_m, body) => `\\begin{cases}\n${normalizeCasesBody(body)}\n\\end{cases}`);
   const envTokens: string[] = [];
   content = unflattenMarkdownTables(content);
-  content = content.replace(/(```[\s\S]*?```|`[^`\n]+`|<img[\s\S]*?>|<svg[\s\S]*?<\/svg>|<tikz-diagram[\s\S]*?<\/tikz-diagram>|<svg-wrapper[\s\S]*?<\/svg-wrapper>|\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\}|___?VISUAL\\?_TOKEN_\d+___?|___[A-Z0-9_]+_TOKEN_\d+___|\\left\s*\[\s*\\begin\s*\{aligned\*?\}[\s\S]*?\\end\s*\{aligned\*?\}\s*\\right\.?|\\begin\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}[\s\S]*?\\end\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}|(?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gim, (match) => {
+  content = content.replace(/(```[\s\S]*?```|`[^`\n]+`|<img[\s\S]*?>|<svg[\s\S]*?<\/svg>|<tikz-diagram[\s\S]*?<\/tikz-diagram>|<svg-wrapper[\s\S]*?<\/svg-wrapper>|\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\}|\uE000VT_\d+\uE001|___STEM_VISUAL_TOKEN_\d+___|___?VISUAL\\?_TOKEN_\d+___?|___[A-Z0-9_]+_TOKEN_\d+___|\\left\s*\[\s*\\begin\s*\{aligned\*?\}[\s\S]*?\\end\s*\{aligned\*?\}\s*\\right\.?|\\begin\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}[\s\S]*?\\end\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}|(?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gim, (match) => {
     envTokens.push(match);
     return `\uE000EB_${envTokens.length - 1}\uE001`;
   });
@@ -2272,8 +2271,11 @@ export function cleanQuestionStem(content: any, options?: any[], tfStatements?: 
     return `\n\n\uE000VT_${visualTokens.length - 1}\uE001\n\n`;
   };
 
+  text = text.replace(/<div\b[^>]*>\s*<svg-wrapper[\s\S]*?<\/svg-wrapper>\s*<\/div>/gi, protectVisual);
   text = text.replace(/<svg-wrapper[\s\S]*?<\/svg-wrapper>/gi, protectVisual);
+  text = text.replace(/<div\b[^>]*>\s*<tikz-diagram[\s\S]*?<\/tikz-diagram>\s*<\/div>/gi, protectVisual);
   text = text.replace(/<tikz-diagram[\s\S]*?<\/tikz-diagram>/gi, protectVisual);
+  text = text.replace(/<div\b[^>]*>\s*<svg[\s\S]*?<\/svg>\s*<\/div>/gi, protectVisual);
   text = text.replace(/<svg[\s\S]*?<\/svg>/gi, protectVisual);
   text = text.replace(/<img\b[\s\S]*?>/gi, protectVisual);
   text = text.replace(/(?:```[a-z]*\s*[\s\S]*?\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\}\s*```|```tikz\s*[\s\S]*?```|\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\})/gi, protectVisual);
@@ -2360,21 +2362,24 @@ export function cleanQuestionStem(content: any, options?: any[], tfStatements?: 
 
   let cleaned = sanitizeExamQuestion(text.trim());
 
-  // Khôi phục các hình vẽ BBT & đồ thị nguyên vẹn 100% bằng Unicode private tokens
-  cleaned = cleaned.replace(/\uE000VT_(\d+)\uE001/g, (_m, idx) => {
-    const raw = visualTokens[Number(idx)];
+  // Khôi phục các hình vẽ BBT & đồ thị nguyên vẹn 100% bằng Unicode private tokens hoặc bất kỳ fallback format nào
+  cleaned = cleaned.replace(/(?:\uE000VT_(\d+)\uE001|(?<![a-zA-Z0-9_])VT_(\d+)(?![a-zA-Z0-9_])|___STEM_VISUAL_TOKEN_(\d+)___|(?:\\_|_){3}VISUAL(?:\\_|_)*TOKEN(?:\\_|_)*(\d+)(?:\\_|_)*\d*|___?VISUAL_TOKEN_(\d+)___?)/gi, (_m, id1, id2, id3, id4, id5) => {
+    const rawIdx = id1 ?? id2 ?? id3 ?? id4 ?? id5;
+    const raw = visualTokens[Number(rawIdx)];
     return raw ? `\n\n${raw}\n\n` : '';
   });
 
-  // Hỗ trợ khôi phục fallback cho bất kỳ token định dạng legacy nào
-  cleaned = cleaned.replace(/(?:\\_|_){3}VISUAL(?:\\_|_)*TOKEN(?:\\_|_)*(\d+)(?:\\_|_)*\d*/gi, (_m, idx) => {
-    const raw = visualTokens[Number(idx)];
-    return raw ? `\n\n${raw}\n\n` : '';
+  // Bảo hiểm an toàn tuyệt đối: Nếu có hình vẽ trong visualTokens mà chưa có mặt trong cleaned, tự động phục hồi ngay
+  visualTokens.forEach((vt) => {
+    if (!cleaned.includes(vt)) {
+      cleaned += `\n\n${vt}\n\n`;
+    }
   });
 
   // Triệt tiêu hoàn toàn bất kỳ chuỗi token hình vẽ mồ côi nào sót lại ở mọi biến thể
   cleaned = cleaned
     .replace(/\uE000VT_\d+\uE001/g, '')
+    .replace(/(?<![a-zA-Z0-9_])VT_\d+(?![a-zA-Z0-9_])/g, '')
     .replace(/(?:\\_|_){3}VISUAL(?:\\_|_)*TOKEN(?:\\_|_)*\d+(?:\\_|_)*/gi, '')
     .replace(/___VISUAL_TOKEN_\d+___/gi, '')
     .replace(/___VISUAL_TOKEN_\d+/gi, '');

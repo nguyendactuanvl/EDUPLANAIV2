@@ -1,21 +1,13 @@
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Configure worker with safe blob URL wrapper to bypass cross-origin browser restrictions
+// Cấu hình Worker cho PDF.js phiên bản ổn định 4.10.38
 if (typeof window !== 'undefined') {
   try {
-    const workerVersion = pdfjsLib.version || '6.3.289';
-    const cdnUrl = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${workerVersion}/pdf.worker.min.mjs`;
-    
-    // In browser, new Worker(cdnUrl) throws SecurityError due to cross-origin script rules.
-    // An inline Blob module worker importing the CDN script executes with same-origin privileges.
-    try {
-      const blob = new Blob([`import '${cdnUrl}';`], { type: 'text/javascript' });
-      pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
-    } catch {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = cdnUrl;
-    }
+    const workerVersion = '4.10.38';
+    // Sử dụng CDN chính thức đồng bộ phiên bản 4.10.38
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${workerVersion}/pdf.worker.min.mjs`;
   } catch (e) {
-    console.warn('PDF worker setup:', e);
+    console.warn('PDF worker setup failed:', e);
   }
 }
 
@@ -45,7 +37,7 @@ function getSafePdfData(pdfData: ArrayBuffer | Uint8Array): Uint8Array {
  * Standard configuration options for getDocument
  */
 function getDocumentOptions(safeData: Uint8Array) {
-  const workerVersion = pdfjsLib.version || '6.3.289';
+  const workerVersion = '4.10.38';
   return {
     data: safeData,
     cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${workerVersion}/cmaps/`,
@@ -58,13 +50,21 @@ function getDocumentOptions(safeData: Uint8Array) {
  * Quick inspection to get total number of pages in a PDF
  */
 export async function getPdfTotalPages(pdfData: ArrayBuffer | Uint8Array): Promise<number> {
+  let loadingTask: any = null;
   try {
     const safeData = getSafePdfData(pdfData);
-    const loadingTask = pdfjsLib.getDocument(getDocumentOptions(safeData));
+    loadingTask = pdfjsLib.getDocument(getDocumentOptions(safeData));
     const pdf = await loadingTask.promise;
-    return pdf.numPages || 1;
+    const num = pdf.numPages || 1;
+    try {
+      if (loadingTask?.destroy) await loadingTask.destroy();
+    } catch {}
+    return num;
   } catch (err) {
     console.error('Failed to inspect PDF total pages:', err);
+    try {
+      if (loadingTask?.destroy) await loadingTask.destroy();
+    } catch {}
     return 1;
   }
 }
@@ -105,8 +105,13 @@ export async function renderPdfPageToDataUrl(
 
   await page.render(renderContext).promise;
 
+  const dataUrl = canvas.toDataURL('image/png');
+  try {
+    if (loadingTask?.destroy) await loadingTask.destroy();
+  } catch {}
+
   return {
-    dataUrl: canvas.toDataURL('image/png'),
+    dataUrl,
     width: viewport.width,
     height: viewport.height,
     numPages
@@ -115,16 +120,19 @@ export async function renderPdfPageToDataUrl(
 
 /**
  * Render a specific page range of a PDF to an array of PNG Data URLs
+ * Supports progressive callback onPageRendered for instant display of initial pages
  */
 export async function renderPdfPageRange(
   pdfData: ArrayBuffer | Uint8Array,
   fromPage: number = 1,
   toPage: number = 5,
-  scale: number = 1.5
+  scale: number = 1.5,
+  onPageRendered?: (pageNum: number, dataUrl: string) => void
 ): Promise<{ pages: string[]; totalPages: number }> {
+  let loadingTask: any = null;
   try {
     const safeData = getSafePdfData(pdfData);
-    const loadingTask = pdfjsLib.getDocument(getDocumentOptions(safeData));
+    loadingTask = pdfjsLib.getDocument(getDocumentOptions(safeData));
     const pdf = await loadingTask.promise;
     const totalPages = pdf.numPages;
 
@@ -133,24 +141,40 @@ export async function renderPdfPageRange(
     const pages: string[] = [];
 
     for (let i = start; i <= end; i++) {
-      const page = await pdf.getPage(i);
-      const viewport = page.getViewport({ scale });
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d');
-      if (!context) continue;
+      try {
+        const page = await pdf.getPage(i);
+        const viewport = page.getViewport({ scale });
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        if (!context) continue;
 
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      context.fillStyle = '#ffffff';
-      context.fillRect(0, 0, canvas.width, canvas.height);
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
 
-      await page.render({ canvasContext: context, canvas, viewport } as any).promise;
-      pages.push(canvas.toDataURL('image/png'));
+        await page.render({ canvasContext: context, canvas, viewport } as any).promise;
+        const dataUrl = canvas.toDataURL('image/png');
+        pages.push(dataUrl);
+
+        if (onPageRendered) {
+          onPageRendered(i, dataUrl);
+        }
+      } catch (pageErr) {
+        console.warn(`Error rendering PDF page ${i}:`, pageErr);
+      }
     }
+
+    try {
+      if (loadingTask?.destroy) await loadingTask.destroy();
+    } catch {}
 
     return { pages, totalPages };
   } catch (err) {
     console.error('Failed to render PDF page range:', err);
+    try {
+      if (loadingTask?.destroy) await loadingTask.destroy();
+    } catch {}
     return { pages: [], totalPages: 1 };
   }
 }
@@ -160,8 +184,8 @@ export async function renderPdfPageRange(
  */
 export async function renderAllPdfPages(
   pdfData: ArrayBuffer | Uint8Array,
-  maxPages: number = 5,
-  scale: number = 1.2
+  maxPages: number = 10,
+  scale: number = 1.5
 ): Promise<string[]> {
   const result = await renderPdfPageRange(pdfData, 1, maxPages, scale);
   return result.pages;

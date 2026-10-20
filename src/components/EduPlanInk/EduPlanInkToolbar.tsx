@@ -153,6 +153,7 @@ export const EduPlanInkToolbar: React.FC<EduPlanInkToolbarProps> = ({
     if (file) {
       onUploadBackground(file);
     }
+    e.target.value = '';
   };
 
   return (

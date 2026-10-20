@@ -1301,7 +1301,7 @@ const [examName, setExamName] = useState("");
   };
 
   const handleAiFixQuestionVisuals = (q: Question, idx: number) => {
-    const res = aiFixQuestionVisuals(q.content || (q as any).question || '', q.solution || q.explanation || '');
+    const res = aiFixQuestionVisuals(q.content || (q as any).question || '', q.solution || q.explanation || '', q.options);
     if (res.status !== 'none') {
       const newQs = [...questions];
       newQs[idx] = {
@@ -1329,7 +1329,7 @@ const [examName, setExamName] = useState("");
     let fixedCount = 0;
     let annotationCount = 0;
     const updated = questions.map((q) => {
-      const res = aiFixQuestionVisuals(q.content || (q as any).question || '', q.solution || q.explanation || '');
+      const res = aiFixQuestionVisuals(q.content || (q as any).question || '', q.solution || q.explanation || '', q.options);
       if (res.status !== 'none') {
         if (res.status === 'teacher_annotation') annotationCount++;
         else fixedCount++;
@@ -1419,7 +1419,7 @@ const [examName, setExamName] = useState("");
     }
     const enriched = sampleQuestions.map((q: any) => ({
       ...q,
-      content: autoEnrichTextWithVisuals(q.content || (q as any).question || (q as any).text || '', false),
+      content: autoEnrichTextWithVisuals(q.content || (q as any).question || (q as any).text || '', false, q.options),
       solution: autoEnrichTextWithVisuals(q.solution || q.explanation || '', true),
       explanation: autoEnrichTextWithVisuals(q.solution || q.explanation || '', true)
     }));
@@ -1449,7 +1449,7 @@ const [examName, setExamName] = useState("");
     applyPresetCompetency11();
     const enriched = (SAMPLE_COMPETENCY_EXAM_QUESTIONS_11 as Question[]).map((q: any) => ({
       ...q,
-      content: autoEnrichTextWithVisuals(q.content || (q as any).question || (q as any).text || '', false),
+      content: autoEnrichTextWithVisuals(q.content || (q as any).question || (q as any).text || '', false, q.options),
       solution: autoEnrichTextWithVisuals(q.solution || q.explanation || '', true),
       explanation: autoEnrichTextWithVisuals(q.solution || q.explanation || '', true)
     }));
@@ -1492,7 +1492,7 @@ const [examName, setExamName] = useState("");
             topic: q.topic || 'Chủ đề bóc tách',
             subtopic: q.subtopic || 'Nội dung kiến thức',
             level: q.level || 'Thông hiểu',
-            content: autoEnrichTextWithVisuals(q.content || (q as any).question || '', false),
+            content: autoEnrichTextWithVisuals(q.content || (q as any).question || '', false, q.options),
             solution: autoEnrichTextWithVisuals((q.solution || q.explanation || "").trim(), true),
             explanation: autoEnrichTextWithVisuals((q.solution || q.explanation || "").trim(), true)
           }));
@@ -1519,7 +1519,7 @@ const [examName, setExamName] = useState("");
     const reindexed = parsed.map((q, idx) => ({
       ...q,
       id: currentMaxId + idx + 1,
-      content: autoEnrichTextWithVisuals(q.content || (q as any).question || (q as any).text || '', false),
+      content: autoEnrichTextWithVisuals(q.content || (q as any).question || (q as any).text || '', false, q.options),
       solution: autoEnrichTextWithVisuals(q.solution || q.explanation || '', true),
       explanation: autoEnrichTextWithVisuals(q.solution || q.explanation || '', true)
     }));
@@ -1759,7 +1759,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
           topic: q.topic || 'Chủ đề trọng tâm',
           subtopic: q.subtopic || 'Nội dung kiến thức',
           level: q.level || 'Thông hiểu',
-          content: autoEnrichTextWithVisuals(q.content || (q as any).question || (q as any).text || '', false),
+          content: autoEnrichTextWithVisuals(q.content || (q as any).question || (q as any).text || '', false, q.options),
           solution: autoEnrichTextWithVisuals((q.solution || q.explanation || "").trim(), true),
           explanation: autoEnrichTextWithVisuals((q.solution || q.explanation || "").trim(), true)
         }));
@@ -1804,7 +1804,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
     if (questions.length === 0) return;
     let count = 0;
     const updated = questions.map((q: any) => {
-      const newContent = autoEnrichTextWithVisuals(q.content || q.question || '', false);
+      const newContent = autoEnrichTextWithVisuals(q.content || q.question || '', false, q.options);
       const newSol = autoEnrichTextWithVisuals(q.solution || q.explanation || '', true);
       if (newContent !== (q.content || '') || newSol !== (q.solution || '')) count++;
       return {
@@ -1823,7 +1823,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
     if (questions.length === 0) return;
     const processedQuestions = questions.map((q: any) => ({
       ...q,
-      content: autoEnrichTextWithVisuals(q.content || q.question || q.text || '', false),
+      content: autoEnrichTextWithVisuals(q.content || q.question || q.text || '', false, q.options),
       solution: autoEnrichTextWithVisuals(q.solution || q.explanation || '', true),
       explanation: autoEnrichTextWithVisuals(q.solution || q.explanation || '', true)
     }));

@@ -303,10 +303,10 @@ interface RationalParams {
 }
 
 // Trích xuất tham số hàm phân thức bậc nhất trên bậc nhất y = (ax+b)/(cx+d) hoặc bậc hai trên bậc nhất
-function extractRationalParams(code: string): RationalParams | null {
+function extractRationalParams(code: string, context?: string): RationalParams | null {
   const parseLinear = (str: string) => {
-    let s = str.replace(/[{}\s$]/g, '');
-    const m = s.match(/^([+-]?(?:\d*\.?\d*)?)x(?:([+-]\d*\.?\d+))?$/);
+    let s = str.replace(/[{}\s$\\\*]/g, '');
+    const m = s.match(/^([+-]?(?:\d*\.?\d*)?)x(?:([+-]\d*\.?\d+))?$/i);
     if (m) {
       let coeffStr = m[1];
       if (coeffStr === '' || coeffStr === '+') coeffStr = '1';
@@ -319,9 +319,9 @@ function extractRationalParams(code: string): RationalParams | null {
   };
 
   const parseQuadratic = (str: string) => {
-    let s = str.replace(/[{}\s$]/g, '');
+    let s = str.replace(/[{}\s$\\\*]/g, '');
     // ax^2 + bx + c
-    const m = s.match(/^([+-]?(?:\d*\.?\d*)?)x(?:\^2|²)(?:([+-]?(?:\d*\.?\d*)?)x)?(?:([+-]\d*\.?\d+))?$/);
+    const m = s.match(/^([+-]?(?:\d*\.?\d*)?)x(?:\^2|²)(?:([+-]?(?:\d*\.?\d*)?)x)?(?:([+-]\d*\.?\d+))?$/i);
     if (m) {
       let aStr = m[1];
       if (aStr === '' || aStr === '+') aStr = '1';
@@ -339,8 +339,10 @@ function extractRationalParams(code: string): RationalParams | null {
     return null;
   };
 
+  const combined = context ? `${context}\n${code}` : code;
+
   // 1. Phân thức LaTeX: \frac{...}{...}
-  const fracMatch = code.match(/\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}/);
+  const fracMatch = combined.match(/\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}/);
   if (fracMatch) {
     const den = parseLinear(fracMatch[2]);
     if (den && den.c !== 0) {
@@ -380,20 +382,42 @@ function extractRationalParams(code: string): RationalParams | null {
     }
   }
 
-  // 2. Dạng phân thức xuyệt (...) / (...)
-  const slashMatch = code.match(/\(?([+-\d\.]*x[+-\d\.]*)\)?\s*\/\s*\(?([+-\d\.]*x[+-\d\.]*)\)?/);
-  if (slashMatch) {
-    const num = parseLinear(slashMatch[1]);
+  // 2. Dạng phân thức xuyệt (...) / (...) trong code hoặc context
+  const slashMatches = [...combined.matchAll(/\(\s*([^\/()]+)\s*\)\s*\/\s*\(\s*([^\/()]+)\s*\)/g)];
+  for (const slashMatch of slashMatches) {
     const den = parseLinear(slashMatch[2]);
-    if (num && den && den.c !== 0) {
-      return {
-        a: num.c,
-        b: num.k,
-        c: den.c,
-        d: den.k,
-        xAsym: -den.k / den.c,
-        yAsym: num.c / den.c
-      };
+    if (den && den.c !== 0) {
+      const numLin = parseLinear(slashMatch[1]);
+      if (numLin) {
+        return {
+          a: numLin.c,
+          b: numLin.k,
+          c: den.c,
+          d: den.k,
+          xAsym: -den.k / den.c,
+          yAsym: numLin.c / den.c
+        };
+      }
+      const numQuad = parseQuadratic(slashMatch[1]);
+      if (numQuad) {
+        const xAsym = -den.k / den.c;
+        const mSlant = numQuad.a / den.c;
+        const nSlant = (numQuad.b * den.c - numQuad.a * den.k) / (den.c * den.c);
+        return {
+          a: numQuad.a,
+          b: numQuad.b,
+          c: den.c,
+          d: den.k,
+          xAsym,
+          yAsym: 0,
+          isDegree2: true,
+          quadA: numQuad.a,
+          quadB: numQuad.b,
+          quadC: numQuad.c,
+          mSlant,
+          nSlant
+        };
+      }
     }
   }
 
@@ -524,7 +548,7 @@ function generateRationalFunctionPaths(
   return paths;
 }
 
-export function renderTikzFallbackSvg(raw: string): string | null {
+export function renderTikzFallbackSvg(raw: string, context?: string): string | null {
   try {
     const cleaned = cleanTikzCode(raw);
 
@@ -773,7 +797,7 @@ export function renderTikzFallbackSvg(raw: string): string | null {
     // 3.5 BẮT BUỘC: Nếu là đồ thị hàm phân thức (bậc 1/1 hoặc bậc 2/1):
     // 1) Nếu chưa có nhánh đồ thị \draw plot, tự động vẽ 2 nhánh phân thức giải tích bằng thẻ <path> SVG với stroke="#2563eb"
     // 2) BỔ SUNG ĐẦY ĐỦ CÁC ĐƯỜNG TIỆM CẬN (tiệm cận đứng, ngang/xiên) nét đứt màu đỏ (#dc2626) cùng nhãn phương trình và tâm đối xứng I
-    const ratParams = extractRationalParams(cleaned);
+    const ratParams = extractRationalParams(cleaned, context);
     if (ratParams) {
       if (!hasFunctionCurve) {
         const branches = generateRationalFunctionPaths(
@@ -882,22 +906,23 @@ export function renderTikzFallbackSvg(raw: string): string | null {
   }
 }
 
-export function getTikzSvg(raw: string): string | null {
+export function getTikzSvg(raw: string, context?: string): string | null {
   if (!raw) return null;
   const cleaned = cleanTikzCode(raw);
-  const cached = tikzCache.get(raw) || tikzCache.get(cleaned);
+  const cacheKey = raw + (context || '');
+  const cached = tikzCache.get(cacheKey) || tikzCache.get(raw) || tikzCache.get(cleaned);
   if (cached) return cached;
   try {
-    const key = 'tikz_cache_' + btoa(encodeURIComponent(cleaned.slice(0, 100)));
+    const key = 'tikz_cache_' + btoa(encodeURIComponent((cleaned + (context || '')).slice(0, 100)));
     const local = localStorage.getItem(key);
     if (local) {
-      tikzCache.set(raw, local);
-      tikzCache.set(cleaned, local);
+      tikzCache.set(cacheKey, local);
       return local;
     }
   } catch (e) {}
-  const fallback = renderTikzFallbackSvg(raw);
+  const fallback = renderTikzFallbackSvg(raw, context);
   if (fallback) {
+    tikzCache.set(cacheKey, fallback);
     tikzCache.set(raw, fallback);
     tikzCache.set(cleaned, fallback);
   }
@@ -914,7 +939,7 @@ export function embedTikzSvgsInText(text: string): string {
   // Replace ```tikz ... ``` or \begin{tikzpicture} ... \end{tikzpicture}
   result = result.replace(/(?:```[a-z]*\s*([\s\S]*?\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\})\s*```|```tikz\s*([\s\S]*?)```|(\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\}))/gi, (match, inner1, inner2, inner3) => {
     const tikzCode = inner1 || (inner2 ? `\\begin{tikzpicture}\n${inner2}\n\\end{tikzpicture}` : inner3 || match);
-    const svg = getTikzSvg(tikzCode);
+    const svg = getTikzSvg(tikzCode, text);
     if (svg) {
       return `\n\n${svg}\n\n`;
     }

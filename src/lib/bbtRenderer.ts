@@ -38,6 +38,7 @@ export interface BBTData {
 
 export function cleanMathText(str?: string): string {
   if (!str) return '';
+  if (str === '__DBLBAR__' || str === '||' || str === '\\|') return '__DBLBAR__';
   let s = str
     // Xử lý triệt để mọi biến thể âm/dương vô cực có dấu gạch chéo rách chuỗi hoặc có dấu cách
     .replace(/[-–—]\s*\\+\s*infty/gi, '-∞')
@@ -330,23 +331,51 @@ export function generateBbtSvg(data: BBTData): string {
 export function unflattenMarkdownTables(text: string): string {
   if (!text || (!text.includes('|') && !text.includes('\\n'))) return text;
 
-  // Chỉ xử lý nếu văn bản thực sự chứa cấu trúc bảng Markdown / BBT (hàng phân cách |---| hoặc hàng BBT có ít nhất 2 cột)
-  const hasMarkdownTable = /\|[ \t]*:?-{2,}:?[ \t]*\|/.test(text) ||
-    /(?:^|\n)[ \t]*\|[ \t]*\$?[xt]\$?[ \t]*\|(?:[^\n|]+\|){2,}/i.test(text) ||
-    /\|\s*(?:y['’′]|f['’′]|f\([a-z]\))\s*\|(?:[^\n|]+\|){2,}/i.test(text);
-
-  if (!hasMarkdownTable) {
-    return text;
-  }
-
+  // Protect and convert LaTeX arrow commands before replacing any escaped newlines!
   let s = text
+    .replace(/\\+(?:ne|e)?arrow/gi, '↗')
+    .replace(/\\+(?:se)?arrow/gi, '↘')
+    .replace(/\\+(?:up)?arrow/gi, '↑')
+    .replace(/\\+(?:down)?arrow/gi, '↓')
     .replace(/\\r\\n/g, '\n')
     .replace(/\\n/g, '\n')
     .replace(/[’`´′]/g, "'")
     .replace(/\\prime/g, "'")
     .replace(/[−–—]/g, '-');
 
-  // Xử lý tiền xử lý đặc biệt cho các bảng copy từ web/HTML có dòng bị bẻ đôi giữa các ô
+  // Kiểm tra xem văn bản có chứa cấu trúc bảng Markdown / BBT hay không
+  const hasMarkdownTable = /\|[ \t]*:?-{2,}:?[ \t]*\|/.test(s) ||
+    /(?:^|\n)[ \t]*\|[ \t]*\$?[xt]\$?[ \t]*\|/i.test(s) ||
+    /(?:^|\n)[ \t]*\$?[xt]\$?[ \t]*\|/i.test(s) ||
+    /\|\s*(?:y['’′]|f['’′]|f\([a-z]\))\s*\|/i.test(s) ||
+    /(?:^|\n)\s*(?:y['’′]|f['’′]|f\([a-z]\))\s*\|/i.test(s);
+
+  if (!hasMarkdownTable) {
+    return text;
+  }
+
+  // 1. Tách văn bản đứng trước bảng nếu dính liền vào | x |:
+  s = s.replace(/([^\n|])\s*(\|(?:\s*\$?[xt]\$?|\s*[xt]\s*)\s*\|(?=[^\n|]+\|))/gi, '$1\n\n$2');
+
+  // 2. Tách giữa hàng đầu (x) và hàng phân cách |---| nếu bị dính liền trên 1 dòng với || hoặc |:
+  s = s.replace(/(\|[ \t]*)(?:\|\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)+\|?)/g, '$1\n|---|---|---|---|---|---|---|');
+  s = s.replace(/(\|)\s*(\|[\s:-]*-{2,}[\s|:-]*\|)/g, '$1\n$2');
+
+  // 3. Tách trước hàng y' / f'(x) nếu cùng 1 dòng với hàng phân cách:
+  s = s.replace(/(\|[\s:-]*-{2,}[\s|:-]*\|)[ \t]*(?:\|{0,3}[ \t]*)(\$?(?:y['’′]|f['’′]\(x\)|f['’′]|y\^\\prime)\$?)[ \t]*\|{1,3}/gi, '$1\n| $2 | ');
+
+  // 4. Chuẩn hóa dòng bắt đầu bằng x hoặc y' mà thiếu dấu | ở đầu:
+  s = s.replace(/(^|\n)\s*(\$?[xt]\$?)\s*\|/gi, '$1| $2 |');
+  s = s.replace(/(^|\n)[ \t]*\|{0,3}[ \t]*(\$?(?:y['’′]|f['’′]\(x\)|f['’′]|y\^\\prime)\$?)[ \t]*\|{1,3}/gi, '$1| $2 | ');
+
+  // 5. Tách trước hàng y / f(x) nếu cùng 1 dòng với hàng y':
+  s = s.replace(/(\|[ \t]*)(?:\|{1,4}[ \t]*)(\$?(?:y(?![’'′\^])|f\(x\)|g\(x\))\$?)[ \t]*\|{1,3}/gi, '$1\n| $2 | ');
+  s = s.replace(/(^|\n)[ \t]*\|{0,3}[ \t]*(\$?(?:y(?![’'′\^])|f\(x\)|g\(x\))\$?)[ \t]*\|{1,3}/gi, '$1| $2 | ');
+
+  // 6. Tách văn bản sau bảng nếu bị dính liền với hàng cuối:
+  s = s.replace(/(^[ \t]*\|.+?\|)[ \t]*([A-Za-zÀ-ỹĐđ#*].*)$/gm, '$1\n\n$2');
+
+  // 7. Xử lý qua bộ collapseMultilineTableLines để chuẩn hóa từng dòng
   if (s.includes('|')) {
     const lines = s.split('\n');
     const resultLines: string[] = [];
@@ -355,12 +384,14 @@ export function unflattenMarkdownTables(text: string): string {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
-      // Chỉ nhận diện là dòng bảng khi có ít nhất 2 dấu gạch đứng | hoặc chứa hàng phân cách |---|
-      const isTableRow = (line.startsWith('|') && (line.match(/\|/g) || []).length >= 2) || /\|[ \t]*:?-{2,}:?[ \t]*\|/.test(line);
+      const isTableRow = (line.startsWith('|') && (line.match(/\|/g) || []).length >= 2) ||
+                         /\|[ \t]*:?-{2,}:?[ \t]*\|/.test(line) ||
+                         /^(?:\$?[xt]\$?|\$?(?:y['’′]|y|f['’′]?\([a-z]\))\$?)\s*\|/.test(line);
+
       if (isTableRow) {
         inTable = true;
         tableBuffer.push(line);
-      } else if (inTable && (line === '' || /^(?:Câu|Bài|Giá trị|Đáp án|##|\d+[\.\)])/i.test(line))) {
+      } else if (inTable && (line === '' || /^(?:Câu|Bài|Giá trị|Đáp án|##|\d+[\.\)]|[A-Da-d][\.\)])/i.test(line))) {
         resultLines.push(collapseMultilineTableLines(tableBuffer));
         resultLines.push(line);
         tableBuffer = [];
@@ -377,86 +408,78 @@ export function unflattenMarkdownTables(text: string): string {
     s = resultLines.join('\n');
   }
 
-  // 1. Tách văn bản đứng trước bảng nếu bị dính liền trên 1 dòng:
-  // Đảm bảo phải có ít nhất 2 cột sau | x |, TUYỆT ĐỐI KHÔNG match trị tuyệt đối |x|
-  s = s.replace(/([^\n|])\s*(\|(?:\s*\$?[xt]\$?|\s*[xt]\s*)\s*\|(?=[^\n|]+\|))/gi, '$1\n\n$2');
-
-  // 1.1 Xóa các dòng trống hoặc khoảng trắng thừa giữa các hàng bảng để đảm bảo các hàng nối liền nhau
-  s = s.replace(/(\|[^\n]+\|)[ \t]*\n\s*\n[ \t]*(\|)/g, '$1\n$2');
-
-  // 2. Tách giữa hàng đầu (x) và hàng phân cách |---| nếu có:
-  s = s.replace(/(\|)[ \t]+(\|\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)+\|)/g, '$1\n$2');
-
-  // 3. Tách trước hàng y' / f'(x) nếu cùng 1 dòng
-  s = s.replace(/(\|)[ \t]+(\|\s*\$?(?:y['’′]|y\^\{\s*['’′\\prime]\s*\}|y\^\\prime|f['’′]|g['’′]|f\^\{\s*['’′\\prime]\s*\}|g\^\{\s*['’′\\prime]\s*\}|f['’′]?\s*\([a-z]\)|g['’′]?\s*\([a-z]\))\$?[\s|])/gi, '$1\n$2');
-
-  // 4. Tách trước hàng y / f(x) nếu cùng 1 dòng:
-  s = s.replace(/(\|)[ \t]+(\|\s*\$?(?:y|f\s*\([a-z]\)|g\s*\([a-z]\))\$?[\s|])/gi, '$1\n$2');
-
-  // 5. Tách văn bản đứng sau bảng nếu dính liền với hàng cuối:
-  // Chỉ tách khi dòng này thực sự là một hàng bảng (bắt đầu bằng | và có ít nhất 2 cột)
-  s = s.replace(/(^[ \t]*\|[^\n|]+\|[^\n|]*\|[ \t]*)(\S[^\n|]*)$/gm, (_match, tablePart, rest) => {
-    const trimmedRest = rest.trim();
-    if (trimmedRest && !trimmedRest.startsWith('|')) {
-      return `${tablePart.trim()}\n\n${trimmedRest}`;
-    }
-    return _match;
-  });
-
-  // Đảm bảo không còn dòng trắng nào giữa các hàng markdown table
+  // Đảm bảo không còn dòng trắng giữa các hàng bảng
   s = s.replace(/(\|[^\n]+\|)[ \t]*\n\s*\n[ \t]*(\|)/g, '$1\n$2');
 
   return s;
 }
 
 function collapseMultilineTableLines(tblLines: string[]): string {
+  const ensureRowPipes = (r: string) => {
+    let trimmed = r.trim();
+    if (!trimmed) return '';
+    if (!trimmed.startsWith('|')) trimmed = '| ' + trimmed;
+    if (!trimmed.endsWith('|')) trimmed = trimmed + ' |';
+    return trimmed;
+  };
+
+  // Nếu tblLines đã có các hàng riêng biệt và có cả x lẫn hàng phân cách:
+  const isCleanMulti = tblLines.length >= 3 &&
+    tblLines.some(l => /\|[ \t]*\$?[xt]\$?[ \t]*\|/i.test(l)) &&
+    tblLines.some(l => /\|[ \t]*:?-{2,}:?[ \t]*\|/.test(l));
+
+  if (isCleanMulti) {
+    return tblLines.map(ensureRowPipes).filter(Boolean).join('\n');
+  }
+
   const joined = tblLines.join(' ');
   const sepMatch = joined.match(/\|\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)+\|/);
-  if (!sepMatch) return tblLines.join('\n');
+  if (!sepMatch) {
+    return tblLines.map(ensureRowPipes).filter(Boolean).join('\n');
+  }
 
   const sepIdx = sepMatch.index || 0;
   const beforeSep = joined.substring(0, sepIdx).trim();
   const sepStr = sepMatch[0].trim();
   const afterSep = joined.substring(sepIdx + sepMatch[0].length).trim();
 
-  // Tìm vị trí phân cách giữa hàng đạo hàm (row 3) và hàng giá trị f(x) (row 4)
-  const row4Match = afterSep.match(/(?:\|\s*)(?:f\s*\([a-z]\)|y\b)/i);
+  // Tìm vị trí phân cách giữa hàng đạo hàm (y') và hàng hàm số (y)
+  // Chỉ khớp 'y' hoặc 'f(x)' khi KHÔNG theo sau bởi dấu ' / prime / ^
+  const row4Match = afterSep.match(/(?:\|{1,4}\s*|\s+)(?:\$?(?:y(?![’'′\^])|f\s*\([a-z]\))\$?)\s*\|/i);
   let row2 = afterSep;
   let row3 = '';
-  if (row4Match && row4Match.index !== undefined && row4Match.index > 3) {
+  if (row4Match && row4Match.index !== undefined) {
     row2 = afterSep.substring(0, row4Match.index).trim();
-    row3 = afterSep.substring(row4Match.index).trim();
-    if (!row3.startsWith('|')) row3 = '| ' + row3;
+    row3 = afterSep.substring(row4Match.index).replace(/^[| \t]+/, '').trim();
+  }
+
+  // Tách văn bản câu hỏi dính vào cuối row3 nếu có
+  let trailingText = '';
+  if (row3) {
+    const textMatch = row3.match(/^(.*?\|)[ \t]*([A-Za-zÀ-ỹĐđ#*].*)$/);
+    if (textMatch) {
+      row3 = textMatch[1].trim();
+      trailingText = textMatch[2].trim();
+    }
   }
 
   const cleanRowCells = (r: string) => {
-    return r.split('|').map(cell => {
-      let c = cell.replace(/\s+/g, ' ').trim();
-      if (/e\s*a\s*r\s*r\s*o\s*w/i.test(c) || /n\s*e\s*a\s*r\s*r\s*o\s*w/i.test(c)) return '↗';
-      if (/s\s*e\s*a\s*r\s*r\s*o\s*w/i.test(c)) return '↘';
-      if (c === '--' || c === '- -') return '-';
-      if (c === '++' || c === '+ +') return '+';
-      if (c === '00' || c === '0 0') return '0';
-      if (c === '11' || c === '1 1') return '1';
-      if (c === '22' || c === '2 2') return '2';
-      if (c === '55' || c === '5 5') return '5';
-      if (c === '↘↘' || c === '↘ ↘') return '↘';
-      if (c === '↗↗' || c === '↗ ↗') return '↗';
-      if (c === '-∞-∞' || c === '- ∞ -∞' || c === '-∞ -∞') return '-∞';
-      if (c === '+∞+∞' || c === '+ ∞ +∞' || c === '+∞ +∞') return '+∞';
-      if (c === '-1-1' || c === '- 1 -1' || c === '-1 -1') return '-1';
-      if (c.includes("f'(x)") || c.includes("f ′ (x)") || c.includes("f' (x)")) return "f'(x)";
-      if (c.includes("f(x)")) return "f(x)";
-      if (c === 'xx' || c === 'x x') return 'x';
-      const parts = c.split(' ');
-      if (parts.length === 2 && parts[0] === parts[1]) return parts[0];
-      return c;
-    }).join(' | ');
+    let clean = r.trim().replace(/^\|+/, '').replace(/\|+$/, '');
+    clean = clean.replace(/\|{2,}/g, '| __DBLBAR__ |');
+    return clean.split('|').map(cell => cleanMathText(cell)).join(' | ');
   };
 
-  const rows = [cleanRowCells(beforeSep).trim(), sepStr, cleanRowCells(row2).trim()];
-  if (row3) rows.push(cleanRowCells(row3).trim());
-  return rows.join('\n');
+  const rows = [
+    ensureRowPipes(cleanRowCells(beforeSep)),
+    ensureRowPipes(sepStr),
+    ensureRowPipes(cleanRowCells(row2))
+  ];
+  if (row3) {
+    rows.push(ensureRowPipes(cleanRowCells(row3)));
+  }
+
+  const tableResult = rows.filter(Boolean).join('\n');
+  return trailingText ? `${tableResult}\n\n${trailingText}` : tableResult;
 }
 
 /**
@@ -475,10 +498,12 @@ export function parseMarkdownBbtTable(tableMarkdown: string): BBTData | null {
     if (lines.length < 2 || lines.length > 5) return null;
 
     const rowCells = lines.map(line => {
-      return line
-        .slice(1, -1)
+      let cleanLine = line.trim().replace(/^\|+/, '').replace(/\|+$/, '');
+      cleanLine = cleanLine.replace(/\|{2,}/g, '| __DBLBAR__ |').replace(/\|{2,}/g, '|');
+      return cleanLine
         .split(/(?<!\\)\|/)
-        .map(cell => cell.trim());
+        .map(cell => cell.trim())
+        .filter(Boolean);
     });
 
     // Kiểm tra hàng 1: bắt đầu bằng x hoặc t
@@ -510,7 +535,7 @@ export function parseMarkdownBbtTable(tableMarkdown: string): BBTData | null {
     const xValues: string[] = [];
     for (let c = 0; c < xCells.length; c++) {
       const val = cleanMathText(xCells[c]);
-      if (val && val !== '') {
+      if (val && val !== '' && val !== '__DBLBAR__') {
         xValues.push(val);
       }
     }
@@ -570,40 +595,76 @@ export function parseMarkdownBbtTable(tableMarkdown: string): BBTData | null {
         const group = milestoneGroups[i] || [];
 
         // Kiểm tra tiệm cận đứng:
-        // - Nhóm có 2 giá trị (ví dụ: ["-\\infty", "+\\infty"])
-        // - Hoặc giá trị chứa vạch đôi || (ví dụ: "-\\infty || +\\infty")
-        // - Hoặc hàng y' tại mốc này có vạch đôi || hoặc d
-        const yPcell = yPrimeCells.find((c, idx) => (c.includes('||') || c.includes('\\|') || c === 'd') && (idx === i || idx === i * 2));
-        const hasDoubleBarInYP = !!yPcell;
+        // - Nhóm có 2 giá trị hoặc chứa token __DBLBAR__ / ||
+        // - Hoặc hàng y' tại mốc này có vạch đôi __DBLBAR__ / || / d
+        const hasDoubleBarInYP = yPrimeCells.some((c, idx) => (c === '__DBLBAR__' || c.includes('||') || c.includes('\\|') || c === 'd') && (idx === i || idx === i * 2 || idx === i - 1 || idx === i + 1));
+        const hasDoubleBarInGroup = group.some(c => c === '__DBLBAR__' || c.includes('||') || c.includes('\\|'));
 
         let isAsym = false;
         let yVal: string | undefined = undefined;
         let yLeftVal: string | undefined = undefined;
         let yRightVal: string | undefined = undefined;
 
-        if (group.length >= 2) {
+        const cleanGroup = group.filter(c => c !== '__DBLBAR__' && !c.includes('||'));
+
+        if (cleanGroup.length >= 2 || hasDoubleBarInGroup) {
           isAsym = true;
-          yLeftVal = group[0];
-          yRightVal = group[1];
-        } else if (group.length === 1 && (group[0].includes('||') || group[0].includes('\\|'))) {
-          isAsym = true;
-          const parts = group[0].split(/\|\||\\\|/).map(s => s.trim());
-          yLeftVal = parts[0] || '+\\infty';
-          yRightVal = parts[1] || '-\\infty';
-        } else if (group.length === 1) {
+          yLeftVal = cleanGroup[0] || '+\\infty';
+          yRightVal = cleanGroup[cleanGroup.length - 1] || '-\\infty';
+        } else if (cleanGroup.length === 1) {
           if (hasDoubleBarInYP && i > 0 && i < xValues.length - 1) {
             isAsym = true;
-            yLeftVal = group[0];
-            yRightVal = group[0];
+            yLeftVal = cleanGroup[0];
+            yRightVal = cleanGroup[0];
           } else {
-            yVal = group[0];
+            yVal = cleanGroup[0];
           }
         }
 
         let yPos: 'top' | 'bottom' | 'middle' = 'middle';
         if (yVal) {
-          if (yVal.includes('-\\infty') || yVal.includes('-∞')) yPos = 'bottom';
-          else if (yVal.includes('+\\infty') || yVal.includes('+∞')) yPos = 'top';
+          if (yVal.includes('-\\infty') || yVal.includes('-∞')) {
+            yPos = 'bottom';
+          } else if (yVal.includes('+\\infty') || yVal.includes('+∞')) {
+            yPos = 'top';
+          } else {
+            const leftTrend = i > 0 ? (intervalTrends[i - 1] || (signs[i - 1] === '-' ? 'decreasing' : 'increasing')) : null;
+            const rightTrend = i < xValues.length - 1 ? (intervalTrends[i] || (signs[i] === '-' ? 'decreasing' : 'increasing')) : null;
+
+            if (leftTrend === 'increasing' && rightTrend === 'decreasing') {
+              yPos = 'top'; // Cực đại
+            } else if (leftTrend === 'decreasing' && rightTrend === 'increasing') {
+              yPos = 'bottom'; // Cực tiểu
+            } else if (i === 0) {
+              yPos = rightTrend === 'decreasing' ? 'top' : 'bottom';
+            } else if (i === xValues.length - 1) {
+              yPos = leftTrend === 'increasing' ? 'top' : 'bottom';
+            }
+          }
+        }
+
+        let yLeftPos: 'top' | 'bottom' | 'middle' = 'top';
+        if (yLeftVal) {
+          if (yLeftVal.includes('-\\infty') || yLeftVal.includes('-∞')) {
+            yLeftPos = 'bottom';
+          } else if (yLeftVal.includes('+\\infty') || yLeftVal.includes('+∞')) {
+            yLeftPos = 'top';
+          } else {
+            const leftTrend = i > 0 ? (intervalTrends[i - 1] || (signs[i - 1] === '-' ? 'decreasing' : 'increasing')) : null;
+            yLeftPos = leftTrend === 'increasing' ? 'top' : 'bottom';
+          }
+        }
+
+        let yRightPos: 'top' | 'bottom' | 'middle' = 'bottom';
+        if (yRightVal) {
+          if (yRightVal.includes('-\\infty') || yRightVal.includes('-∞')) {
+            yRightPos = 'bottom';
+          } else if (yRightVal.includes('+\\infty') || yRightVal.includes('+∞')) {
+            yRightPos = 'top';
+          } else {
+            const rightTrend = i < xValues.length - 1 ? (intervalTrends[i] || (signs[i] === '-' ? 'decreasing' : 'increasing')) : null;
+            yRightPos = rightTrend === 'decreasing' ? 'top' : 'bottom';
+          }
         }
 
         points.push({
@@ -613,9 +674,9 @@ export function parseMarkdownBbtTable(tableMarkdown: string): BBTData | null {
           yVal: isAsym ? undefined : yVal,
           yPosition: yPos,
           yLeftVal,
-          yLeftPosition: yLeftVal?.includes('-') ? 'bottom' : 'top',
+          yLeftPosition: yLeftPos,
           yRightVal,
-          yRightPosition: yRightVal?.includes('+') ? 'top' : 'bottom'
+          yRightPosition: yRightPos
         });
 
         if (i < xValues.length - 1) {
@@ -641,7 +702,7 @@ export function parseMarkdownBbtTable(tableMarkdown: string): BBTData | null {
         const yP = yPrimeCells[c] ? yPrimeCells[c].replace(/\$/g, '').trim() : undefined;
         const yValRaw = yCells[c] ? yCells[c].replace(/\$/g, '').trim() : '';
 
-        const isAsym = (yP && (yP === '||' || yP.includes('||') || yP.includes('\\|') || yP === 'd')) || yValRaw.includes('||') || yValRaw.includes('\\|');
+        const isAsym = (yP && (yP === '__DBLBAR__' || yP === '||' || yP.includes('||') || yP.includes('\\|') || yP === 'd')) || yValRaw.includes('__DBLBAR__') || yValRaw.includes('||') || yValRaw.includes('\\|');
 
         let yLeftVal: string | undefined;
         let yRightVal: string | undefined;
@@ -1495,7 +1556,13 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
       .replace(/\$/g, '')
       .replace(/^y\s*=\s*/i, '')
       .replace(/^f\([a-z]\)\s*=\s*/i, '')
-      .replace(/^g\([a-z]\)\s*=\s*/i, '');
+      .replace(/^g\([a-z]\)\s*=\s*/i, '')
+      .replace(/\\frac\s*\{([^}]+)\}\s*\{([^}]+)\}/g, '($1)/($2)')
+      .replace(/\\cdot|\\times/g, '*')
+      .replace(/[−–—]/g, '-')
+      .replace(/²/g, '^2')
+      .replace(/³/g, '^3')
+      .replace(/⁴/g, '^4');
 
     const width = 420;
     const height = 300;
@@ -1592,24 +1659,24 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
     let slantAsym: { m: number; n: number } | null = null;
 
     if (currentExpr.includes('/')) {
-      const parts = currentExpr.split('/');
-      if (parts.length === 2) {
-        const numCoeffs = parsePolynomialCoeffs(parts[0].replace(/^\(|\)$/g, ''));
-        const denCoeffs = parsePolynomialCoeffs(parts[1].replace(/^\(|\)$/g, ''));
-        if (denCoeffs[1] && denCoeffs[1] !== 0) {
-          xAsym = -(denCoeffs[0] || 0) / denCoeffs[1];
-          if (numCoeffs[2] === undefined || numCoeffs[2] === 0) {
-            yAsym = (numCoeffs[1] || 0) / denCoeffs[1];
-          } else if (numCoeffs[2]) {
-            // Hàm phân thức bậc 2 trên bậc 1 (Toán 12 GDPT 2018): tiệm cận xiên y = mx + n
-            const d = denCoeffs[1];
-            const e = denCoeffs[0] || 0;
-            const a = numCoeffs[2];
-            const b = numCoeffs[1] || 0;
-            const m = a / d;
-            const n = (b * d - a * e) / (d * d);
-            slantAsym = { m, n };
-          }
+      const slashIndex = currentExpr.indexOf('/');
+      const numPart = currentExpr.substring(0, slashIndex).replace(/^\(+|\)+$/g, '');
+      const denPart = currentExpr.substring(slashIndex + 1).replace(/^\(+|\)+$/g, '');
+      const numCoeffs = parsePolynomialCoeffs(numPart);
+      const denCoeffs = parsePolynomialCoeffs(denPart);
+      if (denCoeffs[1] && denCoeffs[1] !== 0) {
+        xAsym = -(denCoeffs[0] || 0) / denCoeffs[1];
+        if (numCoeffs[2] === undefined || numCoeffs[2] === 0) {
+          yAsym = (numCoeffs[1] || 0) / denCoeffs[1];
+        } else if (numCoeffs[2]) {
+          // Hàm phân thức bậc 2 trên bậc 1 (Toán 12 GDPT 2018): tiệm cận xiên y = mx + n
+          const d = denCoeffs[1];
+          const e = denCoeffs[0] || 0;
+          const a = numCoeffs[2];
+          const b = numCoeffs[1] || 0;
+          const m = a / d;
+          const n = (b * d - a * e) / (d * d);
+          slantAsym = { m, n };
         }
       }
     }
@@ -1850,16 +1917,26 @@ export interface AiFixResult {
  * - Nếu nhận diện được công thức toán học: Tạo BBT / Đồ thị SVG vector 100% chính xác.
  * - Nếu là bài toán hàm ẩn / trừu tượng không có biểu thức đại số cố định: Chèn khối Chú thích dành cho GV.
  */
-export function aiFixQuestionVisuals(content: string, solution?: string): AiFixResult {
+export function aiFixQuestionVisuals(content: string, solution?: string, options?: string[]): AiFixResult {
   if (!content) return { updatedContent: content || '', updatedSolution: solution || '', status: 'none', message: 'Nội dung câu hỏi rỗng.' };
 
   const mentionsBbt = /(bảng\s*biến\s*thiên|BBT|bbt|dấu\s*của\s*f'\(x\)|chiều\s*biến\s*thiên|khảo\s*sát\s*sự\s*biến\s*thiên)/i.test(content);
   const mentionsGraph = /(đồ\s*thị|hình\s*bên|hình\s*vẽ|như\s*hình|parabol|tiệm\s*cận)/i.test(content);
 
-  // 1. Thử nhận diện công thức đại số cố định
-  const formulaMatch = content.match(/(?:y|f\(x\)|g\(x\))\s*=\s*([^,;.\n$\)]+)/i) || 
+  // 1. Thử nhận diện công thức đại số cố định từ content, solution hoặc options
+  let formulaMatch = content.match(/(?:y|f\(x\)|g\(x\))\s*=\s*([^,;.\n$\)]+)/i) || 
                        content.match(/hàm\s*số\s*(?:\$)?(?:y\s*=\s*)?([^,;.\n$]+)/i) ||
                        (solution || '').match(/(?:y|f\(x\))\s*=\s*([^,;.\n$\)]+)/i);
+
+  if (!formulaMatch && Array.isArray(options) && options.length > 0) {
+    for (const opt of options) {
+      const optM = opt.match(/(?:y|f\(x\))\s*=\s*([^,;.\n$]+)/i) || opt.match(/(?:\$)?([^$]+)(?:\$)?/);
+      if (optM && (optM[1].includes('x') || optM[1].includes('X')) && !/nào\s*dưới\s*đây/i.test(optM[1])) {
+        formulaMatch = optM;
+        break;
+      }
+    }
+  }
 
   let updatedC = content;
   let updatedS = solution || '';
@@ -1954,8 +2031,55 @@ export function aiFixQuestionVisuals(content: string, solution?: string): AiFixR
 /**
  * Tự động sinh dữ liệu BBT đại diện chuẩn SGK cho các câu hỏi tổng quát $y = f(x)$
  */
-export function syntheticBbtFromQuestion(block: string): BBTData {
+export function syntheticBbtFromQuestion(block: string, options?: string[]): BBTData {
   const isSignTable = /bảng\s*xét\s*dấu/i.test(block);
+  const lower = (block + ' ' + (options || []).join(' ')).toLowerCase();
+
+  // 1. Nếu câu hỏi về TIỆM CẬN, PHÂN THỨC HỮU TỶ hoặc có chứa phân thức:
+  // TUYỆT ĐỐI KHÔNG sinh bảng bậc 3! Sinh bảng phân thức chuẩn với tiệm cận đứng và tiệm cận ngang!
+  if (lower.includes('tiệm cận') || lower.includes('phân thức') || lower.includes('/') || lower.includes('bậc nhất trên bậc nhất') || /\\frac/i.test(block)) {
+    const xMatch = block.match(/x\s*=\s*([-–—]?\d+)/i);
+    const yMatch = block.match(/y\s*=\s*([-–—]?\d+)/i);
+    const xAsym = xMatch ? xMatch[1].replace(/[−–—]/g, '-') : '1';
+    const yAsym = yMatch ? yMatch[1].replace(/[−–—]/g, '-') : '2';
+
+    const isNeg = lower.includes('nghịch biến') || lower.includes('nghich bien') || (block.match(/-/g) || []).length > (block.match(/\+/g) || []).length;
+    const sign: '+' | '-' = isNeg ? '-' : '+';
+    const trend: 'increasing' | 'decreasing' = isNeg ? 'decreasing' : 'increasing';
+
+    return {
+      functionName: 'y = f(x)',
+      domainNote: 'Bảng biến thiên',
+      points: [
+        { x: '-\\infty', yVal: yAsym, yPosition: isNeg ? 'top' : 'bottom' },
+        {
+          x: xAsym,
+          yPrime: '||',
+          isAsymptote: true,
+          yPosition: 'middle',
+          yLeftVal: isNeg ? '-\\infty' : '+\\infty',
+          yLeftPosition: isNeg ? 'bottom' : 'top',
+          yRightVal: isNeg ? '+\\infty' : '-\\infty',
+          yRightPosition: isNeg ? 'top' : 'bottom'
+        },
+        { x: '+\\infty', yVal: yAsym, yPosition: isNeg ? 'bottom' : 'top' }
+      ],
+      intervals: [
+        { sign, trend },
+        { sign, trend }
+      ],
+      showDerivative: true
+    };
+  }
+
+  // 2. Nếu câu hỏi xác định trên đoạn đóng [a; b], ví dụ: liên tục trên [-2; 3]
+  const domainMatch = block.match(/(?:trên\s*đoạn|liên\s*tục\s*trên)\s*\[\s*([-–—]?\d+)\s*;\s*([-–—]?\d+)\s*\]/i);
+  let domainA: number | null = null;
+  let domainB: number | null = null;
+  if (domainMatch) {
+    domainA = parseFloat(domainMatch[1].replace(/[−–—]/g, '-'));
+    domainB = parseFloat(domainMatch[2].replace(/[−–—]/g, '-'));
+  }
 
   const rawNumMatches = Array.from(block.matchAll(/(?<![a-zA-Z_\$\\])[-–—]?\d+(?:\.\d+)?(?![a-zA-Z0-9_\$])/g))
     .map(m => parseFloat(m[0].replace(/[−–—]/g, '-')))
@@ -1982,14 +2106,25 @@ export function syntheticBbtFromQuestion(block: string): BBTData {
     }
   }
 
+  // Nếu có đoạn [a; b], sử dụng điểm đầu và điểm cuối là a và b
+  const startX = domainA !== null ? String(domainA) : '-\\infty';
+  const endX = domainB !== null ? String(domainB) : '+\\infty';
+
   const points: BBTPoint[] = [
-    { x: '-\\infty', yVal: '-\\infty', yPosition: 'bottom' }
+    { x: startX, yVal: domainA !== null ? '1' : '-\\infty', yPosition: 'bottom' }
   ];
   const intervals: BBTInterval[] = [];
 
   let currentSign: '+' | '-' = '+';
 
-  keyVals.forEach((xv, idx) => {
+  // Lọc keyVals nằm giữa startX và endX nếu có miền xác định
+  const validKeyVals = domainA !== null && domainB !== null
+    ? (sortedNums.filter(n => n > domainA! && n < domainB!))
+    : keyVals;
+
+  const actualKeys = validKeyVals.length > 0 ? validKeyVals : [0];
+
+  actualKeys.forEach((xv, idx) => {
     intervals.push({
       sign: currentSign,
       trend: currentSign === '+' ? 'increasing' : 'decreasing'
@@ -1999,7 +2134,7 @@ export function syntheticBbtFromQuestion(block: string): BBTData {
     points.push({
       x: String(xv),
       yPrime: '0',
-      yVal: isTop ? String(Math.max(2, 3 + idx)) : String(Math.min(-1, -1 - idx)),
+      yVal: isTop ? '5' : '-1',
       yPosition: isTop ? 'top' : 'bottom'
     });
 
@@ -2011,41 +2146,92 @@ export function syntheticBbtFromQuestion(block: string): BBTData {
     trend: currentSign === '+' ? 'increasing' : 'decreasing'
   });
   points.push({
-    x: '+\\infty',
-    yVal: currentSign === '+' ? '+\\infty' : '-\\infty',
+    x: endX,
+    yVal: domainB !== null ? '-2' : (currentSign === '+' ? '+\\infty' : '-\\infty'),
     yPosition: currentSign === '+' ? 'top' : 'bottom'
   });
 
   return {
     functionName: 'y = f(x)',
-    domainNote: isSignTable ? 'Bảng xét dấu đạo hàm f\'(x)' : 'Bảng biến thiên hàm số y = f(x)',
+    domainNote: isSignTable ? "Bảng xét dấu đạo hàm f'(x)" : (domainA !== null ? `Bảng biến thiên trên đoạn [${domainA}; ${domainB}]` : 'Bảng biến thiên hàm số y = f(x)'),
     points,
     intervals,
     showDerivative: true
   };
 }
 
-export function generateSyntheticGraphSvg(block: string): string | null {
+export function generateSyntheticGraphSvg(block: string, options?: string[]): string | null {
   if (!block) return null;
+
+  // 1. Kiểm tra nếu có công thức trong các phương án Lựa chọn (từ options truyền vào hoặc trong thân block)
+  if (Array.isArray(options) && options.length > 0) {
+    for (const opt of options) {
+      const optMatch = opt.match(/(?:y|f\(x\))\s*=\s*([^,;.\n$]+)/i) ||
+                       opt.match(/(?:\$)?([^$]+)(?:\$)?/);
+      if (optMatch && (optMatch[1].includes('x') || optMatch[1].includes('X')) && !/nào\s*dưới\s*đây/i.test(optMatch[1])) {
+        const expr = optMatch[1].trim().replace(/^\$|\$$/g, '');
+        const svg = generateFunctionGraphSvg(expr, block);
+        if (svg) return svg;
+      }
+    }
+  }
+
+  const optAMatch = block.match(/(?:^|\n)\s*(?:\*{0,2}|[-*]\s*)?A[\.\:\)]\s*(?:\$)?(?:y\s*=\s*)?([^,\n\$\|]+)/i);
+  if (optAMatch) {
+    const candidate = optAMatch[1].trim();
+    if ((candidate.includes('x') || candidate.includes('X')) && !/nào\s*dưới\s*đây/i.test(candidate)) {
+      const svg = generateFunctionGraphSvg(candidate, block);
+      if (svg) return svg;
+    }
+  }
+
+  // 2. Kiểm tra nếu đề bài mô tả các điểm cực trị (ví dụ: cực trị (0;0) và (2;-4), dạng chữ N)
+  const ptRegex = /\(\s*([-–—]?\d+(?:\.\d+)?)\s*;\s*([-–—]?\d+(?:\.\d+)?)\s*\)/g;
+  const pts: [number, number][] = [];
+  let m: RegExpExecArray | null;
+  while ((m = ptRegex.exec(block)) !== null) {
+    pts.push([parseFloat(m[1].replace(/[−–—]/g, '-')), parseFloat(m[2].replace(/[−–—]/g, '-'))]);
+  }
+  if (pts.length >= 2 && (/cực\s*trị|cực\s*đại|cực\s*tiểu|chữ\s*N|bậc\s*3|bậc\s*ba/i.test(block))) {
+    const p1 = pts[0];
+    const p2 = pts.find(p => Math.abs(p[0] - p1[0]) > 0.1);
+    if (p2) {
+      const [x1, y1] = p1;
+      const [x2, y2] = p2;
+      const dx = x2 - x1;
+      const a = -2 * (y2 - y1) / Math.pow(dx, 3);
+      const b = -1.5 * a * (x1 + x2);
+      const c = 3 * a * x1 * x2;
+      const d = y1 - (a * Math.pow(x1, 3) + b * Math.pow(x1, 2) + c * x1);
+
+      const aStr = a === 1 ? '' : (a === -1 ? '-' : `${Number(a.toFixed(2))}`);
+      const bStr = b === 0 ? '' : (b > 0 ? `+ ${b === 1 ? '' : Number(b.toFixed(2))}x^2` : `- ${Math.abs(b) === 1 ? '' : Number(Math.abs(b).toFixed(2))}x^2`);
+      const cStr = c === 0 ? '' : (c > 0 ? `+ ${c === 1 ? '' : Number(c.toFixed(2))}x` : `- ${Math.abs(c) === 1 ? '' : Number(Math.abs(c).toFixed(2))}x`);
+      const dStr = d === 0 ? '' : (d > 0 ? `+ ${Number(d.toFixed(2))}` : `- ${Number(Math.abs(d).toFixed(2))}`);
+      const cubicExpr = `${aStr}x^3 ${bStr} ${cStr} ${dStr}`.replace(/\s+/g, ' ').trim();
+      const svg = generateFunctionGraphSvg(cubicExpr, block);
+      if (svg) return svg;
+    }
+  }
 
   const lower = block.toLowerCase();
 
   if (lower.includes('phân thức') || lower.includes('tiệm cận') || lower.includes('/') || lower.includes('bậc nhất trên bậc nhất')) {
-    return generateFunctionGraphSvg('(x+1)/(x-1)');
+    return generateFunctionGraphSvg('(x+1)/(x-1)', block);
   }
 
   if (lower.includes('trùng phương') || lower.includes('bậc 4') || lower.includes('x^4') || lower.includes('x⁴')) {
-    return generateFunctionGraphSvg('x^4 - 2*x^2');
+    return generateFunctionGraphSvg('x^4 - 2*x^2', block);
   }
 
   if (lower.includes('parabol') || lower.includes('bậc 2') || lower.includes('bậc hai')) {
-    return generateFunctionGraphSvg('x^2 - 2*x - 1');
+    return generateFunctionGraphSvg('x^2 - 2*x - 1', block);
   }
 
-  return generateFunctionGraphSvg('x^3 - 3*x');
+  return generateFunctionGraphSvg('x^3 - 3*x', block);
 }
 
-export function autoEnrichTextWithVisuals(text: string, isSolution: boolean = false): string {
+export function autoEnrichTextWithVisuals(text: string, isSolution: boolean = false, options?: string[]): string {
   if (!text) return '';
   let updated = text;
 
@@ -2078,14 +2264,34 @@ export function autoEnrichTextWithVisuals(text: string, isSolution: boolean = fa
 
     if (hasBbtText && !hasVisualAlready) {
       let bbt: BBTData | null = null;
-      const fMatch = b.match(/(?:y|f\(x\)|g\(x\))\s*=\s*([^,;.\n$]+)/i) ||
-                     b.match(/hàm\s*số\s*(?:\$)?(?:y\s*=\s*)?([^,;.\n$]+)/i);
-      if (fMatch) {
-        bbt = analyzeFunctionToBbt(fMatch[1].trim());
+      let fMatch = b.match(/(?:y|f\(x\)|g\(x\))\s*=\s*([^,;.\n$]+)/i) ||
+                   b.match(/hàm\s*số\s*(?:\$)?(?:y\s*=\s*)?([^,;.\n$]+)/i);
+
+      let exprCandidate = fMatch ? fMatch[1].trim() : '';
+      if (/nào\s*dưới\s*đây|cho\s*trước|đồng\s*biến|nghịch\s*biến/i.test(exprCandidate)) {
+        exprCandidate = '';
+      }
+
+      if (!exprCandidate && Array.isArray(options) && options.length > 0) {
+        const optMatch = options[0].match(/(?:y|f\(x\))\s*=\s*([^,;.\n$]+)/i) ||
+                         options[0].match(/(?:\$)?([^$]+)(?:\$)?/);
+        if (optMatch && (optMatch[1].includes('x') || optMatch[1].includes('X'))) {
+          exprCandidate = optMatch[1].trim().replace(/^\$|\$$/g, '');
+        }
+      }
+      if (!exprCandidate) {
+        const optAMatch = b.match(/(?:^|\n)\s*(?:\*{0,2}|[-*]\s*)?A[\.\:\)]\s*(?:\$)?(?:y\s*=\s*)?([^,\n\$\|]+)/i);
+        if (optAMatch && (optAMatch[1].includes('x') || optAMatch[1].includes('X'))) {
+          exprCandidate = optAMatch[1].trim();
+        }
+      }
+
+      if (exprCandidate) {
+        bbt = analyzeFunctionToBbt(exprCandidate);
       }
 
       if (!bbt) {
-        bbt = syntheticBbtFromQuestion(b);
+        bbt = syntheticBbtFromQuestion(b, options);
       }
 
       if (bbt) {
@@ -2118,14 +2324,34 @@ export function autoEnrichTextWithVisuals(text: string, isSolution: boolean = fa
 
     if (hasGraphText && !hasGraphAlready) {
       let graphSvg: string | null = null;
-      const fMatch = b.match(/(?:y|f\(x\)|g\(x\))\s*=\s*([^,;.\n$]+)/i) ||
-                     b.match(/hàm\s*số\s*(?:\$)?(?:y\s*=\s*)?([^,;.\n$]+)/i);
-      if (fMatch) {
-        graphSvg = generateFunctionGraphSvg(fMatch[1].trim(), b);
+      let fMatch = b.match(/(?:y|f\(x\)|g\(x\))\s*=\s*([^,;.\n$]+)/i) ||
+                   b.match(/hàm\s*số\s*(?:\$)?(?:y\s*=\s*)?([^,;.\n$]+)/i);
+
+      let exprCandidate = fMatch ? fMatch[1].trim() : '';
+      if (/nào\s*dưới\s*đây|cho\s*trước|đồng\s*biến|nghịch\s*biến/i.test(exprCandidate)) {
+        exprCandidate = '';
+      }
+
+      if (!exprCandidate && Array.isArray(options) && options.length > 0) {
+        const optMatch = options[0].match(/(?:y|f\(x\))\s*=\s*([^,;.\n$]+)/i) ||
+                         options[0].match(/(?:\$)?([^$]+)(?:\$)?/);
+        if (optMatch && (optMatch[1].includes('x') || optMatch[1].includes('X'))) {
+          exprCandidate = optMatch[1].trim().replace(/^\$|\$$/g, '');
+        }
+      }
+      if (!exprCandidate) {
+        const optAMatch = b.match(/(?:^|\n)\s*(?:\*{0,2}|[-*]\s*)?A[\.\:\)]\s*(?:\$)?(?:y\s*=\s*)?([^,\n\$\|]+)/i);
+        if (optAMatch && (optAMatch[1].includes('x') || optAMatch[1].includes('X'))) {
+          exprCandidate = optAMatch[1].trim();
+        }
+      }
+
+      if (exprCandidate) {
+        graphSvg = generateFunctionGraphSvg(exprCandidate, b);
       }
 
       if (!graphSvg) {
-        graphSvg = generateSyntheticGraphSvg(b);
+        graphSvg = generateSyntheticGraphSvg(b, options);
       }
 
       if (graphSvg) {

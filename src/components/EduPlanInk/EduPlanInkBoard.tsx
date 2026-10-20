@@ -275,6 +275,11 @@ export const EduPlanInkBoard: React.FC = () => {
         };
         img.src = currentPage.customBgUrl;
         imageCache.current.set(currentPage.customBgUrl, img);
+      } else if (!img.complete) {
+        img.onload = () => {
+          renderBackground();
+          renderStaticStrokes();
+        };
       }
 
       if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
@@ -1378,20 +1383,29 @@ export const EduPlanInkBoard: React.FC = () => {
         const maxPagesToLoad = Math.min(totalPages, 30);
         setPdfLoadingStatus(`Đang chuyển đổi ${maxPagesToLoad} trang PDF sang hình ảnh HD...`);
 
-        const { pages: renderedPages } = await renderPdfPageRange(arrayBuffer, 1, maxPagesToLoad, 2.0);
+        const { pages: renderedPages } = await renderPdfPageRange(arrayBuffer, 1, maxPagesToLoad, 1.5);
 
         if (!renderedPages || renderedPages.length === 0) {
-          alert('Không thể trích xuất trang từ tệp PDF này. Vui lòng kiểm tra lại file.');
+          setPdfLoadingStatus('⚠️ Không thể trích xuất trang từ tệp PDF này. Vui lòng kiểm tra lại file.');
+          setTimeout(() => {
+            setIsLoadingPdf(false);
+            setPdfLoadingStatus('');
+          }, 3000);
           return;
         }
 
-        // Preload images into cache
-        renderedPages.forEach((dataUrl) => {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.src = dataUrl;
-          imageCache.current.set(dataUrl, img);
-        });
+        // Đảm bảo ảnh đã giải mã xong vào imageCache trước khi render
+        await Promise.all(
+          renderedPages.map(async (dataUrl) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.src = dataUrl;
+            imageCache.current.set(dataUrl, img);
+            try {
+              if (img.decode) await img.decode();
+            } catch {}
+          })
+        );
 
         const baseTitle = file.name.replace(/\.[^/.]+$/, '');
         const isCurrentEmpty =
@@ -1451,17 +1465,21 @@ export const EduPlanInkBoard: React.FC = () => {
           setCurrentColor('#0f172a');
         }
 
+        setIsLoadingPdf(false);
+        setPdfLoadingStatus('');
+
         // Trigger immediate render
         setTimeout(() => {
           renderBackground();
           renderStaticStrokes();
-        }, 60);
+        }, 30);
       } catch (err) {
         console.error('Error importing PDF to whiteboard:', err);
-        alert('Có lỗi xảy ra khi mở tệp PDF. Vui lòng thử lại.');
-      } finally {
-        setIsLoadingPdf(false);
-        setPdfLoadingStatus('');
+        setPdfLoadingStatus('⚠️ Có lỗi xảy ra khi mở tệp PDF. Vui lòng thử lại.');
+        setTimeout(() => {
+          setIsLoadingPdf(false);
+          setPdfLoadingStatus('');
+        }, 3000);
       }
     } else if (file.type.startsWith('image/')) {
       const reader = new FileReader();

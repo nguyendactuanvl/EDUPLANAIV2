@@ -70,13 +70,16 @@
           inlineMath: [['$', '$'], ['\\(', '\\)']],
           displayMath: [['$$', '$$'], ['\\[', '\\]']],
           processEscapes: true,
-          processEnvironments: true
+          processEnvironments: true,
+          packages: {'[+]': ['base', 'ams', 'noerrors', 'noundefined']}
         },
         svg: {
           fontCache: 'global'
         },
         options: {
-          skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+          skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'svg', 'svg-wrapper', 'code'],
+          ignoreHtmlClass: 'tex2jax_ignore|svg-wrapper',
+          processHtmlClass: 'tex2jax_process',
           renderActions: {
             addLatexAttribute: [150, function(doc) {
               if (doc && doc.math) {
