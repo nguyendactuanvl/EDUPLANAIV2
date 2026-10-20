@@ -1705,7 +1705,7 @@ export function mapMathPropertiesToSvgCoordinates(expression: string, contextBlo
       if (pt.yPrime === '0' && pt.x && pt.yVal) {
         const numX = snapCoordinateToGrid(parseFloat(pt.x.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/, '$1/$2')));
         const numY = snapCoordinateToGrid(parseFloat(pt.yVal.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/, '$1/$2')));
-        if (!isNaN(numX) && !isNaN(numY) && Math.abs(numX) <= 6.5 && Math.abs(numY) <= 6.5) {
+        if (!isNaN(numX) && !isNaN(numY) && Math.abs(numX) <= 10 && Math.abs(numY) <= 12) {
           extrema.push({
             x: numX,
             y: numY,
@@ -1723,12 +1723,34 @@ export function mapMathPropertiesToSvgCoordinates(expression: string, contextBlo
     ptMatches.forEach(m => {
       const px = snapCoordinateToGrid(parseFloat(m[1].replace(/[−–—]/g, '-')));
       const py = snapCoordinateToGrid(parseFloat(m[2].replace(/[−–—]/g, '-')));
-      if (!isNaN(px) && !isNaN(py) && Math.abs(px) <= 6.5 && Math.abs(py) <= 6.5) {
+      if (!isNaN(px) && !isNaN(py) && Math.abs(px) <= 10 && Math.abs(py) <= 12) {
         if (!extrema.some(e => Math.abs(e.x - px) < 1e-3 && Math.abs(e.y - py) < 1e-3)) {
           extrema.push({ x: px, y: py, isExtremum: true });
         }
       }
     });
+  }
+
+  // 3. Tự động giải hệ số hàm bậc ba khi đề bài cho hàm ẩn y = ax^3 + bx^2 + cx + d kèm điểm đi qua và cực trị
+  const hasSymbolicParams = /(?:[a-e]\*?x|[a-e]x\^|ax\^3|bx\^2|cx\+d)/i.test(clean);
+  if (hasSymbolicParams && extrema.length >= 2) {
+    const isCubic = /x\^3|bậc\s*ba/i.test(clean + ' ' + (contextBlock || ''));
+    if (isCubic) {
+      const sortedPts = [...extrema].sort((p1, p2) => p1.x - p2.x);
+      const p1 = sortedPts[0];
+      const p2 = sortedPts[1];
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      if (Math.abs(dx) > 1e-3) {
+        // Cho hàm số bậc ba y = ax^3 + bx^2 + cx + d đạt cực trị/điểm đặc biệt tại p1 và p2:
+        // dy = y2 - y1 = -0.5 * a * dx^3 => a = -2 * dy / (dx^3)
+        const aVal = snapCoordinateToGrid(-2 * dy / Math.pow(dx, 3));
+        const bVal = snapCoordinateToGrid(-1.5 * aVal * (p1.x + p2.x));
+        const cVal = snapCoordinateToGrid(3 * aVal * p1.x * p2.x);
+        const dVal = snapCoordinateToGrid(p1.y - (aVal * Math.pow(p1.x, 3) + bVal * Math.pow(p1.x, 2) + cVal * p1.x));
+        clean = `${aVal}*x^3 + (${bVal})*x^2 + (${cVal})*x + (${dVal})`;
+      }
+    }
   }
 
   return {
@@ -1743,7 +1765,7 @@ export function mapMathPropertiesToSvgCoordinates(expression: string, contextBlo
 
 /**
  * Sinh đồ thị hàm số vector SVG chuẩn SGK Toán 10, 11, 12 GDPT 2018
- * Hiển thị đầy đủ hệ trục Oxy, điểm cực trị, tiệm cận và đường cong sắc nét
+ * Hiển thị đầy đủ hệ trục Oxy, điểm cực trị, tiệm cận nét đứt và đường cong sắc nét
  */
 export function generateFunctionGraphSvg(expression: string, contextBlock?: string): string | null {
   try {
@@ -1753,8 +1775,42 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
     const width = 420;
     const height = 300;
     const originX = 210;
-    const originY = 150;
-    const scale = 26; // 26 pixels per unit
+
+    // Phân tích khoảng giá trị Y cần hiển thị dựa trên cực trị, tiệm cận, điểm đặc biệt
+    let maxYNeeded = 5;
+    let minYNeeded = -5;
+    if (mapped.extrema && mapped.extrema.length > 0) {
+      mapped.extrema.forEach(pt => {
+        if (isFinite(pt.y)) {
+          if (pt.y > maxYNeeded) maxYNeeded = pt.y;
+          if (pt.y < minYNeeded) minYNeeded = pt.y;
+        }
+      });
+    }
+    if (mapped.yAsymptote !== null && isFinite(mapped.yAsymptote)) {
+      if (mapped.yAsymptote > maxYNeeded) maxYNeeded = mapped.yAsymptote;
+      if (mapped.yAsymptote < minYNeeded) minYNeeded = mapped.yAsymptote;
+    }
+    if (mapped.slantAsymptote !== null && mapped.xAsymptote !== null) {
+      const yCenter = mapped.slantAsymptote.m * mapped.xAsymptote + mapped.slantAsymptote.n;
+      if (isFinite(yCenter)) {
+        if (yCenter > maxYNeeded) maxYNeeded = yCenter;
+        if (yCenter < minYNeeded) minYNeeded = yCenter;
+      }
+    }
+
+    const ySpan = Math.max(10, maxYNeeded - minYNeeded + 2);
+    // Nếu ySpan lớn (như hàm phân thức tiệm cận xiên có cực trị y=7, y=-1 -> span = 10..12), điều chỉnh scale vừa vặn
+    let scale = 26;
+    if (ySpan > 10) {
+      scale = Math.max(18, Math.min(24, Math.floor((height - 50) / ySpan)));
+    }
+    // Căn chỉnh trục Ox (originY) sao cho vùng trọng tâm đồ thị nằm chính giữa khung nhìn
+    const midY = (maxYNeeded + minYNeeded) / 2;
+    let originY = 150;
+    if (Math.abs(midY) > 0.5) {
+      originY = Math.max(110, Math.min(190, Math.round(150 + midY * scale * 0.35)));
+    }
 
     const toSvgX = (x: number) => snapCoordinateToGrid(originX + x * scale, 1e-2);
     const toSvgY = (y: number) => snapCoordinateToGrid(originY - y * scale, 1e-2);
@@ -1832,9 +1888,9 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
       }
     };
 
-    const minX = -6.5;
-    const maxX = 6.5;
-    const step = 0.05;
+    const minX = -Math.floor((originX - 15) / scale) - 0.5;
+    const maxX = Math.floor((width - originX - 15) / scale) + 0.5;
+    const step = 0.04;
     let pathD = '';
     let validPointsCount = 0;
 
@@ -1844,12 +1900,12 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
 
     let inSubpath = false;
     for (let xVal = minX; xVal <= maxX; xVal += step) {
-      if (xAsym !== null && Math.abs(xVal - xAsym) < 0.15) {
+      if (xAsym !== null && Math.abs(xVal - xAsym) < 0.12) {
         inSubpath = false;
         continue;
       }
       const yVal = evalY(xVal, currentExpr);
-      if (yVal === null || isNaN(yVal) || !isFinite(yVal) || Math.abs(yVal) > 6.5) {
+      if (yVal === null || isNaN(yVal) || !isFinite(yVal)) {
         inSubpath = false;
         continue;
       }
@@ -1857,7 +1913,8 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
       const sx = toSvgX(xVal);
       const sy = toSvgY(yVal);
 
-      if (sx < 10 || sx > width - 10 || sy < 10 || sy > height - 10) {
+      // Cho phép đường cong vẽ trọn vẹn cả 2 nhánh (không bị giới hạn y=6.5 giả định)
+      if (sx < 8 || sx > width - 8 || sy < 8 || sy > height - 8) {
         inSubpath = false;
         continue;
       }
@@ -1907,12 +1964,12 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
       pathD = '';
       inSubpath = false;
       for (let xVal = minX; xVal <= maxX; xVal += step) {
-        if (xAsym !== null && Math.abs(xVal - xAsym) < 0.15) {
+        if (xAsym !== null && Math.abs(xVal - xAsym) < 0.12) {
           inSubpath = false;
           continue;
         }
         const yVal = evalY(xVal, currentExpr);
-        if (yVal === null || isNaN(yVal) || !isFinite(yVal) || Math.abs(yVal) > 6.5) {
+        if (yVal === null || isNaN(yVal) || !isFinite(yVal)) {
           inSubpath = false;
           continue;
         }
@@ -1920,7 +1977,7 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
         const sx = toSvgX(xVal);
         const sy = toSvgY(yVal);
 
-        if (sx < 10 || sx > width - 10 || sy < 10 || sy > height - 10) {
+        if (sx < 8 || sx > width - 8 || sy < 8 || sy > height - 8) {
           inSubpath = false;
           continue;
         }
@@ -1936,7 +1993,7 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
 
     const svgParts: string[] = [];
 
-    // Grid definition (aligned with origin for 1-to-1 grid coordinate mapping)
+    // Grid definition (khớp 100% từng đơn vị với hệ trục và gốc O)
     svgParts.push(`<defs>
       <pattern id="graph-grid" width="${scale}" height="${scale}" patternUnits="userSpaceOnUse" x="${originX}" y="${originY}">
         <path d="M ${scale} 0 L 0 0 0 ${scale}" fill="none" stroke="#f1f5f9" stroke-width="1" />
@@ -1950,16 +2007,16 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
     svgParts.push(`<rect width="${width}" height="${height}" fill="#ffffff" />`);
     svgParts.push(`<rect width="${width}" height="${height}" fill="url(#graph-grid)" />`);
 
-    // Asymptotes (Đường tiệm cận đứng, ngang, xiên nét đứt màu đỏ, vạch tọa độ trên trục)
+    // Asymptotes (Đường tiệm cận nét đứt, TUYỆT ĐỐI không ghi phương trình rườm rà, vạch tọa độ chính xác)
     if (xAsym !== null && isFinite(xAsym)) {
       const sx = toSvgX(xAsym);
-      svgParts.push(`<line x1="${sx.toFixed(1)}" y1="10" x2="${sx.toFixed(1)}" y2="${height - 10}" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="5,4" />`);
+      svgParts.push(`<line x1="${sx.toFixed(1)}" y1="8" x2="${sx.toFixed(1)}" y2="${height - 8}" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="5,4" />`);
       // Vạch tọa độ trên trục Ox
       svgParts.push(`<line x1="${sx.toFixed(1)}" y1="${originY - 4}" x2="${sx.toFixed(1)}" y2="${originY + 4}" stroke="#dc2626" stroke-width="1.5" />`);
     }
     if (yAsym !== null && isFinite(yAsym)) {
       const sy = toSvgY(yAsym);
-      svgParts.push(`<line x1="10" y1="${sy.toFixed(1)}" x2="${width - 10}" y2="${sy.toFixed(1)}" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="5,4" />`);
+      svgParts.push(`<line x1="8" y1="${sy.toFixed(1)}" x2="${width - 8}" y2="${sy.toFixed(1)}" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="5,4" />`);
       // Vạch tọa độ trên trục Oy
       svgParts.push(`<line x1="${originX - 4}" y1="${sy.toFixed(1)}" x2="${originX + 4}" y2="${sy.toFixed(1)}" stroke="#dc2626" stroke-width="1.5" />`);
     }
@@ -1986,29 +2043,37 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
     }
 
     // Axes
-    svgParts.push(`<line x1="15" y1="${originY}" x2="${width - 15}" y2="${originY}" stroke="#1e293b" stroke-width="1.5" marker-end="url(#graph-arrow)" />`);
-    svgParts.push(`<line x1="${originX}" y1="${height - 15}" x2="${originX}" y2="15" stroke="#1e293b" stroke-width="1.5" marker-end="url(#graph-arrow)" />`);
+    svgParts.push(`<line x1="12" y1="${originY}" x2="${width - 12}" y2="${originY}" stroke="#1e293b" stroke-width="1.5" marker-end="url(#graph-arrow)" />`);
+    svgParts.push(`<line x1="${originX}" y1="${height - 12}" x2="${originX}" y2="12" stroke="#1e293b" stroke-width="1.5" marker-end="url(#graph-arrow)" />`);
 
     // Origin and axis labels
     svgParts.push(`<text x="${originX - 12}" y="${originY + 16}" font-family="'Times New Roman', Times, serif" font-size="14" font-style="italic" fill="#0f172a">O</text>`);
-    svgParts.push(`<text x="${width - 18}" y="${originY + 18}" font-family="'Times New Roman', Times, serif" font-size="15" font-style="italic" fill="#0f172a">x</text>`);
-    svgParts.push(`<text x="${originX - 16}" y="18" font-family="'Times New Roman', Times, serif" font-size="15" font-style="italic" fill="#0f172a">y</text>`);
+    svgParts.push(`<text x="${width - 16}" y="${originY + 18}" font-family="'Times New Roman', Times, serif" font-size="15" font-style="italic" fill="#0f172a">x</text>`);
+    svgParts.push(`<text x="${originX - 16}" y="16" font-family="'Times New Roman', Times, serif" font-size="15" font-style="italic" fill="#0f172a">y</text>`);
 
     // Tick marks on axes
-    for (let u = -6; u <= 6; u++) {
+    const minTickX = Math.ceil((15 - originX) / scale);
+    const maxTickX = Math.floor((width - 15 - originX) / scale);
+    for (let u = minTickX; u <= maxTickX; u++) {
       if (u === 0) continue;
       const tx = toSvgX(u);
-      if (tx > 20 && tx < width - 20) {
+      if (tx > 15 && tx < width - 15) {
         svgParts.push(`<line x1="${tx}" y1="${originY - 3}" x2="${tx}" y2="${originY + 3}" stroke="#1e293b" stroke-width="1" />`);
-        if (Math.abs(u) <= 3) {
+        if (Math.abs(u) <= 4) {
           svgParts.push(`<text x="${tx}" y="${originY + 16}" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="12" fill="#475569">${u}</text>`);
         }
       }
+    }
+
+    const minTickY = Math.ceil((originY - (height - 15)) / scale);
+    const maxTickY = Math.floor((originY - 15) / scale);
+    for (let u = minTickY; u <= maxTickY; u++) {
+      if (u === 0) continue;
       const ty = toSvgY(u);
-      if (ty > 20 && ty < height - 20) {
+      if (ty > 15 && ty < height - 15) {
         svgParts.push(`<line x1="${originX - 3}" y1="${ty}" x2="${originX + 3}" y2="${ty}" stroke="#1e293b" stroke-width="1" />`);
-        if (Math.abs(u) <= 3) {
-          svgParts.push(`<text x="${originX - 12}" y="${ty + 4}" text-anchor="end" font-family="'Times New Roman', Times, serif" font-size="12" fill="#475569">${u}</text>`);
+        if (Math.abs(u) <= 4 || (mapped.extrema && mapped.extrema.some(e => Math.abs(e.y - u) < 0.1))) {
+          svgParts.push(`<text x="${originX - 8}" y="${ty + 4}" text-anchor="end" font-family="'Times New Roman', Times, serif" font-size="12" fill="#475569">${u}</text>`);
         }
       }
     }
@@ -2019,27 +2084,33 @@ export function generateFunctionGraphSvg(expression: string, contextBlock?: stri
     }
 
     // Key extreme points validated against mathematical function evalY
-    const validationResult = validateExtremaCoordinates(mapped.extrema, (x) => evalY(x, currentExpr));
+    const dynamicBounds = {
+      minX: minTickX - 0.5,
+      maxX: maxTickX + 0.5,
+      minY: minTickY - 0.5,
+      maxY: maxTickY + 0.5
+    };
+    const validationResult = validateExtremaCoordinates(mapped.extrema, (x) => evalY(x, currentExpr), dynamicBounds);
     validationResult.validExtrema.forEach(pt => {
-      if (Math.abs(pt.x) <= 6 && Math.abs(pt.y) <= 6) {
-        const px = toSvgX(pt.x);
-        const py = toSvgY(pt.y);
-        if (px > 20 && px < width - 20 && py > 20 && py < height - 20) {
-          svgParts.push(`<line x1="${px}" y1="${originY}" x2="${px}" y2="${py}" stroke="#64748b" stroke-dasharray="3,3" stroke-width="1" />`);
-          svgParts.push(`<line x1="${originX}" y1="${py}" x2="${px}" y2="${py}" stroke="#64748b" stroke-dasharray="3,3" stroke-width="1" />`);
-          svgParts.push(`<circle cx="${px}" cy="${py}" r="3.5" fill="#1e293b" />`);
-        }
+      const px = toSvgX(pt.x);
+      const py = toSvgY(pt.y);
+      if (px > 12 && px < width - 12 && py > 12 && py < height - 12) {
+        svgParts.push(`<line x1="${px}" y1="${originY}" x2="${px}" y2="${py}" stroke="#64748b" stroke-dasharray="3,3" stroke-width="1" />`);
+        svgParts.push(`<line x1="${originX}" y1="${py}" x2="${px}" y2="${py}" stroke="#64748b" stroke-dasharray="3,3" stroke-width="1" />`);
+        svgParts.push(`<circle cx="${px}" cy="${py}" r="3.5" fill="#1e293b" />`);
       }
     });
 
     // Highlight explicit y-intercept (0, d) e.g. (0,1) with dashed lines and axis tick mark
     const yAt0 = evalY(0, currentExpr);
-    if (yAt0 !== null && isFinite(yAt0) && Math.abs(yAt0) <= 6 && Math.abs(yAt0) > 0.01) {
+    if (yAt0 !== null && isFinite(yAt0) && Math.abs(yAt0) > 0.01) {
       const px = toSvgX(0);
       const py = toSvgY(yAt0);
-      svgParts.push(`<line x1="${originX - 4}" y1="${py}" x2="${originX + 4}" y2="${py}" stroke="#dc2626" stroke-width="1.5" />`);
-      svgParts.push(`<text x="${originX + 6}" y="${py + 4}" font-family="'Times New Roman', Times, serif" font-size="12" font-weight="bold" fill="#dc2626">${formatNumDisplay(yAt0)}</text>`);
-      svgParts.push(`<circle cx="${px}" cy="${py}" r="3" fill="#dc2626" />`);
+      if (py > 12 && py < height - 12) {
+        svgParts.push(`<line x1="${originX - 4}" y1="${py}" x2="${originX + 4}" y2="${py}" stroke="#dc2626" stroke-width="1.5" />`);
+        svgParts.push(`<text x="${originX + 6}" y="${py + 4}" font-family="'Times New Roman', Times, serif" font-size="12" font-weight="bold" fill="#dc2626">${formatNumDisplay(yAt0)}</text>`);
+        svgParts.push(`<circle cx="${px}" cy="${py}" r="3" fill="#dc2626" />`);
+      }
     }
 
     return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" class="max-w-full h-auto mx-auto my-3 drop-shadow-sm bg-white rounded-lg border border-slate-200">

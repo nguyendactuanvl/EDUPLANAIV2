@@ -30,7 +30,7 @@ import { apiFetch } from '../lib/apiFetch';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { parseRawExamText, parseExamWithAI, ParsedQuestion } from '../lib/examParser';
 import { exportHtmlToWord, downloadAllExamImagesFromElement } from '../lib/exportUtils';
-import { formatMathContent, sanitizeLatexString } from '../lib/utils';
+import { formatMathContent, sanitizeLatexString, cleanOptionText } from '../lib/utils';
 import { QuestionEditModal, QuestionData } from './QuestionEditModal';
 import { getHeaderConfig } from '../lib/headerConfig';
 
@@ -629,6 +629,42 @@ export function SimilarExamsModal({
     }
   };
 
+  // Export current exam to Word with formulas as high-res images
+  const handleExportSingleWordImage = async () => {
+    if (!singleExamContainerRef.current || !currentExam) return;
+    try {
+      setExportingWord(true);
+      await exportHtmlToWord(
+        singleExamContainerRef.current,
+        `De_Tuong_Tu_Ma_${currentExam.code}_Anh.docx`,
+        'image'
+      );
+    } catch (err: any) {
+      console.error('Word export image error:', err);
+      alert('Lỗi xuất file Word (Ảnh): ' + (err?.message || ''));
+    } finally {
+      setExportingWord(false);
+    }
+  };
+
+  // Export all 4 exams into 1 Word file with formulas as images
+  const handleExportAllFourWordImage = async () => {
+    if (!allExamsContainerRef.current || similarExams.length === 0) return;
+    try {
+      setExportingWord(true);
+      await exportHtmlToWord(
+        allExamsContainerRef.current,
+        `Tron_Bo_4_De_Tuong_Tu_1001_1002_1003_1004_Anh.docx`,
+        'image'
+      );
+    } catch (err: any) {
+      console.error('Word export all image error:', err);
+      alert('Lỗi xuất file Word (Ảnh): ' + (err?.message || ''));
+    } finally {
+      setExportingWord(false);
+    }
+  };
+
   // Export all 4 exams into 1 Word file with page breaks
   const handleExportAllFourWord = async () => {
     if (!allExamsContainerRef.current || similarExams.length === 0) return;
@@ -923,16 +959,29 @@ export function SimilarExamsModal({
                     {showDetailedSolutions ? 'Ẩn lời giải' : 'Hiện lời giải'}
                   </button>
 
-                  {/* Export Current Exam Word */}
+                  {/* Export Current Exam Word (Chuẩn OMML) */}
                   {activeTab !== 'matrix' && (
                     <button
                       onClick={handleExportSingleWord}
                       disabled={exportingWord}
                       className="px-3.5 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                      title="Xuất đề thi đang xem ra file Word .docx font Times New Roman, công thức toán OMML"
+                      title="Xuất đề thi đang xem ra file Word .docx font Times New Roman, công thức toán OMML chỉnh sửa được"
                     >
                       <Download className="w-3.5 h-3.5" />
                       Tải Đề Này (.docx)
+                    </button>
+                  )}
+
+                  {/* Export Current Exam Word (Ảnh) */}
+                  {activeTab !== 'matrix' && (
+                    <button
+                      onClick={handleExportSingleWordImage}
+                      disabled={exportingWord}
+                      className="px-3 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      title="Xuất đề thi đang xem ra file Word với công thức toán dạng ảnh sắc nét (không lo lỗi hiển thị trên máy học sinh/phụ huynh)"
+                    >
+                      <ImageIcon className="w-3.5 h-3.5 text-indigo-600" />
+                      Tải Word (Ảnh)
                     </button>
                   )}
 
@@ -946,6 +995,30 @@ export function SimilarExamsModal({
                     <FileDown className="w-3.5 h-3.5" />
                     Tải Trọn Bộ 4 Đề (.docx)
                   </button>
+
+                  {/* Export All 4 Exams Word (Ảnh) */}
+                  <button
+                    onClick={handleExportAllFourWordImage}
+                    disabled={exportingWord}
+                    className="px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Xuất trọn bộ 4 đề thi vào 1 file Word duy nhất dạng công thức ảnh chất lượng cao"
+                  >
+                    <FileDown className="w-3.5 h-3.5 text-emerald-600" />
+                    Tải 4 Đề (Ảnh)
+                  </button>
+
+                  {/* Export HD Diagrams / BBT / Graphs as PNG */}
+                  {activeTab !== 'matrix' && (
+                    <button
+                      onClick={handleDownloadExamImages}
+                      disabled={exportingWord}
+                      className="px-3 py-1.5 bg-purple-50 text-purple-800 border border-purple-200 hover:bg-purple-100 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      title="Xuất và tải về toàn bộ hình vẽ BBT, Đồ thị vector dạng ảnh PNG HD sắc nét"
+                    >
+                      <ImageIcon className="w-3.5 h-3.5 text-purple-600" />
+                      Tải Bộ Ảnh HD (PNG)
+                    </button>
+                  )}
 
                   {/* Export Answer Matrix Word */}
                   <button
@@ -1126,7 +1199,7 @@ export function SimilarExamsModal({
                                     >
                                       <strong className="text-slate-700">{letter}.</strong>
                                       <div className="flex-1">
-                                        <MarkdownRenderer content={formatMathContent(opt)} />
+                                        <MarkdownRenderer content={formatMathContent(cleanOptionText(opt))} />
                                       </div>
                                     </div>
                                   );
@@ -1332,7 +1405,7 @@ export function SimilarExamsModal({
                               <tr>
                                 {q.options.map((opt, oIdx) => (
                                   <td key={oIdx} className="p-1">
-                                    <strong>{String.fromCharCode(65 + oIdx)}.</strong> {opt}
+                                    <strong>{String.fromCharCode(65 + oIdx)}.</strong> {cleanOptionText(opt)}
                                   </td>
                                 ))}
                               </tr>

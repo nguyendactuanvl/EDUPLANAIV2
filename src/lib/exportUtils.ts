@@ -79,11 +79,25 @@ function latexToOmmlComponent(rawTex: string, isBlock: boolean = false): any {
     .replace(/\\dotfill\b/g, '')
     .trim();
 
-  // Đảm bảo không bị thiếu delimiter \right. khi có \left[
-  const leftBracketCount = (cleanTex.match(/\\left\s*\[/g) || []).length;
-  const rightBracketCount = (cleanTex.match(/\\right\s*[.\]\)\}]/g) || []).length;
-  if (leftBracketCount > rightBracketCount) {
-    cleanTex += ' \\right.';
+  // Tự động đóng môi trường LaTeX bị thiếu \end{...} (như \begin{cases} không có \end{cases})
+  const envs = ['cases', 'aligned', 'array', 'matrix', 'pmatrix', 'bmatrix', 'vmatrix', 'Vmatrix', 'split', 'gather', 'align'];
+  for (const env of envs) {
+    const beginCount = (cleanTex.match(new RegExp(`\\\\begin\\s*\\{${env}\\*?\\}`, 'g')) || []).length;
+    const endCount = (cleanTex.match(new RegExp(`\\\\end\\s*\\{${env}\\*?\\}`, 'g')) || []).length;
+    if (beginCount > endCount) {
+      for (let i = 0; i < beginCount - endCount; i++) {
+        cleanTex += ` \\end{${env}}`;
+      }
+    }
+  }
+
+  // Đảm bảo không bị thiếu delimiter \right. khi có \left[, \left\{, \left(
+  const leftDelims = (cleanTex.match(/\\left\s*[\{\[\(]/g) || []).length;
+  const rightDelims = (cleanTex.match(/\\right\s*[.\}\]\)]/g) || []).length;
+  if (leftDelims > rightDelims) {
+    for (let i = 0; i < leftDelims - rightDelims; i++) {
+      cleanTex += ' \\right.';
+    }
   }
 
   // Đảm bảo môi trường đa dòng (aligned, cases, array, matrix, split, gather, align) sử dụng displayMode

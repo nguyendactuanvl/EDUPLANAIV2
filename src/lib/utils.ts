@@ -2207,19 +2207,19 @@ export function cleanOptionText(opt: any): string {
   // 0. Triệt tiêu undefined/null rò rỉ
   text = text.replace(/(?:=\s*)?undefined(?![a-zA-Z0-9_\$])/gi, '').replace(/\bundefined\b/gi, '');
   
-  // Dọn dẹp thẻ HTML nếu có
-  text = text.replace(/<\/?[^>]+(>|$)/g, "");
+  // Dọn dẹp thẻ HTML thực sự (bắt buộc bắt đầu bằng chữ cái [a-zA-Z], bảo vệ tuyệt đối dấu bất đẳng thức như < 0, < y...)
+  text = text.replace(/<\/?(?:[a-zA-Z][a-zA-Z0-9]*)\b[^>]*>/g, "");
 
-  // 1. Loại bỏ nhãn phương án ở đầu (A., B., C., D., a., b., c., d., - A., **A.**, etc.)
+  // 1. Loại bỏ triệt để mọi nhãn phương án ở đầu (kể cả lặp nhãn như A. C., B. D., - A., **A.**, etc.)
   // Bảo vệ tuyệt đối tên tập hợp hoặc biến toán học (như A \cap B, A \cup B, A \setminus B, A =, B =, A \subset B)
-  const isMathStart = /^[\s\-*•]*([A-Da-d])\s*(?:\\(?:cap|cup|setminus|subset|supset|subseteq|supseteq|in|notin)|=|[+*\/<>]|\()/i.test(text);
-  if (!isMathStart) {
-    text = text
-      .replace(/^[\s\-*•]*\(?(?:\*{0,2})([A-Da-d])(?:\*{0,2})\)?[\.\:\)](?:\*{0,2})\s*/, '')
-      .trim();
-  } else {
-    // Nếu có tiền tố nhãn phương án trước biểu thức toán (vd: "A. A \cap B"), chỉ bóc nhãn "A. "
-    text = text.replace(/^[\s\-*•]*\(?(?:\*{0,2})[A-Da-d](?:\*{0,2})\)?[\.\:\)](?:\*{0,2})\s+(?=[A-Da-d]\s*(?:\\|=|[+*\/<>]))/i, '').trim();
+  while (/^[\s\-*•]*\(?(?:\*{0,2})([A-Da-d])(?:\*{0,2})\)?[\.\:\)](?:\*{0,2})\s*/.test(text)) {
+    const isMathStart = /^[\s\-*•]*([A-Da-d])\s*(?:\\(?:cap|cup|setminus|subset|supset|subseteq|supseteq|in|notin)|=|[+*\/<>]|\()/i.test(text);
+    if (isMathStart) {
+      // Nếu có tiền tố nhãn phương án trước biểu thức toán (vd: "A. A \cap B"), chỉ bóc nhãn "A. " một lần
+      text = text.replace(/^[\s\-*•]*\(?(?:\*{0,2})[A-Da-d](?:\*{0,2})\)?[\.\:\)](?:\*{0,2})\s+(?=[A-Da-d]\s*(?:\\|=|[+*\/<>]))/i, '').trim();
+      break;
+    }
+    text = text.replace(/^[\s\-*•]*\(?(?:\*{0,2})([A-Da-d])(?:\*{0,2})\)?[\.\:\)](?:\*{0,2})\s*/, '').trim();
   }
 
   // 2. Loại bỏ hoàn toàn dấu sao (*) hoặc gạch dưới (_) đánh dấu phương án đúng ở đầu hoặc cuối phương án
