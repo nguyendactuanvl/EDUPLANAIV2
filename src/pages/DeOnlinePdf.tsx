@@ -550,6 +550,14 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
     }
   };
 
+  const isValidGoogleSheetUrl = (url?: string | null): boolean => {
+    if (!url || typeof url !== 'string') return false;
+    if (!url.includes("docs.google.com/spreadsheets/d/")) return false;
+    const match = url.match(/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+    if (!match || !match[1]) return false;
+    return match[1].length >= 15;
+  };
+
   const handleCreateAndLinkSheet = async () => {
     if (!selectedRoomResultsData) return;
     const code = selectedRoomForResults;
@@ -557,6 +565,20 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
 
     setIsSyncingSheet(true);
     try {
+      let token = getCachedToken();
+      if (!token) {
+        const authRes = await googleSignIn();
+        if (authRes) {
+          setGoogleUser(authRes.user);
+          setGoogleToken(authRes.accessToken);
+          token = authRes.accessToken;
+        }
+      }
+
+      if (!token) {
+        throw new Error("Chưa xác thực tài khoản Google. Vui lòng nhấn đăng nhập Google.");
+      }
+
       const sheet = await createGoogleSheet(selectedRoomResultsData.examTitle || code);
       
       const updatedData = {
@@ -577,7 +599,7 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
 
       const subs = updatedData.submissions || [];
       if (subs.length > 0) {
-        await syncSubmissionsToSheet(sheet.id, updatedData.examTitle || code, subs);
+        await syncSubmissionsToSheet(sheet.id, updatedData.examTitle || code, subs).catch(() => {});
       }
 
       setSelectedRoomResultsData(updatedData);
@@ -592,9 +614,11 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
       localStorage.setItem("eduplan_teacher_exams_history", JSON.stringify(updatedHistory));
       syncHistoryToCloud(updatedHistory);
 
-      alert("🚀 Đã khởi tạo và liên kết Google Sheet thành công! Bảng điểm đã được đồng bộ hóa.");
+      window.open(sheet.url, '_blank');
     } catch (err: any) {
-      alert("Lỗi tạo/liên kết Trang tính: " + err.message);
+      if (err?.message) {
+        alert("Lỗi tạo/liên kết Trang tính: " + err.message);
+      }
     } finally {
       setIsSyncingSheet(false);
     }
@@ -622,23 +646,43 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
 
   const handleOneClickQuickConnectSheet = async () => {
     if (!selectedRoomForResults) return;
+
+    // If already valid Google Sheet, open directly
+    const existingUrl = selectedRoomResultsData?.linkedSheetUrl;
+    if (isValidGoogleSheetUrl(existingUrl)) {
+      window.open(existingUrl, '_blank');
+      return;
+    }
+
     setIsSyncingSheet(true);
     try {
-      let activeUser = googleUser;
-      if (!activeUser) {
-        activeUser = { displayName: "Giáo viên (Bảng điểm Nhanh)", email: "teacher@eduplan.vn" };
-        setGoogleUser(activeUser);
-        setGoogleToken("google_sheets_active_token");
+      const code = selectedRoomForResults;
+      const title = selectedRoomResultsData?.examTitle || `Phòng thi ${code}`;
+
+      let token = getCachedToken();
+      if (!token) {
+        const authRes = await googleSignIn();
+        if (authRes) {
+          setGoogleUser(authRes.user);
+          setGoogleToken(authRes.accessToken);
+          token = authRes.accessToken;
+        }
       }
 
-      const code = selectedRoomForResults;
-      const sheetUrl = selectedRoomResultsData?.linkedSheetUrl || `https://docs.google.com/spreadsheets/d/${code}/edit?usp=sharing`;
-      const sheetId = selectedRoomResultsData?.linkedSheetId || `sheet_${code}`;
+      if (!token) {
+        throw new Error("Vui lòng xác nhận đăng nhập Google để tạo bảng điểm Google Sheet thực tế trên Google Drive.");
+      }
+
+      const sheet = await createGoogleSheet(title);
+      const subs = selectedRoomResultsData?.submissions || [];
+      if (subs.length > 0) {
+        await syncSubmissionsToSheet(sheet.id, title, subs).catch(() => {});
+      }
 
       const updatedData = {
         ...(selectedRoomResultsData || {}),
-        linkedSheetId: sheetId,
-        linkedSheetUrl: sheetUrl
+        linkedSheetId: sheet.id,
+        linkedSheetUrl: sheet.url
       };
 
       await fetch("/api/exams/share", {
@@ -651,7 +695,7 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
 
       const updatedHistory = examsHistory.map((h: any) => {
         if (h.code === code) {
-          return { ...h, linkedSheetId: sheetId, linkedSheetUrl: sheetUrl };
+          return { ...h, linkedSheetId: sheet.id, linkedSheetUrl: sheet.url };
         }
         return h;
       });
@@ -659,9 +703,11 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
       localStorage.setItem("eduplan_teacher_exams_history", JSON.stringify(updatedHistory));
       syncHistoryToCloud(updatedHistory);
 
-      alert("⚡ Đã kích hoạt Bảng điểm Google Sheets Nhanh (1-Click) thành công!");
+      window.open(sheet.url, '_blank');
     } catch (e: any) {
-      alert("Lỗi kết nối nhanh: " + (e.message || e));
+      if (e?.message) {
+        alert("Lỗi tạo Google Sheet: " + e.message);
+      }
     } finally {
       setIsSyncingSheet(false);
     }
@@ -2939,9 +2985,9 @@ HS05 - Hoàng Văn Em`);
                           </div>
 
                           <div className="flex items-center gap-2">
-                            {selectedRoomResultsData?.linkedSheetUrl ? (
+                            {isValidGoogleSheetUrl(selectedRoomResultsData?.linkedSheetUrl) ? (
                               <a
-                                href={selectedRoomResultsData.linkedSheetUrl}
+                                href={selectedRoomResultsData!.linkedSheetUrl}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs flex items-center gap-1 text-[11px]"
@@ -2956,7 +3002,7 @@ HS05 - Hoàng Văn Em`);
                                 className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-lg shadow-xs flex items-center gap-1.5 text-[11px] disabled:opacity-50 cursor-pointer"
                               >
                                 <Zap className="w-3.5 h-3.5 fill-white" />
-                                {isSyncingSheet ? "Đang xác thực..." : "⚡ Xác Nhận Kết Nối 1-Click (Qua Mã Code)"}
+                                {isSyncingSheet ? "Đang tạo Sheet..." : "⚡ Xác Nhận Kết Nối 1-Click (Tạo Google Sheet)"}
                               </button>
                             )}
                           </div>
@@ -3022,10 +3068,10 @@ HS05 - Hoàng Văn Em`);
 
                         {googleUser && (
                           <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
-                            {selectedRoomResultsData?.linkedSheetUrl ? (
+                            {isValidGoogleSheetUrl(selectedRoomResultsData?.linkedSheetUrl) ? (
                               <div className="text-emerald-700 font-bold flex items-center gap-1">
                                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                <a href={selectedRoomResultsData.linkedSheetUrl} target="_blank" rel="noreferrer" className="underline hover:text-indigo-600">
+                                <a href={selectedRoomResultsData!.linkedSheetUrl} target="_blank" rel="noreferrer" className="underline hover:text-indigo-600">
                                   Mở Google Sheet Cá nhân ↗
                                 </a>
                               </div>
