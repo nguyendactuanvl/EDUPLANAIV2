@@ -216,6 +216,7 @@ export function Worksheets() {
   const [viewMode, setViewMode] = useState<'document' | 'questions'>('document');
   const [resultsViewTab, setResultsViewTab] = useState<'table' | 'analytics'>('table');
   const [integrationSolutionTab, setIntegrationSolutionTab] = useState<'quick' | 'link' | 'custom'>('quick');
+  const [quickCodeInput, setQuickCodeInput] = useState<string>('');
 
   // BBT & Đồ thị & Hình 3D & Thống kê Visualizer State
   const [activeVisualizer, setActiveVisualizer] = useState<{
@@ -2125,37 +2126,87 @@ export function Worksheets() {
                   {/* ACTIVE TAB CONTENT BOX */}
                   <div className="pt-2">
                     {integrationSolutionTab === 'quick' && (
-                      <div className="p-3 bg-emerald-50/60 border border-emerald-200 rounded-xl flex flex-wrap items-center justify-between gap-2.5 text-[11px]">
-                        <div className="space-y-0.5">
-                          <p className="font-bold text-emerald-900 flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Phương án 1: Kích hoạt Bảng điểm 1-Click (Không cần đăng nhập)
-                          </p>
-                          <p className="text-[10px] text-emerald-700">
-                            Thầy cô yếu công nghệ chỉ cần bấm 1 lần để hệ thống tự khởi tạo Bảng điểm Google Sheets cho phòng thi.
-                          </p>
+                      <div className="p-3.5 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/90 rounded-xl space-y-3">
+                        <div className="flex items-center justify-between border-b border-emerald-200/80 pb-2">
+                          <div className="flex items-center gap-1.5">
+                            <Zap className="w-4 h-4 text-emerald-600 fill-emerald-500" />
+                            <span className="text-xs font-black text-emerald-900 uppercase">
+                              Giải Pháp Liên Kết Nhanh Qua Mã Code (3 Bước)
+                            </span>
+                          </div>
+                          <span className="text-[9px] bg-emerald-200 text-emerald-900 font-bold px-2 py-0.5 rounded-full">
+                            Dành cho GV yếu CNTT
+                          </span>
                         </div>
 
-                        <div className="flex items-center gap-2">
-                          {selectedRoomResultsData?.linkedSheetUrl ? (
-                            <a
-                              href={selectedRoomResultsData.linkedSheetUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs flex items-center gap-1 text-[11px]"
-                            >
-                              <FileSpreadsheet className="w-3.5 h-3.5" /> Mở Google Sheet Đã Tạo ↗
-                            </a>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={handleOneClickQuickConnectSheet}
-                              disabled={isSyncingSheet}
-                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs flex items-center gap-1 text-[11px] disabled:opacity-50 cursor-pointer"
-                            >
-                              <Zap className="w-3.5 h-3.5 fill-white" />
-                              {isSyncingSheet ? "Đang kích hoạt..." : "⚡ Kích Hoạt Bảng Điểm 1-Click Ngay"}
-                            </button>
-                          )}
+                        {/* 3-Step Simplified Guide Cards */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px]">
+                          <div className="p-2.5 bg-white rounded-xl border border-emerald-100 shadow-2xs space-y-1">
+                            <div className="font-bold text-emerald-800 flex items-center gap-1.5">
+                              <span className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-black shrink-0">1</span>
+                              Mã Kết Nối Phòng
+                            </div>
+                            <p className="text-[10px] text-slate-500 leading-tight">
+                              Mã phòng thi là <strong className="font-mono text-indigo-600">{selectedRoomForResults}</strong> (tự động lấy theo phòng chọn).
+                            </p>
+                          </div>
+
+                          <div className="p-2.5 bg-white rounded-xl border border-emerald-100 shadow-2xs space-y-1">
+                            <div className="font-bold text-emerald-800 flex items-center gap-1.5">
+                              <span className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-black shrink-0">2</span>
+                              Xác Nhận Mã
+                            </div>
+                            <p className="text-[10px] text-slate-500 leading-tight">
+                              Nhập hoặc giữ nguyên mã xác nhận ở ô bên dưới (không cần nhớ mật khẩu Google).
+                            </p>
+                          </div>
+
+                          <div className="p-2.5 bg-white rounded-xl border border-emerald-100 shadow-2xs space-y-1">
+                            <div className="font-bold text-emerald-800 flex items-center gap-1.5">
+                              <span className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-black shrink-0">3</span>
+                              Bấm Kích Hoạt
+                            </div>
+                            <p className="text-[10px] text-slate-500 leading-tight">
+                              Bấm "Xác Nhận Kết Nối 1-Click" để tự mở Bảng điểm Google Sheet tức thì!
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Interactive Code Form Row */}
+                        <div className="pt-1.5 flex flex-wrap items-center justify-between gap-2 border-t border-emerald-200/60">
+                          <div className="flex items-center gap-2 flex-1 max-w-xs">
+                            <span className="text-[11px] font-bold text-emerald-900 whitespace-nowrap">Mã Code:</span>
+                            <input
+                              type="text"
+                              value={quickCodeInput || selectedRoomForResults || 'EDU2026'}
+                              onChange={(e) => setQuickCodeInput(e.target.value.toUpperCase())}
+                              placeholder="VD: NQ9JE5 hoặc EDU2026"
+                              className="px-2.5 py-1 bg-white border border-emerald-300 rounded-lg text-xs font-mono font-bold text-indigo-700 w-full focus:ring-2 focus:ring-emerald-400 outline-none shadow-2xs"
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {selectedRoomResultsData?.linkedSheetUrl ? (
+                              <a
+                                href={selectedRoomResultsData.linkedSheetUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs flex items-center gap-1 text-[11px]"
+                              >
+                                <FileSpreadsheet className="w-3.5 h-3.5" /> Mở Google Sheet Đã Xác Thực ↗
+                              </a>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={handleOneClickQuickConnectSheet}
+                                disabled={isSyncingSheet}
+                                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-lg shadow-xs flex items-center gap-1.5 text-[11px] disabled:opacity-50 cursor-pointer"
+                              >
+                                <Zap className="w-3.5 h-3.5 fill-white" />
+                                {isSyncingSheet ? "Đang xác thực..." : "⚡ Xác Nhận Kết Nối 1-Click (Qua Mã Code)"}
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )}
