@@ -681,11 +681,15 @@ export function sanitizeLatexString(text: string): string {
   // 2.3 Sửa lỗi \text{... thiếu ngoặc đóng do AI hoặc regex trước cắt xén
   s = s.replace(/\\text\{([^{}\n]+)$/g, '\\text{$1}');
 
-  // 3. Sửa lỗi cú pháp số mũ / ký hiệu độ:
+  // 3. Sửa lỗi cú pháp số mũ / ký hiệu độ / hàm lượng giác viết thiếu khoảng trắng (\sinA -> \sin A):
   s = s.replace(/\^\{\s*\\+\s*circ\s*\}/g, '^\\circ');
   s = s.replace(/\^\{\s*circ\s*\}/g, '^\\circ');
   s = s.replace(/\^\s*\\+\s*circ\b/g, '^\\circ');
   s = s.replace(/(?<=\d)\s*\^\s*circ\b/g, '^\\circ');
+  s = s.replace(/\\(sin|cos|tan|cot|lim|ln|log|arcsin|arccos|arctan)(?!h\b)([A-Za-z])(?![a-zA-Z0-9])/g, (_m, fn, arg) => `\\${fn} ${arg}`);
+
+  // 3.5 Sửa lỗi chèn nhầm $$ giữa khối công thức liên tục (vd: \sin B$$ = \frac{c}{\sin C}):
+  s = s.replace(/([^$\n]+)\$\$\s*(=|\+|-|\*|\/|\\ne|\\ge|\\le|<|>|\\in|\\notin|\\frac|\\cdot)\s*/g, "$1 $2 ");
 
   // 4. Chuẩn hóa môi trường bảng số liệu ghép nhóm \begin{array}... \end{array}
   s = normalizeArrayAndTableEnvironments(s);
@@ -2234,11 +2238,11 @@ export function cleanOptionText(opt: any): string {
     .replace(/\$\*([^\$]+)\$/g, '$$$1$')
     .trim();
 
-  // 3. Tự động bọc $ cho phương án là biểu thức toán học hoặc khoảng/đoạn thiếu $
-  text = autoWrapNakedMathExpression(text);
-
-  // 4. Chuẩn hóa KaTeX double backslash (\\) thành MathJax single backslash (\)
+  // 3. Chuẩn hóa KaTeX double backslash (\\) và sửa lỗi \sinA, \cosB, chèn nhầm $$ giữa công thức
   text = sanitizeLatexString(text);
+
+  // 4. Tự động bọc $ cho phương án là biểu thức toán học hoặc khoảng/đoạn thiếu $
+  text = autoWrapNakedMathExpression(text);
 
   return text;
 }
@@ -2399,7 +2403,7 @@ export const wrapAllNakedMath = (str: string): string => {
   // 0. Bảo vệ các khối math và code đã có sẵn trước khi tìm kiếm naked math
   const protectedTokens: string[] = [];
   let s = normalizeInfinity(str);
-  s = s.replace(/(```[\s\S]*?```|`[^`\n]+`|\$\$[\s\S]*?\$\$|\$[^\$\n]+?\$)/g, (match) => {
+  s = s.replace(/(```[\s\S]*?```|`[^`\n]+`|\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|(?<!\\)\$(?!\$)(?:\\.|[^\$\\])+?(?<!\\)\$)/g, (match) => {
     protectedTokens.push(match);
     return `___WRAPPED_MATH_TOKEN_${protectedTokens.length - 1}___`;
   });
@@ -2407,7 +2411,7 @@ export const wrapAllNakedMath = (str: string): string => {
   s = normalizeLogicAndSetSymbols(s);
 
   // Bảo vệ tiếp các khối math mới sinh từ normalizeLogicAndSetSymbols
-  s = s.replace(/(\$\$[\s\S]*?\$\$|\$[^\$\n]+?\$)/g, (match) => {
+  s = s.replace(/(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|(?<!\\)\$(?!\$)(?:\\.|[^\$\\])+?(?<!\\)\$)/g, (match) => {
     protectedTokens.push(match);
     return `___WRAPPED_MATH_TOKEN_${protectedTokens.length - 1}___`;
   });

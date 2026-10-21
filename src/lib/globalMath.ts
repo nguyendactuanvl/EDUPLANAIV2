@@ -67,7 +67,7 @@ export function autoWrapNakedMathExpression(text: string): string {
 
   const withoutConj = t.replace(/(?:^|\s+)(?:và|hoặc|hay)(?:\s+|$)/gi, ' ').trim();
   const hasVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(withoutConj);
-  const isSentential = t.length > 70 || t.split(/\s+/).length > 8;
+  const isSentential = hasVietnamese && (t.length > 80 || t.split(/\s+/).length > 12);
 
   if (!hasVietnamese && !isSentential) {
     if (/\s+(?:và|hoặc|hay)\s+/i.test(t)) {
@@ -81,7 +81,7 @@ export function autoWrapNakedMathExpression(text: string): string {
         return p;
       }).join('');
     } else {
-      if (/^[\[\(].+[\]\)]$/.test(t) || /[\^_\\]/.test(t) || /^[a-zA-Z]\s*[=><\le\ge]/.test(t) || /^\\?\{[^}\n]+\\?\}$/.test(t) || /^[0-9]+(?:\.[0-9]+)?$/.test(t)) {
+      if (/^[\[\(].+[\]\)]$/.test(t) || /[\^_\\]/.test(t) || /^-?\s*\d*(?:\/\d+|\\frac)/.test(t) || /^[a-zA-Z0-9\+\-\*\/=><\s,;\.\(\)]+$/.test(t) || /^\\?\{[^}\n]+\\?\}$/.test(t) || /^-?[0-9]+(?:\.[0-9]+)?$/.test(t)) {
         return `$${t}$`;
       }
     }
