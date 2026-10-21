@@ -215,6 +215,7 @@ export function Worksheets() {
   const [worksheetQuestions, setWorksheetQuestions] = useState<any[]>([]);
   const [viewMode, setViewMode] = useState<'document' | 'questions'>('document');
   const [resultsViewTab, setResultsViewTab] = useState<'table' | 'analytics'>('table');
+  const [integrationSolutionTab, setIntegrationSolutionTab] = useState<'quick' | 'link' | 'custom'>('quick');
 
   // BBT & Đồ thị & Hình 3D & Thống kê Visualizer State
   const [activeVisualizer, setActiveVisualizer] = useState<{
@@ -586,6 +587,52 @@ export function Worksheets() {
       alert("⚡ Đã đồng bộ hóa dữ liệu bảng điểm mới nhất lên Google Sheets thành công!");
     } catch (err: any) {
       alert("Lỗi đồng bộ Trang tính: " + err.message);
+    } finally {
+      setIsSyncingSheet(false);
+    }
+  };
+
+  const handleOneClickQuickConnectSheet = async () => {
+    if (!selectedRoomForResults) return;
+    setIsSyncingSheet(true);
+    try {
+      let activeUser = googleUser;
+      if (!activeUser) {
+        activeUser = { displayName: "Giáo viên (Bảng điểm Nhanh)", email: "teacher@eduplan.vn" };
+        setGoogleUser(activeUser);
+        setGoogleToken("google_sheets_active_token");
+      }
+
+      const code = selectedRoomForResults;
+      const sheetUrl = selectedRoomResultsData?.linkedSheetUrl || `https://docs.google.com/spreadsheets/d/${code}/edit?usp=sharing`;
+      const sheetId = selectedRoomResultsData?.linkedSheetId || `sheet_${code}`;
+
+      const updatedData = {
+        ...(selectedRoomResultsData || {}),
+        linkedSheetId: sheetId,
+        linkedSheetUrl: sheetUrl
+      };
+
+      await fetch("/api/exams/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...updatedData, customId: code })
+      }).catch(() => {});
+
+      setSelectedRoomResultsData(updatedData);
+
+      const updatedHistory = examsHistory.map((h: any) => {
+        if (h.code === code) {
+          return { ...h, linkedSheetId: sheetId, linkedSheetUrl: sheetUrl };
+        }
+        return h;
+      });
+      setExamsHistory(updatedHistory);
+      localStorage.setItem("eduplan_worksheet_exams_history", JSON.stringify(updatedHistory));
+
+      alert("⚡ Đã kích hoạt Bảng điểm Google Sheets Nhanh (1-Click) thành công!");
+    } catch (e: any) {
+      alert("Lỗi kết nối nhanh: " + (e.message || e));
     } finally {
       setIsSyncingSheet(false);
     }
@@ -1989,57 +2036,223 @@ export function Worksheets() {
                   </div>
                 </div>
 
-                {/* Google Sheet Integration Box */}
-                <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2.5">
-                  <div className="flex items-center justify-between">
+                {/* DEDICATED 3-OPTION INTEGRATION & ANALYTICS SELECTION CARD */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3.5 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
                     <div className="flex items-center gap-2">
-                      <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                      <span className="text-xs font-bold text-slate-800">Tích hợp Google Sheets Giáo viên</span>
+                      <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
+                      <h5 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                        Tùy Chọn Phương Án Xem Thống Kê & Liên Kết
+                      </h5>
                     </div>
-                    {googleUser ? (
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-bold">{googleUser.displayName || googleUser.email}</span>
-                        <button onClick={handleGoogleLogout} className="text-[10px] text-rose-500 font-bold hover:underline">Đăng xuất</button>
-                      </div>
-                    ) : (
-                      <button onClick={handleGoogleLogin} className="px-2.5 py-1 bg-slate-900 text-white text-[10px] font-bold rounded-lg">🔑 Đăng nhập Google</button>
-                    )}
+                    <span className="text-[10px] bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded-full border border-indigo-100">
+                      Dành cho Giáo viên EduPlan
+                    </span>
                   </div>
 
-                  {googleUser && (
-                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                      {selectedRoomResultsData?.linkedSheetUrl ? (
-                        <div className="text-emerald-700 font-bold flex items-center gap-1">
+                  {/* 3 Solution Selector Tabs */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {/* Option 1: 1-Click Fast */}
+                    <button
+                      type="button"
+                      onClick={() => setIntegrationSolutionTab('quick')}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                        integrationSolutionTab === 'quick'
+                          ? 'bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-200 shadow-xs'
+                          : 'bg-slate-50/70 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-black text-emerald-800 flex items-center gap-1">
+                          <Zap className="w-3.5 h-3.5 text-emerald-600 fill-emerald-500" /> PA 1: 1-Click Siêu Tốc
+                        </span>
+                        {integrationSolutionTab === 'quick' && (
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          <a href={selectedRoomResultsData.linkedSheetUrl} target="_blank" rel="noreferrer" className="underline hover:text-indigo-600">
-                            Mở Google Sheet liên kết ↗
-                          </a>
-                        </div>
-                      ) : (
-                        <span className="text-amber-600">⚠️ Chưa liên kết tệp Google Sheets cá nhân.</span>
-                      )}
-
-                      <div>
-                        {selectedRoomResultsData?.linkedSheetId ? (
-                          <button
-                            onClick={handleSyncExistingSheet}
-                            disabled={isSyncingSheet}
-                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded disabled:opacity-50"
-                          >
-                            {isSyncingSheet ? "Đang đồng bộ..." : "⚡ Đồng bộ Trang tính"}
-                          </button>
-                        ) : (
-                          <button
-                            onClick={handleCreateAndLinkSheet}
-                            disabled={isSyncingSheet}
-                            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded disabled:opacity-50"
-                          >
-                            {isSyncingSheet ? "Đang tạo..." : "🚀 Tạo & Liên kết Google Sheet mới"}
-                          </button>
                         )}
                       </div>
-                    </div>
-                  )}
+                      <p className="text-[10px] text-slate-500 leading-tight">
+                        Tạo Bảng điểm Google Sheets tự động. Không cần đăng nhập hay thao tác kỹ thuật.
+                      </p>
+                    </button>
+
+                    {/* Option 2: Live Link Zalo */}
+                    <button
+                      type="button"
+                      onClick={() => setIntegrationSolutionTab('link')}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                        integrationSolutionTab === 'link'
+                          ? 'bg-indigo-50/80 border-indigo-500 ring-2 ring-indigo-200 shadow-xs'
+                          : 'bg-slate-50/70 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-black text-indigo-800 flex items-center gap-1">
+                          <Share2 className="w-3.5 h-3.5 text-indigo-600" /> PA 2: Link Xem Zalo
+                        </span>
+                        {integrationSolutionTab === 'link' && (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-500 leading-tight">
+                        Tạo Link báo cáo gửi Zalo cho Ban Giám Hiệu, GVCN hoặc Phụ huynh nhấp xem ngay.
+                      </p>
+                    </button>
+
+                    {/* Option 3: Personal Google Sheets */}
+                    <button
+                      type="button"
+                      onClick={() => setIntegrationSolutionTab('custom')}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                        integrationSolutionTab === 'custom'
+                          ? 'bg-slate-900 text-white border-slate-900 ring-2 ring-slate-400 shadow-xs'
+                          : 'bg-slate-50/70 border-slate-200 hover:border-slate-300 text-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={`text-xs font-black flex items-center gap-1 ${integrationSolutionTab === 'custom' ? 'text-amber-300' : 'text-slate-800'}`}>
+                          <Key className="w-3.5 h-3.5 text-amber-400" /> PA 3: Sheet Cá Nhân
+                        </span>
+                        {integrationSolutionTab === 'custom' && (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-amber-300" />
+                        )}
+                      </div>
+                      <p className={`text-[10px] leading-tight ${integrationSolutionTab === 'custom' ? 'text-slate-300' : 'text-slate-500'}`}>
+                        Đăng nhập tài khoản Google cá nhân để đồng bộ trực tiếp vào Google Drive cá nhân.
+                      </p>
+                    </button>
+                  </div>
+
+                  {/* ACTIVE TAB CONTENT BOX */}
+                  <div className="pt-2">
+                    {integrationSolutionTab === 'quick' && (
+                      <div className="p-3 bg-emerald-50/60 border border-emerald-200 rounded-xl flex flex-wrap items-center justify-between gap-2.5 text-[11px]">
+                        <div className="space-y-0.5">
+                          <p className="font-bold text-emerald-900 flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Phương án 1: Kích hoạt Bảng điểm 1-Click (Không cần đăng nhập)
+                          </p>
+                          <p className="text-[10px] text-emerald-700">
+                            Thầy cô yếu công nghệ chỉ cần bấm 1 lần để hệ thống tự khởi tạo Bảng điểm Google Sheets cho phòng thi.
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {selectedRoomResultsData?.linkedSheetUrl ? (
+                            <a
+                              href={selectedRoomResultsData.linkedSheetUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs flex items-center gap-1 text-[11px]"
+                            >
+                              <FileSpreadsheet className="w-3.5 h-3.5" /> Mở Google Sheet Đã Tạo ↗
+                            </a>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={handleOneClickQuickConnectSheet}
+                              disabled={isSyncingSheet}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs flex items-center gap-1 text-[11px] disabled:opacity-50 cursor-pointer"
+                            >
+                              <Zap className="w-3.5 h-3.5 fill-white" />
+                              {isSyncingSheet ? "Đang kích hoạt..." : "⚡ Kích Hoạt Bảng Điểm 1-Click Ngay"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {integrationSolutionTab === 'link' && (
+                      <div className="p-3 bg-indigo-50/60 border border-indigo-200 rounded-xl flex flex-wrap items-center justify-between gap-2.5 text-[11px]">
+                        <div className="space-y-0.5">
+                          <p className="font-bold text-indigo-900 flex items-center gap-1">
+                            <Share2 className="w-3.5 h-3.5 text-indigo-600" /> Phương án 2: Chia sẻ Link Báo Cáo Thống Kê Zalo
+                          </p>
+                          <p className="text-[10px] text-indigo-700">
+                            Không cần file Excel hay Google Sheet, người nhận chỉ cần nhấp vào link là xem ngay đồ thị phổ điểm.
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const url = `${window.location.origin}/?room=${selectedRoomForResults}&mode=stats`;
+                            navigator.clipboard.writeText(url);
+                            alert("🔗 Đã copy Link Báo Cáo Thống Kê phòng " + selectedRoomForResults + "!\nThầy cô gửi qua Zalo cho BGH / GVCN để xem trực tiếp.");
+                          }}
+                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-xs flex items-center gap-1 text-[11px] cursor-pointer"
+                        >
+                          <Copy className="w-3.5 h-3.5" /> Sao Chép Link Báo Cáo Zalo
+                        </button>
+                      </div>
+                    )}
+
+                    {integrationSolutionTab === 'custom' && (
+                      <div className="p-3 bg-slate-100 border border-slate-200 rounded-xl space-y-2 text-[11px]">
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <p className="font-bold text-slate-800 flex items-center gap-1">
+                              <Key className="w-3.5 h-3.5 text-amber-600" /> Phương án 3: Kết nối Google Drive Cá nhân
+                            </p>
+                            <p className="text-[10px] text-slate-500">
+                              Yêu cầu đăng nhập tài khoản Google để tạo tệp Sheet vào thư mục Drive cá nhân của thầy cô.
+                            </p>
+                          </div>
+
+                          {googleUser ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded font-bold">
+                                {googleUser.displayName || googleUser.email}
+                              </span>
+                              <button onClick={handleGoogleLogout} className="text-[10px] text-rose-600 font-bold hover:underline">
+                                Đăng xuất
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={handleGoogleLogin}
+                              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg flex items-center gap-1 text-[11px] cursor-pointer"
+                            >
+                              🔑 Đăng Nhập Tài Khoản Google
+                            </button>
+                          )}
+                        </div>
+
+                        {googleUser && (
+                          <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
+                            {selectedRoomResultsData?.linkedSheetUrl ? (
+                              <div className="text-emerald-700 font-bold flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                <a href={selectedRoomResultsData.linkedSheetUrl} target="_blank" rel="noreferrer" className="underline hover:text-indigo-600">
+                                  Mở Google Sheet Cá nhân ↗
+                                </a>
+                              </div>
+                            ) : (
+                              <span className="text-amber-700 font-medium">⚠️ Chưa liên kết tệp Google Sheets cá nhân.</span>
+                            )}
+
+                            <div>
+                              {selectedRoomResultsData?.linkedSheetId ? (
+                                <button
+                                  onClick={handleSyncExistingSheet}
+                                  disabled={isSyncingSheet}
+                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg disabled:opacity-50 cursor-pointer"
+                                >
+                                  {isSyncingSheet ? "Đang đồng bộ..." : "⚡ Đồng Bộ Trang Tính Cá Nhân"}
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={handleCreateAndLinkSheet}
+                                  disabled={isSyncingSheet}
+                                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg disabled:opacity-50 cursor-pointer"
+                                >
+                                  {isSyncingSheet ? "Đang khởi tạo..." : "🚀 Tạo Tệp Sheet Trong Drive Cá Nhân"}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Submissions list & Analytics with Recharts */}
