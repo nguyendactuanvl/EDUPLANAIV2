@@ -2122,8 +2122,8 @@ export const fixInlineOptionText = (text: string): string => {
   // Khôi phục lại các khối \text{...}
   res = res.replace(/___TEXT_TOKEN_(\d+)___/g, (_m, idx) => textTokens[Number(idx)] || '');
 
-  // Dọn dẹp khoảng trắng, dấu $ thừa và rác còn sót lại
-  res = res.replace(/\${3,}/g, '$$').replace(/\$\s+\$/g, '');
+  // Dọn dẹp khoảng trắng, dấu $ thừa và rác còn sót lại, đồng thời sửa \sinA -> \sin A
+  res = sanitizeLatexString(res.replace(/\${3,}/g, '$$').replace(/\$\s+\$/g, ''));
   return (prefix + res).trim();
 };
 

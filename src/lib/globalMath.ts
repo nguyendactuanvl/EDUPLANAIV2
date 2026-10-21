@@ -89,11 +89,39 @@ export function autoWrapNakedMathExpression(text: string): string {
   return t;
 }
 
+export function fixTrigAndMathSyntax(text: string): string {
+  if (!text) return '';
+  let s = String(text);
+
+  // 1. Sửa các lệnh lượng giác/logarit/giới hạn/lượng giác ngược dính chữ (vd: \sinA -> \sin A, \cosB -> \cos B)
+  s = s.replace(/\\(sin|cos|tan|cot|lim|ln|log|arcsin|arccos|arctan)(?!h\b)([A-Za-z])(?![a-zA-Z0-9])/g, (_m, fn, arg) => `\\${fn} ${arg}`);
+
+  // 2. Sửa lỗi double $$ bị rách ở giữa công thức inline (vd: $\frac{a}{\sin A} = \frac{b}{\sin B}$$ = \frac{c}{\sin C} = R)
+  s = s.replace(/(?<=\$[^$\n]+)\$\$(?=[^$\n]+\$)/g, ' ');
+  s = s.replace(/(?<=\$[^$\n]+)\$\$(?=\s*[\=\+\-\<>]|\s*[a-zA-Z0-9\\])/g, ' ');
+  s = s.replace(/\$\$/g, ' ');
+
+  // 3. Dọn khoảng trắng thừa
+  s = s.replace(/ {2,}/g, ' ');
+
+  // 4. Cân bằng dấu $ nếu chuỗi bắt đầu bằng $ và có số lượng $ lẻ
+  const dollarMatches = s.match(/\$/g) || [];
+  if (dollarMatches.length % 2 !== 0) {
+    if (s.trim().startsWith('$') && !s.trim().endsWith('$')) {
+      s = s.trim() + '$';
+    } else if (!s.trim().startsWith('$') && s.trim().endsWith('$')) {
+      s = '$' + s.trim();
+    }
+  }
+
+  return s;
+}
+
 export function normalizeMathText(text: any): string {
   if (text === null || text === undefined) return '';
   if (typeof text !== 'string') text = String(text);
 
-  let t = text.normalize("NFC");
+  let t = fixTrigAndMathSyntax(text.normalize("NFC"));
 
   // 0. Chuẩn hóa các dấu ngoặc kép bị escape \" bên trong hoặc xung quanh công thức
   t = t.replace(/\\"/g, '"');
