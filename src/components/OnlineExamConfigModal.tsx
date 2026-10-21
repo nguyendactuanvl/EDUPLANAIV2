@@ -7,6 +7,7 @@ import QRCode from 'qrcode';
 import LZString from 'lz-string';
 import { apiFetch } from '../lib/apiFetch';
 import { saveExamToCloud } from '../lib/cloudExamStore';
+import { registerExamUrlMapping } from '../lib/smartRouter';
 import { embedTikzSvgsInText } from './TikzRenderer';
 import { sanitizeExamQuestion, cleanOptionText, sanitizeAndPolishMath } from '../lib/utils';
 import { 
@@ -223,6 +224,11 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
 
       // Dual-sync to persistent Cloud KV with hex chunking and local cache
       await saveExamToCloud(examId, dataToShare);
+      registerExamUrlMapping(`/exam/${examId}`, examId);
+      registerExamUrlMapping(`/p/${examId}`, examId);
+      registerExamUrlMapping(`/thi/${examId}`, examId);
+      registerExamUrlMapping(`/?pin=${examId}`, examId);
+      registerExamUrlMapping(`/#/exam/${examId}`, examId);
 
       // Clean short PIN url
       const publicBase = window.location.origin;

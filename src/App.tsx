@@ -80,6 +80,8 @@ const ExamStatsDashboard = safeLazy(() => import('./pages/ExamStatsDashboard'), 
 
 
 
+import { parseExamIdFromLocation, registerExamUrlMapping } from "./lib/smartRouter";
+
 export default function App() {
   const [activeTab, setActiveTab] = useState(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -110,6 +112,23 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Auto-register exam URL mappings from teacher exam history
+    try {
+      const teacherHist = JSON.parse(localStorage.getItem("eduplan_teacher_exams_history") || "[]");
+      const worksheetHist = JSON.parse(localStorage.getItem("eduplan_worksheet_exams_history") || "[]");
+      const combined = [...(Array.isArray(teacherHist) ? teacherHist : []), ...(Array.isArray(worksheetHist) ? worksheetHist : [])];
+      combined.forEach((item: any) => {
+        const code = (item.code || item.id || item.examId || "").trim().toUpperCase();
+        if (code) {
+          registerExamUrlMapping(`/exam/${code}`, code);
+          registerExamUrlMapping(`/p/${code}`, code);
+          registerExamUrlMapping(`/thi/${code}`, code);
+          registerExamUrlMapping(`/?pin=${code}`, code);
+          registerExamUrlMapping(`/#/exam/${code}`, code);
+        }
+      });
+    } catch (e) {}
+
     const handleShowModal = () => setIsSettingsOpen(true);
     const handleShowGuide = (e: any) => {
       if (e?.detail?.sectionId) {
@@ -152,20 +171,15 @@ export default function App() {
     };
   }, []);
 
-  
+  // Smart URL parser & HashRouter redirect engine
+  const { examId: studentExamId, examData: studentExamData, isStudentMode } = parseExamIdFromLocation();
+
   const urlParams = new URLSearchParams(window.location.search);
   const hashStr = window.location.hash.startsWith('#') ? window.location.hash.substring(1) : window.location.hash;
   const hashParams = new URLSearchParams(hashStr);
 
-  const pathMatch = window.location.pathname.match(/^\/(?:exam|p|thi)\/([A-Za-z0-9_-]+)/i);
-  const pathExamId = pathMatch ? pathMatch[1] : null;
-
-  const studentExamId = urlParams.get('examId') || urlParams.get('exam') || urlParams.get('code') || urlParams.get('pin') || urlParams.get('p') || hashParams.get('pin') || hashParams.get('p') || hashParams.get('examId') || pathExamId;
-  const studentExamData = urlParams.get('examData') || urlParams.get('d') || hashParams.get('examData') || hashParams.get('d');
-  const isStudentMode = urlParams.get('mode') === 'student' || urlParams.get('view') === 'exam' || hashParams.get('mode') === 'student';
-
   const viewMode = urlParams.get('view') || hashParams.get('view');
-  const examPdfData = urlParams.get('data') || hashParams.get('d') || hashParams.get('data') || hashParams.get('d');
+  const examPdfData = urlParams.get('data') || hashParams.get('d') || hashParams.get('data');
 
   if (viewMode === 'exam_pdf' && examPdfData) {
     return (
@@ -182,8 +196,13 @@ export default function App() {
       </Suspense>
     );
   }
+
   if (isStudentMode) {
-    return <Suspense fallback={<div className="flex h-screen items-center justify-center bg-slate-100 font-sans">Đang tải phòng thi...</div>}><StudentExamView /></Suspense>;
+    return (
+      <Suspense fallback={<div className="flex h-screen items-center justify-center bg-slate-100 font-sans">Đang tải phòng thi...</div>}>
+        <StudentExamView />
+      </Suspense>
+    );
   }
   
   return (

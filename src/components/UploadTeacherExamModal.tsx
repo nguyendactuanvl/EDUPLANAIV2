@@ -42,6 +42,7 @@ import {
   suggestDurationByQuestionCount 
 } from '../lib/examParser';
 import { saveExamToCloud } from '../lib/cloudExamStore';
+import { registerExamUrlMapping } from '../lib/smartRouter';
 import { apiFetch } from '../lib/apiFetch';
 import { useSubjects } from '../lib/subjects';
 import { formatMathContent, sanitizeShortAnswerInput, validateShortAnswer, sanitizeExamQuestion } from '../lib/utils';
@@ -693,6 +694,11 @@ export function UploadTeacherExamModal({
 
       // 4. Save to distributed cloud KV store + localStorage
       await saveExamToCloud(examId, payload);
+      registerExamUrlMapping(`/exam/${examId}`, examId);
+      registerExamUrlMapping(`/p/${examId}`, examId);
+      registerExamUrlMapping(`/thi/${examId}`, examId);
+      registerExamUrlMapping(`/?pin=${examId}`, examId);
+      registerExamUrlMapping(`/#/exam/${examId}`, examId);
 
       // 5. Build clean direct link
       const finalUrl = `${window.location.origin}/?pin=${examId}`;

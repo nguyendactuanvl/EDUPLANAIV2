@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { 
   FileText, Clock, FileCheck, CheckCircle2, XCircle, ChevronLeft, ChevronRight, Download,
   HelpCircle, Settings, Send, Code, Play, RefreshCw, Upload, Copy, Info, Check, AlertCircle, AlertTriangle, Loader2, Sparkles,
-  User, Users, BarChart, Search, Trash2, FileSpreadsheet, ShieldCheck, KeyRound, Zap, CheckCircle, ShieldAlert, Maximize2, Minimize2, Lock
+  User, Users, BarChart, Search, Trash2, FileSpreadsheet, ShieldCheck, KeyRound, Zap, CheckCircle, ShieldAlert, Maximize2, Minimize2, Lock, Key, Share2
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import mammoth from "mammoth";
@@ -15,6 +15,8 @@ import {
   getCachedToken 
 } from "../lib/googleAuth";
 import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
+import { saveExamToCloud, fetchExamFromCloud, saveExamToWebhook } from "../lib/cloudExamStore";
+import { registerExamUrlMapping } from "../lib/smartRouter";
 
 // Types for Exam Configuration
 interface Part1Key {
@@ -1082,6 +1084,18 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
       const code = data.examId.toUpperCase();
       setSharedRoomId(code);
 
+      // Save room persistently across client localStorage, Express server, and Cloud KV
+      try {
+        await saveExamToCloud(code, { ...payload, id: code, customId: code });
+        registerExamUrlMapping(`/exam/${code}`, code);
+        registerExamUrlMapping(`/p/${code}`, code);
+        registerExamUrlMapping(`/thi/${code}`, code);
+        registerExamUrlMapping(`/?pin=${code}`, code);
+        registerExamUrlMapping(`/#/exam/${code}`, code);
+      } catch (cloudErr) {
+        console.warn("Lỗi lưu Cloud KV phòng thi:", cloudErr);
+      }
+
       // Save shared room to teacher's local history
       try {
         const savedHistoryRaw = localStorage.getItem("eduplan_teacher_exams_history") || "[]";
@@ -1118,14 +1132,26 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
   // Load results from backend for a specific room
   const handleLoadRoomResults = async (code: string) => {
     setIsLoadingResults(true);
-    setSelectedRoomForResults(code);
+    const cleanCode = code.trim().toUpperCase();
+    setSelectedRoomForResults(cleanCode);
     setSelectedRoomResultsData(null);
     try {
-      const res = await fetch(`/api/exams/${code.toUpperCase()}?fresh=true`);
-      if (!res.ok) {
-        throw new Error("Không thể tải thông tin phòng thi này.");
+      let data = null;
+      try {
+        const res = await fetch(`/api/exams/${cleanCode}?fresh=true`);
+        if (res.ok) {
+          data = await res.json();
+        }
+      } catch (e) {}
+
+      if (!data) {
+        data = await fetchExamFromCloud(cleanCode);
       }
-      const data = await res.json();
+
+      if (!data) {
+        throw new Error(`Không tìm thấy dữ liệu phòng thi với mã "${cleanCode}". Vui lòng kiểm tra lại mã phòng thi.`);
+      }
+
       setSelectedRoomResultsData(data);
     } catch (e: any) {
       alert("Lỗi tải kết quả: " + e.message);

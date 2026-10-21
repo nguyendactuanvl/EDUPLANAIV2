@@ -6,6 +6,7 @@ import {
   TrendingUp, Sparkles, Check, Printer, PieChart, Info, HelpCircle
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import { fetchExamFromCloud } from "../lib/cloudExamStore";
 
 interface Submission {
   studentName?: string;
@@ -142,10 +143,19 @@ export function ExamStatsDashboard({ initialExamId, onBackToExam }: ExamStatsDas
     const cleanCode = code.trim().toUpperCase();
 
     try {
-      const res = await fetch(`/api/exams/${cleanCode}?fresh=true`);
-      if (res.ok) {
-        const serverData = await res.json();
-        
+      let serverData = null;
+      try {
+        const res = await fetch(`/api/exams/${cleanCode}?fresh=true`);
+        if (res.ok) {
+          serverData = await res.json();
+        }
+      } catch (e) {}
+
+      if (!serverData) {
+        serverData = await fetchExamFromCloud(cleanCode);
+      }
+
+      if (serverData) {
         // Normalize server data
         const title = serverData.examTitle || serverData.title || serverData.examData?.examName || serverData.examName || `Phòng thi ${cleanCode}`;
         const duration = serverData.duration || serverData.examDuration || serverData.examData?.duration || 45;

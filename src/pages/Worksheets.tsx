@@ -7,7 +7,7 @@ import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveCon
 import { 
   BookOpen, Download, AlertCircle, Edit3, Eye, Printer, Share2, Copy, CheckCircle2, 
   ExternalLink, Upload, FileText, Palette, LayoutTemplate, GitFork, Sparkles, Zap, Image as ImageIcon, Sliders, Check,
-  TrendingUp, BarChart2, Plus, Box, BarChart3, School, User, Wand2, Users, BarChart, Loader2, FileSpreadsheet, Trash2, RefreshCw, X, ShieldCheck
+  TrendingUp, BarChart2, Plus, Box, BarChart3, School, User, Wand2, Users, BarChart, Loader2, FileSpreadsheet, Trash2, RefreshCw, X, ShieldCheck, Key
 } from "lucide-react";
 import { StudentExamView } from "./StudentExamView";
 import * as XLSX from "xlsx";
@@ -36,6 +36,7 @@ import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMa
 import { parseRawExamText } from '../lib/examParser';
 import { printElement, ensureMathRendered } from '../lib/print';
 import { saveExamToCloud, saveExamToWebhook } from '../lib/cloudExamStore';
+import { registerExamUrlMapping } from "../lib/smartRouter";
 import { KNTT_CURRICULUM, getKnttCurriculum } from "../data/knttCurriculum";
 import { LanguageSpeechControls } from "../components/LanguageSpeechControls";
 import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
@@ -640,31 +641,29 @@ export function Worksheets() {
   };
 
   const handleLoadRoomResults = async (code: string) => {
-    setSelectedRoomForResults(code);
+    const cleanCode = code.trim().toUpperCase();
+    setSelectedRoomForResults(cleanCode);
     setIsLoadingResults(true);
     try {
-      const res = await fetch(`/api/exams/share?examId=${code}`);
-      if (res.ok) {
-        const data = await res.json();
+      let data = null;
+      try {
+        const res = await fetch(`/api/exams/${cleanCode}?fresh=true`);
+        if (res.ok) {
+          data = await res.json();
+        }
+      } catch (e) {}
+
+      if (!data) {
+        data = await fetchExamFromCloud(cleanCode);
+      }
+
+      if (data) {
         setSelectedRoomResultsData(data);
       } else {
         throw new Error("Không thể tải kết quả từ máy chủ.");
       }
     } catch (err: any) {
-      const cached = localStorage.getItem(`examCache_${code}`);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          setSelectedRoomResultsData({
-            examTitle: parsed.examData?.examName || `Phòng thi ${code}`,
-            submissions: parsed.submissions || []
-          });
-        } catch (e) {
-          alert("Lỗi tải kết quả phòng thi: " + err.message);
-        }
-      } else {
-        alert("Lỗi tải kết quả phòng thi: " + err.message);
-      }
+      alert("Lỗi tải kết quả phòng thi: " + err.message);
     } finally {
       setIsLoadingResults(false);
     }
@@ -910,6 +909,11 @@ export function Worksheets() {
       // Sync to cloud store & Webhook unconditionally
       try {
         await saveExamToCloud(examId, payload);
+        registerExamUrlMapping(`/exam/${examId}`, examId);
+        registerExamUrlMapping(`/p/${examId}`, examId);
+        registerExamUrlMapping(`/thi/${examId}`, examId);
+        registerExamUrlMapping(`/?pin=${examId}`, examId);
+        registerExamUrlMapping(`/#/exam/${examId}`, examId);
       } catch (e) {}
 
       try {
