@@ -92,31 +92,13 @@ export const googleSignIn = async (): Promise<{ user: User | any; accessToken: s
         }
       }
 
-      // Hộp thoại xác nhận hỗ trợ giáo viên kết nối Google Sheets không bị gián đoạn
-      const promptValue = prompt(
-        "Hệ thống phát hiện môi trường xem trước (Preview Domain) chưa được đăng ký trong danh sách Ủy quyền của Firebase.\n\n" +
-        "Để kích hoạt tính năng Tích hợp Google Sheets ngay bây giờ, thầy cô có thể:\n" +
-        "- Dán Access Token Google (nếu có).\n" +
-        "- Hoặc nhấn OK để tự động kích hoạt chế độ Liên kết Google Sheets cho phòng thi.\n",
-        "google_sheets_active_token"
-      );
-
-      if (promptValue !== null) {
-        const token = promptValue.trim() || "google_sheets_active_token";
-        cachedAccessToken = token;
-        const fallbackUser: any = {
-          displayName: "Giáo viên (Đã liên kết Google Sheets)",
-          email: "giaovien@eduplan.vn",
-          uid: "fallback_user_" + Date.now()
-        };
-        return { user: fallbackUser, accessToken: token };
-      }
-
+      // Không sử dụng prompt() vì các môi trường WebView/Desktop Electron chặn gọi prompt đồng bộ
+      console.warn("Môi trường hiện tại chưa cấu hình Firebase Authorized Domains cho Google OAuth trực tiếp.");
       return null;
     }
 
     console.error("Lỗi đăng nhập Google:", error);
-    throw error;
+    return null;
   } finally {
     isSigningIn = false;
   }

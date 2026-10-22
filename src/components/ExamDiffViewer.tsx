@@ -18,7 +18,7 @@ import {
   Image as ImageIcon
 } from 'lucide-react';
 import { MathView } from './MathView';
-import { cleanQuestionStem, sanitizeExamQuestion } from '../lib/utils';
+import { cleanQuestionStem, sanitizeExamQuestion, safePrompt } from '../lib/utils';
 import { exportHtmlToWord, downloadAllExamImagesFromElement } from '../lib/exportUtils';
 
 export interface Question {
@@ -713,7 +713,7 @@ export function ExamDiffViewer({
                     <div className="flex justify-end gap-2">
                       <button
                         onClick={() => {
-                          const note = prompt('Nhập ghi chú đánh dấu sai sót (ví dụ: Thiếu dấu phẩy, hình vẽ bị mờ):');
+                          const note = safePrompt('Nhập ghi chú đánh dấu sai sót (ví dụ: Thiếu dấu phẩy, hình vẽ bị mờ):');
                           if (note !== null) {
                             setManualFlags((prev) => ({ ...prev, [pair.originalIndex]: note }));
                           }

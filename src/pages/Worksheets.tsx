@@ -218,6 +218,7 @@ export function Worksheets() {
   const [resultsViewTab, setResultsViewTab] = useState<'table' | 'analytics'>('table');
   const [integrationSolutionTab, setIntegrationSolutionTab] = useState<'quick' | 'link' | 'custom'>('quick');
   const [quickCodeInput, setQuickCodeInput] = useState<string>('');
+  const [manualSheetUrlInput, setManualSheetUrlInput] = useState<string>('');
 
   // BBT & Đồ thị & Hình 3D & Thống kê Visualizer State
   const [activeVisualizer, setActiveVisualizer] = useState<{
@@ -619,6 +620,87 @@ export function Worksheets() {
     }
   };
 
+  const handleSaveCustomSheetUrl = async (urlToSave?: string) => {
+    const targetUrl = (urlToSave || manualSheetUrlInput || '').trim();
+    if (!targetUrl) {
+      alert("Vui lòng nhập đường link Google Sheet (ví dụ: https://docs.google.com/spreadsheets/d/.../edit).");
+      return;
+    }
+    if (!isValidGoogleSheetUrl(targetUrl)) {
+      alert("Đường link Google Sheet không hợp lệ. Link phải có dạng: https://docs.google.com/spreadsheets/d/.../edit");
+      return;
+    }
+
+    const match = targetUrl.match(/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+    const sheetId = match ? match[1] : '';
+    const code = selectedRoomForResults;
+    if (!code) return;
+
+    const updatedData = {
+      ...(selectedRoomResultsData || {}),
+      linkedSheetId: sheetId,
+      linkedSheetUrl: targetUrl
+    };
+
+    try {
+      await fetch("/api/exams/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...updatedData, customId: code })
+      }).catch(() => {});
+
+      setSelectedRoomResultsData(updatedData);
+
+      const updatedHistory = examsHistory.map((h: any) => {
+        if (h.code === code) {
+          return { ...h, linkedSheetId: sheetId, linkedSheetUrl: targetUrl };
+        }
+        return h;
+      });
+      setExamsHistory(updatedHistory);
+      localStorage.setItem("eduplan_worksheet_exams_history", JSON.stringify(updatedHistory));
+
+      showToast(`✅ Đã liên kết Google Sheet thành công với phòng thi ${code}!`);
+    } catch (e: any) {
+      alert("Lỗi khi lưu liên kết: " + e.message);
+    }
+  };
+
+  const handleUnlinkSheet = async () => {
+    const code = selectedRoomForResults;
+    if (!code) return;
+
+    const updatedData = {
+      ...(selectedRoomResultsData || {}),
+      linkedSheetId: null,
+      linkedSheetUrl: null
+    };
+
+    try {
+      await fetch("/api/exams/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...updatedData, customId: code })
+      }).catch(() => {});
+
+      setSelectedRoomResultsData(updatedData);
+
+      const updatedHistory = examsHistory.map((h: any) => {
+        if (h.code === code) {
+          return { ...h, linkedSheetId: null, linkedSheetUrl: null };
+        }
+        return h;
+      });
+      setExamsHistory(updatedHistory);
+      localStorage.setItem("eduplan_worksheet_exams_history", JSON.stringify(updatedHistory));
+
+      setManualSheetUrlInput('');
+      showToast(`Đã hủy liên kết Google Sheet cho phòng ${code}`);
+    } catch (e: any) {
+      alert("Lỗi: " + e.message);
+    }
+  };
+
   const handleOneClickQuickConnectSheet = async () => {
     if (!selectedRoomForResults) return;
 
@@ -636,51 +718,82 @@ export function Worksheets() {
 
       let token = getCachedToken();
       if (!token) {
-        const authRes = await googleSignIn();
-        if (authRes) {
-          setGoogleUser(authRes.user);
-          setGoogleToken(authRes.accessToken);
-          token = authRes.accessToken;
+        try {
+          const authRes = await googleSignIn();
+          if (authRes) {
+            setGoogleUser(authRes.user);
+            setGoogleToken(authRes.accessToken);
+            token = authRes.accessToken;
+          }
+        } catch (authErr) {
+          console.warn("Google auth bypassed or not available in this environment:", authErr);
         }
       }
 
-      if (!token) {
-        throw new Error("Vui lòng xác nhận đăng nhập Google để tạo bảng điểm Google Sheet thực tế trên Google Drive.");
+      // Khi có token Google OAuth hợp lệ (ví dụ tên miền đã duyệt)
+      if (token) {
+        const sheet = await createGoogleSheet(title);
+        const subs = selectedRoomResultsData?.submissions || [];
+        if (subs.length > 0) {
+          await syncSubmissionsToSheet(sheet.id, title, subs).catch(() => {});
+        }
+
+        const updatedData = {
+          ...(selectedRoomResultsData || {}),
+          linkedSheetId: sheet.id,
+          linkedSheetUrl: sheet.url
+        };
+
+        await fetch("/api/exams/share", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...updatedData, customId: code })
+        }).catch(() => {});
+
+        setSelectedRoomResultsData(updatedData);
+
+        const updatedHistory = examsHistory.map((h: any) => {
+          if (h.code === code) {
+            return { ...h, linkedSheetId: sheet.id, linkedSheetUrl: sheet.url };
+          }
+          return h;
+        });
+        setExamsHistory(updatedHistory);
+        localStorage.setItem("eduplan_worksheet_exams_history", JSON.stringify(updatedHistory));
+
+        setManualSheetUrlInput(sheet.url);
+        window.open(sheet.url, '_blank');
+        showToast("✅ Đã tạo Google Sheet và đồng bộ dữ liệu điểm số thành công!");
+        return;
       }
 
-      const sheet = await createGoogleSheet(title);
+      // CƠ CHẾ 1-CLICK DỰ PHÒNG THÔNG MINH CHO DESKTOP / WEBVIEW / KHÔNG CẦN ĐĂNG NHẬP:
+      // 1. Sao chép dữ liệu bảng điểm học sinh dạng bảng (TSV) vào Clipboard
       const subs = selectedRoomResultsData?.submissions || [];
-      if (subs.length > 0) {
-        await syncSubmissionsToSheet(sheet.id, title, subs).catch(() => {});
+      const tsvHeaders = ["STT", "Họ và tên học sinh", "Lớp", "Tổng điểm (10)", "Thời gian nộp"].join("\t");
+      const tsvRows = subs.map((s: any, idx: number) => [
+        idx + 1,
+        s.studentName || "Học sinh",
+        s.studentClass || "N/A",
+        s.totalScore ?? 0,
+        new Date(s.submittedAt || Date.now()).toLocaleString('vi-VN')
+      ].join("\t")).join("\n");
+      const tsvContent = `${tsvHeaders}\n${tsvRows}`;
+
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(tsvContent).catch(() => {});
       }
 
-      const updatedData = {
-        ...(selectedRoomResultsData || {}),
-        linkedSheetId: sheet.id,
-        linkedSheetUrl: sheet.url
-      };
+      // 2. Xuất ngay file Excel .xlsx chuẩn về máy tính
+      handleExportResultsToExcel();
 
-      await fetch("/api/exams/share", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...updatedData, customId: code })
-      }).catch(() => {});
+      // 3. Mở tab Google Sheet mới trực tiếp trên trình duyệt
+      window.open('https://sheets.new', '_blank');
 
-      setSelectedRoomResultsData(updatedData);
-
-      const updatedHistory = examsHistory.map((h: any) => {
-        if (h.code === code) {
-          return { ...h, linkedSheetId: sheet.id, linkedSheetUrl: sheet.url };
-        }
-        return h;
-      });
-      setExamsHistory(updatedHistory);
-      localStorage.setItem("eduplan_worksheet_exams_history", JSON.stringify(updatedHistory));
-
-      window.open(sheet.url, '_blank');
+      showToast(`⚡ Đã mở Google Sheets & sao chép bảng điểm phòng ${code}! Dán (Ctrl+V) vào ô A1 để xem.`);
     } catch (e: any) {
       if (e?.message) {
-        alert("Lỗi tạo Google Sheet: " + e.message);
+        showToast("Thông báo: " + e.message);
       }
     } finally {
       setIsSyncingSheet(false);
@@ -706,6 +819,11 @@ export function Worksheets() {
 
       if (data) {
         setSelectedRoomResultsData(data);
+        if (data.linkedSheetUrl) {
+          setManualSheetUrlInput(data.linkedSheetUrl);
+        } else {
+          setManualSheetUrlInput('');
+        }
       } else {
         throw new Error("Không thể tải kết quả từ máy chủ.");
       }
@@ -963,7 +1081,8 @@ export function Worksheets() {
         registerExamUrlMapping(`/#/exam/${examId}`, examId);
       } catch (e) {}
 
-      // Robust link embedding compressed payload (&d=...) so students always load 100% reliably
+      // Primary link is clean short PIN url (~40 chars)
+      const shortLink = `${window.location.origin}/?pin=${examId}`;
       let compressed = '';
       try {
         compressed = LZString.compressToEncodedURIComponent(JSON.stringify(payload));
@@ -971,11 +1090,11 @@ export function Worksheets() {
         console.warn("LZString compression error:", compErr);
       }
 
-      const finalLink = compressed 
+      const fullBackupLink = compressed 
         ? `${window.location.origin}/?pin=${examId}&d=${compressed}`
-        : `${window.location.origin}/?pin=${examId}`;
+        : shortLink;
        
-      setShareLink(finalLink);
+      setShareLink(shortLink);
 
       // Save room to history
       const roomCode = examId;
@@ -986,7 +1105,8 @@ export function Worksheets() {
         grade: selectedGrade,
         duration: 45,
         createdAt: new Date().toISOString(),
-        shareLink: finalLink,
+        shareLink: shortLink,
+        backupLink: fullBackupLink,
         linkedSheetId: null,
         linkedSheetUrl: null
       };
@@ -2110,13 +2230,14 @@ export function Worksheets() {
                       </button>
                       <button
                         onClick={() => {
-                          const link = room.shareLink || `${window.location.origin}/?examId=${room.code}`;
-                          navigator.clipboard.writeText(link);
-                          alert("Đã copy link học sinh cho phòng: " + room.code);
+                          const rawLink = room.shareLink || `${window.location.origin}/?pin=${room.code}`;
+                          const cleanLink = rawLink.includes('&d=') ? rawLink.split('&d=')[0] : rawLink;
+                          navigator.clipboard.writeText(cleanLink);
+                          alert("Đã copy Link Rút Gọn học sinh cho phòng: " + room.code + "\nLink: " + cleanLink);
                         }}
                         className="py-1 px-2 bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1 transition-colors"
                       >
-                        <Copy className="w-3 h-3" /> Link
+                        <Copy className="w-3 h-3" /> Link Ngắn
                       </button>
                       <button
                         onClick={(e) => {
@@ -2305,33 +2426,72 @@ export function Worksheets() {
                               type="text"
                               value={quickCodeInput || selectedRoomForResults || 'EDU2026'}
                               onChange={(e) => setQuickCodeInput(e.target.value.toUpperCase())}
-                              placeholder="VD: NQ9JE5 hoặc EDU2026"
+                              placeholder="VD: 3M835U hoặc EDU2026"
                               className="px-2.5 py-1 bg-white border border-emerald-300 rounded-lg text-xs font-mono font-bold text-indigo-700 w-full focus:ring-2 focus:ring-emerald-400 outline-none shadow-2xs"
                             />
                           </div>
 
                           <div className="flex items-center gap-2">
                             {isValidGoogleSheetUrl(selectedRoomResultsData?.linkedSheetUrl) ? (
-                              <a
-                                href={selectedRoomResultsData!.linkedSheetUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs flex items-center gap-1 text-[11px]"
-                              >
-                                <FileSpreadsheet className="w-3.5 h-3.5" /> Mở Google Sheet Đã Xác Thực ↗
-                              </a>
+                              <div className="flex items-center gap-1.5">
+                                <a
+                                  href={selectedRoomResultsData!.linkedSheetUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs flex items-center gap-1 text-[11px]"
+                                >
+                                  <FileSpreadsheet className="w-3.5 h-3.5" /> Mở Google Sheet Đã Kết Nối ↗
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={handleUnlinkSheet}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                  title="Hủy liên kết sheet này để dán link khác"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             ) : (
-                              <button
-                                type="button"
-                                onClick={handleOneClickQuickConnectSheet}
-                                disabled={isSyncingSheet}
-                                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-lg shadow-xs flex items-center gap-1.5 text-[11px] disabled:opacity-50 cursor-pointer"
-                              >
-                                <Zap className="w-3.5 h-3.5 fill-white" />
-                                {isSyncingSheet ? "Đang tạo Sheet..." : "⚡ Xác Nhận Kết Nối 1-Click (Tạo Google Sheet)"}
-                              </button>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={handleOneClickQuickConnectSheet}
+                                  disabled={isSyncingSheet}
+                                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-lg shadow-xs flex items-center gap-1.5 text-[11px] disabled:opacity-50 cursor-pointer"
+                                >
+                                  <Zap className="w-3.5 h-3.5 fill-white" />
+                                  {isSyncingSheet ? "Đang xử lý..." : "⚡ Xác Nhận Kết Nối 1-Click (Tạo Google Sheet)"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleExportResultsToExcel}
+                                  className="px-3 py-1.5 bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-50 font-bold rounded-lg shadow-2xs flex items-center gap-1 text-[11px] cursor-pointer"
+                                  title="Tải bảng điểm Excel về máy tính"
+                                >
+                                  <Download className="w-3.5 h-3.5" /> Tải Excel (.xlsx)
+                                </button>
+                              </div>
                             )}
                           </div>
+                        </div>
+
+                        {/* Direct Paste Google Sheet URL input */}
+                        <div className="pt-2 border-t border-emerald-200/50 flex flex-wrap items-center gap-2 text-[11px]">
+                          <span className="font-bold text-slate-700 whitespace-nowrap">🔗 Hoặc dán link Google Sheet có sẵn:</span>
+                          <input
+                            type="url"
+                            value={manualSheetUrlInput}
+                            onChange={(e) => setManualSheetUrlInput(e.target.value)}
+                            placeholder="https://docs.google.com/spreadsheets/d/.../edit"
+                            className="flex-1 min-w-[200px] px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-emerald-400 outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSaveCustomSheetUrl()}
+                            className="px-3 py-1 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg cursor-pointer"
+                          >
+                            Lưu Link
+                          </button>
                         </div>
                       </div>
                     )}

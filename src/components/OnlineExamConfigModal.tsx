@@ -60,8 +60,10 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
 
   // Step state
   const [step, setStep] = useState<'config' | 'success'>('config');
-  const [isSharing, setIsSharing] = useState(false);
   const [shareLink, setShareLink] = useState('');
+  const [backupLink, setBackupLink] = useState('');
+  const [showBackupLink, setShowBackupLink] = useState(false);
+  const [copiedBackup, setCopiedBackup] = useState(false);
   const [sharePin, setSharePin] = useState('');
   const [qrCodeUrl, setQrCodeUrl] = useState('');
   const [copiedLink, setCopiedLink] = useState(false);
@@ -239,13 +241,15 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
       }
 
       const publicBase = window.location.origin;
-      const finalUrl = compressed 
+      // Clean short PIN url: only ~40 characters, compact and clean for Zalo/SMS
+      const shortUrl = `${publicBase}/?pin=${examId}`;
+      const fullBackupUrl = compressed 
         ? `${publicBase}/?pin=${examId}&d=${compressed}`
-        : `${publicBase}/?pin=${examId}`;
+        : shortUrl;
 
-      // Generate QR Code
+      // Generate QR Code with the short clean URL so QR is sharp, large blocks and scans instantly (<0.2s)
       try {
-        const qrData = await QRCode.toDataURL(finalUrl, {
+        const qrData = await QRCode.toDataURL(shortUrl, {
           width: 280,
           margin: 2,
           errorCorrectionLevel: 'M',
@@ -253,7 +257,7 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
         });
         setQrCodeUrl(qrData);
       } catch (qrErr) {
-        setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(finalUrl)}`);
+        setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(shortUrl)}`);
       }
 
       // Save to teacher created exams history in localStorage so it is never lost on refresh/exit
@@ -270,7 +274,8 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
           subject: subject,
           grade: grade,
           createdAt: new Date().toISOString(),
-          shareUrl: finalUrl,
+          shareUrl: shortUrl,
+          backupUrl: fullBackupUrl,
           submissions: []
         };
         const updatedHistory = [newHistoryEntry, ...existingHistory.filter((e: any) => e.examId !== examId && e.id !== examId)];
@@ -280,7 +285,8 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
       }
 
       setSharePin(examId);
-      setShareLink(finalUrl);
+      setShareLink(shortUrl);
+      setBackupLink(fullBackupUrl);
       setStep('success');
 
       if (onExamUpdated) {
@@ -651,25 +657,31 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
               </div>
 
               {/* Direct Link Box */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
-                  <span>Đường link làm bài trực tiếp:</span>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-bold text-slate-700">Đường link làm bài thi (Gọn nhẹ):</label>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      Link Ngắn (~{shareLink.length} ký tự)
+                    </span>
+                  </div>
                   {copiedLink && (
                     <span className="text-emerald-600 font-bold flex items-center gap-1 text-xs animate-in fade-in">
-                      <Check className="w-3.5 h-3.5" /> Đã sao chép link!
+                      <Check className="w-3.5 h-3.5" /> Đã sao chép link ngắn!
                     </span>
                   )}
-                </label>
+                </div>
+
                 <div className="flex gap-2">
                   <input
                     type="text"
                     readOnly
                     value={shareLink}
-                    className="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm font-semibold text-slate-800 select-all outline-none"
+                    className="flex-1 bg-white border border-emerald-400 font-mono text-emerald-800 rounded-xl px-3 py-2 text-xs sm:text-sm font-bold select-all outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
                   />
                   <button
                     onClick={handleCopyLink}
-                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs sm:text-sm flex items-center gap-1.5 shrink-0 shadow-2xs transition-colors"
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs sm:text-sm flex items-center gap-1.5 shrink-0 shadow-xs transition-colors cursor-pointer"
                   >
                     <Copy className="w-4 h-4" /> Sao chép Link
                   </button>
@@ -683,6 +695,53 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
                     <ExternalLink className="w-4 h-4" /> Thử làm
                   </a>
                 </div>
+                <p className="text-[11px] text-slate-500">
+                  ✨ Link siêu ngắn gọn, gửi qua Zalo/Facebook không bị tràn màn hình hay rách link. Học sinh nhấp vào sẽ tự động tải đề thi từ Cloud.
+                </p>
+
+                {/* Optional Collapsible Backup Full Payload Link */}
+                {backupLink && backupLink !== shareLink && (
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowBackupLink(!showBackupLink)}
+                      className="text-[11px] text-slate-500 hover:text-slate-700 font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      <span>{showBackupLink ? "▲ Thu gọn link dự phòng" : "▼ Tùy chọn: Link Dự Phòng Nén Toàn Bộ Đề (Offline Fallback)"}</span>
+                    </button>
+
+                    {showBackupLink && (
+                      <div className="mt-2 p-3 bg-amber-50/70 border border-amber-200 rounded-xl space-y-1.5 animate-in fade-in">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-amber-900">
+                            Link dự phòng (Nén trực tiếp đề thi vào URL - {backupLink.length} ký tự):
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(backupLink);
+                              setCopiedBackup(true);
+                              setTimeout(() => setCopiedBackup(false), 2000);
+                            }}
+                            className="text-xs bg-amber-600 hover:bg-amber-700 text-white font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors"
+                          >
+                            <Copy className="w-3 h-3" />
+                            <span>{copiedBackup ? "Đã chép!" : "Sao chép link nén"}</span>
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          readOnly
+                          value={backupLink}
+                          className="w-full bg-white border border-amber-300 rounded-lg p-1.5 text-[10px] text-slate-600 font-mono truncate select-all"
+                        />
+                        <p className="text-[10px] text-amber-800">
+                          Chỉ dùng link này trong trường hợp máy học sinh bị mạng trường học chặn kết nối Cloud ngoài. Bình thường hãy ưu tiên gửi <strong>Link Ngắn Gọn</strong> ở trên.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* QR Code & Zalo Message */}

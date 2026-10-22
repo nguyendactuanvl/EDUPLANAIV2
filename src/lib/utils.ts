@@ -10,6 +10,20 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * An toàn gọi prompt() trên trình duyệt và desktop/WebView mà không gây crash khi prompt() bị chặn
+ */
+export function safePrompt(message: string, defaultValue = ''): string | null {
+  try {
+    if (typeof window !== 'undefined' && typeof window.prompt === 'function') {
+      return window.prompt(message, defaultValue);
+    }
+  } catch (e) {
+    console.warn("window.prompt is not supported in this runtime environment:", e);
+  }
+  return null;
+}
+
+/**
  * Làm sạch chuỗi JSON bên trong chuỗi string, tự động sửa các lỗi:
  * - Ký tự backslash không hợp lệ trong LaTeX (\frac, \alpha, \le, \vec, \Omega, ...)
  * - Unicode escape không hợp lệ (\upsilon, \underline, ...)

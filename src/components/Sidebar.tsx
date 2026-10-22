@@ -1,15 +1,17 @@
 import { 
   Trophy, BookOpen, Calendar, FileText, Settings, Sparkles, Clock, 
   ClipboardList, FileEdit, FileCheck, Users, ShieldCheck, CalendarDays, 
-  Key, Calculator, HelpCircle, PlayCircle, PenTool, ScanLine, Sun, Moon, GraduationCap, BarChart3
+  Key, Calculator, HelpCircle, PlayCircle, PenTool, ScanLine, Sun, Moon, GraduationCap, BarChart3,
+  Lock
 } from "lucide-react";
 import { cn } from "../lib/utils";
 
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
-  onOpenSettings?: () => void;
+  onOpenSettings?: (defaultTab?: "apikey" | "security" | "subjects") => void;
   onOpenGuide?: () => void;
+  onLockApp?: () => void;
   isDarkMode?: boolean;
   onToggleTheme?: () => void;
 }
@@ -19,6 +21,7 @@ export function Sidebar({
   setActiveTab, 
   onOpenSettings, 
   onOpenGuide,
+  onLockApp,
   isDarkMode = false,
   onToggleTheme
 }: SidebarProps) {
@@ -142,13 +145,34 @@ export function Sidebar({
           </div>
         </button>
 
-        <button 
-          onClick={onOpenSettings}
-          className="flex items-center gap-3 text-xs font-medium text-emerald-400 hover:text-emerald-300 transition-colors w-full text-left cursor-pointer pt-1"
-        >
-          <Key className="h-4 w-4 shrink-0" />
-          <span className="truncate">Nhập mã API key ở đây</span>
-        </button>
+        <div className="flex items-center gap-2 pt-1">
+          <button 
+            onClick={() => onOpenSettings?.("apikey")}
+            className="flex-1 flex items-center gap-2 text-xs font-medium text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer truncate"
+            title="Cài đặt API Key cá nhân"
+          >
+            <Key className="h-4 w-4 shrink-0" />
+            <span className="truncate">Cài đặt API Key</span>
+          </button>
+
+          <button
+            onClick={() => onOpenSettings?.("security")}
+            className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+            title="Bảo mật & Mã PIN Giáo viên"
+          >
+            <ShieldCheck className="h-4 w-4" />
+          </button>
+
+          {onLockApp && (
+            <button
+              onClick={onLockApp}
+              className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+              title="Khóa màn hình làm việc tức thì"
+            >
+              <Lock className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

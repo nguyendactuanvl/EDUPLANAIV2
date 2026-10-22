@@ -11,7 +11,7 @@ import remarkMath from 'remark-math';
 import LZString from 'lz-string';
 import { Link } from 'lucide-react';
 import { exportHtmlToWord, downloadAllExamImagesFromElement } from '../lib/exportUtils';
-import { cn, fixMath, cleanQuestionStem, parseApiResponse, cleanOptionText, getPublicAppUrl, isRealWorldQuestion, sanitizeShortAnswerInput, validateShortAnswer, compareShortAnswers, sanitizeLatexString } from '../lib/utils';
+import { cn, fixMath, cleanQuestionStem, parseApiResponse, cleanOptionText, getPublicAppUrl, isRealWorldQuestion, sanitizeShortAnswerInput, validateShortAnswer, compareShortAnswers, sanitizeLatexString, safePrompt } from '../lib/utils';
 import { ensureMathRendered } from '../lib/print';
 import { saveExamToCloud, SYSTEM_EXAM_WEBHOOK } from '../lib/cloudExamStore';
 import { 
@@ -998,7 +998,7 @@ export function ExamGenerator() {
   });
 
   const saveCurrentConfig = () => {
-    const name = prompt("Nhập tên để lưu cấu hình ma trận này (ví dụ: Giữa kì 1 Toán 9):");
+    const name = safePrompt("Nhập tên để lưu cấu hình ma trận này (ví dụ: Giữa kì 1 Toán 9):");
     if (!name) return;
     const newConfig: MatrixConfig = {
       id: Date.now().toString(),
@@ -4365,7 +4365,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                         <button
                           onClick={() => {
                             const current = localStorage.getItem('custom_public_app_url') || '';
-                            const newUrl = prompt('Nhập tên miền tùy chỉnh (Ví dụ: https://my-exam.vercel.app):\nĐể trống nếu muốn dùng tên miền hiện tại.', current);
+                            const newUrl = safePrompt('Nhập tên miền tùy chỉnh (Ví dụ: https://my-exam.vercel.app):\nĐể trống nếu muốn dùng tên miền hiện tại.', current);
                             if (newUrl !== null) {
                               if (newUrl.trim()) {
                                 localStorage.setItem('custom_public_app_url', newUrl.trim());

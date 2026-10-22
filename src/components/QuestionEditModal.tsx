@@ -8,6 +8,7 @@ import { AiSimulationDrawerModal } from './math-tools/AiSimulationDrawerModal';
 import { TrendingUp, BarChart2, Box, BarChart3, Calculator, ImagePlus, Link2, Wand2, Sparkles } from 'lucide-react';
 import { run1ClickMathFix } from './math-tools/MathFormulaFixer';
 import { aiFixQuestionVisuals } from '../lib/bbtRenderer';
+import { safePrompt } from '../lib/utils';
 
 export interface QuestionData {
   id?: number;
@@ -381,7 +382,7 @@ export const QuestionEditModal: React.FC<QuestionEditModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  const url = prompt("Vui lòng nhập đường link hình ảnh (URL):");
+                  const url = safePrompt("Vui lòng nhập đường link hình ảnh (URL):");
                   if (url && url.trim()) {
                     setContent(prev => `${prev}\n\n![Hình vẽ](${url.trim()})`);
                   }

@@ -17,6 +17,7 @@ import {
 import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
 import { saveExamToCloud, fetchExamFromCloud, saveExamToWebhook } from "../lib/cloudExamStore";
 import { registerExamUrlMapping } from "../lib/smartRouter";
+import { safePrompt } from "../lib/utils";
 
 // Types for Exam Configuration
 interface Part1Key {
@@ -2712,7 +2713,7 @@ HS05 - Hoàng Văn Em`);
                   <span className="text-slate-300">|</span>
                   <button
                     onClick={() => {
-                      const input = prompt("Nhập mã đồng bộ Giáo viên (ví dụ: GV-XXXXXX) để khôi phục danh sách phòng thi của bạn từ đám mây:", teacherSyncCode);
+                      const input = safePrompt("Nhập mã đồng bộ Giáo viên (ví dụ: GV-XXXXXX) để khôi phục danh sách phòng thi của bạn từ đám mây:", teacherSyncCode);
                       if (input && input.trim()) {
                         handleSyncRoomsHistory(input.trim());
                       }

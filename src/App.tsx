@@ -3,12 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { Analytics } from '@vercel/analytics/react';
-import { Menu, Sparkles, Key, AlertCircle, HelpCircle, Sun, Moon } from "lucide-react";
+import { Menu, Sparkles, Key, AlertCircle, HelpCircle, Sun, Moon, Lock, ShieldCheck } from "lucide-react";
 import React, { useState, Suspense, useEffect } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SettingsModal } from "./components/SettingsModal";
 import { UserGuideModal } from "./components/UserGuideModal";
+import { TeacherLockScreen } from "./components/TeacherLockScreen";
+import { isTeacherLocked, lockTeacherWorkspace, updateActivityTimestamp, getSecuritySettings } from "./lib/appSecurity";
 import { getInitialTheme, applyTheme, ThemeMode } from "./lib/theme";
 
 function safeLazy<T extends React.ComponentType<any>>(
@@ -95,9 +97,13 @@ export default function App() {
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsDefaultTab, setSettingsDefaultTab] = useState<"apikey" | "security" | "subjects">("apikey");
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [guideSectionId, setGuideSectionId] = useState<string | undefined>(undefined);
   const [retryStatus, setRetryStatus] = useState<{ attempt: number, maxRetries: number, message?: string } | null>(null);
+
+  // Teacher Workspace Lock State
+  const [isLocked, setIsLocked] = useState(() => isTeacherLocked());
 
   // Theme State
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
@@ -129,7 +135,10 @@ export default function App() {
       });
     } catch (e) {}
 
-    const handleShowModal = () => setIsSettingsOpen(true);
+    const handleShowModal = () => {
+      setSettingsDefaultTab("apikey");
+      setIsSettingsOpen(true);
+    };
     const handleShowGuide = (e: any) => {
       if (e?.detail?.sectionId) {
         setGuideSectionId(e.detail.sectionId);
@@ -151,14 +160,39 @@ export default function App() {
       setActiveTab("exam_stats");
     };
 
+    const handleLockStatus = (e: any) => {
+      if (typeof e?.detail?.isLocked === 'boolean') {
+        setIsLocked(e.detail.isLocked);
+      }
+    };
+    const handleSecurityChanged = () => {
+      setIsLocked(isTeacherLocked());
+    };
+
     window.addEventListener('show-api-key-modal', handleShowModal);
     window.addEventListener('show-user-guide-modal', handleShowGuide);
     window.addEventListener('api-retry-status', handleRetryStatus);
     window.addEventListener('hsa-focus-mode', handleFocusMode);
     window.addEventListener('open-exam-stats', handleOpenStats);
+    window.addEventListener('eduplan-lock-status-changed', handleLockStatus);
+    window.addEventListener('eduplan-security-changed', handleSecurityChanged);
+
+    // Track user activity for auto-lock timeout
+    const handleUserActivity = () => updateActivityTimestamp();
+    window.addEventListener('mousemove', handleUserActivity, { passive: true });
+    window.addEventListener('keydown', handleUserActivity, { passive: true });
+    window.addEventListener('click', handleUserActivity, { passive: true });
+
+    // Periodic check for inactivity timeout
+    const lockCheckInterval = setInterval(() => {
+      if (isTeacherLocked()) {
+        setIsLocked(true);
+      }
+    }, 20000);
     
     const storedKey = localStorage.getItem("eduplan_gemini_api_key_v2");
     if (!storedKey) {
+      setSettingsDefaultTab("apikey");
       setIsSettingsOpen(true);
     }
 
@@ -168,6 +202,12 @@ export default function App() {
       window.removeEventListener('api-retry-status', handleRetryStatus);
       window.removeEventListener('hsa-focus-mode', handleFocusMode);
       window.removeEventListener('open-exam-stats', handleOpenStats);
+      window.removeEventListener('eduplan-lock-status-changed', handleLockStatus);
+      window.removeEventListener('eduplan-security-changed', handleSecurityChanged);
+      window.removeEventListener('mousemove', handleUserActivity);
+      window.removeEventListener('keydown', handleUserActivity);
+      window.removeEventListener('click', handleUserActivity);
+      clearInterval(lockCheckInterval);
     };
   }, []);
 
@@ -204,6 +244,18 @@ export default function App() {
       </Suspense>
     );
   }
+
+  // Teacher Workspace Lock Guard: Protects teacher dashboard from unauthorized web visitors
+  if (isLocked) {
+    return (
+      <TeacherLockScreen 
+        onUnlockSuccess={() => setIsLocked(false)} 
+        onStudentModeClick={() => {
+          window.location.search = '?view=student';
+        }}
+      />
+    );
+  }
   
   return (
     <div className="flex h-screen bg-slate-100 font-sans overflow-hidden">
@@ -233,9 +285,14 @@ export default function App() {
               setActiveTab(tab);
               setIsSidebarOpen(false);
             }} 
-            onOpenSettings={() => {
+            onOpenSettings={(tab) => {
+              setSettingsDefaultTab(tab || "apikey");
               setIsSettingsOpen(true);
               setIsSidebarOpen(false);
+            }}
+            onLockApp={() => {
+              lockTeacherWorkspace();
+              setIsLocked(true);
             }}
             onOpenGuide={() => {
               setIsGuideOpen(true);
@@ -265,6 +322,26 @@ export default function App() {
                 {theme === 'dark' ? <Moon className="h-4 w-4 text-indigo-400" /> : <Sun className="h-4 w-4 text-amber-500" />}
               </button>
               <button 
+                onClick={() => {
+                  lockTeacherWorkspace();
+                  setIsLocked(true);
+                }}
+                className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-md text-xs transition-colors hover:text-amber-500"
+                title="Khóa không gian làm việc ngay"
+              >
+                <Lock className="h-4 w-4" />
+              </button>
+              <button 
+                onClick={() => {
+                  setSettingsDefaultTab("security");
+                  setIsSettingsOpen(true);
+                }}
+                className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-md text-xs transition-colors hover:text-emerald-500"
+                title="Bảo mật & Mã PIN"
+              >
+                <ShieldCheck className="h-4 w-4" />
+              </button>
+              <button 
                 onClick={() => setIsGuideOpen(true)}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 text-slate-700 border border-slate-200 rounded-md text-xs font-medium hover:bg-slate-200 transition-colors"
                 title="Hướng dẫn sử dụng"
@@ -272,7 +349,10 @@ export default function App() {
                 <HelpCircle className="h-3.5 w-3.5 text-emerald-600" />
                 <span>HDSD</span>
               </button>
-              <button onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-md text-xs font-medium hover:bg-emerald-100 transition-colors">
+              <button onClick={() => {
+                setSettingsDefaultTab("apikey");
+                setIsSettingsOpen(true);
+              }} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-md text-xs font-medium hover:bg-emerald-100 transition-colors">
                 <Key className="h-3.5 w-3.5" />
                 <span>API Key</span>
               </button>
@@ -309,7 +389,11 @@ export default function App() {
           </ErrorBoundary>
         </div>
       </main>
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <SettingsModal 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)} 
+        defaultTab={settingsDefaultTab}
+      />
       <UserGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} initialSectionId={guideSectionId} />
       <Analytics />
     </div>
