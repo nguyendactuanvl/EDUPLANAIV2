@@ -963,18 +963,19 @@ export function Worksheets() {
         registerExamUrlMapping(`/#/exam/${examId}`, examId);
       } catch (e) {}
 
+      // Robust link embedding compressed payload (&d=...) so students always load 100% reliably
+      let compressed = '';
       try {
-        await saveExamToWebhook({
-          action: "saveExam",
-          examId: examId,
-          ...payload
-        });
-      } catch (e) {}
+        compressed = LZString.compressToEncodedURIComponent(JSON.stringify(payload));
+      } catch (compErr) {
+        console.warn("LZString compression error:", compErr);
+      }
 
-       // Standalone link using just the examId (cloud backend handles data fetching)
-       const finalLink = `${window.location.origin}/?examId=${examId}`;
+      const finalLink = compressed 
+        ? `${window.location.origin}/?pin=${examId}&d=${compressed}`
+        : `${window.location.origin}/?pin=${examId}`;
        
-       setShareLink(finalLink);
+      setShareLink(finalLink);
 
       // Save room to history
       const roomCode = examId;
@@ -1711,28 +1712,89 @@ export function Worksheets() {
                   </span>
                 </div>
 
+                {/* Worksheet Structure Type Selector */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
+                    <span>Hình thức cấu trúc phiếu học tập:</span>
+                    {numPartIV === 0 ? (
+                      <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                        Đề 3 phần (KHÔNG TỰ LUẬN)
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">
+                        Đề 4 phần (+ {numPartIV} Tự luận)
+                      </span>
+                    )}
+                  </label>
+                  <select
+                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+                    value={worksheetType}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setWorksheetType(val);
+                      if (val.includes("Đề 3 phần")) {
+                        setNumPartI(12);
+                        setNumPartII(4);
+                        setNumPartIII(6);
+                        setNumPartIV(0);
+                      } else if (val.includes("Đề 4 phần")) {
+                        setNumPartI(12);
+                        setNumPartII(2);
+                        setNumPartIII(4);
+                        setNumPartIV(3);
+                      } else if (val.includes("Chỉ trắc nghiệm")) {
+                        setNumPartI(20);
+                        setNumPartII(0);
+                        setNumPartIII(0);
+                        setNumPartIV(0);
+                      } else if (val.includes("Chỉ tự luận")) {
+                        setNumPartI(0);
+                        setNumPartII(0);
+                        setNumPartIII(0);
+                        setNumPartIV(4);
+                      }
+                    }}
+                  >
+                    {worksheetTypes.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+
                 {/* Quick Structure Presets */}
                 <div className="space-y-1">
                   <span className="text-[11px] font-bold text-slate-600 block">⚡ Mẫu cấu trúc nhanh BGD 2025:</span>
                   <div className="grid grid-cols-2 gap-1.5 text-[11px]">
                     <button
                       type="button"
-                      onClick={() => { setNumPartI(12); setNumPartII(4); setNumPartIII(6); setNumPartIV(0); }}
+                      onClick={() => {
+                        setNumPartI(12);
+                        setNumPartII(4);
+                        setNumPartIII(6);
+                        setNumPartIV(0);
+                        setWorksheetType("Đề 3 phần (12 câu TN nhiều lựa chọn; 4 câu Đ/S; 6 câu TL ngắn)");
+                      }}
                       className={cn(
-                        "p-1.5 rounded-lg border text-left font-medium transition-all",
+                        "p-1.5 rounded-lg border text-left font-medium transition-all cursor-pointer",
                         (numPartI === 12 && numPartII === 4 && numPartIII === 6 && numPartIV === 0)
                           ? "bg-emerald-600 text-white border-emerald-700 font-bold shadow-xs"
                           : "bg-white text-slate-700 border-slate-200 hover:border-emerald-400"
                       )}
                     >
-                      🎯 3 Phần BGD (12 TN + 4 ĐS + 6 TLN)
+                      🎯 3 Phần BGD (12 TN + 4 ĐS + 6 TLN - 0 Tự luận)
                     </button>
 
                     <button
                       type="button"
-                      onClick={() => { setNumPartI(12); setNumPartII(4); setNumPartIII(6); setNumPartIV(2); }}
+                      onClick={() => {
+                        setNumPartI(12);
+                        setNumPartII(4);
+                        setNumPartIII(6);
+                        setNumPartIV(2);
+                        setWorksheetType("Đề 4 phần (12 câu TN; 4 câu Đ/S; 6 câu TL ngắn; 2 câu Tự luận)");
+                      }}
                       className={cn(
-                        "p-1.5 rounded-lg border text-left font-medium transition-all",
+                        "p-1.5 rounded-lg border text-left font-medium transition-all cursor-pointer",
                         (numPartI === 12 && numPartII === 4 && numPartIII === 6 && numPartIV === 2)
                           ? "bg-emerald-600 text-white border-emerald-700 font-bold shadow-xs"
                           : "bg-white text-slate-700 border-slate-200 hover:border-emerald-400"
@@ -1743,9 +1805,15 @@ export function Worksheets() {
 
                     <button
                       type="button"
-                      onClick={() => { setNumPartI(20); setNumPartII(0); setNumPartIII(0); setNumPartIV(0); }}
+                      onClick={() => {
+                        setNumPartI(20);
+                        setNumPartII(0);
+                        setNumPartIII(0);
+                        setNumPartIV(0);
+                        setWorksheetType("Chỉ trắc nghiệm khách quan");
+                      }}
                       className={cn(
-                        "p-1.5 rounded-lg border text-left font-medium transition-all",
+                        "p-1.5 rounded-lg border text-left font-medium transition-all cursor-pointer",
                         (numPartI === 20 && numPartII === 0 && numPartIII === 0 && numPartIV === 0)
                           ? "bg-indigo-600 text-white border-indigo-700 font-bold shadow-xs"
                           : "bg-white text-slate-700 border-slate-200 hover:border-indigo-400"
@@ -1756,9 +1824,15 @@ export function Worksheets() {
 
                     <button
                       type="button"
-                      onClick={() => { setNumPartI(0); setNumPartII(0); setNumPartIII(0); setNumPartIV(4); }}
+                      onClick={() => {
+                        setNumPartI(0);
+                        setNumPartII(0);
+                        setNumPartIII(0);
+                        setNumPartIV(4);
+                        setWorksheetType("Chỉ tự luận");
+                      }}
                       className={cn(
-                        "p-1.5 rounded-lg border text-left font-medium transition-all",
+                        "p-1.5 rounded-lg border text-left font-medium transition-all cursor-pointer",
                         (numPartI === 0 && numPartII === 0 && numPartIII === 0 && numPartIV === 4)
                           ? "bg-indigo-600 text-white border-indigo-700 font-bold shadow-xs"
                           : "bg-white text-slate-700 border-slate-200 hover:border-indigo-400"

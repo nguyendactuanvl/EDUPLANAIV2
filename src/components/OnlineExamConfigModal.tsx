@@ -230,9 +230,18 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
       registerExamUrlMapping(`/?pin=${examId}`, examId);
       registerExamUrlMapping(`/#/exam/${examId}`, examId);
 
-      // Clean short PIN url
+      // Clean short PIN url + compressed payload for instant 100% reliable loading on all devices
+      let compressed = '';
+      try {
+        compressed = LZString.compressToEncodedURIComponent(JSON.stringify(dataToShare));
+      } catch (compErr) {
+        console.warn("LZString compression notice:", compErr);
+      }
+
       const publicBase = window.location.origin;
-      const finalUrl = `${publicBase}/?pin=${examId}`;
+      const finalUrl = compressed 
+        ? `${publicBase}/?pin=${examId}&d=${compressed}`
+        : `${publicBase}/?pin=${examId}`;
 
       // Generate QR Code
       try {

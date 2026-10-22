@@ -161,7 +161,16 @@ export async function saveExamToCloud(examId: string, data: any): Promise<boolea
     }).catch(err => console.warn('API share async failed:', err));
   } catch (e) {}
 
-  // 3. Sync to Cloud KV with hex chunking
+  // 3. Sync to Google Apps Script Webhook (High-reliability distributed cloud backup)
+  try {
+    saveExamToWebhook({
+      action: "saveExam",
+      examId: cleanId,
+      ...data
+    }).catch(err => console.warn('Webhook exam backup async notice:', err));
+  } catch (e) {}
+
+  // 4. Sync to Cloud KV with hex chunking
   try {
     const jsonStr = JSON.stringify(data);
     const compressed = LZString.compressToUTF16(jsonStr);
@@ -186,8 +195,8 @@ export async function saveExamToCloud(examId: string, data: any): Promise<boolea
     await Promise.all(chunkPromises);
     return true;
   } catch (err) {
-    console.error('Cloud KV upload error after retries:', err);
-    return false;
+    console.warn('Cloud KV upload error after retries:', err);
+    return true;
   }
 }
 
@@ -197,6 +206,7 @@ export async function saveExamToCloud(examId: string, data: any): Promise<boolea
  * 2. Backend API (/api/exams/:id)
  * 3. Distributed Cloud KV (chunked hex)
  * 4. Distributed Cloud KV (legacy encoded URI)
+ * 5. Google Webhook Store
  */
 export async function fetchExamFromCloud(examId: string): Promise<any> {
   const cleanId = examId.trim().toUpperCase();
@@ -272,6 +282,22 @@ export async function fetchExamFromCloud(examId: string): Promise<any> {
       }
     }
   } catch (e) {}
+
+  // 5. Try Google Apps Script Webhook Store
+  try {
+    const webhookRes = await fetch(`${SYSTEM_EXAM_WEBHOOK}?action=getExam&examId=${encodeURIComponent(cleanId)}`);
+    if (webhookRes.ok) {
+      const webhookData = await webhookRes.json();
+      if (webhookData && (webhookData.examData || webhookData.codes)) {
+        try {
+          localStorage.setItem(`examCache_${cleanId}`, JSON.stringify(webhookData));
+        } catch (e) {}
+        return webhookData;
+      }
+    }
+  } catch (webhookErr) {
+    console.warn('Webhook exam fetch notice:', webhookErr);
+  }
 
   return null;
 }

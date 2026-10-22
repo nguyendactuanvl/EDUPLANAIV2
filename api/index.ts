@@ -2173,6 +2173,57 @@ app.all("/api/generate-interactive-worksheet", async (req, res) => {
     const totalRequired = (numPartI || 0) + (numPartII || 0) + (numPartIII || 0) + (numPartIV || 0);
     const totalCount = totalRequired > 0 ? totalRequired : 24;
        
+    const parametricRule = hasParametric
+      ? `YÊU CẦU THAM SỐ: Thiết kế các câu hỏi chứa tham số thực ($m, a, b...$) ở mức độ vận dụng để phân hóa tư duy học sinh.`
+      : `QUY TẮC CẤM THAM SỐ (CỰC KỲ QUAN TRỌNG - BẮT BUỘC TUÂN THỦ 100%):
+- GIÁO VIÊN ĐÃ TÍCH CHỌN: "KHÔNG CÓ BÀI TOÁN CHỨA THAM SỐ".
+- TUYỆT ĐỐI KHÔNG XUẤT HIỆN BẤT KỲ THAM SỐ NÀO (như $m$, $k$, $a$, $b$, $\alpha$ làm tham số).
+- TUYỆT ĐỐI KHÔNG có các câu hỏi dạng: "Tìm m để...", "Tìm tất cả giá trị thực của tham số m...", "Hàm số chứa tham số m...", "Phương trình có nghiệm thỏa mãn m...".
+- TẤT CẢ các hệ số, số liệu trong đề bài, hàm số, phương trình, bất phương trình và 4 phương án BẮT BUỘC 100% là CÁC CON SỐ THỰC CỤ THỂ (ví dụ: $y = 2x^3 - 3x^2 + 1$, $x = 2$, $-5$, $\\frac{1}{2}$, ...).`;
+
+    const partIVRule = numPartIV > 0
+      ? `4. PHẦN IV (essay): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartIV} CÂU Tự luận (loại "essay") - bài tập tự luận có hướng dẫn chấm.`
+      : `QUY TẮC CẤU TRÚC ĐỀ 3 PHẦN (CỰC KỲ QUAN TRỌNG - BẮT BUỘC TUÂN THỦ 100%):
+- Giáo viên đã chọn cấu trúc ĐỀ 3 PHẦN (không có tự luận).
+- TUYỆT ĐỐI KHÔNG SINH PHẦN IV HOẶC BẤT KỲ BÀI TẬP TỰ LUẬN NÀO!
+- TUYỆT ĐỐI KHÔNG sinh câu hỏi có type "essay". Mảng "questions" chỉ chứa câu hỏi thuộc 3 phần (loại "mc", "tf", "sa").`;
+
+    const exampleJsonQuestions = [
+      `        {
+          "type": "mc",
+          "content": "Nội dung câu hỏi trắc nghiệm 4 lựa chọn...",
+          "options": ["Đáp án A", "Đáp án B", "Đáp án C", "Đáp án D"],
+          "correctOptionIndex": 0,
+          "solution": "Lời giải chi tiết từng bước..."
+        }`,
+      `        {
+          "type": "tf",
+          "content": "Nội dung câu hỏi Đúng/Sai...",
+          "tfStatements": [
+            { "statement": "Ý a...", "correct": true },
+            { "statement": "Ý b...", "correct": false },
+            { "statement": "Ý c...", "correct": true },
+            { "statement": "Ý d...", "correct": false }
+          ],
+          "solution": "Lời giải chi tiết..."
+        }`,
+      `        {
+          "type": "sa",
+          "content": "Nội dung câu trả lời ngắn...",
+          "correctAnswer": "25",
+          "solution": "Lời giải chi tiết..."
+        }`
+    ];
+
+    if (numPartIV > 0) {
+      exampleJsonQuestions.push(`        {
+          "type": "essay",
+          "content": "Nội dung tự luận rèn luyện...",
+          "correctAnswer": "Hướng dẫn chấm chi tiết",
+          "solution": "Lời giải chi tiết..."
+        }`);
+    }
+
     const promptText = `Bạn là một giáo viên xuất sắc môn ${subject || "Toán"} (chuẩn Chương trình GDPT 2018, bộ sách giáo khoa Kết nối tri thức với cuộc sống áp dụng từ năm học 2026-2027). Hãy tạo một Phiếu bài tập (Worksheet) tương tác thật chuyên nghiệp cho học sinh Lớp ${grade}, môn ${subject || "Toán"}, bài học/chủ đề: "${lesson}". Hình thức: ${type || "Kết hợp trắc nghiệm, đúng/sai, trả lời ngắn, tự luận"}.
        
     RÀNG BUỘC PHẠM VI NỘI DUNG VÀ CHỦ ĐỀ (BẮT BUỘC 100%):
@@ -2185,47 +2236,20 @@ app.all("/api/generate-interactive-worksheet", async (req, res) => {
     ${numPartI > 0 ? `1. PHẦN I (mc): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartI} CÂU Trắc nghiệm 4 lựa chọn (loại "mc") - mỗi câu gồm "content", 4 phương án vào mảng "options", "correctOptionIndex".` : ''}
     ${numPartII > 0 ? `2. PHẦN II (tf): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartII} CÂU Trắc nghiệm Đúng/Sai (loại "tf") - mỗi câu BẮT BUỘC có mảng "tfStatements" gồm ĐÚNG 4 đối tượng [{ "statement": "...", "correct": true/false }].` : ''}
     ${numPartIII > 0 ? `3. PHẦN III (sa): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartIII} CÂU Trắc nghiệm Trả lời ngắn (loại "sa") - "correctAnswer" là 1 số cụ thể có độ dài tối đa 4 ký tự.` : ''}
-    ${numPartIV > 0 ? `4. PHẦN IV (essay): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartIV} CÂU Tự luận (loại "essay") - bài tập tự luận có hướng dẫn chấm.` : ''}
+    ${partIVRule}
 
-    - Tỷ lệ thực tế: Khoảng ${realWorldPercent}%. ${hasParametric ? 'Có tham số m.' : 'Khôi có tham số.'} ${additionalNotes ? `Ghi chú riêng: ${additionalNotes}` : ''}
+    - Tỷ lệ thực tế: Khoảng ${realWorldPercent}%.
+    - ${parametricRule}
+    ${additionalNotes ? `- Ghi chú riêng từ giáo viên: ${additionalNotes}` : ''}
 
     ${MATH_FORMATTING_RULES}
-    5. BẮT BUỘC KÈM TRƯỜNG "solution": Lời giải chi tiết từng bước biến đổi, kèm lý do chọn đáp án, viết bằng công thức LaTeX chuẩn cho TẤT CẢ các câu hỏi (mc, tf, sa, essay).
+    5. BẮT BUỘC KÈM TRƯỜNG "solution": Lời giải chi tiết từng bước biến đổi, kèm lý do chọn đáp án, viết bằng công thức LaTeX chuẩn cho TẤT CẢ các câu hỏi.
     6. BẮT BUỘC SỬA LỖI CHÍNH TẢ tiếng Việt thật cẩn thận.
-    7. BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CẤU TRÚC SAU (MẢNG "questions" PHẢI CÓ ĐỦ CHÍNH XÁC ${totalCount} PHẦN TỬ CÂU HỎI):
+    7. BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CẤU TRÚC SAU (MẢNG "questions" PHẢI CÓ ĐỦ CHÍNH XÁC ${totalCount} PHẦN TỬ CÂU HỎI, ${numPartIV === 0 ? 'TUYỆT ĐỐI KHÔNG CÓ CÂU LOẠI "essay"' : ''}):
     {
       "examName": "Phiếu bài tập: ${lesson}",
       "questions": [
-        {
-          "type": "mc",
-          "content": "Nội dung câu hỏi...",
-          "options": ["Đáp án 1", "Đáp án 2", "Đáp án 3", "Đáp án 4"],
-          "correctOptionIndex": 0,
-          "solution": "Lời giải chi tiết từng bước..."
-        },
-        {
-          "type": "tf",
-          "content": "Nội dung câu hỏi Đúng/Sai...",
-          "tfStatements": [
-            { "statement": "Ý a...", "correct": true },
-            { "statement": "Ý b...", "correct": false },
-            { "statement": "Ý c...", "correct": true },
-            { "statement": "Ý d...", "correct": false }
-          ],
-          "solution": "Lời giải chi tiết..."
-        },
-        {
-          "type": "sa",
-          "content": "Nội dung câu trả lời ngắn...",
-          "correctAnswer": "25",
-          "solution": "Lời giải chi tiết..."
-        },
-        {
-          "type": "essay",
-          "content": "Nội dung tự luận...",
-          "correctAnswer": "Hướng dẫn chấm chi tiết",
-          "solution": "Lời giải chi tiết..."
-        }
+${exampleJsonQuestions.join(',\n')}
       ]
     }
     `;
@@ -2361,12 +2385,14 @@ YÊU CẦU PHONG CÁCH: A4 CHUẨN IN ẤN (Đen trắng / Tiết kiệm mực -
       }
       if (numPartIV > 0) {
         exercisePrompt += `\n- PHẦN IV: BÀI TẬP TỰ LUẬN RÈN LUYỆN: đúng chính xác ${numPartIV} bài toán rèn luyện tư duy tự luận trình bày lập luận logic.`;
+      } else {
+        exercisePrompt += `\n- CẤM TUYỆT ĐỐI PHẦN IV (TỰ LUẬN): Giáo viên đã chọn cấu trúc ĐỀ 3 PHẦN. TUYỆT ĐỐI KHÔNG ĐƯỢC CÓ PHẦN IV HAY BÀI TẬP TỰ LUẬN. KHÔNG TẠO MỤC PHẦN IV TRONG ĐỀ BÀI CŨNG NHƯ TRONG BẢNG ĐÁP ÁN VÀ HƯỚNG DẪN GIẢI!`;
       }
 
       exercisePrompt += `\n- Tỷ lệ bài toán gắn với thực tiễn cuộc sống hoặc liên môn: Khoảng ${realWorldPercent}%.`;
       exercisePrompt += hasParametric 
         ? `\n- Phân hóa học sinh: CÓ một số bài toán ở mức độ vận dụng chứa tham số thực ($m, a, b, ...$).`
-        : `\n- Phân hóa học sinh: TUYỆT ĐỐI KHÔNG sử dụng bài toán chứa tham số, tập trung hoàn toàn vào số liệu cụ thể.`;
+        : `\n- QUY ĐỊNH CẤM THAM SỐ (BẮT BUỘC 100%): Giáo viên đã chọn "Không có bài toán chứa tham số". TUYỆT ĐỐI KHÔNG xuất hiện bất kỳ tham số nào (như m, k, a, b tham số). TUYỆT ĐỐI KHÔNG có các câu hỏi tìm m hay chứa tham số m. TẤT CẢ các hệ số, phương trình, hàm số và bài toán PHẢI 100% là số cụ thể.`;
 
       if (additionalNotes && additionalNotes.trim()) {
         exercisePrompt += `\n- Trọng tâm cần nhấn mạnh / Yêu cầu riêng từ giáo viên: ${additionalNotes}`;
@@ -2394,26 +2420,24 @@ Nhiệm vụ của bạn là nhận thông tin cấu hình và tạo ra một "P
   + Lớp 11: Không sử dụng phương pháp vectơ trong không gian 3D, không sử dụng định lý Menelaus trong hình không gian.
   + Định nghĩa hình chữ nhật: Là tứ giác có 4 góc vuông.
 - Tích hợp thực tế & STEM: Đưa các bài toán gắn với thực tiễn, kinh tế, vật lý, đời sống; phần liên môn/STEM phải ghi rõ cụm từ "tích hợp stem/steam".
-- Phân hóa: 
-  + Thiết kế các câu hỏi chứa tham số ($m, a, b...$) ở mức vận dụng để phân hóa tư duy học sinh.
-  + Với mức nhận biết, thông hiểu, tuyệt đối chỉ tập trung vào rèn luyện bản chất số liệu cụ thể không có tham số.
+${hasParametric ? `- Phân hóa: Thiết kế các câu hỏi chứa tham số ($m, a, b...$) ở mức vận dụng để phân hóa tư duy học sinh.\n- Với mức nhận biết, thông hiểu, tuyệt đối chỉ tập trung vào rèn luyện bản chất số liệu cụ thể không có tham số.` : `- QUY ĐỊNH CẤM THAM SỐ (BẮT BUỘC 100%): Giáo viên đã chọn "Không có bài toán chứa tham số". TUYỆT ĐỐI KHÔNG xuất hiện bất kỳ tham số nào (như $m$, $k$, $a$, $b$ tham số). CẤM các câu hỏi tìm m hoặc chứa m. TẤT CẢ các hệ số, bài toán, phương trình và phương án BẮT BUỘC 100% là số cụ thể.`}
 
 ---
 ### 2. PHONG CÁCH TRÌNH BÀY LAYOUT:
 ${stylePrompt}
 
 ---
-### 3. CẤU TRÚC PHIẾU HỌC TẬP (4 PHẦN CHUẨN ĐỔI MỚI CHUYÊN BIỆT):
+### 3. CẤU TRÚC PHIẾU HỌC TẬP (${numPartIV > 0 ? '4 PHẦN CHUẨN ĐỔI MỚI CHUYÊN BIỆT' : '3 PHẦN CHUẨN ĐỔI MỚI (KHÔNG CÓ TỰ LUẬN)'}):
 ${exercisePrompt}
 
-Hãy trình bày các câu hỏi thành các phần rõ ràng như sau (nếu hình thức bài tập có đủ các phần tương ứng):
+Hãy trình bày các câu hỏi thành các phần rõ ràng như sau:
 - **QUY TẮC ĐÁNH SỐ THỨ TỰ BẮT BUỘC**:
   + TUYỆT ĐỐI KHÔNG dùng dấu gạch đầu dòng '-' hoặc bullet '•', '*' để mở đầu các câu hỏi.
   + MỖI CÂU HỎI BẮT BUỘC phải có số thứ tự rõ ràng (**Câu 1:**, **Câu 2:**, ...):
     * PHẦN I: **Câu 1:** [Đề bài] \n A. [Phương án] \n B. [Phương án] \n C. [Phương án] \n D. [Phương án] \n\n **Câu 2:** ...
     * PHẦN II: **Câu 1:** [Mệnh đề dẫn] \n a) [Ý 1] \n b) [Ý 2] \n c) [Ý 3] \n d) [Ý 4] \n\n **Câu 2:** ...
     * PHẦN III: **Câu 1:** [Đề bài] \n\n **Câu 2:** [Đề bài] ...
-    * PHẦN IV: **Câu 1:** [Đề bài] \n\n **Câu 2:** [Đề bài] ...
+${numPartIV > 0 ? `    * PHẦN IV: **Câu 1:** [Đề bài] \\n\\n **Câu 2:** [Đề bài] ...` : `    * TUYỆT ĐỐI KHÔNG CÓ PHẦN IV (TỰ LUẬN).`}
   + Luôn có dấu cách trắng giữa từ tiếng Việt và dấu $: 'hàm số $y = f(x)$ có', 'tại điểm $x = 1$', 'A. $x = 0$', không bao giờ viết dính 'hàm số$y=f(x)$có'.
 - **PHẦN I: CÂU HỎI TRẮC NGHIỆM NHIỀU PHƯƠNG ÁN LỰA CHỌN** (Đúng số lượng yêu cầu)
   + Bốn phương án ký hiệu: A.  B.  C.  D.
@@ -2423,8 +2447,7 @@ Hãy trình bày các câu hỏi thành các phần rõ ràng như sau (nếu h�
   + Mỗi ý là một phát biểu hoàn chỉnh để học sinh phán đoán Đúng hoặc Sai.
 - **PHẦN III: CÂU HỎI TRẮC NGHIỆM TRẢ LỜI NGẮN** (Đúng số lượng yêu cầu)
   + Đặt câu hỏi dứt khoát, kết quả cuối cùng là một số nguyên, phân số tối giản hoặc số thập phân.
-- **PHẦN IV: BÀI TẬP TỰ LUẬN RÈN LUYỆN** (Đúng số lượng yêu cầu)
-  + Các bài tập đòi hỏi lập luận logic, vẽ hình minh họa hoặc liên hệ giải quyết vấn đề thực tiễn.
+${numPartIV > 0 ? `- **PHẦN IV: BÀI TẬP TỰ LUẬN RÈN LUYỆN** (Đúng số lượng yêu cầu)\n  + Các bài tập đòi hỏi lập luận logic, vẽ hình minh họa hoặc liên hệ giải quyết vấn đề thực tiễn.` : `- **CẤM TUYỆT ĐỐI PHẦN IV**: Phiếu 3 phần không có bài tập tự luận.`}
 
 ---
 ### 4. QUY TẮC ĐỊNH DẠNG TOÁN HỌC & LATEX (CHUẨN MATHTYPE WORD)
@@ -2492,9 +2515,17 @@ app.all("/api/generate-worksheet-stream", async (req, res) => {
   if (numPartI > 0) exercisePrompt += `\n- PHẦN I: TRẮC NGHIỆM LỰA CHỌN A,B,C,D: BẮT BUỘC sinh đủ chính xác ${numPartI} câu độc lập (đánh số từ **Câu 1:** đến **Câu ${numPartI}:**, mỗi câu 4 phương án A, B, C, D).`;
   if (numPartII > 0) exercisePrompt += `\n- PHẦN II: TRẮC NGHIỆM ĐÚNG/SAI: BẮT BUỘC sinh đủ chính xác ${numPartII} câu (đánh số từ **Câu 1:** đến **Câu ${numPartII}:**, mỗi câu gồm đề dẫn và ĐÚNG 4 ý a, b, c, d).`;
   if (numPartIII > 0) exercisePrompt += `\n- PHẦN III: TRẮC NGHIỆM TRẢ LỜI NGẮN: BẮT BUỘC sinh đủ chính xác ${numPartIII} câu (đánh số từ **Câu 1:** đến **Câu ${numPartIII}:**, đáp số là 1 con số cụ thể).`;
-  if (numPartIV > 0) exercisePrompt += `\n- PHẦN IV: BÀI TẬP TỰ LUẬN RÈN LUYỆN: BẮT BUỘC sinh đủ chính xác ${numPartIV} câu (đánh số từ **Câu 1:** đến **Câu ${numPartIV}:**).`;
+  if (numPartIV > 0) {
+    exercisePrompt += `\n- PHẦN IV: BÀI TẬP TỰ LUẬN RÈN LUYỆN: BẮT BUỘC sinh đủ chính xác ${numPartIV} câu (đánh số từ **Câu 1:** đến **Câu ${numPartIV}:**).`;
+  } else {
+    exercisePrompt += `\n- CẤM TUYỆT ĐỐI PHẦN IV / TỰ LUẬN: Giáo viên đã chọn cấu trúc ĐỀ 3 PHẦN. TUYỆT ĐỐI KHÔNG SINH PHẦN IV, KHÔNG CÓ BÀI TẬP TỰ LUẬN TRONG ĐỀ BÀI, BẢNG ĐÁP ÁN HAY LỜI GIẢI!`;
+  }
 
-  exercisePrompt += `\n- Tỷ lệ thực tế: ${realWorldPercent}%. ${hasParametric ? 'Có bài toán chứa tham số m.' : 'Không chứa tham số.'}`;
+  exercisePrompt += `\n- Tỷ lệ thực tế: ${realWorldPercent}%.`;
+  exercisePrompt += hasParametric 
+    ? `\n- Phân hóa: Có bài toán chứa tham số m ở mức vận dụng.`
+    : `\n- QUY ĐỊNH CẤM THAM SỐ (BẮT BUỘC 100%): Giáo viên đã chọn "Không có bài toán chứa tham số". TUYỆT ĐỐI KHÔNG xuất hiện bất kỳ tham số nào (như $m$, $k$, $a$, $b$ tham số). CẤM các câu hỏi tìm m hoặc chứa tham số m. TẤT CẢ các hệ số, phương trình, hàm số và bài toán PHẢI 100% là số cụ thể.`;
+
   if (additionalNotes) exercisePrompt += `\n- Ghi chú riêng từ giáo viên: ${additionalNotes}`;
 
   let answerPrompt = 'Cung cấp Bảng đáp án nhanh và Hướng dẫn giải chi tiết gói trong thẻ HTML <details class="solution-box"><summary>👉 BẤM ĐỂ XEM ĐÁP ÁN VÀ LỜI GIẢI CHI TIẾT</summary>...</details>.';
@@ -2507,6 +2538,8 @@ Hãy tạo ngay PHIẾU HỌC TẬP A4 Chuẩn in ấn cho học sinh Lớp ${gr
 YÊU CẦU QUAN TRỌNG VỀ CẤU TRÚC VÀ PHẠM VI NỘI DUNG (BẮT BUỘC 100%):
 0. PHẠM VI CHỦ ĐỀ CHÍNH XÁC (TẬP TRUNG 100%): Tất cả các câu hỏi trong phiếu BẮT BUỘC phải thuộc chính xác bài học "${lesson}" (thuộc ${chapter}, Lớp ${grade}, ${semester}). TUYỆT ĐỐI KHÔNG BỊA RA HOẶC CHÈN THÊM bất kỳ câu hỏi nào thuộc các chương học khác ngoài bài học đã chọn. (Ví dụ: Khi giáo viên chọn Chương V "Các số đặc trưng đo xu thế trung tâm", TUYỆT ĐỐI KHÔNG xuất hiện câu hỏi về Đạo hàm, Giới hạn hay Tích phân).
 1. SỐ LƯỢNG CÂU HỎI BẮT BUỘC (TỔNG ${totalCount} CÂU): Bạn PHẢI sinh đầy đủ 100% chính xác từng câu từ Câu 1 đến câu cuối cùng của từng Phần. TUYỆT ĐỐI KHÔNG ĐƯỢC TÓM TẮT THÀNH 5 HAY 8 CÂU.
+${numPartIV === 0 ? 'CẤM TUYỆT ĐỐI PHẦN IV (TỰ LUẬN): Đề bài là ĐỀ 3 PHẦN. TUYỆT ĐỐI KHÔNG có phần IV hay bài tập tự luận nào!' : ''}
+${!hasParametric ? 'CẤM TUYỆT ĐỐI THAM SỐ: Không chứa tham số m, không hỏi tìm m, tất cả hệ số là số thực cụ thể!' : ''}
 2. Xuất trực tiếp nội dung phiếu học tập Markdown, không viết câu chào hay mở đầu.
 3. ĐỒNG BỘ TIÊU ĐỀ: TUYỆT ĐỐI KHÔNG tự ý chèn thêm tiêu đề bài học hay header thừa ở đầu văn bản (như "# BÀI 1: GÓC LƯỢNG GIÁC" hay "# PHIẾU HỌC TẬP"), vì hệ thống đã có sẵn khung tiêu đề chuẩn chính quy bên trên. Bắt đầu ngay bằng mục Tóm tắt kiến thức / Lý thuyết trọng tâm.
 4. ĐÁNH SỐ CÂU HỎI CHUẨN ĐỀ THI:
@@ -2515,7 +2548,7 @@ YÊU CẦU QUAN TRỌNG VỀ CẤU TRÚC VÀ PHẠM VI NỘI DUNG (BẮT BUỘC 
      + PHẦN I: **Câu 1:** [Đề bài] \n A. [Phương án] \n B. [Phương án] \n C. [Phương án] \n D. [Phương án] \n\n **Câu 2:** ...
      + PHẦN II: **Câu 1:** [Mệnh đề dẫn] \n a) ... \n b) ... \n c) ... \n d) ... \n\n **Câu 2:** ...
      + PHẦN III: **Câu 1:** [Đề bài] \n\n **Câu 2:** [Đề bài] ...
-     + PHẦN IV: **Câu 1:** [Đề bài] \n\n **Câu 2:** [Đề bài] ...
+${numPartIV > 0 ? `     + PHẦN IV: **Câu 1:** [Đề bài] \\n\\n **Câu 2:** [Đề bài] ...` : `     + TUYỆT ĐỐI KHÔNG CÓ PHẦN IV / TỰ LUẬN.`}
 5. QUY TẮC CÔNG THỨC TOÁN & TÁCH CHỮ TIẾNG VIỆT KHỎI DẤU $:
    - TUYỆT ĐỐI KHÔNG để chữ tiếng Việt bị nhốt bên trong dấu $ (Ví dụ: phải viết chuẩn 'Dãy số $(u_n)$ là một cấp số cộng $\\Rightarrow u_{n+1} = u_n + d$ ($d$: công sai).', '$u_n = u_1 + (n-1)d$ với $n \\ge 2$.', '$u_k = \\frac{u_{k-1} + u_{k+1}}{2}$ với $k \\ge 2$.').
    - LUÔN CÓ KHOẢNG TRẮNG GIỮA TỪ TIẾNG VIỆT VÀ DẤU $: viết 'hàm số $y = f(x)$ có', 'tại điểm $x = 1$', 'A. $x = 0$', TUYỆT ĐỐI KHÔNG viết dính 'hàm số$y = f(x)$có'.
