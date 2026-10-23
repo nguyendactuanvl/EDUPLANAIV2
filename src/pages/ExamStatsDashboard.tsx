@@ -6,7 +6,8 @@ import {
   TrendingUp, Sparkles, Check, Printer, PieChart, Info, HelpCircle
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import { fetchExamFromCloud } from "../lib/cloudExamStore";
+import { fetchExamFromCloud, saveExamToCloud } from "../lib/cloudExamStore";
+import { registerExamUrlMapping } from "../lib/smartRouter";
 
 interface Submission {
   studentName?: string;
@@ -475,6 +476,50 @@ export function ExamStatsDashboard({ initialExamId, onBackToExam }: ExamStatsDas
     setTimeout(() => setCopyFeedback(null), 2500);
   };
 
+  const handleRefreshExamUrl = async () => {
+    if (!selectedRoomId) return;
+    const cleanCode = selectedRoomId.trim().toUpperCase();
+    try {
+      let examData = currentExam;
+      if (!examData || !examData.code) {
+        examData = await fetchExamFromCloud(cleanCode);
+      }
+      if (!examData) {
+        alert(`Không tìm thấy dữ liệu cho mã phòng "${cleanCode}".`);
+        return;
+      }
+
+      const refreshedPayload = {
+        ...examData,
+        id: cleanCode,
+        customId: cleanCode,
+        updatedAt: new Date().toISOString()
+      };
+
+      await saveExamToCloud(cleanCode, refreshedPayload);
+
+      registerExamUrlMapping(cleanCode, cleanCode);
+      registerExamUrlMapping(`/exam/${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/p/${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/thi/${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/room/${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/?pin=${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/#/exam/${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/?data=${cleanCode}`, cleanCode);
+
+      const newShareUrl = `${window.location.origin}/?pin=${cleanCode}`;
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(newShareUrl);
+      }
+
+      setCopyFeedback("Đã làm mới URL!");
+      setTimeout(() => setCopyFeedback(null), 2500);
+      alert(`🎉 Đã làm mới & tái ánh xạ URL kỳ thi thành công!\n\nMã PIN: ${cleanCode}\nLiên kết mới đã được sao chép vào khay nhớ tạm:\n${newShareUrl}`);
+    } catch (e: any) {
+      alert("Lỗi làm mới URL: " + e.message);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50/70 p-4 sm:p-6 lg:p-8 space-y-6">
       
@@ -606,6 +651,14 @@ export function ExamStatsDashboard({ initialExamId, onBackToExam }: ExamStatsDas
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              onClick={handleRefreshExamUrl}
+              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+              title="Làm mới liên kết chia sẻ & tái ánh xạ mã PIN kỳ thi"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Làm mới URL</span>
+            </button>
             <button
               onClick={copyRoomLink}
               className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"

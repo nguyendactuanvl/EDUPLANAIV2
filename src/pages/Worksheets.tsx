@@ -902,6 +902,58 @@ export function Worksheets() {
     }
   };
 
+  const handleRefreshExamUrl = async (roomCode: string) => {
+    const cleanCode = roomCode.trim().toUpperCase();
+    if (!cleanCode) return;
+
+    try {
+      let examData = null;
+      try {
+        const res = await fetch(`/api/exams/${cleanCode}?fresh=true`);
+        if (res.ok) {
+          examData = await res.json();
+        }
+      } catch (e) {}
+
+      if (!examData) {
+        examData = await fetchExamFromCloud(cleanCode);
+      }
+
+      if (!examData) {
+        throw new Error(`Không tìm thấy dữ liệu phiếu bài tập / đề thi cho mã "${cleanCode}".`);
+      }
+
+      const refreshedPayload = {
+        ...examData,
+        id: cleanCode,
+        customId: cleanCode,
+        updatedAt: new Date().toISOString()
+      };
+
+      await saveExamToCloud(cleanCode, refreshedPayload);
+
+      // Register mappings via registerExamUrlMapping
+      registerExamUrlMapping(cleanCode, cleanCode);
+      registerExamUrlMapping(`/exam/${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/p/${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/thi/${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/worksheet/${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/?pin=${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/#/exam/${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/?view=worksheet&data=${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/?data=${cleanCode}`, cleanCode);
+
+      const newShareUrl = `${window.location.origin}/?pin=${cleanCode}`;
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(newShareUrl);
+      }
+
+      showToast(`🎉 Đã làm mới & tái ánh xạ URL kỳ thi ${cleanCode} thành công! Link đã được sao chép.`);
+    } catch (err: any) {
+      alert("Lỗi khi làm mới URL kỳ thi: " + err.message);
+    }
+  };
+
   const handleDeleteSubmission = async (subIndex: number) => {
     if (!selectedRoomResultsData) return;
     const code = selectedRoomForResults;
@@ -2214,7 +2266,7 @@ export function Worksheets() {
                         <span className="text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded">Mã phòng: {room.code}</span>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-2 border-t border-slate-100">
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 pt-2 border-t border-slate-100">
                       <button
                         onClick={() => setPreviewRoomCode(room.code)}
                         className="py-1 px-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1 transition-colors"
@@ -2227,6 +2279,13 @@ export function Worksheets() {
                         className="py-1 px-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1 transition-colors"
                       >
                         <BarChart className="w-3 h-3" /> Kết quả
+                      </button>
+                      <button
+                        onClick={() => handleRefreshExamUrl(room.code)}
+                        title="Cập nhật hoặc tạo lại liên kết chia sẻ mới & tái ánh xạ mã phòng thi"
+                        className="py-1 px-2 bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1 transition-colors"
+                      >
+                        <RefreshCw className="w-3 h-3" /> Làm mới URL
                       </button>
                       <button
                         onClick={() => {

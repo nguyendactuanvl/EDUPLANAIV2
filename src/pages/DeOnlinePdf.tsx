@@ -1251,6 +1251,61 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
     }
   };
 
+  const handleRefreshExamUrl = async (roomCode: string) => {
+    const cleanCode = roomCode.trim().toUpperCase();
+    if (!cleanCode) return;
+
+    setIsSharing(true);
+    try {
+      let examData = null;
+      try {
+        const res = await fetch(`/api/exams/${cleanCode}?fresh=true`);
+        if (res.ok) {
+          examData = await res.json();
+        }
+      } catch (e) {}
+
+      if (!examData) {
+        examData = await fetchExamFromCloud(cleanCode);
+      }
+
+      if (!examData) {
+        throw new Error(`Không tìm thấy dữ liệu đề thi cho phòng "${cleanCode}".`);
+      }
+
+      const refreshedPayload = {
+        ...examData,
+        id: cleanCode,
+        customId: cleanCode,
+        updatedAt: new Date().toISOString()
+      };
+
+      await saveExamToCloud(cleanCode, refreshedPayload);
+
+      // Register mappings via registerExamUrlMapping
+      registerExamUrlMapping(cleanCode, cleanCode);
+      registerExamUrlMapping(`/exam/${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/p/${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/thi/${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/room/${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/?pin=${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/#/exam/${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/?view=exam_pdf&data=${cleanCode}`, cleanCode);
+      registerExamUrlMapping(`/?data=${cleanCode}`, cleanCode);
+
+      const newShareUrl = `${window.location.origin}${window.location.pathname}?view=exam_pdf&data=${cleanCode}`;
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(newShareUrl);
+      }
+
+      alert(`🎉 Đã làm mới & tái ánh xạ URL kỳ thi thành công!\n\nMã phòng: ${cleanCode}\nLiên kết đã được sao chép vào khay nhớ tạm:\n${newShareUrl}`);
+    } catch (err: any) {
+      alert("Lỗi khi làm mới URL kỳ thi: " + err.message);
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
   // Export Room Results to Excel
   const handleExportResultsToExcel = () => {
     if (!selectedRoomResultsData || !selectedRoomResultsData.submissions || selectedRoomResultsData.submissions.length === 0) {
@@ -2412,6 +2467,13 @@ HS05 - Hoàng Văn Em`);
                             >
                               {isLinkCopied ? "Đã copy!" : "Copy Link"}
                             </button>
+                            <button 
+                              onClick={() => handleRefreshExamUrl(sharedRoomId)}
+                              title="Làm mới liên kết chia sẻ & tái ánh xạ mã phòng thi vào hệ thống"
+                              className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-bold rounded-lg cursor-pointer transition-colors shrink-0 flex items-center gap-1"
+                            >
+                              <RefreshCw className="w-3 h-3" /> Làm mới URL
+                            </button>
                           </div>
                         </div>
 
@@ -2781,12 +2843,19 @@ HS05 - Hoàng Văn Em`);
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-slate-100">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-2 border-t border-slate-100">
                         <button
                           onClick={() => handleLoadRoomResults(room.code)}
                           className="py-1 px-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1"
                         >
                           <BarChart className="w-3 h-3" /> Kết quả
+                        </button>
+                        <button
+                          onClick={() => handleRefreshExamUrl(room.code)}
+                          title="Làm mới liên kết chia sẻ & tái ánh xạ mã phòng thi vào hệ thống"
+                          className="py-1 px-2 bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-bold rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1"
+                        >
+                          <RefreshCw className="w-3 h-3" /> Làm mới URL
                         </button>
                         <button
                           onClick={() => {
@@ -2796,7 +2865,7 @@ HS05 - Hoàng Văn Em`);
                           }}
                           className="py-1 px-2 bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1"
                         >
-                          <Copy className="w-3 h-3" /> Link
+                          <Copy className="w-3 h-3" /> Copy Link
                         </button>
                         <button
                           onClick={() => handleDeleteRoomFromHistory(room.code)}
