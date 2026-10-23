@@ -2215,9 +2215,22 @@ export function Worksheets() {
                     navigator.clipboard.writeText(shareLink); 
                     alert('Đã sao chép link!\nCô có thể dán trực tiếp vào nhóm Zalo/Facebook để học sinh làm bài ngay.');
                   }} 
-                  className="px-3.5 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 shrink-0 flex items-center gap-1.5 transition-colors"
+                  className="px-3.5 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 shrink-0 flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Copy className="w-4 h-4" /> Sao chép
+                </button>
+                <button 
+                  onClick={() => {
+                    const matchPin = shareLink.match(/pin=([A-Za-z0-9_-]+)/);
+                    const pin = matchPin ? matchPin[1] : '';
+                    if (pin) {
+                      handleRefreshExamUrl(pin);
+                    }
+                  }} 
+                  title="Làm mới liên kết chia sẻ & tái ánh xạ mã phòng thi vào hệ thống"
+                  className="px-3.5 py-2 bg-amber-500 text-white text-sm font-medium rounded-lg hover:bg-amber-600 shrink-0 flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <RefreshCw className="w-4 h-4" /> Làm mới URL
                 </button>
                 <a 
                   href={shareLink} 
