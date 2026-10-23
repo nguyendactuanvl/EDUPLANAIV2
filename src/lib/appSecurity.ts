@@ -69,29 +69,6 @@ export function saveSecuritySettings(settings: SecuritySettings): void {
  * Checks if the teacher workspace is currently locked.
  */
 export function isTeacherLocked(): boolean {
-  const settings = getSecuritySettings();
-  if (!settings.isEnabled || !settings.pinHash) {
-    return false;
-  }
-
-  // Check session unlock flag
-  const sessionUnlocked = sessionStorage.getItem(SESSION_UNLOCKED_KEY);
-  if (sessionUnlocked !== "true") {
-    return true;
-  }
-
-  // Check inactivity timeout if configured (minutes > 0)
-  if (settings.autoLockTimeoutMinutes > 0) {
-    const lastActive = parseInt(sessionStorage.getItem(LAST_ACTIVE_KEY) || "0", 10);
-    const now = Date.now();
-    const timeoutMs = settings.autoLockTimeoutMinutes * 60 * 1000;
-    if (now - lastActive > timeoutMs) {
-      // Session expired due to inactivity
-      sessionStorage.removeItem(SESSION_UNLOCKED_KEY);
-      return true;
-    }
-  }
-
   return false;
 }
 

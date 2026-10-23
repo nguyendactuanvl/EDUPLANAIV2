@@ -3,14 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { Analytics } from '@vercel/analytics/react';
-import { Menu, Sparkles, Key, AlertCircle, HelpCircle, Sun, Moon, Lock, ShieldCheck } from "lucide-react";
+import { Menu, Sparkles, Key, AlertCircle, HelpCircle, Sun, Moon, Maximize2, Minimize2 } from "lucide-react";
 import React, { useState, Suspense, useEffect } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SettingsModal } from "./components/SettingsModal";
 import { UserGuideModal } from "./components/UserGuideModal";
-import { TeacherLockScreen } from "./components/TeacherLockScreen";
-import { isTeacherLocked, lockTeacherWorkspace, updateActivityTimestamp, getSecuritySettings } from "./lib/appSecurity";
 import { getInitialTheme, applyTheme, ThemeMode } from "./lib/theme";
 
 function safeLazy<T extends React.ComponentType<any>>(
@@ -97,13 +95,10 @@ export default function App() {
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settingsDefaultTab, setSettingsDefaultTab] = useState<"apikey" | "security" | "subjects">("apikey");
+  const [settingsDefaultTab, setSettingsDefaultTab] = useState<"apikey" | "subjects">("apikey");
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [guideSectionId, setGuideSectionId] = useState<string | undefined>(undefined);
   const [retryStatus, setRetryStatus] = useState<{ attempt: number, maxRetries: number, message?: string } | null>(null);
-
-  // Teacher Workspace Lock State
-  const [isLocked, setIsLocked] = useState(() => isTeacherLocked());
 
   // Theme State
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
@@ -115,6 +110,11 @@ export default function App() {
 
   const toggleTheme = () => {
     setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
+  const handleToggleFocusMode = () => {
+    const next = !isFocusMode;
+    window.dispatchEvent(new CustomEvent('toggle-focus-mode', { detail: next }));
   };
 
   useEffect(() => {
@@ -150,7 +150,13 @@ export default function App() {
       setTimeout(() => setRetryStatus(null), 14000);
     };
     const handleFocusMode = (e: any) => {
-      setIsFocusMode(Boolean(e?.detail));
+      if (typeof e?.detail === 'boolean') {
+        setIsFocusMode(e.detail);
+      } else if (e?.detail && typeof e.detail.enabled === 'boolean') {
+        setIsFocusMode(e.detail.enabled);
+      } else {
+        setIsFocusMode(prev => !prev);
+      }
     };
 
     const handleOpenStats = (e: any) => {
@@ -160,36 +166,14 @@ export default function App() {
       setActiveTab("exam_stats");
     };
 
-    const handleLockStatus = (e: any) => {
-      if (typeof e?.detail?.isLocked === 'boolean') {
-        setIsLocked(e.detail.isLocked);
-      }
-    };
-    const handleSecurityChanged = () => {
-      setIsLocked(isTeacherLocked());
-    };
-
     window.addEventListener('show-api-key-modal', handleShowModal);
     window.addEventListener('show-user-guide-modal', handleShowGuide);
     window.addEventListener('api-retry-status', handleRetryStatus);
+    window.addEventListener('toggle-focus-mode', handleFocusMode);
+    window.addEventListener('focus-mode', handleFocusMode);
     window.addEventListener('hsa-focus-mode', handleFocusMode);
     window.addEventListener('open-exam-stats', handleOpenStats);
-    window.addEventListener('eduplan-lock-status-changed', handleLockStatus);
-    window.addEventListener('eduplan-security-changed', handleSecurityChanged);
 
-    // Track user activity for auto-lock timeout
-    const handleUserActivity = () => updateActivityTimestamp();
-    window.addEventListener('mousemove', handleUserActivity, { passive: true });
-    window.addEventListener('keydown', handleUserActivity, { passive: true });
-    window.addEventListener('click', handleUserActivity, { passive: true });
-
-    // Periodic check for inactivity timeout
-    const lockCheckInterval = setInterval(() => {
-      if (isTeacherLocked()) {
-        setIsLocked(true);
-      }
-    }, 20000);
-    
     const storedKey = localStorage.getItem("eduplan_gemini_api_key_v2");
     if (!storedKey) {
       setSettingsDefaultTab("apikey");
@@ -200,14 +184,10 @@ export default function App() {
       window.removeEventListener('show-api-key-modal', handleShowModal);
       window.removeEventListener('show-user-guide-modal', handleShowGuide);
       window.removeEventListener('api-retry-status', handleRetryStatus);
+      window.removeEventListener('toggle-focus-mode', handleFocusMode);
+      window.removeEventListener('focus-mode', handleFocusMode);
       window.removeEventListener('hsa-focus-mode', handleFocusMode);
       window.removeEventListener('open-exam-stats', handleOpenStats);
-      window.removeEventListener('eduplan-lock-status-changed', handleLockStatus);
-      window.removeEventListener('eduplan-security-changed', handleSecurityChanged);
-      window.removeEventListener('mousemove', handleUserActivity);
-      window.removeEventListener('keydown', handleUserActivity);
-      window.removeEventListener('click', handleUserActivity);
-      clearInterval(lockCheckInterval);
     };
   }, []);
 
@@ -245,18 +225,6 @@ export default function App() {
     );
   }
 
-  // Teacher Workspace Lock Guard: Protects teacher dashboard from unauthorized web visitors
-  if (isLocked) {
-    return (
-      <TeacherLockScreen 
-        onUnlockSuccess={() => setIsLocked(false)} 
-        onStudentModeClick={() => {
-          window.location.search = '?view=student';
-        }}
-      />
-    );
-  }
-  
   return (
     <div className="flex h-screen bg-slate-100 font-sans overflow-hidden">
       {retryStatus && (
@@ -290,10 +258,6 @@ export default function App() {
               setIsSettingsOpen(true);
               setIsSidebarOpen(false);
             }}
-            onLockApp={() => {
-              lockTeacherWorkspace();
-              setIsLocked(true);
-            }}
             onOpenGuide={() => {
               setIsGuideOpen(true);
               setIsSidebarOpen(false);
@@ -305,63 +269,86 @@ export default function App() {
       )}
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden h-screen">
-        {/* Mobile Header */}
-        {!isFocusMode && (
-          <header className="lg:hidden flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0 shadow-sm z-10 relative">
+        {/* Main Header */}
+        <header className="flex items-center justify-between px-4 py-2.5 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0 shadow-xs z-10 relative">
+          <div className="flex items-center gap-3">
+            {!isFocusMode && (
+              <button 
+                onClick={() => setIsSidebarOpen(true)} 
+                className="lg:hidden p-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                title="Mở menu"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+            )}
             <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
-               <Sparkles className="h-6 w-6" />
-               <span className="font-bold text-lg hidden sm:inline">EduPlan AI</span>
-               <span className="font-bold text-lg sm:hidden">EduPlan</span>
+               <Sparkles className="h-5 w-5" />
+               <span className="font-bold text-base hidden sm:inline">EduPlan AI</span>
+               {isFocusMode && (
+                 <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 font-semibold border border-emerald-200 dark:border-emerald-800 animate-pulse">
+                   Chế độ Tập trung
+                 </span>
+               )}
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={toggleTheme}
-                className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-md text-xs transition-colors"
-                title="Chuyển giao diện Sáng/Tối"
-              >
-                {theme === 'dark' ? <Moon className="h-4 w-4 text-indigo-400" /> : <Sun className="h-4 w-4 text-amber-500" />}
-              </button>
-              <button 
-                onClick={() => {
-                  lockTeacherWorkspace();
-                  setIsLocked(true);
-                }}
-                className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-md text-xs transition-colors hover:text-amber-500"
-                title="Khóa không gian làm việc ngay"
-              >
-                <Lock className="h-4 w-4" />
-              </button>
-              <button 
-                onClick={() => {
-                  setSettingsDefaultTab("security");
-                  setIsSettingsOpen(true);
-                }}
-                className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-md text-xs transition-colors hover:text-emerald-500"
-                title="Bảo mật & Mã PIN"
-              >
-                <ShieldCheck className="h-4 w-4" />
-              </button>
-              <button 
-                onClick={() => setIsGuideOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 text-slate-700 border border-slate-200 rounded-md text-xs font-medium hover:bg-slate-200 transition-colors"
-                title="Hướng dẫn sử dụng"
-              >
-                <HelpCircle className="h-3.5 w-3.5 text-emerald-600" />
-                <span>HDSD</span>
-              </button>
-              <button onClick={() => {
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Focus Mode Toggle Button */}
+            <button
+              onClick={handleToggleFocusMode}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer border ${
+                isFocusMode
+                  ? "bg-emerald-600 text-white border-emerald-700 shadow-sm hover:bg-emerald-700"
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700"
+              }`}
+              title={isFocusMode ? "Thoát Chế độ Tập trung (Hiện lại thanh menu)" : "Bật Chế độ Tập trung (Ẩn menu, mở rộng tối đa màn hình)"}
+            >
+              {isFocusMode ? (
+                <>
+                  <Minimize2 className="h-4 w-4" />
+                  <span>Thoát Focus Mode</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="h-4 w-4" />
+                  <span className="hidden sm:inline">Focus Mode</span>
+                </>
+              )}
+            </button>
+
+            {/* Theme Toggle */}
+            <button
+              onClick={toggleTheme}
+              className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs transition-colors hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+              title="Chuyển giao diện Sáng/Tối"
+            >
+              {theme === 'dark' ? <Moon className="h-4 w-4 text-indigo-400" /> : <Sun className="h-4 w-4 text-amber-500" />}
+            </button>
+
+            {/* User Guide Button */}
+            <button 
+              onClick={() => setIsGuideOpen(true)}
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+              title="Hướng dẫn sử dụng"
+            >
+              <HelpCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>HDSD</span>
+            </button>
+
+            {/* API Key Button */}
+            <button 
+              onClick={() => {
                 setSettingsDefaultTab("apikey");
                 setIsSettingsOpen(true);
-              }} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-md text-xs font-medium hover:bg-emerald-100 transition-colors">
-                <Key className="h-3.5 w-3.5" />
-                <span>API Key</span>
-              </button>
-              <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-md">
-                <Menu className="h-6 w-6" />
-              </button>
-            </div>
-          </header>
-        )}
+              }} 
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 rounded-lg text-xs font-medium hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors cursor-pointer"
+              title="Cài đặt API Key"
+            >
+              <Key className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">API Key</span>
+            </button>
+          </div>
+        </header>
 
         <div className="flex-1 overflow-y-auto relative w-full h-full">
           <ErrorBoundary key={activeTab}>

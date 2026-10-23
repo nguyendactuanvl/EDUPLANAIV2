@@ -9,9 +9,8 @@ import { cn } from "../lib/utils";
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
-  onOpenSettings?: (defaultTab?: "apikey" | "security" | "subjects") => void;
+  onOpenSettings?: (defaultTab?: "apikey" | "subjects") => void;
   onOpenGuide?: () => void;
-  onLockApp?: () => void;
   isDarkMode?: boolean;
   onToggleTheme?: () => void;
 }
@@ -21,7 +20,6 @@ export function Sidebar({
   setActiveTab, 
   onOpenSettings, 
   onOpenGuide,
-  onLockApp,
   isDarkMode = false,
   onToggleTheme
 }: SidebarProps) {
@@ -154,24 +152,6 @@ export function Sidebar({
             <Key className="h-4 w-4 shrink-0" />
             <span className="truncate">Cài đặt API Key</span>
           </button>
-
-          <button
-            onClick={() => onOpenSettings?.("security")}
-            className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-            title="Bảo mật & Mã PIN Giáo viên"
-          >
-            <ShieldCheck className="h-4 w-4" />
-          </button>
-
-          {onLockApp && (
-            <button
-              onClick={onLockApp}
-              className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-              title="Khóa màn hình làm việc tức thì"
-            >
-              <Lock className="h-4 w-4" />
-            </button>
-          )}
         </div>
       </div>
     </div>
