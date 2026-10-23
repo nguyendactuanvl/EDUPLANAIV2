@@ -182,6 +182,9 @@ export function safeJsonParse<T = any>(text: string, fallback?: T): T {
     .replace(/```/g, '')
     .trim();
 
+  // Pre-escape single backslash \n... LaTeX commands (\neq, \ne, \notin...) so JSON.parse doesn't evaluate \n as ASCII 10 newline
+  cleaned = cleaned.replace(/(?<!\\)\\(neq|ne|notin|nexists|neg|nabla|nu|nearrow|nrightarrow|nleftarrow|nsubseteq|nparallel|noindent|newline|nobreak|normalsize|natural|ni|nsim|ncong)\b/g, '\\\\$1');
+
   try {
     return JSON.parse(cleaned);
   } catch (e1) {
@@ -1113,8 +1116,16 @@ export const cleanVietnameseUnicode = (str: string): string => {
     .replace(/\bchọnm\b/gi, 'chọn $m$')
     .replace(/(\b(?:sin|cos|tan|cot)[a-z0-9]*)eq0/gi, '$1 \\neq 0')
     .replace(/(\b(?:sin|cos|tan|cot)[a-z0-9]*)eq1/gi, '$1 \\neq 1')
-    .replace(/(?<![\\a-zA-Z])([xymtabckuvwz])eq(\d+)/gi, '$1 \\neq $2')
-    .replace(/(?<![\\a-zA-Z])([xymtabckuvwz])eq(?=\\frac|\d)/gi, '$1 \\neq ');
+    .replace(/(?<![\\a-zA-Z])\b1\s*eq\s*0\b/gi, '1 \\neq 0')
+    .replace(/(?<![\\a-zA-Z])\b1eq0\b/gi, '1 \\neq 0')
+    .replace(/([0-9a-zA-Z\)\}\]\^]+)\s*1?eq\s*(0|\d+|[a-zA-Z]+|\-|\+|\$|\\|\)|\}|\])/gi, (_m, left, right) => {
+      if (left.endsWith('1') && _m.includes('1eq')) {
+        return `${left} \\neq ${right}`;
+      }
+      return `${left} \\neq ${right}`;
+    })
+    .replace(/(?<![\\a-zA-Z])([a-zA-Z0-9\)\}\]\^]+)\s*eq\s*(\d+)/gi, '$1 \\neq $2')
+    .replace(/(?<![\\a-zA-Z])([a-zA-Z0-9\)\}\]\^]+)\s*eq(?=\\frac|\d)/gi, '$1 \\neq ');
 
   // 4. Xử lý thiếu gạch đầu mệnh đề phủ định (\overline{P}, \overline{Q}, ...)
   res = res

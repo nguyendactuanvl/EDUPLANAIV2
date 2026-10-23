@@ -178,12 +178,29 @@ export function normalizeMathText(text: any): string {
     return `"$${cleanBody}$"`;
   });
 
-  // 3. Khôi phục các ký tự thoát bị rách hoặc nuốt gạch chéo ngược
-  t = t.replace(/(?<![a-zA-Z\\])\b([a-zA-Z])\s*a?e\s*0\b/gi, '$1 \\neq 0');
-  t = t.replace(/(?<![a-zA-Z\\])\b([a-zA-Z])\s*eq\s*0\b/gi, '$1 \\neq 0');
-  t = t.replace(/\((?:\s*|\$)*([a-zA-Z])\s*a?e\s*0(?:\s*|\$)*\)/gi, '($1 \\neq 0)');
-  t = t.replace(/(?<=^|[\s$])([a-z])\s*eq(?=0|\d|\s|\$)/gi, '$1 \\neq ');
+  // 3. Khôi phục các ký tự thoát bị rách hoặc nuốt gạch chéo ngược cho \neq và các lệnh TeX
+  // A. Khôi phục \neq khi \n bị biến thành newline character trong JSON string parsing
+  t = t.replace(/[\r\n]+\s*eq\s*(0|\d+|[a-zA-Z]+|\-|\+|\$|\\|\)|\}|\])/gi, ' \\neq $1');
+  t = t.replace(/[\r\n]+\s*eq\b/gi, ' \\neq ');
+  t = t.replace(/[\r\n]+\s*neq\b/gi, ' \\neq ');
+  t = t.replace(/[\r\n]+\s*notin\b/gi, ' \\notin ');
+  t = t.replace(/[\r\n]+\s*nexists\b/gi, ' \\nexists ');
+
+  // B. Khôi phục \neq khi bị biến dạng thành 1eq0, + 1eq0, x^2 + 1eq0, (x)eq0, a eq b, 1 eq 0, 1eq, 1neq0...
+  t = t.replace(/(?<![\\a-zA-Z])\b1\s*eq\s*0\b/gi, '1 \\neq 0');
+  t = t.replace(/(?<![\\a-zA-Z])\b1eq0\b/gi, '1 \\neq 0');
+  t = t.replace(/([0-9a-zA-Z\)\}\]\^]+)\s*1?eq\s*(0|\d+|[a-zA-Z]+|\-|\+|\$|\\|\)|\}|\])/gi, (_m, left, right) => {
+    if (left.endsWith('1') && _m.includes('1eq')) {
+      return `${left} \\neq ${right}`;
+    }
+    return `${left} \\neq ${right}`;
+  });
+  t = t.replace(/(?<![\\a-zA-Z])\b([a-zA-Z0-9\)\}\]\^]+)\s*a?e\s*0\b/gi, '$1 \\neq 0');
+  t = t.replace(/(?<![\\a-zA-Z])\b([a-zA-Z0-9\)\}\]\^]+)\s*eq\s*0\b/gi, '$1 \\neq 0');
+  t = t.replace(/\((?:\s*|\$)*([a-zA-Z0-9\)\}\]\^]+)\s*a?e\s*0(?:\s*|\$)*\)/gi, '($1 \\neq 0)');
+  t = t.replace(/(?<=^|[\s$])([a-zA-Z0-9\)\}\]\^]+)\s*eq(?=0|\d|\s|\$)/gi, '$1 \\neq ');
   t = t.replace(/(?<!\\)\bneq\b/g, '\\neq');
+  t = t.replace(/(?<!\\)\bne\b(?=\s*0|\s*\d|\s*\$|\s*[a-zA-Z]|\s*-|\s*\\)/g, '\\neq');
   t = t.replace(/(?<!\\)\blim\b/g, '\\lim');
   t = t.replace(/(?<!\\)\bfrac\b/g, '\\frac');
   t = t.replace(/(?<!\\)\bleft\b/g, '\\left');
