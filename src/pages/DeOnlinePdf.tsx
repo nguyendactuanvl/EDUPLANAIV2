@@ -914,11 +914,28 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
     setIsLoadingExam(true);
     setExamError("");
     try {
-      const res = await fetch(`/api/exams/${code.trim().toUpperCase()}`);
-      if (!res.ok) {
+      const cleanCode = code.trim().toUpperCase();
+      let data = null;
+
+      // 1. Thử lấy từ Backend API
+      try {
+        const res = await fetch(`/api/exams/${cleanCode}?fresh=true`);
+        if (res.ok) {
+          data = await res.json();
+        }
+      } catch (e) {
+        console.warn("Backend API load room error:", e);
+      }
+
+      // 2. Dự phòng lấy từ Cloud Store (Cloud KV, LocalStorage, Google Webhook) nếu Backend API không có dữ liệu
+      if (!data) {
+        data = await fetchExamFromCloud(cleanCode);
+      }
+
+      if (!data) {
         throw new Error("Không tìm thấy mã phòng thi. Vui lòng kiểm tra lại mã hoặc đường link chia sẻ từ Giáo viên.");
       }
-      const data = await res.json();
+
       setLoadedExamData(data);
       setExamTitle(data.examTitle || "Đề thi PDF");
       setDuration(data.duration || 90);

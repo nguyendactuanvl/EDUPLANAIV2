@@ -751,6 +751,12 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
         throw new Error(`Không tìm thấy bài thi với mã "${cleanId}". Vui lòng kiểm tra lại mã PIN hoặc yêu cầu thầy/cô gửi lại link.`);
       }
 
+      if (data.codeVersions || data.pdfBase64) {
+        // Đây là đề thi PDF online -> chuyển hướng mượt sang chế độ phòng thi PDF
+        window.location.replace(`/?view=exam_pdf&data=${cleanId}`);
+        return;
+      }
+
       setExamData(data);
       if (data.codes && data.codes.length > 0) {
         const randomCode = data.codes[Math.floor(Math.random() * data.codes.length)].code;

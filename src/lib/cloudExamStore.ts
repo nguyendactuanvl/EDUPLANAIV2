@@ -208,6 +208,30 @@ export async function saveExamToCloud(examId: string, data: any): Promise<boolea
  * 4. Distributed Cloud KV (legacy encoded URI)
  * 5. Google Webhook Store
  */
+export function isValidExamPayload(data: any): boolean {
+  if (!data || typeof data !== 'object') return false;
+  if (data.deleted === true) return false;
+  return Boolean(
+    data.examData ||
+    data.codes ||
+    data.codeVersions ||
+    data.part1Keys ||
+    data.pdfBase64 ||
+    data.examTitle ||
+    data.title ||
+    data.submissions ||
+    data.originalQuestions
+  );
+}
+
+/**
+ * Fetches exam data from:
+ * 1. Client localStorage
+ * 2. Backend API (/api/exams/:id)
+ * 3. Distributed Cloud KV (chunked hex)
+ * 4. Distributed Cloud KV (legacy encoded URI)
+ * 5. Google Webhook Store
+ */
 export async function fetchExamFromCloud(examId: string): Promise<any> {
   const cleanId = examId.trim().toUpperCase();
   if (!cleanId) return null;
@@ -217,7 +241,7 @@ export async function fetchExamFromCloud(examId: string): Promise<any> {
     const cached = localStorage.getItem(`examCache_${cleanId}`);
     if (cached) {
       const parsed = JSON.parse(cached);
-      if (parsed && (parsed.examData || parsed.codes)) {
+      if (isValidExamPayload(parsed)) {
         return parsed;
       }
     }
@@ -228,7 +252,7 @@ export async function fetchExamFromCloud(examId: string): Promise<any> {
     const res = await apiFetch(`/api/exams/${cleanId}`);
     if (res.ok) {
       const data = await res.json();
-      if (data && (data.examData || data.codes)) {
+      if (isValidExamPayload(data)) {
         try {
           localStorage.setItem(`examCache_${cleanId}`, JSON.stringify(data));
         } catch (e) {}
@@ -257,10 +281,12 @@ export async function fetchExamFromCloud(examId: string): Promise<any> {
         const decompressed = LZString.decompressFromUTF16(restoredUtf16);
         if (decompressed) {
           const parsed = JSON.parse(decompressed);
-          try {
-            localStorage.setItem(`examCache_${cleanId}`, JSON.stringify(parsed));
-          } catch (e) {}
-          return parsed;
+          if (isValidExamPayload(parsed)) {
+            try {
+              localStorage.setItem(`examCache_${cleanId}`, JSON.stringify(parsed));
+            } catch (e) {}
+            return parsed;
+          }
         }
       }
     }
@@ -275,10 +301,12 @@ export async function fetchExamFromCloud(examId: string): Promise<any> {
       const decomp = LZString.decompressFromEncodedURIComponent(val);
       if (decomp) {
         const parsed = JSON.parse(decomp);
-        try {
-          localStorage.setItem(`examCache_${cleanId}`, JSON.stringify(parsed));
-        } catch (e) {}
-        return parsed;
+        if (isValidExamPayload(parsed)) {
+          try {
+            localStorage.setItem(`examCache_${cleanId}`, JSON.stringify(parsed));
+          } catch (e) {}
+          return parsed;
+        }
       }
     }
   } catch (e) {}
@@ -288,7 +316,7 @@ export async function fetchExamFromCloud(examId: string): Promise<any> {
     const webhookRes = await fetch(`${SYSTEM_EXAM_WEBHOOK}?action=getExam&examId=${encodeURIComponent(cleanId)}`);
     if (webhookRes.ok) {
       const webhookData = await webhookRes.json();
-      if (webhookData && (webhookData.examData || webhookData.codes)) {
+      if (isValidExamPayload(webhookData)) {
         try {
           localStorage.setItem(`examCache_${cleanId}`, JSON.stringify(webhookData));
         } catch (e) {}

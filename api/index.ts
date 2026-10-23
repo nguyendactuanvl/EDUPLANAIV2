@@ -3274,6 +3274,24 @@ app.get("/api/exams/:id", async (req, res) => {
     }
   }
 
+  // Fallback to Google Apps Script Webhook Store if not found in Cloud KV
+  if (!metadata) {
+    try {
+      const webhookRes = await fetch(`https://script.google.com/macros/s/AKfycbwYHVplKQAUoUVBo6QbjSBnO_TB71eUXeeP2MmQ42nQIVJiUjvmLrrJwvCC-lsCXc7k/exec?action=getExam&examId=${encodeURIComponent(rawId)}`);
+      if (webhookRes.ok) {
+        const webhookData = await webhookRes.json();
+        if (webhookData && (webhookData.examTitle || webhookData.codeVersions || webhookData.part1Keys || webhookData.examData || webhookData.codes)) {
+          metadata = webhookData;
+          sharedExamsStore.set(rawId, metadata);
+          sharedExamsStore.set(rawId.toUpperCase(), metadata);
+          saveExamsToDisk();
+        }
+      }
+    } catch (e) {
+      console.warn("Webhook fallback fetch notice:", e);
+    }
+  }
+
   if (metadata) {
     // Also retrieve PDF base64
     let pdfData = sharedExamsStore.get(`${rawId}_PDF`)
