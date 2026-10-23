@@ -3204,34 +3204,65 @@ app.all("/api/exams/share", async (req, res) => {
       code += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     const examId = req.body?.customId ? String(req.body.customId).trim() : code;
+    const cleanId = examId.toUpperCase();
 
     const body = req.body || {};
     const pdfBase64 = body.pdfBase64 || "";
 
-    const metadata = { ...body };
+    // Load existing metadata to preserve submissions and sheet settings if omitted in body
+    let existing = sharedExamsStore.get(cleanId) 
+      || sharedExamsStore.get(examId) 
+      || sharedExamsStore.get(examId.toLowerCase());
+    
+    if (!existing) {
+      existing = await loadFromCloudKV(cleanId);
+    }
+
+    let submissions = body.submissions;
+    if (!Array.isArray(submissions) || submissions.length === 0) {
+      if (existing && Array.isArray(existing.submissions) && existing.submissions.length > 0) {
+        submissions = existing.submissions;
+      } else {
+        submissions = [];
+      }
+    }
+
+    const linkedSheetId = body.linkedSheetId || existing?.linkedSheetId || "";
+    const linkedSheetUrl = body.linkedSheetUrl || existing?.linkedSheetUrl || "";
+    const scriptUrl = body.scriptUrl || existing?.scriptUrl || "";
+
+    const metadata = { 
+      ...existing,
+      ...body, 
+      submissions,
+      linkedSheetId,
+      linkedSheetUrl,
+      scriptUrl,
+      updatedAt: new Date().toISOString()
+    };
     delete metadata.pdfBase64;
 
+    sharedExamsStore.set(cleanId, metadata);
     sharedExamsStore.set(examId, metadata);
     sharedExamsStore.set(examId.toLowerCase(), metadata);
-    sharedExamsStore.set(examId.toUpperCase(), metadata);
 
     if (pdfBase64) {
+      sharedExamsStore.set(`${cleanId}_PDF`, { pdfBase64 });
       sharedExamsStore.set(`${examId}_PDF`, { pdfBase64 });
-      sharedExamsStore.set(`${examId.toUpperCase()}_PDF`, { pdfBase64 });
       sharedExamsStore.set(`${examId.toLowerCase()}_PDF`, { pdfBase64 });
     }
 
     saveExamsToDisk();
 
-    // Persist metadata to cloud KV (extremely small, fast!)
-    await saveToCloudKV(examId.toUpperCase(), metadata);
+    // Persist metadata to cloud KV
+    await saveToCloudKV(cleanId, metadata);
 
-    // Persist PDF only if provided and non-empty (done once)
+    // Persist PDF only if provided and non-empty
     if (pdfBase64) {
-      await saveToCloudKV(`${examId.toUpperCase()}_PDF`, { pdfBase64 });
+      await saveToCloudKV(`${cleanId}_PDF`, { pdfBase64 });
     }
 
-    res.json({ examId });
+    res.json({ examId: cleanId, submissionsCount: submissions.length });
   } catch (error) {
     res.status(500).json({ error: "Lỗi chia sẻ đề thi" });
   }
@@ -3402,30 +3433,58 @@ app.post("/api/exams/:id/submit", async (req, res) => {
   // Initialize submissions array
   metadata.submissions = metadata.submissions || [];
 
-  // Prevent immediate duplicate submissions (e.g. accidental double clicks within 3 minutes)
-  const isDuplicate = metadata.submissions.some((s: any) => 
-    s.studentName === submission.studentName && 
-    s.studentClass === submission.studentClass &&
-    Math.abs(new Date(s.timestamp || Date.now()).getTime() - new Date().getTime()) < 3 * 60 * 1000
+  // Timestamp the submission
+  submission.timestamp = new Date().toISOString();
+  submission.submitTime = submission.submitTime || new Date().toLocaleString("vi-VN");
+
+  // Check if student already submitted - update existing or append
+  const existingIdx = metadata.submissions.findIndex((s: any) =>
+    (s.studentName || "").trim().toLowerCase() === (submission.studentName || "").trim().toLowerCase() &&
+    (s.studentClass || "").trim().toLowerCase() === (submission.studentClass || "").trim().toLowerCase()
   );
 
-  if (!isDuplicate) {
-    submission.timestamp = new Date().toISOString();
+  if (existingIdx >= 0) {
+    metadata.submissions[existingIdx] = { ...metadata.submissions[existingIdx], ...submission };
+  } else {
     metadata.submissions.push(submission);
-    
-    // Save to memory
-    sharedExamsStore.set(rawId, metadata);
-    sharedExamsStore.set(rawId.toUpperCase(), metadata);
-    sharedExamsStore.set(rawId.toLowerCase(), metadata);
-    
-    // Save to disk cache
-    saveExamsToDisk();
-
-    // Await upload back to cloud KV safely (essential for serverless environments!)
-    await saveToCloudKV(rawId, metadata);
   }
 
-  res.json({ success: true, message: "Đã ghi nhận kết quả làm bài của học sinh!" });
+  // Save to memory
+  sharedExamsStore.set(rawId, metadata);
+  sharedExamsStore.set(rawId.toUpperCase(), metadata);
+  sharedExamsStore.set(rawId.toLowerCase(), metadata);
+  
+  // Save to disk cache
+  saveExamsToDisk();
+
+  // Await upload back to cloud KV safely
+  await saveToCloudKV(rawId, metadata);
+
+  // If a Google Apps Script Web App URL is connected, push submission directly to Google Sheet
+  if (metadata.scriptUrl && typeof metadata.scriptUrl === 'string' && metadata.scriptUrl.startsWith('http')) {
+    try {
+      fetch(metadata.scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'submitScore',
+          examCode: rawId,
+          examTitle: metadata.examTitle || metadata.title || rawId,
+          studentName: submission.studentName,
+          studentClass: submission.studentClass,
+          totalScore: submission.totalScore,
+          scorePart1: submission.scorePart1,
+          scorePart2: submission.scorePart2,
+          scorePart3: submission.scorePart3,
+          submitTime: submission.submitTime,
+          isViolation: submission.isViolation || false,
+          violationReason: submission.violationReason || ""
+        })
+      }).catch(e => console.warn("Background Apps Script sync notice:", e));
+    } catch (e) {}
+  }
+
+  res.json({ success: true, message: "Đã ghi nhận kết quả làm bài của học sinh!", submissionsCount: metadata.submissions.length });
 });
 
 // Clean link return without external shorteners that Zalo blocks

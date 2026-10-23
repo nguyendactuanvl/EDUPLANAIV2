@@ -65,6 +65,28 @@
     </style>
     <!-- MathJax 3 Configuration & TeX-MML-SVG Engine -->
     <script>
+      // Global Math pre-processor function available app-wide
+      window.preprocessMathText = function(text) {
+        if (!text || typeof text !== 'string') return text || '';
+        var s = text;
+        // Fix double backslashes in TeX commands
+        s = s.replace(/\\{2,}([a-zA-Z]+)/g, function(_, g1) { return '\\' + g1; });
+        // Fix \neq converted to newlines / eq / 1eq0
+        s = s.replace(/[\r\n]+\s*eq\b/gi, ' \\neq ');
+        s = s.replace(/(?<![\\a-zA-Z])\b1\s*eq\s*0\b/gi, '1 \\neq 0');
+        s = s.replace(/(?<![\\a-zA-Z])\b1eq0\b/gi, '1 \\neq 0');
+        s = s.replace(/([0-9a-zA-Z\)\}\]\^]+)\s*1?eq\s*(0|\d+|[a-zA-Z]+|\-|\+|\$|\\|\)|\}|\])/gi, '$1 \\neq $2');
+        s = s.replace(/(?<![\\a-zA-Z])\b([a-zA-Z0-9\)\}\]\^]+)\s*eq\s*0\b/gi, '$1 \\neq 0');
+        s = s.replace(/(?<!\\)\bneq\b/g, '\\neq');
+        s = s.replace(/(?<!\\)\bne\b(?=\s*0|\s*\d|\s*\$|\s*[a-zA-Z]|\s*-|\s*\\)/g, '\\neq');
+        // Fix missing backslashes for standard TeX commands
+        s = s.replace(/(?<!\\)\b(frac|sqrt|lim|sin|cos|tan|cot|ln|log|in|notin|forall|exists|le|ge|leq|geq|infty|mathbb|Rightarrow|Leftrightarrow)\b/g, '\\$1');
+        s = s.replace(/\\dfrac\b/g, '\\frac');
+        s = s.replace(/\\geq\b/g, '\\ge');
+        s = s.replace(/\\leq\b/g, '\\le');
+        return s;
+      };
+
       window.MathJax = {
         tex: {
           inlineMath: [['$', '$'], ['\\(', '\\)']],
@@ -81,6 +103,17 @@
           ignoreHtmlClass: 'tex2jax_ignore|svg-wrapper',
           processHtmlClass: 'tex2jax_process',
           renderActions: {
+            // Priority 50: Pre-process extracted LaTeX strings before MathJax compilation (priority 100)
+            preprocessMathString: [50, function(doc) {
+              if (doc && doc.math) {
+                for (var i = 0; i < doc.math.length; i++) {
+                  var m = doc.math[i];
+                  if (m && m.math) {
+                    m.math = window.preprocessMathText(m.math);
+                  }
+                }
+              }
+            }, ''],
             addLatexAttribute: [150, function(doc) {
               if (doc && doc.math) {
                 for (var i = 0; i < doc.math.length; i++) {
