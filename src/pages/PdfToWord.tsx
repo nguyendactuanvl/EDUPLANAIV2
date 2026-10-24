@@ -7,7 +7,7 @@ import {
   Image as ImageIcon, Scissors, PlusCircle, FileCode, Palette, BarChart2, TrendingUp
 } from 'lucide-react';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
-import { parseApiResponse, normalizeOcrChoicesAndFormatting } from '../lib/utils';
+import { parseApiResponse, normalizeOcrChoicesAndFormatting, normalizeMathText } from '../lib/utils';
 import { run1ClickMathFix } from '../components/math-tools/MathFormulaFixer';
 import { getPdfTotalPages, renderPdfPageRange, renderPdfPageToDataUrl } from '../lib/pdfUtils';
 import { ImageCropperModal } from '../components/ImageCropperModal';
@@ -319,7 +319,7 @@ export function PdfToWord() {
               pageText = pageText.replace(/```(?:tikz|latex)?\s*\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}\s*```/gi, '\n[Hình vẽ minh họa]\n');
               pageText = pageText.replace(/```tikz[\s\S]*?```/gi, '\n[Hình vẽ minh họa]\n');
               pageText = pageText.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/gi, '\n[Hình vẽ minh họa]\n');
-              pageText = normalizeOcrChoicesAndFormatting(pageText);
+              pageText = normalizeMathText(normalizeOcrChoicesAndFormatting(pageText));
             }
 
             pageResults.push(pageText.trim());
@@ -377,7 +377,7 @@ export function PdfToWord() {
         }
 
         if (finalResult) {
-          finalResult = normalizeOcrChoicesAndFormatting(finalResult);
+          finalResult = normalizeMathText(normalizeOcrChoicesAndFormatting(finalResult));
           if (visualMode === 'auto_redraw') {
             finalResult = autoEnrichTextWithVisuals(finalResult);
           }
@@ -425,7 +425,7 @@ export function PdfToWord() {
           rawRes = rawRes.replace(/```tikz[\s\S]*?```/gi, '\n[Hình vẽ minh họa]\n');
           rawRes = rawRes.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/gi, '\n[Hình vẽ minh họa]\n');
         }
-        finalResult = rawRes;
+        finalResult = normalizeMathText(normalizeOcrChoicesAndFormatting(rawRes));
       }
 
       // Stop progress timer & jump to 100%

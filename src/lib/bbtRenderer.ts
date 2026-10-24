@@ -337,8 +337,8 @@ export function unflattenMarkdownTables(text: string): string {
     .replace(/\\+(?:se)?arrow/gi, '↘')
     .replace(/\\+(?:up)?arrow/gi, '↑')
     .replace(/\\+(?:down)?arrow/gi, '↓')
-    .replace(/\\r\\n/g, '\n')
-    .replace(/\\n/g, '\n')
+    .replace(/\\r\\n(?![a-zA-Z])/g, '\n')
+    .replace(/\\n(?![a-zA-Z])/g, '\n')
     .replace(/[’`´′]/g, "'")
     .replace(/\\prime/g, "'")
     .replace(/[−–—]/g, '-');

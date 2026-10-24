@@ -2607,11 +2607,15 @@ Nhiệm vụ của bạn là đọc toàn bộ nội dung từ ${isSinglePageMod
 - Nếu trang có phần chuyển tiếp từ trang trước (ví dụ câu hỏi tiếp diễn từ đầu trang), PHẢI gõ đầy đủ các câu chữ tiếp theo đó.
 ${!isSinglePageMode ? '- Ở ranh giới chuyển tiếp giữa các trang, bắt buộc đánh dấu bằng dòng: "--- [Hết Trang X / Sang Trang Y] ---" (thay X và Y bằng số trang tương ứng).' : ''}
 
-2. CHUẨN HÓA CÔNG THỨC TOÁN / LÝ / HÓA (CHUẨN LATEX):
-- Mọi biến số, số liệu kèm đơn vị, biểu thức đại số, hàm số, phương trình, bất phương trình, tọa độ, ký hiệu hình học, vectơ đều phải đặt trong dấu đô la: $công_thức$ (ví dụ: $x$, $y = ax + b$, $\\vec{AB}$, $\\vec{u}$, $\\vec{i}$, $\\vec{j}$, $\\vec{k}$, \\{M, N\\}, \\{1, 2, 3\\}, $[-2; 2]$, $\\mathbb{R}$).
-- Với công thức độc lập đứng riêng dòng, sử dụng hai dấu đô la: $$công_thức$$.
-- LUÔN DÙNG \\frac thay cho \\dfrac.
-- Tuyệt đối không để sót ký hiệu toán ở dạng text thường. Giữ cú pháp chuẩn LaTeX tương thích hoàn toàn để chuyển đổi sang MathType hoặc công cụ Equation trong Microsoft Word.
+2. CHUẨN HÓA CÔNG THỨC TOÁN / LÝ / HÓA (CHUẨN LATEX NGHIÊM NGẶT):
+- MỌI biến số, số liệu, biểu thức đại số, hàm số, phương trình, bất phương trình, tọa độ, ký hiệu hình học, vectơ, và 100% các phương án A, B, C, D BẮT BUỘC phải đặt trong dấu đô la: $công_thức$.
+- TUYỆT ĐỐI KHÔNG ĐỂ BẤT PHƯƠNG TRÌNH HAY ĐẲNG THỨC NÀO Ở DẠNG TEXT THƯỜNG THIẾU $: Ví dụ: BẮT BUỘC viết $x - 1 \ge 0$, $a \ge 1$, $b \ge 1$, $a + b \ge 0$, $a + b \le 0$, $x^2 + y \ge 1$, $xy \ge 1$, $x \ge y$, $x + 2y \le 0$, $-\\frac{1}{2} < x \le 3$. KHÔNG BAO GIỜ viết x - 1\\geq0 hay a\\geq1 không có dấu $.
+- LUÔN CÓ KHOẢNG TRẮNG sau các lệnh so sánh: \\ge 0, \\le 0, \\neq 0 (không dính liền \\geq0 hay \\leq0).
+- CÁC PHƯƠNG ÁN A, B, C, D: Mọi phương án chứa toán học đều phải bọc gọn gàng trong $...$: A. $x - 1 \ge 0$, B. $a \ge 1$, C. $P = \\sin x$, D. $P = \\cos x$.
+- TẬP HỢP: viết chuẩn $A = \\{x \\in \\mathbb{R} \\mid x + 2y \\le 0\\}$, có dấu gạch chéo trước ngoặc nhọn \\{ và \\}.
+- ĐIỀU KIỆN TRONG NGOẶC: $(x \\neq \\frac{\\pi}{2} + k\\pi, k \\in \\mathbb{Z})$, luôn viết \\neq chuẩn xác.
+- KHÔNG BAO GIỜ bọc cả câu tiếng Việt (như "ta được:", "với:") vào bên trong dấu $. Dấu $ chỉ bọc riêng biểu thức toán.
+- LUÔN DÙNG \\frac thay cho \\dfrac. DÙNG \\ge thay cho \\geq, \\le thay cho \\leq.
 
 3. GIỮ NGUYÊN CẤU TRÚC ĐỀ THI VÀ VĂN BẢN:
 - Giữ nguyên số thứ tự đề mục, bài tập (ví dụ: Câu 1:, Câu 2:, Bài 1:).

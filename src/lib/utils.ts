@@ -2289,7 +2289,7 @@ export function getPublicAppUrl(): string {
 
 export function cleanQuestionStem(content: any, options?: any[], tfStatements?: any[]): string {
   if (!content) return '';
-  let rawStr = String(content).replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n');
+  let rawStr = String(content).replace(/\\r\\n(?![a-zA-Z])/g, '\n').replace(/\\n(?![a-zA-Z])/g, '\n');
   let text = unflattenMarkdownTables(rawStr.trim());
   
   // Bảo vệ an toàn tuyệt đối cho Bảng biến thiên (BBT), Đồ thị, SVGs, Images & Markdown tables
@@ -2877,9 +2877,7 @@ const old_fixMath_disabled_for_safety = (text: any) => {
             });
         }
         
-        let lines = t.split('\\n');
-        // fallback if it doesn't have \\n but actual newlines
-        if (lines.length === 1) lines = t.split('\n');
+        let lines = t.split(/(?:\\r\\n|\\n)(?![a-zA-Z])|\r?\n/);
         
         let newLines = [];
         for (let line of lines) {

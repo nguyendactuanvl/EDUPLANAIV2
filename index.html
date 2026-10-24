@@ -71,19 +71,30 @@
         var s = text;
         // Fix double backslashes in TeX commands
         s = s.replace(/\\{2,}([a-zA-Z]+)/g, function(_, g1) { return '\\' + g1; });
+        // Fix \backslash leq, \backslash geq, \backslash neq
+        s = s.replace(/\\backslash\s*(leq|geq|neq|frac|sqrt|in|notin|cap|cup|setminus|forall|exists|mathbb|pi|alpha|beta)\b/gi, '\\$1');
+        s = s.replace(/\\backslash\s*/gi, '\\');
         // Fix \neq converted to newlines / eq / 1eq0
-        s = s.replace(/[\r\n]+\s*eq\b/gi, ' \\neq ');
+        s = s.replace(/([\r\n]+|\s*\\n\s*)\s*eq\s*(0|\d+|[a-zA-Z]+|\-|\+|\$|\\|\)|\}|\])/gi, ' \\neq $2');
+        s = s.replace(/([\r\n]+|\s*\\n\s*)\s*eq\b/gi, ' \\neq ');
         s = s.replace(/(?<![\\a-zA-Z])\b1\s*eq\s*0\b/gi, '1 \\neq 0');
         s = s.replace(/(?<![\\a-zA-Z])\b1eq0\b/gi, '1 \\neq 0');
         s = s.replace(/([0-9a-zA-Z\)\}\]\^]+)\s*1?eq\s*(0|\d+|[a-zA-Z]+|\-|\+|\$|\\|\)|\}|\])/gi, '$1 \\neq $2');
         s = s.replace(/(?<![\\a-zA-Z])\b([a-zA-Z0-9\)\}\]\^]+)\s*eq\s*0\b/gi, '$1 \\neq 0');
         s = s.replace(/(?<!\\)\bneq\b/g, '\\neq');
         s = s.replace(/(?<!\\)\bne\b(?=\s*0|\s*\d|\s*\$|\s*[a-zA-Z]|\s*-|\s*\\)/g, '\\neq');
+        // Fix missing spaces after comparison operators: \geq0 -> \ge 0, \leq0 -> \le 0, \geqy -> \ge y
+        s = s.replace(/\\(geq|leq|neq|ge|le|ne)([0-9a-zA-Z])/g, '\\$1 $2');
         // Fix missing backslashes for standard TeX commands
         s = s.replace(/(?<!\\)\b(frac|sqrt|lim|sin|cos|tan|cot|ln|log|in|notin|forall|exists|le|ge|leq|geq|infty|mathbb|Rightarrow|Leftrightarrow)\b/g, '\\$1');
         s = s.replace(/\\dfrac\b/g, '\\frac');
         s = s.replace(/\\geq\b/g, '\\ge');
         s = s.replace(/\\leq\b/g, '\\le');
+        s = s.replace(/\\ge([0-9a-zA-Z])/g, '\\ge $1');
+        s = s.replace(/\\le([0-9a-zA-Z])/g, '\\le $1');
+        s = s.replace(/\\neq([0-9a-zA-Z])/g, '\\neq $1');
+        // Escape set braces { and } if unescaped
+        s = s.replace(/(?<=[=:\s])\{([^{}\n]+?)\}(?!\s*\{)/g, '\\{$1\\}');
         return s;
       };
 
