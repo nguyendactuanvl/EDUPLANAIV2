@@ -10,6 +10,17 @@ interface TrigonometryChapterToolsProps {
   theme?: 'light' | 'dark';
 }
 
+const getCircumcircle = (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number) => {
+  const d = 2 * (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2));
+  if (Math.abs(d) < 1e-6) {
+    return { xc: x1, yc: y1, r: 0 };
+  }
+  const ux = ((x1 * x1 + y1 * y1) * (y2 - y3) + (x2 * x2 + y2 * y2) * (y3 - y1) + (x3 * x3 + y3 * y3) * (y1 - y2)) / d;
+  const uy = ((x1 * x1 + y1 * y1) * (x3 - x2) + (x2 * x2 + y2 * y2) * (x1 - x3) + (x3 * x3 + y3 * y3) * (x2 - x1)) / d;
+  const r = Math.sqrt((ux - x1) * (ux - x1) + (uy - y1) * (uy - y1));
+  return { xc: ux, yc: uy, r };
+};
+
 export function TrigonometryChapterTools({ theme = 'light' }: TrigonometryChapterToolsProps) {
   // Active Lesson state (1 to 3)
   const [activeLesson, setActiveLesson] = useState<1 | 2 | 3>(2);
@@ -968,18 +979,22 @@ export function TrigonometryChapterTools({ theme = 'light' }: TrigonometryChapte
 
                       return (
                         <>
-                          {/* Circumcircle if toggled */}
-                          {b2ShowCircumcircle && b2Result.R > 0 && (
-                            <circle
-                              cx={(bx + cx) / 2}
-                              cy={by - b2Result.R * scale * 0.4}
-                              r={Math.min(b2Result.R * scale, 130)}
-                              fill="none"
-                              stroke={isLightMode ? "rgba(16, 185, 129, 0.25)" : "rgba(16, 185, 129, 0.3)"}
-                              strokeWidth="1.5"
-                              strokeDasharray="4 4"
-                            />
-                          )}
+                          {/* Circumcircle if toggled - passes exactly through A, B, C */}
+                          {b2ShowCircumcircle && (() => {
+                            const circ = getCircumcircle(ax, ay, bx, by, cx, cy);
+                            if (circ.r <= 0) return null;
+                            return (
+                              <circle
+                                cx={circ.xc}
+                                cy={circ.yc}
+                                r={circ.r}
+                                fill="none"
+                                stroke={isLightMode ? "rgba(16, 185, 129, 0.4)" : "rgba(16, 185, 129, 0.5)"}
+                                strokeWidth="2"
+                                strokeDasharray="5 5"
+                              />
+                            );
+                          })()}
 
                           {/* Height AH */}
                           {b2ShowHeight && (

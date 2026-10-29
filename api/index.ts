@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from "express";
 import fs from "fs";
 import HTMLtoDOCX from "html-to-docx";
@@ -62,7 +63,9 @@ const MATH_FORMATTING_RULES = `QUY TẮC ĐỊNH DẠNG TOÁN HỌC VÀ VĂN B�
    - Hình học không gian: Nét liền cho các cạnh nhìn thấy, nét đứt cho các cạnh khuất đáy hoặc sau.
    - Miền nghiệm BPT: Nét liền cho dấu có bằng (<=, >=), nét đứt cho dấu ngặt (<, >). Phần không thuộc miền nghiệm tô màu xám nhẹ fill=gray!25.
 
-6. TRÌNH BÀY ĐÁP ÁN TRẮC NGHIỆM:
+6. TRÌNH BÀY ĐÁP ÁN, LỜI GIẢI CHI TIẾT VÀ BẢNG BIỂU:
+   - TUYỆT ĐỐI CẤM dùng mã LaTeX \\underline{...} (ví dụ \\underline{A}, \\underline{B}, \\underline{C}, \\underline{D}). Để nhấn mạnh đáp án đúng, BẮT BUỘC dùng Markdown in đậm: **A**, **B**, **C**, **D** (hoặc [A], [B], [C], [D]).
+   - TUYỆT ĐỐI CẤM dùng môi trường LaTeX \\begin{tabular}...\\end{tabular} hay \\begin{center}...\\end{center}. Mọi bảng giá trị tọa độ, bảng số liệu BẮT BUỘC dùng định dạng Markdown Table chuẩn (| x | -4 | -2 | 0 | ... |).
    - TUYỆT ĐỐI KHÔNG viết các đáp án A, B, C, D dính liền nhau trên cùng một dòng.
    - BẮT BUỘC mỗi đáp án phải nằm trên một dòng riêng biệt.
 
@@ -86,6 +89,10 @@ app.use((req, _res, next) => {
     } catch (e) {}
   }
   next();
+});
+
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok", timestamp: Date.now() });
 });
 
 const chunkStore = new Map<string, { chunks: string[], type: string, name?: string, total: number, timestamp: number }>();
@@ -341,6 +348,41 @@ function saveExamsToDisk() {
   }
 }
 
+function isValidGeminiApiKey(key?: string): boolean {
+  if (!key || typeof key !== 'string') return false;
+  let clean = key.trim();
+  if (clean.startsWith('Bearer ')) {
+    clean = clean.substring(7).trim();
+  }
+  try { clean = decodeURIComponent(clean); } catch (e) {}
+  clean = clean.replace(/[^\x20-\x7E]/g, '').trim();
+  if (!clean || clean === 'null' || clean === 'undefined' || clean === 'missing' || clean.length < 10) {
+    return false;
+  }
+  return true;
+}
+
+function getSystemAiClient() {
+  const sysKey = process.env.CUSTOM_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+  if (sysKey && sysKey !== "missing") {
+    return new GoogleGenAI({ 
+      apiKey: sysKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build'
+        }
+      }
+    });
+  }
+  return new GoogleGenAI({
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build'
+      }
+    }
+  });
+}
+
 function getAiClient(req: any) {
   const authHeader = req.headers['authorization'] as string;
   let customKey = '';
@@ -350,7 +392,7 @@ function getAiClient(req: any) {
     customKey = req.headers['x-gemini-api-key'] as string;
   }
   
-  if (customKey) {
+  if (isValidGeminiApiKey(customKey)) {
     try { customKey = decodeURIComponent(customKey); } catch (e) {}
     customKey = customKey.replace(/[^\x20-\x7E]/g, '').trim();
     return new GoogleGenAI({ 
@@ -363,14 +405,7 @@ function getAiClient(req: any) {
     });
   }
   
-  return new GoogleGenAI({ 
-    apiKey: process.env.CUSTOM_GEMINI_API_KEY || process.env.GEMINI_API_KEY || "missing",
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build'
-      }
-    }
-  });
+  return getSystemAiClient();
 }
 
 function handleAiError(error: any, req: any, res: any) {
@@ -406,6 +441,10 @@ function handleAiError(error: any, req: any, res: any) {
         return res.status(429).json({ error: "Hệ thống đang quá tải hoặc tạm thời không khả dụng do nhu cầu cao (429). Vui lòng thử lại sau ít phút hoặc sử dụng API Key cá nhân." });
     }
     return res.status(429).json({ error: "Hệ thống AI của Google đang quá tải (429). Vui lòng đợi vài giây và thử lại." });
+  }
+
+  if (lowerMsg.includes("fetch failed") || lowerMsg.includes("failed to fetch") || lowerMsg.includes("networkerror") || lowerMsg.includes("econnreset")) {
+    return res.status(503).json({ error: "Kết nối mạng tới dịch vụ AI tạm thời gián đoạn. Thầy/cô vui lòng bấm 'Thử tạo lại' sau ít giây." });
   }
 
   if (lowerMsg.includes("bad escaped character") || lowerMsg.includes("unexpected token") || lowerMsg.includes("syntaxerror")) {
@@ -686,26 +725,32 @@ function safeJsonParse<T = any>(text: string, fallback?: T): T {
 }
 
 function getValidGeminiModels(requestedModel?: string): string[] {
-  let primary = requestedModel || "gemini-3.5-flash-lite";
+  let primary = requestedModel || "gemini-3.8-flash";
+  if (
+    !primary ||
+    primary.includes("1.5") || 
+    primary.includes("2.0") || 
+    primary.includes("3.5") || 
+    primary === "gemini-pro"
+  ) {
+    primary = "gemini-3.8-flash";
+  }
   const list = [
     primary,
-    "gemini-3.5-flash-lite",
-    "gemini-3.5-flash",
-    "gemini-3.1-flash",
-    "gemini-3.5-pro",
-    "gemini-3.1-pro",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash"
+    "gemini-3.8-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-flash-latest"
   ];
   return Array.from(new Set(list));
 }
 
-async function generateWithFallback(req: any, payloadOptions: any) {
-  const client = getAiClient(req);
+async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
+  let client = getAiClient(req);
+  let isCustom = isValidGeminiApiKey((req.headers['authorization'] || req.headers['x-gemini-api-key']) as string);
   const models = getValidGeminiModels(payloadOptions?.model);
 
   let primaryError: any = null;
-  const maxRetries = 4;
+  const maxRetries = 3;
   
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     for (const model of models) {
@@ -735,31 +780,60 @@ async function generateWithFallback(req: any, payloadOptions: any) {
   
       } catch (e: any) {
         const status = e?.status;
-        console.warn(`[generateWithFallback] Model ${model} status ${status}. Retrying fallback...`);
         const lowerMsg = (e?.message || "").toLowerCase();
         
-        if (lowerMsg.includes("api_key_invalid") || lowerMsg.includes("api key not valid")) {
-          throw e;
+        // If custom key failed for ANY reason (invalid, quota, network), immediately switch to system client and retry this model
+        if (isCustom) {
+          if (res && typeof res.setHeader === 'function') {
+            try { res.setHeader('X-Custom-Key-Failed', 'true'); } catch (err) {}
+          }
+          client = getSystemAiClient();
+          isCustom = false;
+          try {
+            const config = payloadOptions.config || {};
+            const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán:
+- TẤT CẢ các biến số, tham số đơn lẻ (như x, y, m, a, b, c, d, S...) BẮT BUỘC phải đặt trong cặp dấu đô la: $x$, $y$, $m$, $a$, $b$, $c$, $d$, $S$.
+- LUÔN LUÔN sử dụng \\frac thay thế cho \\dfrac.
+- Số mũ BẮT BUỘC dùng dấu mũ: $x^2$, $a^3$.
+- Phân số BẮT BUỘC dùng \\frac{tử}{mẫu}.`;
+
+            const updatedPayload = { 
+              ...payloadOptions, 
+              model,
+              config: {
+                maxOutputTokens: 8192,
+                ...config,
+                systemInstruction: config.systemInstruction || defaultSystemInstruction
+              } 
+            };
+            const response = await client.models.generateContent(updatedPayload);
+            const normText = response.text ? response.text.normalize("NFC") : "";
+            return {
+              text: normText,
+              candidates: response.candidates ? response.candidates.map((c: any) => ({ finishReason: c.finishReason, index: c.index })) : undefined
+            } as any;
+          } catch (systemErr: any) {
+            primaryError = systemErr;
+            continue;
+          }
         }
-        
+
         const is429 = lowerMsg.includes("429") || status === 429 || lowerMsg.includes("resource_exhausted") || lowerMsg.includes("quota") || lowerMsg.includes("503") || status === 503 || lowerMsg.includes("unavailable") || lowerMsg.includes("overloaded");
         const is404 = lowerMsg.includes("not found") || status === 404 || lowerMsg.includes("is not found");
-        
-        if (is429) {
-          primaryError = e;
-          await delay(1000);
-          continue; 
-        }
-        if (is404) {
-          if (!primaryError) primaryError = e;
+        const isFetchError = lowerMsg.includes("fetch failed") || lowerMsg.includes("failed to fetch") || lowerMsg.includes("networkerror") || lowerMsg.includes("econnreset") || lowerMsg.includes("etimedout");
+
+        primaryError = e;
+        if (is429 || isFetchError || is404) {
+          await delay(500);
           continue;
         }
-        throw e; // Non-retryable
+        await delay(500);
+        continue;
       }
     }
     
     if (primaryError && attempt < maxRetries - 1) {
-      await delay(1500 * (attempt + 1) + Math.random() * 500);
+      await delay(1000 * (attempt + 1) + Math.random() * 300);
     }
   }
   
@@ -768,7 +842,8 @@ async function generateWithFallback(req: any, payloadOptions: any) {
 }
 
 async function generateWithFallbackStream(req: any, res: any, payloadOptions: any) {
-  const client = getAiClient(req);
+  let client = getAiClient(req);
+  let isCustom = isValidGeminiApiKey((req.headers['authorization'] || req.headers['x-gemini-api-key']) as string);
   const models = getValidGeminiModels(payloadOptions?.model);
 
   const config = payloadOptions.config || {};
@@ -812,8 +887,44 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
           return;
         }
       } catch (e: any) {
-        console.warn(`[generateWithFallbackStream] Model ${model} attempt ${attempt} error:`, e?.message || e);
         primaryError = e;
+        if (isCustom) {
+          client = getSystemAiClient();
+          isCustom = false;
+          try {
+            const updatedPayload = {
+              ...payloadOptions,
+              model,
+              config: {
+                maxOutputTokens: 8192,
+                ...config,
+                systemInstruction: config.systemInstruction || defaultSystemInstruction
+              }
+            };
+            const responseStream = await client.models.generateContentStream(updatedPayload);
+            for await (const chunk of responseStream) {
+              if (chunk.text) {
+                if (!streamStarted) {
+                  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+                  res.setHeader('Transfer-Encoding', 'chunked');
+                  res.setHeader('X-Content-Type-Options', 'nosniff');
+                  res.setHeader('Cache-Control', 'no-cache, no-transform');
+                  res.setHeader('Access-Control-Allow-Origin', '*');
+                  res.setHeader('X-Custom-Key-Failed', 'true');
+                  streamStarted = true;
+                }
+                res.write(chunk.text);
+              }
+            }
+            if (streamStarted) {
+              res.end();
+              return;
+            }
+          } catch (systemErr: any) {
+            primaryError = systemErr;
+            continue;
+          }
+        }
         if (streamStarted) {
           res.write('\n\n⚠️ GIÁN ĐOẠN DỮ LIỆU: Máy chủ AI quá tải. Vui lòng bấm "Thử tạo lại" để tạo lại phiếu học tập.');
           res.end();
@@ -821,7 +932,7 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
         }
       }
     }
-    await delay(1500 * (attempt + 1));
+    await delay(1000 * (attempt + 1));
   }
 
   if (!streamStarted) {
@@ -829,7 +940,7 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
       return handleAiError(primaryError, req, res);
     }
     return res.status(503).json({ 
-      error: "Hệ thống AI hiện đang quá tải (Lỗi 503 Service Unavailable). Thầy cô vui lòng bấm 'Thử tạo lại' sau ít phút hoặc nhập API Key cá nhân trong Cài đặt." 
+      error: "Hệ thống AI hiện đang quá tải (Lỗi 503 Service Unavailable). Thầy cô vui lòng bấm 'Thử tạo lại' sau ít phút hoặc kiểm tra lại API Key trong Cài đặt." 
     });
   }
 }
@@ -1132,14 +1243,14 @@ ${MATH_FORMATTING_RULES}
   | $y$ | $-\\infty$ | $\\nearrow$ | $y_{CĐ}$ | $\\searrow$ | $-\\infty$ |
   Nếu có tiệm cận đứng hoặc điểm gián đoạn (như hàm phân thức bậc nhất/bậc nhất): dùng vạch đôi $\\|$ ở hàng $y'$ và phân tách 2 giới hạn ở hàng $y$ bằng $\\|$ (ví dụ: $2 \\searrow -\\infty \\| +\\infty \\searrow 2$). TUYỆT ĐỐI KHÔNG viết bảng biến thiên dính liền trên 1 dòng.
 - HÌNH VẼ ĐỒ THỊ: Nếu trích dẫn đồ thị mà không có URL ảnh thực tế, BẮT BUỘC 100% mô tả rõ đặc điểm đồ thị bằng lời trong đề (ví dụ: "Đồ thị đi qua điểm A(0; -1), đỉnh I(1; -2)...") hoặc sinh kèm mã SVG đồ thị nội tuyến, KHÔNG để thẻ img/div trống rỗng.
-- LỜI GIẢI CHI TIẾT ('solution' / 'explanation'): Lời giải KHÔNG CẦN lặp lại BẢNG BIẾN THIÊN hay HÌNH VẼ ĐỒ THỊ (để nội dung lời giải gọn gàng, tiết kiệm diện tích, tập trung vào lập luận toán học từng bước chính xác), trừ khi đề bài yêu cầu cụ thể việc vẽ lại.
+- LỜI GIẢI CHI TIẾT ('solution' / 'explanation'): Lời giải viết ngắn gọn, súc tích (1-3 dòng tập trung bước biến đổi then chốt và kết quả), KHÔNG lặp lại BẢNG BIẾN THIÊN hay HÌNH VẼ ĐỒ THỊ, không viết dông dài để tối ưu tối đa tốc độ sinh đề thi.
 - CẤM TUYỆT ĐỐI sinh mã HTML inline phức tạp (<mark style="...">, <span>). Chỉ dùng Markdown chuẩn (**in đậm**, *in nghiêng*).
 - Ký hiệu vô cùng/vô cực BẮT BUỘC viết chuẩn LaTeX là \\infty (ví dụ: $(-\\infty; -1)$, $(-1; +\\infty)$, $[0; +\\infty)$, $(-\\infty; +\\infty)$). Tuyệt đối KHÔNG viết thiếu dấu gạch chéo ngược thành -infty, +infty, in fty.
 - TUYỆT ĐỐI KHÔNG lặp lại các chữ A, B, C, D vào nội dung của câu hỏi hoặc phương án (hệ thống sẽ tự động gán nhãn A, B, C, D).
 - Câu trắc nghiệm (mc): mảng "options" phải có ĐÚNG 4 phần tử dạng chuỗi. "correctOptionIndex" là chỉ số đáp án đúng (0, 1, 2, 3).
 - Câu đúng/sai (tf): "tfStatements" phải là mảng ĐÚNG 4 đối tượng [{ "statement": "...", "correct": true/false }].
 - Câu trả lời ngắn (sa): "correctAnswer" BẮT BUỘC là MỘT SỐ CỤ THỂ có độ dài TỐI ĐA 4 KÝ TỰ (ví dụ: "22", "-3.5", "13", "102"). Tuyệt đối không dùng dạng mở hay công thức.
-${detailedSolution !== false ? '- BẮT BUỘC KÈM TRƯỜNG "solution": Lời giải chi tiết từng bước biến đổi rõ ràng, kèm lý do chọn đáp án, viết bằng công thức LaTeX chuẩn cho TẤT CẢ các câu hỏi (mc, tf, sa, essay).' : '- Hãy để trường "solution" là lời giải ngắn gọn để tối ưu tốc độ tạo đề.'}
+- BẮT BUỘC KÈM TRƯỜNG "solution": Lời giải súc tích (1-3 dòng trọng tâm), kèm lý do chọn đáp án, dùng công thức LaTeX chuẩn cho TẤT CẢ các câu hỏi (mc, tf, sa, essay).
 
 BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI CẤU TRÚC SAU:
 {
@@ -3103,12 +3214,29 @@ function hexToStr(hex: string): string {
   return str;
 }
 
+function isServerValidExamPayload(data: any): boolean {
+  if (!data || typeof data !== 'object') return false;
+  if (data.deleted === true) return false;
+  return Boolean(
+    data.examData ||
+    data.codes ||
+    data.codeVersions ||
+    data.part1Keys ||
+    data.pdfBase64 ||
+    data.examTitle ||
+    data.title ||
+    data.submissions ||
+    data.originalQuestions ||
+    data.rooms
+  );
+}
+
 async function saveToCloudKV(cleanId: string, data: any): Promise<boolean> {
   try {
     const jsonStr = JSON.stringify(data);
-    const compressed = LZString.compressToUTF16(jsonStr);
-    const hex = strToHex(compressed);
-    const count = Math.ceil(hex.length / CHUNK_SIZE);
+    const compressed = LZString.compressToEncodedURIComponent(jsonStr);
+    const hexPayload = strToHex(compressed);
+    const count = Math.ceil(hexPayload.length / CHUNK_SIZE);
 
     // Save count
     await fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${cleanId}_C/${count}`, {
@@ -3118,9 +3246,9 @@ async function saveToCloudKV(cleanId: string, data: any): Promise<boolean> {
     // Save all chunks in parallel
     const chunkPromises: Promise<any>[] = [];
     for (let i = 0; i < count; i++) {
-      const chunk = hex.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+      const chunk = hexPayload.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
       chunkPromises.push(
-        fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${cleanId}_${i}/${chunk}`, {
+        fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${cleanId}__${i}/${chunk}`, {
           method: 'POST'
         })
       );
@@ -3128,7 +3256,6 @@ async function saveToCloudKV(cleanId: string, data: any): Promise<boolean> {
     await Promise.all(chunkPromises);
     return true;
   } catch (err) {
-    console.error('saveToCloudKV error:', err);
     return false;
   }
 }
@@ -3143,7 +3270,12 @@ async function safeFetchServerKVValue(url: string): Promise<string> {
     if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith('{') || trimmed.startsWith('['))) {
       try {
         const parsed = JSON.parse(trimmed);
-        return typeof parsed === 'string' ? parsed : JSON.stringify(parsed);
+        if (typeof parsed === 'string') return parsed;
+        if (parsed !== null && typeof parsed === 'object') {
+          if (typeof (parsed as any).Value === 'string') return (parsed as any).Value;
+          return JSON.stringify(parsed);
+        }
+        return String(parsed);
       } catch (e) {
         return trimmed.replace(/^"|"$/g, '');
       }
@@ -3155,7 +3287,7 @@ async function safeFetchServerKVValue(url: string): Promise<string> {
 }
 
 async function loadFromCloudKV(cleanId: string): Promise<any> {
-  // 1. Try Distributed Cloud KV with hex chunking
+  // 1. Try Distributed Cloud KV with safe chunking
   try {
     const countVal = await safeFetchServerKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}_C`);
     const readCount = parseInt(countVal, 10);
@@ -3163,30 +3295,61 @@ async function loadFromCloudKV(cleanId: string): Promise<any> {
       const chunkPromises: Promise<string>[] = [];
       for (let i = 0; i < readCount; i++) {
         chunkPromises.push(
-          safeFetchServerKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}_${i}`)
+          safeFetchServerKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}__${i}`)
+            .then(val => val || safeFetchServerKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}_${i}`))
         );
       }
       const chunks = await Promise.all(chunkPromises);
-      const hexReconstructed = chunks.join('');
-      if (hexReconstructed) {
-        const restoredUtf16 = hexToStr(hexReconstructed);
-        const decompressed = LZString.decompressFromUTF16(restoredUtf16);
+      const reconstructed = chunks.join('');
+      if (reconstructed) {
+        let decompressed: string | null = null;
+        try {
+          const restored = hexToStr(reconstructed);
+          decompressed = LZString.decompressFromEncodedURIComponent(restored) ||
+                         LZString.decompressFromUTF16(restored) ||
+                         LZString.decompress(restored);
+        } catch (e) {}
+
+        if (!decompressed) {
+          try {
+            decompressed = LZString.decompressFromEncodedURIComponent(reconstructed) ||
+                           LZString.decompressFromUTF16(reconstructed) ||
+                           LZString.decompress(reconstructed);
+          } catch (e) {}
+        }
+
         if (decompressed) {
-          return JSON.parse(decompressed);
+          try {
+            const parsed = JSON.parse(decompressed);
+            if (isServerValidExamPayload(parsed)) {
+              return parsed;
+            }
+          } catch (e) {
+            // Silent fallback on corrupted or invalid cache entry
+          }
         }
       }
     }
   } catch (kvErr) {
-    console.warn('Cloud KV chunked fetch error:', kvErr);
+    // Suppress noise for invalid/corrupted cloud kv chunks
   }
 
   // 2. Try legacy single-key Cloud KV
   try {
     const val = await safeFetchServerKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}`);
     if (val && typeof val === 'string') {
-      const decomp = LZString.decompressFromEncodedURIComponent(val);
+      let decomp: string | null = null;
+      try {
+        decomp = LZString.decompressFromEncodedURIComponent(val) || LZString.decompressFromUTF16(val) || LZString.decompress(val) || val;
+      } catch (e) {}
+
       if (decomp) {
-        return JSON.parse(decomp);
+        try {
+          const parsed = JSON.parse(decomp);
+          if (isServerValidExamPayload(parsed)) {
+            return parsed;
+          }
+        } catch (e) {}
       }
     }
   } catch (e) {}

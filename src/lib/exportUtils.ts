@@ -33,6 +33,9 @@ import {
   ImportedXmlComponent,
   ImageRun,
   PageBreak,
+  VerticalMergeType,
+  ShadingType,
+  PageOrientation,
   type ParagraphChild,
   type FileChild,
 } from 'docx';
@@ -1163,63 +1166,177 @@ async function parseDomToDocxChildren(
             right: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
           };
 
-      const rows: TableRow[] = [];
       const trElements = Array.from(el.querySelectorAll('tr'));
+      if (trElements.length === 0) return;
 
-      for (const tr of trElements) {
-        const cellElements = Array.from(tr.querySelectorAll('th, td'));
-        const rowCells: TableCell[] = [];
+      const numRows = trElements.length;
+      interface GridCell {
+        cellEl: HTMLElement;
+        isOrigin: boolean;
+        rowSpan: number;
+        colSpan: number;
+        isContinue: boolean;
+      }
+      const grid: (GridCell | null)[][] = Array.from({ length: numRows }, () => []);
 
-        for (const cell of cellElements) {
+      let maxCols = 0;
+      for (let r = 0; r < numRows; r++) {
+        const tr = trElements[r];
+        const cells = Array.from(tr.querySelectorAll('th, td'));
+        let c = 0;
+        for (const cell of cells) {
+          while (grid[r][c]) {
+            c++;
+          }
           const cellEl = cell as HTMLElement;
-          const cellStyle = cellEl.getAttribute('style') || '';
-          const widthMatch = cellStyle.match(/width:\s*([0-9.]+)%/);
-          const widthPct = widthMatch
-            ? Math.round(parseFloat(widthMatch[1]))
-            : Math.round(100 / Math.max(1, cellElements.length));
+          const colSpan = Math.max(1, parseInt(cellEl.getAttribute('colspan') || '1', 10));
+          const rowSpan = Math.max(1, parseInt(cellEl.getAttribute('rowspan') || '1', 10));
 
-          // Cell content paragraphs
-          const cellParagraphs: Paragraph[] = [];
-          const cellChildren = Array.from(cellEl.children);
+          for (let rr = r; rr < r + rowSpan && rr < numRows; rr++) {
+            for (let cc = c; cc < c + colSpan; cc++) {
+              grid[rr][cc] = {
+                cellEl,
+                isOrigin: rr === r && cc === c,
+                rowSpan,
+                colSpan,
+                isContinue: rr > r,
+              };
+            }
+          }
+          c += colSpan;
+          if (c > maxCols) maxCols = c;
+        }
+      }
+      maxCols = Math.max(1, maxCols);
 
-          if (cellChildren.length > 0 && cellChildren.some((c) => /^(DIV|P|H[1-6])$/.test(c.tagName))) {
-            for (const child of cellChildren) {
-              const runs = parseInlineContent(child, {}, options);
+      const rows: TableRow[] = [];
+      const isDenseTable = maxCols >= 8;
+
+      for (let r = 0; r < numRows; r++) {
+        const rowCells: TableCell[] = [];
+        const tr = trElements[r];
+        const isHeader = r < 3 || tr.closest('thead') !== null;
+
+        let c = 0;
+        while (c < maxCols) {
+          const cellInfo = grid[r][c];
+          if (!cellInfo) {
+            c++;
+            continue;
+          }
+
+          // In Word OOXML, a cell with columnSpan covers all colSpan columns in that row.
+          // Skip columns that are part of the span horizontally.
+          if (!cellInfo.isOrigin && !cellInfo.isContinue) {
+            c++;
+            continue;
+          }
+          if (cellInfo.isContinue && c > 0 && grid[r][c - 1]?.cellEl === cellInfo.cellEl) {
+            c++;
+            continue;
+          }
+
+          const { cellEl, rowSpan, colSpan, isContinue } = cellInfo;
+
+          // Calculate percentage width for this cell (sum of widths of spanned columns)
+          let cellWidthPct = 0;
+          if (maxCols >= 18) {
+            // Proportional distribution for 19-column Vinh Loc Matrix:
+            // TT (4%), Chu de (16%), Noi dung (16%), 12 question levels (3.6% each = 43.2%), 3 Totals (4.6% each = 13.8%), Tile (7%)
+            const colWeights = [4, 16, 16, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 4.6, 4.6, 4.6, 7];
+            for (let k = c; k < c + colSpan && k < colWeights.length; k++) {
+              cellWidthPct += colWeights[k];
+            }
+            cellWidthPct = Math.round(cellWidthPct);
+          } else {
+            cellWidthPct = Math.round((colSpan / maxCols) * 100);
+          }
+          if (cellWidthPct <= 0) cellWidthPct = Math.round((colSpan / maxCols) * 100);
+
+          if (isContinue) {
+            rowCells.push(
+              new TableCell({
+                verticalMerge: VerticalMergeType.CONTINUE,
+                columnSpan: colSpan > 1 ? colSpan : undefined,
+                width: { size: cellWidthPct, type: WidthType.PERCENTAGE },
+                borders: borderConfig,
+                children: [new Paragraph({})],
+              })
+            );
+          } else {
+            const cellStyle = cellEl.getAttribute('style') || '';
+            const cellClass = cellEl.className || '';
+            const textContent = (cellEl.textContent || '').trim();
+            const isCenter =
+              cellStyle.includes('text-align: center') ||
+              cellClass.includes('text-center') ||
+              cellEl.tagName === 'TH' ||
+              (isDenseTable && textContent.length <= 15);
+
+            const formatCellRuns = (elTarget: Element) => {
+              const runs = parseInlineContent(elTarget, {}, options);
+              if (isDenseTable) {
+                runs.forEach((run) => {
+                  (run as any).options = {
+                    ...(run as any).options,
+                    size: maxCols >= 15 ? 17 : 20, // 8.5pt or 10pt to prevent vertical character wrapping
+                    font: 'Times New Roman',
+                  };
+                });
+              }
+              return runs;
+            };
+
+            const cellParagraphs: Paragraph[] = [];
+            const cellChildren = Array.from(cellEl.children);
+
+            if (cellChildren.length > 0 && cellChildren.some((ch) => /^(DIV|P|H[1-6])$/.test(ch.tagName))) {
+              for (const child of cellChildren) {
+                const runs = formatCellRuns(child);
+                cellParagraphs.push(
+                  new Paragraph({
+                    spacing: { line: isDenseTable ? 220 : 288, after: isDenseTable ? 10 : 40 },
+                    alignment: isCenter ? AlignmentType.CENTER : AlignmentType.LEFT,
+                    children: runs,
+                  })
+                );
+              }
+            } else {
+              const runs = formatCellRuns(cellEl);
               cellParagraphs.push(
                 new Paragraph({
-                  spacing: { line: 288, after: 40 },
-                  alignment: cellStyle.includes('text-align: center')
-                    ? AlignmentType.CENTER
-                    : AlignmentType.LEFT,
+                  spacing: { line: isDenseTable ? 220 : 288, after: isDenseTable ? 10 : 40 },
+                  alignment: isCenter ? AlignmentType.CENTER : AlignmentType.LEFT,
                   children: runs,
                 })
               );
             }
-          } else {
-            const runs = parseInlineContent(cellEl, {}, options);
-            cellParagraphs.push(
-              new Paragraph({
-                spacing: { line: 288, after: 40 },
-                alignment: cellStyle.includes('text-align: center')
-                  ? AlignmentType.CENTER
-                  : AlignmentType.LEFT,
-                children: runs,
+
+            rowCells.push(
+              new TableCell({
+                verticalMerge: rowSpan > 1 ? VerticalMergeType.RESTART : undefined,
+                columnSpan: colSpan > 1 ? colSpan : undefined,
+                width: { size: cellWidthPct, type: WidthType.PERCENTAGE },
+                borders: borderConfig,
+                margins: isDenseTable
+                  ? { top: 30, bottom: 30, left: 40, right: 40 }
+                  : { top: 80, bottom: 80, left: 100, right: 100 },
+                children: cellParagraphs.length > 0 ? cellParagraphs : [new Paragraph({})],
               })
             );
           }
 
-          rowCells.push(
-            new TableCell({
-              width: { size: widthPct, type: WidthType.PERCENTAGE },
-              borders: borderConfig,
-              margins: { top: 80, bottom: 80, left: 100, right: 100 },
-              children: cellParagraphs.length > 0 ? cellParagraphs : [new Paragraph({})],
-            })
-          );
+          c += colSpan;
         }
 
         if (rowCells.length > 0) {
-          rows.push(new TableRow({ children: rowCells }));
+          rows.push(
+            new TableRow({
+              tableHeader: isHeader,
+              cantSplit: true,
+              children: rowCells,
+            })
+          );
         }
       }
 
@@ -1660,7 +1777,44 @@ export async function exportHtmlToWord(
 
   try {
     const clone = element.cloneNode(true) as HTMLElement;
-    clone.querySelectorAll('.no-print, button, input, select, textarea').forEach(el => el.remove());
+
+    // Convert form controls (input, textarea, select) to text spans to preserve all user data
+    const srcControls = Array.from(element.querySelectorAll('input, textarea, select'));
+    const cloneControls = Array.from(clone.querySelectorAll('input, textarea, select'));
+    cloneControls.forEach((clonedCtrl, idx) => {
+      const src = srcControls[idx] as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | undefined;
+      let val = '';
+      if (src) {
+        if (src.tagName === 'SELECT') {
+          const sel = src as HTMLSelectElement;
+          val = sel.options[sel.selectedIndex]?.text || sel.value || '';
+        } else {
+          val = (src as HTMLInputElement | HTMLTextAreaElement).value ?? src.getAttribute('value') ?? '';
+        }
+      } else {
+        if (clonedCtrl.tagName === 'SELECT') {
+          const sel = clonedCtrl as HTMLSelectElement;
+          val = sel.options[sel.selectedIndex]?.text || sel.value || '';
+        } else {
+          val = (clonedCtrl as HTMLInputElement | HTMLTextAreaElement).value ?? clonedCtrl.getAttribute('value') ?? '';
+        }
+      }
+
+      const span = document.createElement('span');
+      span.textContent = val || '';
+      if (clonedCtrl.classList.contains('text-center') || (clonedCtrl as HTMLElement).style.textAlign === 'center') {
+        span.style.textAlign = 'center';
+        span.style.display = 'inline-block';
+        span.style.width = '100%';
+      }
+      if (clonedCtrl.classList.contains('font-bold') || (clonedCtrl as HTMLElement).style.fontWeight === 'bold') {
+        span.style.fontWeight = 'bold';
+      }
+      clonedCtrl.parentNode?.replaceChild(span, clonedCtrl);
+    });
+
+    // Remove print-hidden elements and action buttons
+    clone.querySelectorAll('.no-print, button, [role="button"]').forEach(el => el.remove());
 
     // Ensure all print-only elements are visible during export
     clone.querySelectorAll('.print-only, .only-print').forEach(el => {
@@ -2061,6 +2215,48 @@ export async function exportHtmlToWord(
     // 3. Build docx children from the DOM tree
     const docxChildren = await parseDomToDocxChildren(clone, { mathFormat: resolvedMathFormat });
 
+    // Check if the document contains wide tables (such as Matrix or Spec tables with >= 8 columns)
+    const hasWideTable = Array.from(clone.querySelectorAll('table')).some(tbl => {
+      const rows = Array.from(tbl.querySelectorAll('tr'));
+      return rows.some(r => r.querySelectorAll('th, td').length >= 8);
+    });
+
+    const isMatrixOrSpecDoc =
+      hasWideTable ||
+      /ma_tran|ban_dac_ta|matrix|spec|vinh_loc|dac_ta/i.test(filename) ||
+      clone.querySelector('#competency-matrix-export-wrap, #matrix-table-wrap, #spec-table-wrap, #pedagogical-matrix-export-doc, #pedagogical-inline-full-export, #pedagogical-inline-only-export, #pedagogical-inline-spec-only-export, .matrix-table') !== null;
+
+    const pageProperties = isMatrixOrSpecDoc
+      ? {
+          page: {
+            size: {
+              width: 16838, // A4 landscape width (297mm)
+              height: 11906, // A4 landscape height (210mm)
+              orientation: PageOrientation.LANDSCAPE,
+            },
+            margin: {
+              top: convertMillimetersToTwip(12), // 1.2cm
+              bottom: convertMillimetersToTwip(12), // 1.2cm
+              left: convertMillimetersToTwip(12), // 1.2cm
+              right: convertMillimetersToTwip(12), // 1.2cm
+            },
+          },
+        }
+      : {
+          page: {
+            size: {
+              width: 11906, // A4 portrait width (210mm)
+              height: 16838, // A4 portrait height (297mm)
+            },
+            margin: {
+              top: convertMillimetersToTwip(20), // 2cm
+              bottom: convertMillimetersToTwip(20), // 2cm
+              left: convertMillimetersToTwip(25), // 2.5cm
+              right: convertMillimetersToTwip(20), // 2cm
+            },
+          },
+        };
+
     // 4. Create Word Document with exact A4 page layout & typography specs
     const doc = new Document({
       styles: {
@@ -2068,13 +2264,13 @@ export async function exportHtmlToWord(
           document: {
             run: {
               font: 'Times New Roman',
-              size: 24, // 12pt
+              size: isMatrixOrSpecDoc ? 20 : 24, // 10pt for matrix/spec, 12pt for regular docs
               color: '000000',
             },
             paragraph: {
               spacing: {
-                line: 288, // 1.2 lines
-                after: 80, // 4pt
+                line: isMatrixOrSpecDoc ? 240 : 288, // tighter for matrix, 1.2 lines for exams
+                after: isMatrixOrSpecDoc ? 20 : 80,
               },
             },
           },
@@ -2082,20 +2278,7 @@ export async function exportHtmlToWord(
       },
       sections: [
         {
-          properties: {
-            page: {
-              size: {
-                width: 11906, // A4 width 210mm
-                height: 16838, // A4 height 297mm
-              },
-              margin: {
-                top: convertMillimetersToTwip(20), // 2cm
-                bottom: convertMillimetersToTwip(20), // 2cm
-                left: convertMillimetersToTwip(25), // 2.5cm
-                right: convertMillimetersToTwip(20), // 2cm
-              },
-            },
-          },
+          properties: pageProperties,
           children: docxChildren.length > 0 ? docxChildren : [new Paragraph({ text: '' })],
         },
       ],
@@ -2125,18 +2308,7 @@ export async function generateDocxBlobFromElement(
   mathFormat: 'omml' | 'image' = 'omml'
 ): Promise<Blob | null> {
   try {
-    const clone = element.cloneNode(true) as HTMLElement;
-    clone.querySelectorAll('.no-print, button, input, select, textarea').forEach(el => el.remove());
-    clone.querySelectorAll('.print-only, .only-print').forEach(el => {
-      (el as HTMLElement).style.display = 'block';
-      el.classList.remove('print-only', 'only-print');
-    });
-    clone.querySelectorAll('details').forEach(details => {
-      details.setAttribute('open', 'true');
-      (details as HTMLElement).style.display = 'block';
-    });
-
-    const docBlob = await exportHtmlToWord(clone, 'temp_drive_file.docx', mathFormat);
+    const docBlob = await exportHtmlToWord(element, 'temp_drive_file.docx', mathFormat);
     return docBlob;
   } catch (e) {
     console.error('Lỗi tạo Word Blob cho Google Drive:', e);

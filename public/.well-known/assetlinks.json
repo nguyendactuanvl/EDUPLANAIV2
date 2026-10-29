@@ -1,8 +1,12 @@
-[{
-      "relation": ["delegate_permission/common.handle_all_urls"],
-      "target": {
-        "namespace": "android_app",
-        "package_name": "com.eduplan.ai",
-        "sha256_cert_fingerprints": ["A1:5F:B2:90:F8:CF:97:CC:E6:A6:A6:E4:BB:CC:47:E7:0A:68:19:FD:82:6F:35:81:91:4D:A5:17:64:FF:2D:0D"]
-      }
-    }]
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.eduplan.ai",
+      "sha256_cert_fingerprints": [
+        "8B:EF:74:BC:18:AE:4F:40:2C:7D:BE:75:BB:89:7D:92:16:E2:D2:FA:9A:38:0F:1F:4D:0A:6F:4B:AE:19:DD:4A"
+      ]
+    }
+  }
+]

@@ -4,22 +4,31 @@
 
 export interface MatrixRowItem {
   id: string;
-  topic: string; // Chủ đề
-  unit: string;  // Nội dung / Đơn vị kiến thức
+  topic: string; // Chủ đề / Chương (kèm số tiết, ví dụ: "Hàm số lượng giác và phương trình lượng giác (10t)")
+  unit: string;  // Nội dung / Đơn vị kiến thức (kèm số tiết, ví dụ: "Giá trị lượng giác của góc lượng giác (3t)")
+  
+  // Khung ma trận chuẩn THPT EDUPLAN AI (19 cột chuẩn GDPT 2018)
+  nlc?: { biet: string; hieu: string; vd: string; };   // Nhiều lựa chọn (I.1, I.2...)
+  ds?: { biet: string; hieu: string; vd: string; };    // Đúng - Sai (II.1a, II.1b...)
+  tln?: { biet: string; hieu: string; vd: string; };   // Trả lời ngắn (III.1...)
+  tl?: { biet: string; hieu: string; vd: string; };    // Tự luận (IV.1 (0,5đ)...)
+  tong?: { biet: number; hieu: number; vd: number; };  // Tổng số lệnh hỏi
+  tiLe?: string;                                       // Tỉ lệ % điểm (ví dụ: '15%')
+
   // Năng lực 1 (Toán: GQVĐ; KHTN: Nhận thức; Ngoại ngữ: Ngôn ngữ; Ngữ văn: Đọc hiểu)
-  gqvd: {
+  gqvd?: {
     biet: string;
     hieu: string;
     vd: string;
   };
   // Năng lực 2 (Toán: Tư duy; KHTN: Tìm hiểu; Ngoại ngữ: Đọc hiểu; Ngữ văn: Viết NLXH)
-  tuduy: {
+  tuduy?: {
     biet: string;
     hieu: string;
     vd: string;
   };
   // Năng lực 3 (Toán: Mô hình hoá; KHTN: Vận dụng; Ngoại ngữ: Giao tiếp/Viết; Ngữ văn: Viết NLVH)
-  mohinh: {
+  mohinh?: {
     biet: string;
     hieu: string;
     vd: string;
@@ -43,192 +52,497 @@ export interface SpecUnitItem {
   points: number;
 }
 
-// Dữ liệu mẫu chuẩn 100% khớp theo hình ảnh giáo viên cung cấp (Toán 11 - Giữa Kì I)
-export const SAMPLE_COMPETENCY_MATRIX_11: MatrixRowItem[] = [
+// ============================================================================
+// DỮ LIỆU MA TRẬN & BẢN ĐẶC TẢ CHUẨN MẪU THPT VINH LỘC (GDPT 2018)
+// Khung chuẩn 19 cột (4 dạng thức: NLC 12 câu, ĐS 2 câu 8 ý, TLN 4 câu, TL 4 ý)
+// ============================================================================
+
+// 1. TOÁN 11 - CHUẨN 100% THEO FILE ĐÍNH KÈM THPT VINH LỘC (2026 - 2027)
+export const VINHLOC_MATRIX_11: MatrixRowItem[] = [
   {
-    id: 'row-1',
-    topic: 'HÀM SỐ LƯỢNG GIÁC - PT LƯỢNG GIÁC',
-    unit: '1. Giá trị lượng giác',
-    gqvd: { biet: 'I.1', hieu: '', vd: '' },
-    tuduy: { biet: '', hieu: '', vd: '' },
-    mohinh: { biet: '', hieu: '', vd: '' }
+    id: 'vl11-1',
+    topic: 'Hàm số lượng giác và phương trình lượng giác (10t)',
+    unit: 'Giá trị lượng giác của góc lượng giác (3t)',
+    nlc: { biet: 'I.1, I.2', hieu: '', vd: '' },
+    ds: { biet: 'II.1a', hieu: 'II.1b', vd: '' },
+    tln: { biet: 'III.1', hieu: '', vd: '' },
+    tl: { biet: '', hieu: '', vd: '' },
+    tong: { biet: 3, hieu: 2, vd: 0 },
+    tiLe: '15%'
   },
   {
-    id: 'row-2',
-    topic: 'HÀM SỐ LƯỢNG GIÁC - PT LƯỢNG GIÁC',
-    unit: '2. Công thức lượng giác',
-    gqvd: { biet: 'I.2, II.1ab', hieu: '', vd: '' },
-    tuduy: { biet: 'I.3', hieu: 'II.1cd', vd: '' },
-    mohinh: { biet: '', hieu: '', vd: '' }
+    id: 'vl11-2',
+    topic: 'Hàm số lượng giác và phương trình lượng giác (10t)',
+    unit: 'Công thức lượng giác (2t)',
+    nlc: { biet: 'I.3', hieu: '', vd: '' },
+    ds: { biet: 'II.1c', hieu: '', vd: '' },
+    tln: { biet: '', hieu: '', vd: '' },
+    tl: { biet: '', hieu: 'IV.1 (0,5đ)', vd: '' },
+    tong: { biet: 2, hieu: 1, vd: 0 },
+    tiLe: '10%'
   },
   {
-    id: 'row-3',
-    topic: 'HÀM SỐ LƯỢNG GIÁC - PT LƯỢNG GIÁC',
-    unit: '3. Hàm số lượng giác',
-    gqvd: { biet: 'I.4', hieu: 'I.5', vd: '' },
-    tuduy: { biet: '', hieu: 'III.1', vd: '' },
-    mohinh: { biet: '', hieu: '', vd: '' }
+    id: 'vl11-3',
+    topic: 'Hàm số lượng giác và phương trình lượng giác (10t)',
+    unit: 'Hàm số lượng giác (2t)',
+    nlc: { biet: 'I.4, I.5, I.6', hieu: '', vd: '' },
+    ds: { biet: 'II.1d', hieu: '', vd: '' },
+    tln: { biet: '', hieu: '', vd: '' },
+    tl: { biet: '', hieu: '', vd: '' },
+    tong: { biet: 3, hieu: 1, vd: 0 },
+    tiLe: '10%'
   },
   {
-    id: 'row-4',
-    topic: 'HÀM SỐ LƯỢNG GIÁC - PT LƯỢNG GIÁC',
-    unit: '4. Phương trình lượng giác cơ bản',
-    gqvd: { biet: 'I.7', hieu: '', vd: 'TL1' },
-    tuduy: { biet: 'I.6', hieu: '', vd: '' },
-    mohinh: { biet: '', hieu: '', vd: '' }
+    id: 'vl11-4',
+    topic: 'Hàm số lượng giác và phương trình lượng giác (10t)',
+    unit: 'Phương trình lượng giác cơ bản (2t)',
+    nlc: { biet: '', hieu: '', vd: '' },
+    ds: { biet: '', hieu: '', vd: '' },
+    tln: { biet: '', hieu: 'III.2', vd: '' },
+    tl: { biet: '', hieu: '', vd: 'IV.2 (1đ)' },
+    tong: { biet: 0, hieu: 0, vd: 2 },
+    tiLe: '15%'
   },
   {
-    id: 'row-5',
-    topic: 'DÃY SỐ - CẤP SỐ CỘNG - CẤP SỐ NHÂN',
-    unit: '1. Dãy số',
-    gqvd: { biet: 'I.8', hieu: '', vd: '' },
-    tuduy: { biet: 'I.9', hieu: '', vd: '' },
-    mohinh: { biet: '', hieu: '', vd: '' }
+    id: 'vl11-5',
+    topic: 'Dãy số, cấp số cộng và cấp số nhân (7t)',
+    unit: 'Dãy số (2t)',
+    nlc: { biet: 'I.7, I.8', hieu: '', vd: '' },
+    ds: { biet: 'II.2a', hieu: 'II.2b', vd: '' },
+    tln: { biet: '', hieu: '', vd: '' },
+    tl: { biet: '', hieu: '', vd: '' },
+    tong: { biet: 3, hieu: 1, vd: 0 },
+    tiLe: '10%'
   },
   {
-    id: 'row-6',
-    topic: 'DÃY SỐ - CẤP SỐ CỘNG - CẤP SỐ NHÂN',
-    unit: '2. Cấp số cộng',
-    gqvd: { biet: '', hieu: '', vd: '' },
-    tuduy: { biet: 'I.10', hieu: '', vd: '' },
-    mohinh: { biet: '', hieu: '', vd: 'TL2' }
+    id: 'vl11-6',
+    topic: 'Dãy số, cấp số cộng và cấp số nhân (7t)',
+    unit: 'Cấp số cộng (2t)',
+    nlc: { biet: 'I.9', hieu: '', vd: '' },
+    ds: { biet: 'II.2c', hieu: 'II.2d', vd: '' },
+    tln: { biet: '', hieu: '', vd: 'III.3' },
+    tl: { biet: '', hieu: '', vd: '' },
+    tong: { biet: 2, hieu: 1, vd: 1 },
+    tiLe: '12,5%'
   },
   {
-    id: 'row-7',
-    topic: 'DÃY SỐ - CẤP SỐ CỘNG - CẤP SỐ NHÂN',
-    unit: '3. Cấp số nhân',
-    gqvd: { biet: '', hieu: 'I.11', vd: '' },
-    tuduy: { biet: '', hieu: 'I.12', vd: '' },
-    mohinh: { biet: '', hieu: '', vd: '' }
+    id: 'vl11-7',
+    topic: 'Dãy số, cấp số cộng và cấp số nhân (7t)',
+    unit: 'Cấp số nhân (2t)',
+    nlc: { biet: 'I.10', hieu: '', vd: '' },
+    ds: { biet: '', hieu: '', vd: '' },
+    tln: { biet: '', hieu: '', vd: '' },
+    tl: { biet: '', hieu: '', vd: 'IV.3 (1đ)' },
+    tong: { biet: 1, hieu: 0, vd: 1 },
+    tiLe: '12,5%'
   },
   {
-    id: 'row-8',
-    topic: 'QUAN HỆ SONG SONG TRONG KHÔNG GIAN',
-    unit: '1. Đường thẳng và mặt phẳng trong không gian',
-    gqvd: { biet: 'II.2b', hieu: 'II.2c', vd: '' },
-    tuduy: { biet: '', hieu: '', vd: '' },
-    mohinh: { biet: 'I.13', hieu: 'I.14', vd: '' }
+    id: 'vl11-8',
+    topic: 'Các số đặc trưng của mẫu số liệu không ghép nhóm (4t)',
+    unit: 'Mẫu số liệu ghép nhóm (1t)',
+    nlc: { biet: '', hieu: 'I.11', vd: '' },
+    ds: { biet: '', hieu: '', vd: '' },
+    tln: { biet: '', hieu: '', vd: '' },
+    tl: { biet: '', hieu: '', vd: '' },
+    tong: { biet: 0, hieu: 1, vd: 0 },
+    tiLe: '2,5%'
   },
   {
-    id: 'row-9',
-    topic: 'QUAN HỆ SONG SONG TRONG KHÔNG GIAN',
-    unit: '2. Hai đường thẳng song song',
-    gqvd: { biet: 'II.2a', hieu: 'II.2d', vd: '' },
-    tuduy: { biet: 'I.15', hieu: 'III.2', vd: '' },
-    mohinh: { biet: '', hieu: '', vd: '' }
-  },
-  {
-    id: 'row-10',
-    topic: 'QUAN HỆ SONG SONG TRONG KHÔNG GIAN',
-    unit: '3. Đường thẳng và mặt phẳng song song',
-    gqvd: { biet: '', hieu: '', vd: '' },
-    tuduy: { biet: '', hieu: '', vd: 'TL3' },
-    mohinh: { biet: 'I.16', hieu: '', vd: '' }
+    id: 'vl11-9',
+    topic: 'Các số đặc trưng của mẫu số liệu không ghép nhóm (4t)',
+    unit: 'Các số đặc trưng đo xu thế trung tâm (2t)',
+    nlc: { biet: 'I.12', hieu: '', vd: '' },
+    ds: { biet: '', hieu: '', vd: '' },
+    tln: { biet: '', hieu: 'III.4', vd: '' },
+    tl: { biet: '', hieu: '', vd: 'IV.4 (0,5đ)' },
+    tong: { biet: 1, hieu: 0, vd: 2 },
+    tiLe: '12,5%'
   }
 ];
 
-export const SAMPLE_SPEC_LIST_11: SpecUnitItem[] = [
+export const VINHLOC_SPEC_11: SpecUnitItem[] = [
   {
-    id: 'spec-1',
-    topic: 'Hàm số lượng giác và phương trình lượng giác',
-    unit: '1. Giá trị lượng giác của góc lượng giác',
-    bietSpec: '- Nhận biết các khái niệm về góc lượng giác, đường tròn lượng giác, giá trị lượng giác của một góc lượng giác.\n- Nhận biết dấu của các giá trị lượng giác trong từng góc phần tư.',
-    hieuSpec: '- Tính giá trị lượng giác của các góc đặc biệt và các góc có liên quan đặc biệt (bù nhau, phụ nhau, hơn kém nhau $\\pi$).',
-    vdSpec: '- Vận dụng mối quan hệ giữa các giá trị lượng giác để chứng minh đẳng thức lượng giác đơn giản hoặc giải quyết bài toán thực tế góc quay.',
-    assignedQuestions: { part1: 'I.1', part2: '', part3: '', essay: '' },
+    id: 'vls-11-1',
+    topic: 'HÀM SỐ LƯỢNG GIÁC VÀ PHƯƠNG TRÌNH LƯỢNG GIÁC',
+    unit: '1.1. Giá trị lượng giác của góc lượng giác',
+    bietSpec: '- Nhận biết các khái niệm cơ bản về góc lượng giác.\n- Nhận biết khái niệm giá trị lượng giác của một góc lượng giác.\n- Nhận biết dấu của các giá trị lượng giác trong từng góc phần tư.',
+    hieuSpec: '- Mô tả bảng giá trị lượng giác của một số góc lượng giác thường gặp; hệ thức cơ bản giữa các giá trị lượng giác của một góc lượng giác; quan hệ giữa các giá trị lượng giác có liên quan đặc biệt: bù nhau, phụ nhau, đối nhau, hơn kém nhau $\\pi$.\n- Sử dụng máy tính cầm tay để tính giá trị lượng giác của một góc lượng giác khi biết số đo của góc đó.',
+    vdSpec: '- Vận dụng giá trị lượng giác giải bài toán thực tế đơn giản.',
+    assignedQuestions: { part1: 'I.1, I.2', part2: 'II.1a, II.1b', part3: 'III.1', essay: '' },
+    points: 1.5
+  },
+  {
+    id: 'vls-11-2',
+    topic: 'HÀM SỐ LƯỢNG GIÁC VÀ PHƯƠNG TRÌNH LƯỢNG GIÁC',
+    unit: '1.2. Công thức lượng giác',
+    bietSpec: '- Nhận biết các công thức biến đổi lượng giác cơ bản: $\\sin^2 x + \\cos^2 x = 1$, $1 + \\tan^2 x = \\frac{1}{\\cos^2 x}$, công thức cộng, công thức góc nhân đôi.',
+    hieuSpec: '- Mô tả các phép biến đổi lượng giác cơ bản: công thức cộng; công thức góc nhân đôi; công thức biến đổi tích thành tổng và công thức biến đổi tổng thành tích.',
+    vdSpec: '- Vận dụng rút gọn biểu thức và tính giá trị biểu thức lượng giác nhiều góc.',
+    assignedQuestions: { part1: 'I.3', part2: 'II.1c', part3: '', essay: 'IV.1 (0,5đ)' },
+    points: 1.0
+  },
+  {
+    id: 'vls-11-3',
+    topic: 'HÀM SỐ LƯỢNG GIÁC VÀ PHƯƠNG TRÌNH LƯỢNG GIÁC',
+    unit: '1.3. Hàm số lượng giác',
+    bietSpec: '- Nhận biết các khái niệm về hàm số chẵn, hàm số lẻ, hàm số tuần hoàn.\n- Nhận biết các đặc trưng hình học của đồ thị hàm số chẵn, lẻ, tuần hoàn.\n- Nhận biết các hàm số lượng giác thông qua đường tròn lượng giác. Mô tả bảng giá trị của bốn hàm số lượng giác trên một chu kì.',
+    hieuSpec: '- Mô tả bảng giá trị của bốn hàm số lượng giác đó trên một chu kì.\n- Mô tả được các đồ thị hàm số.\n- Giải thích tập xác định; tập giá trị; tính chất chẵn, lẻ; tính tuần hoàn; chu kì; khoảng đồng biến, nghịch biến của các hàm số lượng giác dựa vào đồ thị.',
+    vdSpec: '- Giải quyết bài toán thực tế có tính chất tuần hoàn (dao động của con lắc, thủy triều, nhiệt độ trung bình trong năm, âm thanh) bằng hàm số lượng giác.',
+    assignedQuestions: { part1: 'I.4, I.5, I.6', part2: 'II.1d', part3: '', essay: '' },
+    points: 1.0
+  },
+  {
+    id: 'vls-11-4',
+    topic: 'HÀM SỐ LƯỢNG GIÁC VÀ PHƯƠNG TRÌNH LƯỢNG GIÁC',
+    unit: '1.4. Phương trình lượng giác cơ bản',
+    bietSpec: '- Nhận biết công thức nghiệm của phương trình lượng giác cơ bản bằng cách vận dụng đồ thị hàm số lượng giác tương ứng: $\\sin x = m, \\cos x = m, \\tan x = m, \\cot x = m$.\n- Nhận biết khái niệm phương trình tương đương.',
+    hieuSpec: '- Giải một số phương trình lượng giác cơ bản và tính nghiệm gần đúng của phương trình lượng giác cơ bản (có sử dụng máy tính cầm tay).\n- Tìm số nghiệm của phương trình lượng giác trên một khoảng, đoạn cho trước.',
+    vdSpec: '- Giải phương trình lượng giác ở dạng vận dụng trực tiếp phương trình lượng giác cơ bản.\n- Giải quyết một số vấn đề gắn với phương trình lượng giác (chu kì sóng, góc quay, dao động cơ học).',
+    assignedQuestions: { part1: '', part2: '', part3: 'III.2', essay: 'IV.2 (1đ)' },
+    points: 1.5
+  },
+  {
+    id: 'vls-11-5',
+    topic: 'DÃY SỐ, CẤP SỐ CỘNG VÀ CẤP SỐ NHÂN',
+    unit: '2.1. Dãy số',
+    bietSpec: '- Nhận biết khái niệm dãy số hữu hạn, dãy số vô hạn.\n- Nhận biết tính chất tăng, giảm, bị chặn của dãy số trong những trường hợp đơn giản.',
+    hieuSpec: '- Xác định số hạng thứ $n$ của dãy số cho bởi công thức tổng quát hoặc hệ thức truy hồi đơn giản.',
+    vdSpec: '- Vận dụng kiến thức về dãy số để mô tả và giải quyết một số bài toán thực tiễn (mô hình tăng trưởng số lượng tế bào, tính tiền tích lũy).',
+    assignedQuestions: { part1: 'I.7, I.8', part2: 'II.2a, II.2b', part3: '', essay: '' },
+    points: 1.0
+  },
+  {
+    id: 'vls-11-6',
+    topic: 'DÃY SỐ, CẤP SỐ CỘNG VÀ CẤP SỐ NHÂN',
+    unit: '2.2. Cấp số cộng',
+    bietSpec: '- Nhận biết một dãy số là cấp số cộng, số hạng đầu $u_1$ và công sai $d$.\n- Nhận biết công thức tính số hạng tổng quát $u_n = u_1 + (n-1)d$.',
+    hieuSpec: '- Giải thích công thức xác định số hạng tổng quát của cấp số cộng.\n- Tính tổng của $n$ số hạng đầu $S_n = \\frac{n(u_1 + u_n)}{2}$ của cấp số cộng.',
+    vdSpec: '- Giải quyết một số vấn đề gắn với cấp số cộng (tiết kiệm tích lũy định kì, xếp hàng ghế khán đài, tính khấu hao tài sản).',
+    assignedQuestions: { part1: 'I.9', part2: 'II.2c, II.2d', part3: 'III.3', essay: '' },
+    points: 1.25
+  },
+  {
+    id: 'vls-11-7',
+    topic: 'DÃY SỐ, CẤP SỐ CỘNG VÀ CẤP SỐ NHÂN',
+    unit: '2.3. Cấp số nhân',
+    bietSpec: '- Nhận biết một dãy số là cấp số nhân, số hạng đầu $u_1$ và công bội $q$.\n- Nhận biết công thức tính số hạng tổng quát $u_n = u_1 \\cdot q^{n-1}$.',
+    hieuSpec: '- Giải thích công thức xác định số hạng tổng quát của cấp số nhân.\n- Tính tổng của $n$ số hạng đầu $S_n = \\frac{u_1(1-q^n)}{1-q}$ ($q \\neq 1$).',
+    vdSpec: '- Giải quyết một số vấn đề thực tiễn gắn với cấp số nhân (lãi kép ngân hàng, tăng trưởng dân số, phân rã phóng xạ).',
+    assignedQuestions: { part1: 'I.10', part2: '', part3: '', essay: 'IV.3 (1đ)' },
+    points: 1.25
+  },
+  {
+    id: 'vls-11-8',
+    topic: 'CÁC SỐ ĐẶC TRƯNG CỦA MẪU SỐ LIỆU KHÔNG GHÉP NHÓM',
+    unit: '3.1. Mẫu số liệu ghép nhóm',
+    bietSpec: '- Đọc và giải thích mẫu số liệu ghép nhóm từ bảng tần số hoặc biểu đồ.',
+    hieuSpec: '- Xác định độ dài nhóm, giá trị đại diện của từng nhóm số liệu.',
+    vdSpec: '- Thu thập và phân nhóm số liệu thực tế.',
+    assignedQuestions: { part1: 'I.11', part2: '', part3: '', essay: '' },
     points: 0.25
   },
   {
-    id: 'spec-2',
-    topic: 'Hàm số lượng giác và phương trình lượng giác',
-    unit: '2. Các công thức lượng giác cơ bản',
-    bietSpec: '- Nhận biết các công thức lượng giác cơ bản: $\\sin^2 x + \\cos^2 x = 1$, $1 + \\tan^2 x = \\frac{1}{\\cos^2 x}$, công thức cộng, công thức nhân đôi.',
-    hieuSpec: '- Vận dụng công thức cộng, công thức nhân đôi, công thức biến đổi tích thành tổng và tổng thành tích để rút gọn biểu thức lượng giác.',
-    vdSpec: '- Vận dụng biến đổi lượng giác tìm giá trị lớn nhất, nhỏ nhất của biểu thức chứa tham số hoặc tính giá trị biểu thức lượng giác nhiều góc.',
-    assignedQuestions: { part1: 'I.2, I.3', part2: 'II.1 (ý a, b, c, d)', part3: '', essay: '' },
-    points: 1.5
-  },
-  {
-    id: 'spec-3',
-    topic: 'Hàm số lượng giác và phương trình lượng giác',
-    unit: '3. Hàm số lượng giác và đồ thị',
-    bietSpec: '- Nhận biết tập xác định, tập giá trị, tính tuần hoàn, chu kì và tính chẵn lẻ của 4 hàm số lượng giác cơ bản: $y = \\sin x$, $y = \\cos x$, $y = \\tan x$, $y = \\cot x$.',
-    hieuSpec: '- Xác định được khoảng đồng biến, nghịch biến và hình dạng đồ thị của hàm số lượng giác cơ bản.\n- Tìm tập xác định của các hàm số lượng giác mở rộng $y = \\tan(2x - \\frac{\\pi}{3})$...',
-    vdSpec: '- Giải quyết bài toán thực tế có tính chất tuần hoàn (dao động của con lắc, thủy triều, nhiệt độ trung bình trong năm, âm thanh) bằng hàm số lượng giác.',
-    assignedQuestions: { part1: 'I.4, I.5', part2: '', part3: 'III.1', essay: '' },
-    points: 1.0
-  },
-  {
-    id: 'spec-4',
-    topic: 'Hàm số lượng giác và phương trình lượng giác',
-    unit: '4. Phương trình lượng giác cơ bản',
-    bietSpec: '- Nhận biết công thức nghiệm của các phương trình lượng giác cơ bản: $\\sin x = m$, $\\cos x = m$, $\\tan x = m$, $\\cot x = m$.',
-    hieuSpec: '- Giải được phương trình lượng giác cơ bản và các phương trình quy về phương trình lượng giác cơ bản.\n- Tìm số nghiệm của phương trình lượng giác trên một khoảng, đoạn cho trước.',
-    vdSpec: '- Vận dụng phương trình lượng giác cơ bản để giải quyết bài toán thực tế (góc bắn của vật, chu kì dao động điện từ) và bài toán chứa tham số thực $m$.',
-    assignedQuestions: { part1: 'I.6, I.7', part2: '', part3: '', essay: 'TL1' },
-    points: 1.5
-  },
-  {
-    id: 'spec-5',
-    topic: 'Dãy số. Cấp số cộng và cấp số nhân',
-    unit: '5. Dãy số và số hạng tổng quát',
-    bietSpec: '- Nhận biết khái niệm dãy số hữu hạn, dãy số vô hạn.\n- Nhận biết các cách cho một dãy số (bằng công thức số hạng tổng quát, bằng hệ thức truy hồi, bằng mô tả).',
-    hieuSpec: '- Xác định được tính tăng, giảm và tính bị chặn của một dãy số đơn giản.\n- Tìm số hạng thứ $n$ của dãy số cho bởi công thức truy hồi cơ bản.',
-    vdSpec: '- Vận dụng kiến thức về dãy số để mô tả và giải quyết một số bài toán thực tiễn (mô hình tăng trưởng số lượng tế bào, tính tiền tích lũy).',
-    assignedQuestions: { part1: 'I.8, I.9', part2: '', part3: '', essay: '' },
-    points: 0.5
-  },
-  {
-    id: 'spec-6',
-    topic: 'Dãy số. Cấp số cộng và cấp số nhân',
-    unit: '6. Cấp số cộng',
-    bietSpec: '- Nhận biết khái niệm cấp số cộng, số hạng đầu $u_1$ và công sai $d$.\n- Nhận biết công thức tính số hạng tổng quát: $u_n = u_1 + (n-1)d$.',
-    hieuSpec: '- Thiết lập và tính toán được công sai $d$, số hạng bất kỳ $u_k$, và tổng $n$ số hạng đầu $S_n = \\frac{n(u_1 + u_n)}{2}$ của cấp số cộng.',
-    vdSpec: '- Vận dụng công thức cấp số cộng để giải bài toán mô hình hoá thực tế (tiết kiệm tích lũy định kì, xếp hàng ghế khán đài, tính khấu hao tài sản).',
-    assignedQuestions: { part1: 'I.10', part2: '', part3: '', essay: 'TL2' },
-    points: 1.25
-  },
-  {
-    id: 'spec-7',
-    topic: 'Dãy số. Cấp số cộng và cấp số nhân',
-    unit: '7. Cấp số nhân',
-    bietSpec: '- Nhận biết khái niệm cấp số nhân, số hạng đầu $u_1$ và công bội $q$.\n- Nhận biết công thức tính số hạng tổng quát $u_n = u_1 \\cdot q^{n-1}$.',
-    hieuSpec: '- Tính toán các yếu tố của cấp số nhân: công bội $q$, số hạng tổng quát $u_n$, tổng $n$ số hạng đầu $S_n = \\frac{u_1(1-q^n)}{1-q}$ ($q \\neq 1$).',
-    vdSpec: '- Giải quyết bài toán thực tiễn gắn với cấp số nhân: lãi kép ngân hàng, tăng trưởng dân số, chu kì bán rã phóng xạ.',
-    assignedQuestions: { part1: 'I.11, I.12', part2: '', part3: '', essay: '' },
-    points: 0.5
-  },
-  {
-    id: 'spec-8',
-    topic: 'Quan hệ song song trong không gian',
-    unit: '8. Đường thẳng và mặt phẳng trong không gian',
-    bietSpec: '- Nhận biết các tính chất thừa nhận của hình học không gian.\n- Nhận biết các cách xác định một mặt phẳng (qua 3 điểm không thẳng hàng, qua 1 điểm và 1 đường thẳng, qua 2 đường thẳng cắt nhau).',
-    hieuSpec: '- Tìm giao tuyến của hai mặt phẳng phân biệt; tìm giao điểm của đường thẳng và mặt phẳng trong các hình chóp tứ giác, hình chóp tam giác.',
-    vdSpec: '- Xác định thiết diện của hình chóp, hình lăng trụ cắt bởi một mặt phẳng trong trường hợp đơn giản.',
-    assignedQuestions: { part1: 'I.13, I.14', part2: 'II.2 (ý b, c)', part3: '', essay: '' },
-    points: 1.0
-  },
-  {
-    id: 'spec-9',
-    topic: 'Quan hệ song song trong không gian',
-    unit: '9. Hai đường thẳng song song trong không gian',
-    bietSpec: '- Nhận biết vị trí tương đối của hai đường thẳng trong không gian: trùng nhau, song song, cắt nhau, chéo nhau.',
-    hieuSpec: '- Chứng minh hai đường thẳng song song trong không gian dựa vào định lí về giao tuyến của ba mặt phẳng hoặc đường trung bình.',
-    vdSpec: '- Vận dụng vị trí tương đối và tính chất song song để giải quyết bài toán thực tế (mô hình khung giàn giáo, kết cấu dầm cầu, đường dây điện).',
-    assignedQuestions: { part1: 'I.15', part2: 'II.2 (ý a, d)', part3: 'III.2', essay: '' },
-    points: 1.25
-  },
-  {
-    id: 'spec-10',
-    topic: 'Quan hệ song song trong không gian',
-    unit: '10. Đường thẳng và mặt phẳng song song',
-    bietSpec: '- Nhận biết định nghĩa và điều kiện để một đường thẳng song song với một mặt phẳng ($d \\not\\subset (P)$ và $d \\parallel a \\subset (P)$).',
-    hieuSpec: '- Chứng minh đường thẳng song song với mặt phẳng; tìm giao tuyến của hai mặt phẳng dựa vào tính chất đường thẳng song song mặt phẳng.',
-    vdSpec: '- Xác định và tính toán diện tích thiết diện của hình đa diện cắt bởi mặt phẳng song song với một hoặc hai đường thẳng cho trước.',
-    assignedQuestions: { part1: 'I.16', part2: '', part3: '', essay: 'TL3' },
+    id: 'vls-11-9',
+    topic: 'CÁC SỐ ĐẶC TRƯNG CỦA MẪU SỐ LIỆU KHÔNG GHÉP NHÓM',
+    unit: '3.2. Các số đặc trưng đo xu thế trung tâm',
+    bietSpec: '- Nhận biết được công thức tính các số đặc trưng đo xu thế trung tâm của mẫu số liệu ghép nhóm: số trung bình, trung vị, tứ phân vị, mốt.',
+    hieuSpec: '- Tính các số đặc trưng đo xu thế trung tâm của mẫu số liệu ghép nhóm từ bảng tần số.',
+    vdSpec: '- Tính được các số đặc trưng đo xu thế trung tâm cho mẫu số liệu ghép nhóm: số trung bình cộng (hay số trung bình), trung vị (median), tứ phân vị (quartiles), mốt (mode) và đưa ra nhận xét thực tế.',
+    assignedQuestions: { part1: 'I.12', part2: '', part3: 'III.4', essay: 'IV.4 (0,5đ)' },
     points: 1.25
   }
 ];
+
+// 2. TOÁN 10 - THEO ĐÚNG KHUNG MA TRẬN 19 CỘT MẪU THPT VINH LỘC
+export const VINHLOC_MATRIX_10: MatrixRowItem[] = [
+  {
+    id: 'vl10-1',
+    topic: 'Mệnh đề và tập hợp (8t)',
+    unit: 'Mệnh đề toán học, mệnh đề phủ định, kéo theo (3t)',
+    nlc: { biet: 'I.1, I.2', hieu: '', vd: '' },
+    ds: { biet: 'II.1a', hieu: 'II.1b', vd: '' },
+    tln: { biet: 'III.1', hieu: '', vd: '' },
+    tl: { biet: '', hieu: '', vd: '' },
+    tong: { biet: 3, hieu: 2, vd: 0 },
+    tiLe: '15%'
+  },
+  {
+    id: 'vl10-2',
+    topic: 'Mệnh đề và tập hợp (8t)',
+    unit: 'Tập hợp và các phép toán trên tập hợp (5t)',
+    nlc: { biet: 'I.3', hieu: 'I.4', vd: '' },
+    ds: { biet: 'II.1c', hieu: 'II.1d', vd: '' },
+    tln: { biet: '', hieu: '', vd: '' },
+    tl: { biet: '', hieu: 'IV.1 (0,5đ)', vd: '' },
+    tong: { biet: 2, hieu: 2, vd: 0 },
+    tiLe: '12,5%'
+  },
+  {
+    id: 'vl10-3',
+    topic: 'Bất phương trình và hệ bất phương trình bậc nhất hai ẩn (6t)',
+    unit: 'Bất phương trình bậc nhất hai ẩn và miền nghiệm (3t)',
+    nlc: { biet: 'I.5, I.6', hieu: '', vd: '' },
+    ds: { biet: 'II.2a', hieu: 'II.2b', vd: '' },
+    tln: { biet: '', hieu: 'III.2', vd: '' },
+    tl: { biet: '', hieu: '', vd: '' },
+    tong: { biet: 3, hieu: 2, vd: 0 },
+    tiLe: '12,5%'
+  },
+  {
+    id: 'vl10-4',
+    topic: 'Bất phương trình và hệ bất phương trình bậc nhất hai ẩn (6t)',
+    unit: 'Hệ bất phương trình bậc nhất hai ẩn và bài toán quy hoạch (3t)',
+    nlc: { biet: 'I.7', hieu: 'I.8', vd: '' },
+    ds: { biet: '', hieu: '', vd: '' },
+    tln: { biet: '', hieu: '', vd: '' },
+    tl: { biet: '', hieu: '', vd: 'IV.2 (1đ)' },
+    tong: { biet: 1, hieu: 1, vd: 1 },
+    tiLe: '15%'
+  },
+  {
+    id: 'vl10-5',
+    topic: 'Hệ thức lượng trong tam giác (8t)',
+    unit: 'Giá trị lượng giác của một góc từ $0^\\circ$ đến $180^\\circ$ (3t)',
+    nlc: { biet: 'I.9, I.10', hieu: '', vd: '' },
+    ds: { biet: 'II.2c', hieu: 'II.2d', vd: '' },
+    tln: { biet: 'III.3', hieu: '', vd: '' },
+    tl: { biet: '', hieu: '', vd: '' },
+    tong: { biet: 3, hieu: 1, vd: 0 },
+    tiLe: '15%'
+  },
+  {
+    id: 'vl10-6',
+    topic: 'Hệ thức lượng trong tam giác (8t)',
+    unit: 'Định lí côsin, định lí sin và công thức diện tích tam giác (5t)',
+    nlc: { biet: 'I.11', hieu: 'I.12', vd: '' },
+    ds: { biet: '', hieu: '', vd: '' },
+    tln: { biet: '', hieu: 'III.4', vd: '' },
+    tl: { biet: '', hieu: '', vd: 'IV.3 (1đ), IV.4 (0,5đ)' },
+    tong: { biet: 1, hieu: 2, vd: 2 },
+    tiLe: '30%'
+  }
+];
+
+export const VINHLOC_SPEC_10: SpecUnitItem[] = [
+  {
+    id: 'vls-10-1',
+    topic: 'MỆNH ĐỀ VÀ TẬP HỢP',
+    unit: '1.1. Mệnh đề toán học',
+    bietSpec: '- Nhận biết khái niệm mệnh đề, mệnh đề phủ định, mệnh đề kéo theo, mệnh đề tương đương.\n- Nhận biết các kí hiệu $\\forall, \\exists$.',
+    hieuSpec: '- Xác định tính đúng sai của mệnh đề trong trường hợp đơn giản.',
+    vdSpec: '- Vận dụng quy tắc logic để phản biện và chứng minh mệnh đề đơn giản.',
+    assignedQuestions: { part1: 'I.1, I.2', part2: 'II.1a, II.1b', part3: 'III.1', essay: '' },
+    points: 1.5
+  },
+  {
+    id: 'vls-10-2',
+    topic: 'MỆNH ĐỀ VÀ TẬP HỢP',
+    unit: '1.2. Tập hợp và các phép toán trên tập hợp',
+    bietSpec: '- Nhận biết khái niệm tập hợp, tập hợp con, hai tập hợp bằng nhau.\n- Nhận biết các tập hợp số tự nhiên, nguyên, hữu tỉ, thực và các tập con của $\\mathbb{R}$.',
+    hieuSpec: '- Thực hiện các phép toán giao $A \\cap B$, hợp $A \\cup B$, hiệu $A \\setminus B$, phần bù $C_{\\mathbb{R}}A$.',
+    vdSpec: '- Sử dụng biểu đồ Ven và các phép toán tập hợp giải bài toán thực tế.',
+    assignedQuestions: { part1: 'I.3, I.4', part2: 'II.1c, II.1d', part3: '', essay: 'IV.1 (0,5đ)' },
+    points: 1.25
+  },
+  {
+    id: 'vls-10-3',
+    topic: 'BẤT PHƯƠNG TRÌNH VÀ HỆ BẤT PHƯƠNG TRÌNH BẬC NHẤT HAI ẨN',
+    unit: '2.1. Bất phương trình bậc nhất hai ẩn',
+    bietSpec: '- Nhận biết bất phương trình bậc nhất hai ẩn $ax + by \\le c$.\n- Nhận biết nghiệm và miền nghiệm của bất phương trình bậc nhất hai ẩn.',
+    hieuSpec: '- Biểu diễn miền nghiệm của bất phương trình bậc nhất hai ẩn trên mặt phẳng tọa độ.',
+    vdSpec: '- Vận dụng biểu diễn miền nghiệm để giải bài toán đời sống.',
+    assignedQuestions: { part1: 'I.5, I.6', part2: 'II.2a, II.2b', part3: 'III.2', essay: '' },
+    points: 1.25
+  },
+  {
+    id: 'vls-10-4',
+    topic: 'BẤT PHƯƠNG TRÌNH VÀ HỆ BẤT PHƯƠNG TRÌNH BẬC NHẤT HAI ẨN',
+    unit: '2.2. Hệ bất phương trình bậc nhất hai ẩn và bài toán tối ưu',
+    bietSpec: '- Nhận biết hệ bất phương trình bậc nhất hai ẩn.\n- Nhận biết nghiệm của hệ bất phương trình.',
+    hieuSpec: '- Biểu diễn miền nghiệm của hệ bất phương trình bậc nhất hai ẩn trên mặt phẳng tọa độ (miền đa giác).',
+    vdSpec: '- Giải bài toán tối ưu kinh tế thực tế (tìm $F(x, y) = ax + by$ lớn nhất, nhỏ nhất trên miền đa giác).',
+    assignedQuestions: { part1: 'I.7, I.8', part2: '', part3: '', essay: 'IV.2 (1đ)' },
+    points: 1.5
+  },
+  {
+    id: 'vls-10-5',
+    topic: 'HỆ THỨC LƯỢNG TRONG TAM GIÁC',
+    unit: '3.1. Giá trị lượng giác của một góc từ $0^\\circ$ đến $180^\\circ$',
+    bietSpec: '- Nhận biết giá trị lượng giác của một góc từ $0^\\circ$ đến $180^\\circ$ trên nửa đường tròn đơn vị.\n- Nhận biết mối quan hệ bù nhau: $\\sin(180^\\circ - \\alpha) = \\sin\\alpha$, $\\cos(180^\\circ - \\alpha) = -\\cos\\alpha$.',
+    hieuSpec: '- Tính giá trị lượng giác của các góc đặc biệt bằng máy tính cầm tay hoặc biến đổi.',
+    vdSpec: '- Vận dụng tính góc và độ dài trong bài toán thực tế.',
+    assignedQuestions: { part1: 'I.9, I.10', part2: 'II.2c, II.2d', part3: 'III.3', essay: '' },
+    points: 1.5
+  },
+  {
+    id: 'vls-10-6',
+    topic: 'HỆ THỨC LƯỢNG TRONG TAM GIÁC',
+    unit: '3.2. Định lí côsin, định lí sin và các công thức diện tích tam giác',
+    bietSpec: '- Nhận biết định lí côsin $a^2 = b^2 + c^2 - 2bc\\cos A$, định lí sin $\\frac{a}{\\sin A} = 2R$.\n- Nhận biết các công thức tính diện tích tam giác: $S = \\frac{1}{2}ab\\sin C = \\frac{abc}{4R} = pr = \\sqrt{p(p-a)(p-b)(p-c)}$.',
+    hieuSpec: '- Giải tam giác: tính cạnh, tính góc, bán kính $R, r$ và diện tích tam giác trong các trường hợp cơ bản.',
+    vdSpec: '- Giải bài toán đo đạc khoảng cách, chiều cao thực tế không đo trực tiếp được (ngọn hải đăng, đỉnh núi).',
+    assignedQuestions: { part1: 'I.11, I.12', part2: '', part3: 'III.4', essay: 'IV.3 (1đ), IV.4 (0,5đ)' },
+    points: 3.0
+  }
+];
+
+// 3. TOÁN 12 - THEO ĐÚNG KHUNG MA TRẬN 19 CỘT MẪU THPT VINH LỘC
+export const VINHLOC_MATRIX_12: MatrixRowItem[] = [
+  {
+    id: 'vl12-1',
+    topic: 'Ứng dụng đạo hàm để khảo sát và vẽ đồ thị hàm số (14t)',
+    unit: 'Tính đơn điệu và cực trị của hàm số (4t)',
+    nlc: { biet: 'I.1, I.2, I.3', hieu: '', vd: '' },
+    ds: { biet: 'II.1a', hieu: 'II.1b', vd: '' },
+    tln: { biet: 'III.1', hieu: '', vd: '' },
+    tl: { biet: '', hieu: '', vd: '' },
+    tong: { biet: 4, hieu: 2, vd: 0 },
+    tiLe: '17,5%'
+  },
+  {
+    id: 'vl12-2',
+    topic: 'Ứng dụng đạo hàm để khảo sát và vẽ đồ thị hàm số (14t)',
+    unit: 'Giá trị lớn nhất và nhỏ nhất của hàm số (3t)',
+    nlc: { biet: 'I.4, I.5', hieu: '', vd: '' },
+    ds: { biet: 'II.1c', hieu: 'II.1d', vd: '' },
+    tln: { biet: '', hieu: '', vd: '' },
+    tl: { biet: '', hieu: 'IV.1 (0,5đ)', vd: '' },
+    tong: { biet: 3, hieu: 2, vd: 0 },
+    tiLe: '15%'
+  },
+  {
+    id: 'vl12-3',
+    topic: 'Ứng dụng đạo hàm để khảo sát và vẽ đồ thị hàm số (14t)',
+    unit: 'Đường tiệm cận của đồ thị hàm số (3t)',
+    nlc: { biet: 'I.6, I.7', hieu: '', vd: '' },
+    ds: { biet: '', hieu: '', vd: '' },
+    tln: { biet: '', hieu: 'III.2', vd: '' },
+    tl: { biet: '', hieu: '', vd: '' },
+    tong: { biet: 2, hieu: 1, vd: 0 },
+    tiLe: '10%'
+  },
+  {
+    id: 'vl12-4',
+    topic: 'Ứng dụng đạo hàm để khảo sát và vẽ đồ thị hàm số (14t)',
+    unit: 'Khảo sát sự biến thiên và vẽ đồ thị hàm số (4t)',
+    nlc: { biet: 'I.8', hieu: 'I.9', vd: '' },
+    ds: { biet: '', hieu: '', vd: '' },
+    tln: { biet: '', hieu: '', vd: '' },
+    tl: { biet: '', hieu: '', vd: 'IV.2 (1đ)' },
+    tong: { biet: 1, hieu: 1, vd: 1 },
+    tiLe: '15%'
+  },
+  {
+    id: 'vl12-5',
+    topic: 'Tọa độ của vectơ trong không gian (8t)',
+    unit: 'Vectơ và các phép toán vectơ trong không gian (4t)',
+    nlc: { biet: 'I.10, I.11', hieu: '', vd: '' },
+    ds: { biet: 'II.2a', hieu: 'II.2b', vd: '' },
+    tln: { biet: 'III.3', hieu: '', vd: '' },
+    tl: { biet: '', hieu: '', vd: '' },
+    tong: { biet: 3, hieu: 1, vd: 0 },
+    tiLe: '15%'
+  },
+  {
+    id: 'vl12-6',
+    topic: 'Tọa độ của vectơ trong không gian (8t)',
+    unit: 'Hệ trục tọa độ, tọa độ của điểm và vectơ (4t)',
+    nlc: { biet: 'I.12', hieu: '', vd: '' },
+    ds: { biet: 'II.2c', hieu: 'II.2d', vd: '' },
+    tln: { biet: '', hieu: '', vd: '' },
+    tl: { biet: '', hieu: '', vd: 'IV.3 (1đ)' },
+    tong: { biet: 2, hieu: 1, vd: 1 },
+    tiLe: '15%'
+  },
+  {
+    id: 'vl12-7',
+    topic: 'Các số đặc trưng đo độ phân tán mẫu số liệu ghép nhóm (6t)',
+    unit: 'Khoảng biến thiên, tứ phân vị, phương sai và độ lệch chuẩn (6t)',
+    nlc: { biet: '', hieu: '', vd: '' },
+    ds: { biet: '', hieu: '', vd: '' },
+    tln: { biet: '', hieu: 'III.4', vd: '' },
+    tl: { biet: '', hieu: '', vd: 'IV.4 (0,5đ)' },
+    tong: { biet: 0, hieu: 1, vd: 1 },
+    tiLe: '12,5%'
+  }
+];
+
+export const VINHLOC_SPEC_12: SpecUnitItem[] = [
+  {
+    id: 'vls-12-1',
+    topic: 'ỨNG DỤNG ĐẠO HÀM ĐỂ KHẢO SÁT VÀ VẼ ĐỒ THỊ HÀM SỐ',
+    unit: '1.1. Tính đơn điệu và cực trị của hàm số',
+    bietSpec: '- Nhận biết tính đồng biến, nghịch biến và điểm cực trị của hàm số từ bảng biến thiên hoặc đồ thị.\n- Nhận biết điều kiện đủ để hàm số có cực trị.',
+    hieuSpec: '- Tìm các khoảng đơn điệu và điểm cực trị của các hàm đa thức bậc ba, trùng phương, phân thức bậc nhất/bậc nhất bằng cách xét dấu đạo hàm.',
+    vdSpec: '- Vận dụng tính đơn điệu và cực trị để biện luận số nghiệm của phương trình hoặc giải bài toán chứa tham số $m$.',
+    assignedQuestions: { part1: 'I.1, I.2, I.3', part2: 'II.1a, II.1b', part3: 'III.1', essay: '' },
+    points: 1.75
+  },
+  {
+    id: 'vls-12-2',
+    topic: 'ỨNG DỤNG ĐẠO HÀM ĐỂ KHẢO SÁT VÀ VẼ ĐỒ THỊ HÀM SỐ',
+    unit: '1.2. Giá trị lớn nhất và nhỏ nhất của hàm số',
+    bietSpec: '- Nhận biết GTLN, GTNN của hàm số trên một đoạn từ bảng biến thiên hoặc đồ thị cho trước.',
+    hieuSpec: '- Tìm GTLN, GTNN của hàm số trên một đoạn $[a; b]$ bằng đạo hàm.',
+    vdSpec: '- Giải quyết bài toán tối ưu thực tiễn đời sống (chi phí tối thiểu, doanh thu tối đa, thể tích lớn nhất).',
+    assignedQuestions: { part1: 'I.4, I.5', part2: 'II.1c, II.1d', part3: '', essay: 'IV.1 (0,5đ)' },
+    points: 1.5
+  },
+  {
+    id: 'vls-12-3',
+    topic: 'ỨNG DỤNG ĐẠO HÀM ĐỂ KHẢO SÁT VÀ VẼ ĐỒ THỊ HÀM SỐ',
+    unit: '1.3. Đường tiệm cận của đồ thị hàm số',
+    bietSpec: '- Nhận biết khái niệm đường tiệm cận đứng, tiệm cận ngang, tiệm cận xiên của đồ thị hàm số.',
+    hieuSpec: '- Tìm các đường tiệm cận đứng, ngang, xiên của đồ thị hàm số phân thức hữu tỉ bằng định nghĩa giới hạn.',
+    vdSpec: '- Vận dụng tiệm cận để tìm tham số $m$ hoặc vẽ đồ thị hàm số.',
+    assignedQuestions: { part1: 'I.6, I.7', part2: '', part3: 'III.2', essay: '' },
+    points: 1.0
+  },
+  {
+    id: 'vls-12-4',
+    topic: 'ỨNG DỤNG ĐẠO HÀM ĐỂ KHẢO SÁT VÀ VẼ ĐỒ THỊ HÀM SỐ',
+    unit: '1.4. Khảo sát sự biến thiên và vẽ đồ thị hàm số',
+    bietSpec: '- Nhận dạng đồ thị hàm số bậc ba, phân thức bậc nhất/bậc nhất, phân thức bậc hai/bậc nhất.',
+    hieuSpec: '- Xác định dấu các hệ số $a, b, c, d$, giao điểm với các trục tọa độ, tâm đối xứng của đồ thị.',
+    vdSpec: '- Dùng đồ thị hàm số giải bài toán tương giao thực tế và bài toán chứa tham số $m$.',
+    assignedQuestions: { part1: 'I.8, I.9', part2: '', part3: '', essay: 'IV.2 (1đ)' },
+    points: 1.5
+  },
+  {
+    id: 'vls-12-5',
+    topic: 'TỌA ĐỘ CỦA VECTƠ TRONG KHÔNG GIAN',
+    unit: '2.1. Vectơ và các phép toán trong không gian',
+    bietSpec: '- Nhận biết vectơ, các phép toán cộng, trừ vectơ, nhân vectơ với một số trong không gian.',
+    hieuSpec: '- Tính tích vô hướng của hai vectơ, góc giữa hai vectơ trong không gian.',
+    vdSpec: '- Vận dụng vectơ giải quyết bài toán hình học không gian và lực trong vật lí.',
+    assignedQuestions: { part1: 'I.10, I.11', part2: 'II.2a, II.2b', part3: 'III.3', essay: '' },
+    points: 1.5
+  },
+  {
+    id: 'vls-12-6',
+    topic: 'TỌA ĐỘ CỦA VECTƠ TRONG KHÔNG GIAN',
+    unit: '2.2. Hệ trục tọa độ và tọa độ của điểm, vectơ',
+    bietSpec: '- Nhận biết hệ tọa độ $Oxyz$, tọa độ của một điểm và tọa độ của một vectơ.',
+    hieuSpec: '- Tính độ dài vectơ, khoảng cách giữa hai điểm, tọa độ trung điểm, trọng tâm tam giác.',
+    vdSpec: '- Thiết lập hệ trục tọa độ $Oxyz$ để giải bài toán định vị không gian 3 chiều thực tế.',
+    assignedQuestions: { part1: 'I.12', part2: 'II.2c, II.2d', part3: '', essay: 'IV.3 (1đ)' },
+    points: 1.5
+  },
+  {
+    id: 'vls-12-7',
+    topic: 'CÁC SỐ ĐẶC TRƯNG ĐO ĐỘ PHÂN TÁN CỦA MẪU SỐ LIỆU GHÉP NHÓM',
+    unit: '3.1. Khoảng biến thiên, khoảng tứ phân vị, phương sai và độ lệch chuẩn',
+    bietSpec: '- Nhận biết công thức tính khoảng biến thiên, khoảng tứ phân vị, phương sai và độ lệch chuẩn của mẫu số liệu ghép nhóm.',
+    hieuSpec: '- Tính toán các số đặc trưng đo độ phân tán từ bảng tần số ghép nhóm.',
+    vdSpec: '- Đánh giá mức độ đồng đều và rủi ro của dữ liệu trong các bài toán thực tiễn.',
+    assignedQuestions: { part1: '', part2: '', part3: 'III.4', essay: 'IV.4 (0,5đ)' },
+    points: 1.25
+  }
+];
+
+// Khả năng tương thích ngược
+export const SAMPLE_COMPETENCY_MATRIX_11: MatrixRowItem[] = VINHLOC_MATRIX_11;
+export const SAMPLE_SPEC_LIST_11: SpecUnitItem[] = VINHLOC_SPEC_11;
 
 export interface ExamMatrixTemplate {
   id: string;
@@ -257,143 +571,54 @@ export interface ExamMatrixTemplate {
   topicsList: string[];
 }
 
-// 1. MÔN TOÁN 11 - GIỮA KÌ I (MẪU CHUẨN BỘ GD&ĐT 2025-2026 KHỚP 100% ẢNH CỦA GV)
+// 1. MÔN TOÁN 11 - GIỮA KÌ I (MẪU CHUẨN THPT EDUPLAN AI 2026-2027)
 export const TEMPLATE_TOAN_11_GK1: ExamMatrixTemplate = {
   id: 'matrix_toan_11_gk1',
   subjectId: 'toan',
   subjectName: 'Toán học',
   grade: '11',
   semester: 'Giữa kì I',
-  title: 'Đề kiểm tra Giữa học kì I Môn Toán - Khối 11 (Chuẩn GDPT 2018)',
-  badge: 'Chuẩn GDPT 2018 • Mẫu Bộ GD&ĐT',
-  description: 'Đánh giá 3 mạch kiến thức: Lượng giác, Dãy số - Cấp số, Quan hệ song song trong không gian theo 3 năng lực Toán học (GQVĐ, Tư duy, Mô hình hóa).',
+  title: 'Đề kiểm tra Giữa học kì I Môn Toán - Khối 11 (Chuẩn GDPT 2018 - THPT EDUPLAN AI)',
+  badge: 'Khung ma trận 19 cột THPT EDUPLAN AI 2026-2027',
+  description: 'Mẫu ma trận 19 cột và bản đặc tả chi tiết 28 lệnh hỏi (Nhiều lựa chọn 12 câu, Đúng-Sai 2 câu 8 ý, Trả lời ngắn 4 câu, Tự luận 4 câu; Tỉ lệ 40% - 30% - 30%).',
   durationMinutes: 90,
   totalPoints: 10,
   competencyHeaders: {
-    c1: 'Giải quyết vấn đề',
-    c2: 'Tư duy toán học',
-    c3: 'Mô hình hoá'
+    c1: 'Biết',
+    c2: 'Hiểu',
+    c3: 'Vận dụng'
   },
-  qCounts: { mc: 16, tf: 2, sa: 2, essay: 3 },
-  matrixRows: SAMPLE_COMPETENCY_MATRIX_11,
-  specUnits: SAMPLE_SPEC_LIST_11,
+  qCounts: { mc: 12, tf: 2, sa: 4, essay: 4 },
+  matrixRows: VINHLOC_MATRIX_11,
+  specUnits: VINHLOC_SPEC_11,
   topicsList: [
     'Hàm số lượng giác và phương trình lượng giác',
     'Dãy số. Cấp số cộng và cấp số nhân',
+    'Các số đặc trưng đo xu thế trung tâm của mẫu số liệu ghép nhóm',
     'Quan hệ song song trong không gian'
   ]
 };
 
-// 2. MÔN TOÁN 10 - GIỮA KÌ I
+// 2. MÔN TOÁN 10 - GIỮA KÌ I (MẪU KHUNG 19 CỘT THPT EDUPLAN AI)
 export const TEMPLATE_TOAN_10_GK1: ExamMatrixTemplate = {
   id: 'matrix_toan_10_gk1',
   subjectId: 'toan',
   subjectName: 'Toán học',
   grade: '10',
   semester: 'Giữa kì I',
-  title: 'Đề kiểm tra Giữa học kì I Môn Toán - Khối 10 (Chuẩn GDPT 2018)',
-  badge: 'Toán 10 • Kết nối tri thức',
-  description: 'Mệnh đề toán học, Tập hợp và các phép toán tập hợp, Bất phương trình và hệ bất phương trình bậc nhất hai ẩn, Hệ thức lượng trong tam giác.',
+  title: 'Đề kiểm tra Giữa học kì I Môn Toán - Khối 10 (Chuẩn GDPT 2018 - THPT EDUPLAN AI)',
+  badge: 'Khung ma trận 19 cột THPT EDUPLAN AI 2026-2027',
+  description: 'Mẫu ma trận 19 cột và bản đặc tả chuẩn GDPT 2018 theo định dạng THPT EDUPLAN AI (Mệnh đề - Tập hợp, Bất phương trình bậc nhất hai ẩn, Hệ thức lượng trong tam giác; Tỉ lệ 40% - 30% - 30%).',
   durationMinutes: 90,
   totalPoints: 10,
   competencyHeaders: {
-    c1: 'Giải quyết vấn đề',
-    c2: 'Tư duy toán học',
-    c3: 'Mô hình hoá'
+    c1: 'Biết',
+    c2: 'Hiểu',
+    c3: 'Vận dụng'
   },
-  qCounts: { mc: 16, tf: 2, sa: 2, essay: 3 },
-  matrixRows: [
-    {
-      id: 't10-row-1',
-      topic: 'MỆNH ĐỀ VÀ TẬP HỢP',
-      unit: '1. Mệnh đề toán học, mệnh đề phủ định, mệnh đề kéo theo',
-      gqvd: { biet: 'I.1', hieu: '', vd: '' },
-      tuduy: { biet: 'I.2', hieu: 'II.1ab', vd: '' },
-      mohinh: { biet: '', hieu: '', vd: '' }
-    },
-    {
-      id: 't10-row-2',
-      topic: 'MỆNH ĐỀ VÀ TẬP HỢP',
-      unit: '2. Tập hợp và các phép toán trên tập hợp ($A \\cap B$, $A \\cup B$, $A \\setminus B$)',
-      gqvd: { biet: 'I.3, I.4', hieu: 'I.5', vd: '' },
-      tuduy: { biet: '', hieu: 'II.1cd', vd: '' },
-      mohinh: { biet: '', hieu: '', vd: 'TL1' }
-    },
-    {
-      id: 't10-row-3',
-      topic: 'BẤT PHƯƠNG TRÌNH BẬC NHẤT HAI ẨN',
-      unit: '1. Bất phương trình bậc nhất hai ẩn và miền nghiệm',
-      gqvd: { biet: 'I.6', hieu: 'I.7', vd: '' },
-      tuduy: { biet: '', hieu: 'III.1', vd: '' },
-      mohinh: { biet: '', hieu: '', vd: '' }
-    },
-    {
-      id: 't10-row-4',
-      topic: 'BẤT PHƯƠNG TRÌNH BẬC NHẤT HAI ẨN',
-      unit: '2. Hệ bất phương trình bậc nhất hai ẩn và bài toán quy hoạch tuyến tính',
-      gqvd: { biet: 'I.8', hieu: '', vd: '' },
-      tuduy: { biet: '', hieu: 'I.9', vd: '' },
-      mohinh: { biet: '', hieu: 'II.2ab', vd: 'TL2' }
-    },
-    {
-      id: 't10-row-5',
-      topic: 'HỆ THỨC LƯỢNG TRONG TAM GIÁC',
-      unit: '1. Giá trị lượng giác của một góc từ $0^\\circ$ đến $180^\\circ$',
-      gqvd: { biet: 'I.10', hieu: 'I.11', vd: '' },
-      tuduy: { biet: 'I.12', hieu: '', vd: '' },
-      mohinh: { biet: '', hieu: '', vd: '' }
-    },
-    {
-      id: 't10-row-6',
-      topic: 'HỆ THỨC LƯỢNG TRONG TAM GIÁC',
-      unit: '2. Định lí côsin, định lí sin và các công thức tính diện tích tam giác',
-      gqvd: { biet: 'I.13', hieu: 'I.14', vd: '' },
-      tuduy: { biet: 'I.15', hieu: 'II.2cd', vd: '' },
-      mohinh: { biet: 'I.16', hieu: 'III.2', vd: 'TL3' }
-    }
-  ],
-  specUnits: [
-    {
-      id: 't10-spec-1',
-      topic: 'Mệnh đề và tập hợp',
-      unit: '1. Mệnh đề toán học và mệnh đề kéo theo',
-      bietSpec: '- Nhận biết thế nào là một mệnh đề toán học, mệnh đề phủ định, mệnh đề chứa biến.\n- Nhận biết kí hiệu với mọi $\\forall$ và tồn tại $\\exists$.',
-      hieuSpec: '- Xác định được tính đúng sai của mệnh đề kéo theo $P \\Rightarrow Q$ và mệnh đề tương đương $P \\Leftrightarrow Q$.',
-      vdSpec: '- Vận dụng mệnh đề và phản chứng để chứng minh tính chất chia hết hoặc bất đẳng thức số học đơn giản.',
-      assignedQuestions: { part1: 'I.1, I.2', part2: 'II.1 (ý a, b)', part3: '', essay: '' },
-      points: 1.0
-    },
-    {
-      id: 't10-spec-2',
-      topic: 'Mệnh đề và tập hợp',
-      unit: '2. Tập hợp và các phép toán trên tập hợp',
-      bietSpec: '- Nhận biết kí hiệu phần tử thuộc tập hợp, tập hợp con, tập hợp rỗng, tập hợp số thực (khoảng, đoạn, nửa khoảng).',
-      hieuSpec: '- Thực hiện thành thạo các phép toán giao $A \\cap B$, hợp $A \\cup B$, hiệu $A \\setminus B$ và phần bù $C_{\\mathbb{R}}A$ trên trục số thực.',
-      vdSpec: '- Giải bài toán thực tế sử dụng biểu đồ Ven (thống kê số lượng học sinh tham gia các câu lạc bộ ngoại khóa).',
-      assignedQuestions: { part1: 'I.3, I.4, I.5', part2: 'II.1 (ý c, d)', part3: '', essay: 'TL1' },
-      points: 2.0
-    },
-    {
-      id: 't10-spec-3',
-      topic: 'Bất phương trình và hệ bất phương trình bậc nhất hai ẩn',
-      unit: '3. Miền nghiệm của bất phương trình và hệ bất phương trình bậc nhất hai ẩn',
-      bietSpec: '- Nhận biết bất phương trình bậc nhất hai ẩn $ax + by \\le c$.\n- Kiểm tra một cặp số $(x_0; y_0)$ có phải là nghiệm hay không.',
-      hieuSpec: '- Biểu diễn miền nghiệm của bất phương trình và hệ bất phương trình bậc nhất hai ẩn trên mặt phẳng tọa độ $Oxy$.',
-      vdSpec: '- Vận dụng bài toán tìm giá trị lớn nhất, nhỏ nhất của biểu thức $F(x, y) = ax + by$ trên miền đa giác nghiệm để tối ưu hóa lợi nhuận kinh doanh.',
-      assignedQuestions: { part1: 'I.6, I.7, I.8, I.9', part2: 'II.2 (ý a, b)', part3: 'III.1', essay: 'TL2' },
-      points: 3.0
-    },
-    {
-      id: 't10-spec-4',
-      topic: 'Hệ thức lượng trong tam giác',
-      unit: '4. Định lí sin, định lí côsin và giải tam giác thực tế',
-      bietSpec: '- Nhận biết công thức định lí côsin: $a^2 = b^2 + c^2 - 2bc \\cos A$, định lí sin: $\\frac{a}{\\sin A} = 2R$, và các công thức diện tích $S = \\frac{1}{2}bc \\sin A = \\frac{abc}{4R} = pr$.',
-      hieuSpec: '- Tính các cạnh, góc, bán kính đường tròn ngoại tiếp $R$, nội tiếp $r$ và diện tích của một tam giác bất kì.',
-      vdSpec: '- Giải bài toán đo đạc thực tế: tính khoảng cách giữa hai vị trí không thể đến trực tiếp, tính chiều cao của tháp hoặc ngọn hải đăng.',
-      assignedQuestions: { part1: 'I.10..I.16', part2: 'II.2 (ý c, d)', part3: 'III.2', essay: 'TL3' },
-      points: 4.0
-    }
-  ],
+  qCounts: { mc: 12, tf: 2, sa: 4, essay: 4 },
+  matrixRows: VINHLOC_MATRIX_10,
+  specUnits: VINHLOC_SPEC_10,
   topicsList: [
     'Mệnh đề và tập hợp',
     'Bất phương trình và hệ bất phương trình bậc nhất hai ẩn',
@@ -401,109 +626,29 @@ export const TEMPLATE_TOAN_10_GK1: ExamMatrixTemplate = {
   ]
 };
 
-// 3. MÔN TOÁN 12 - GIỮA KÌ I
+// 3. MÔN TOÁN 12 - GIỮA KÌ I (MẪU KHUNG 19 CỘT THPT EDUPLAN AI)
 export const TEMPLATE_TOAN_12_GK1: ExamMatrixTemplate = {
   id: 'matrix_toan_12_gk1',
   subjectId: 'toan',
   subjectName: 'Toán học',
   grade: '12',
   semester: 'Giữa kì I',
-  title: 'Đề kiểm tra Giữa học kì I Môn Toán - Khối 12 (Chuẩn GDPT 2018)',
-  badge: 'Toán 12 • Ứng dụng Đạo hàm & Oxyz',
-  description: 'Khảo sát sự biến thiên và vẽ đồ thị hàm số, cực trị, giá trị lớn nhất - nhỏ nhất, tiệm cận, vectơ và hệ trục tọa độ Oxyz trong không gian.',
+  title: 'Đề kiểm tra Giữa học kì I Môn Toán - Khối 12 (Chuẩn GDPT 2018 - THPT EDUPLAN AI)',
+  badge: 'Khung ma trận 19 cột THPT EDUPLAN AI 2026-2027',
+  description: 'Mẫu ma trận 19 cột và bản đặc tả chuẩn GDPT 2018 theo định dạng THPT EDUPLAN AI (Ứng dụng đạo hàm khảo sát hàm số, Vectơ và Hệ trục tọa độ Oxyz; Tỉ lệ 40% - 30% - 30%).',
   durationMinutes: 90,
   totalPoints: 10,
   competencyHeaders: {
-    c1: 'Giải quyết vấn đề',
-    c2: 'Tư duy toán học',
-    c3: 'Mô hình hoá'
+    c1: 'Biết',
+    c2: 'Hiểu',
+    c3: 'Vận dụng'
   },
-  qCounts: { mc: 12, tf: 4, sa: 6, essay: 0 },
-  matrixRows: [
-    {
-      id: 't12-row-1',
-      topic: 'ỨNG DỤNG ĐẠO HÀM ĐỂ KHẢO SÁT HÀM SỐ',
-      unit: '1. Tính đơn điệu và Cực trị của hàm số',
-      gqvd: { biet: 'I.1, I.2', hieu: 'I.3', vd: '' },
-      tuduy: { biet: '', hieu: 'II.1ab', vd: 'III.1' },
-      mohinh: { biet: '', hieu: '', vd: '' }
-    },
-    {
-      id: 't12-row-2',
-      topic: 'ỨNG DỤNG ĐẠO HÀM ĐỂ KHẢO SÁT HÀM SỐ',
-      unit: '2. Giá trị lớn nhất và giá trị nhỏ nhất của hàm số',
-      gqvd: { biet: 'I.4', hieu: 'I.5', vd: '' },
-      tuduy: { biet: '', hieu: 'II.1cd', vd: '' },
-      mohinh: { biet: '', hieu: 'III.2', vd: 'III.3' }
-    },
-    {
-      id: 't12-row-3',
-      topic: 'ỨNG DỤNG ĐẠO HÀM ĐỂ KHẢO SÁT HÀM SỐ',
-      unit: '3. Đường tiệm cận của đồ thị hàm số (đứng, ngang, xiên)',
-      gqvd: { biet: 'I.6', hieu: 'I.7', vd: '' },
-      tuduy: { biet: 'I.8', hieu: 'II.2ab', vd: '' },
-      mohinh: { biet: '', hieu: '', vd: '' }
-    },
-    {
-      id: 't12-row-4',
-      topic: 'ỨNG DỤNG ĐẠO HÀM ĐỂ KHẢO SÁT HÀM SỐ',
-      unit: '4. Khảo sát sự biến thiên và đồ thị của các hàm số bậc ba, nhất biến, hữu tỉ',
-      gqvd: { biet: 'I.9', hieu: '', vd: '' },
-      tuduy: { biet: 'I.10', hieu: 'II.2cd', vd: '' },
-      mohinh: { biet: '', hieu: '', vd: 'III.4' }
-    },
-    {
-      id: 't12-row-5',
-      topic: 'VECTƠ VÀ HỆ TỌA ĐỘ TRONG KHÔNG GIAN',
-      unit: '1. Vectơ và các phép toán vectơ trong không gian',
-      gqvd: { biet: 'I.11', hieu: '', vd: '' },
-      tuduy: { biet: '', hieu: 'II.3ab', vd: '' },
-      mohinh: { biet: '', hieu: '', vd: 'III.5' }
-    },
-    {
-      id: 't12-row-6',
-      topic: 'VECTƠ VÀ HỆ TỌA ĐỘ TRONG KHÔNG GIAN',
-      unit: '2. Hệ tọa độ trong không gian $Oxyz$ và tọa độ điểm, vectơ',
-      gqvd: { biet: 'I.12', hieu: 'II.3cd', vd: '' },
-      tuduy: { biet: '', hieu: 'II.4abcd', vd: '' },
-      mohinh: { biet: '', hieu: '', vd: 'III.6' }
-    }
-  ],
-  specUnits: [
-    {
-      id: 't12-spec-1',
-      topic: 'Ứng dụng đạo hàm để khảo sát hàm số',
-      unit: '1. Đơn điệu, cực trị và tiệm cận',
-      bietSpec: '- Nhận biết dấu của $y\'$ và tính đồng biến, nghịch biến.\n- Nhận biết điểm cực trị của hàm số từ bảng biến thiên và đồ thị.\n- Nhận dạng tiệm cận đứng, ngang, xiên.',
-      hieuSpec: '- Tìm các khoảng đơn điệu, cực trị của hàm số phân thức hữu tỉ.\n- Xác định phương trình đường tiệm cận xiên $y = ax + b$ bằng giới hạn.',
-      vdSpec: '- Tìm giá trị tham số $m$ để hàm số đơn điệu hoặc đạt cực trị tại một điểm cho trước.',
-      assignedQuestions: { part1: 'I.1..I.8', part2: 'II.1, II.2 (ý a, b)', part3: 'III.1', essay: '' },
-      points: 4.5
-    },
-    {
-      id: 't12-spec-2',
-      topic: 'Ứng dụng đạo hàm để khảo sát hàm số',
-      unit: '2. Bài toán tối ưu hóa thực tế (Max - Min)',
-      bietSpec: '- Nhận biết quy tắc tìm giá trị lớn nhất, nhỏ nhất trên một đoạn $[a; b]$.',
-      hieuSpec: '- Tìm giá trị lớn nhất, nhỏ nhất của hàm số trên khoảng mở $(a; b)$ thông qua bảng biến thiên.',
-      vdSpec: '- Vận dụng đạo hàm giải quyết bài toán thực tế: Cắt gấp hộp đựng tối đa thể tích, chi phí xây dựng kênh dẫn nước nhỏ nhất, tối ưu doanh thu bán hàng.',
-      assignedQuestions: { part1: 'I.9, I.10', part2: 'II.2 (ý c, d)', part3: 'III.2, III.3, III.4', essay: '' },
-      points: 3.0
-    },
-    {
-      id: 't12-spec-3',
-      topic: 'Vectơ và hệ tọa độ trong không gian',
-      unit: '3. Tọa độ điểm, vectơ và ứng dụng trong không gian Oxyz',
-      bietSpec: '- Nhận biết tọa độ điểm, tọa độ vectơ, độ dài vectơ trong hệ tọa độ $Oxyz$.\n- Nhận biết tích vô hướng của hai vectơ: $\\vec{u} \\cdot \\vec{v} = x_1 x_2 + y_1 y_2 + z_1 z_2$.',
-      hieuSpec: '- Tính góc giữa hai vectơ, khoảng cách giữa hai điểm, tọa độ trọng tâm tam giác, tọa độ trung điểm đoạn thẳng.',
-      vdSpec: '- Gắn hệ trục tọa độ $Oxyz$ vào mô hình công trình kiến trúc (mái vòm, chân tháp, giàn không gian) để giải bài toán định vị không gian.',
-      assignedQuestions: { part1: 'I.11, I.12', part2: 'II.3, II.4', part3: 'III.5, III.6', essay: '' },
-      points: 2.5
-    }
-  ],
+  qCounts: { mc: 12, tf: 2, sa: 4, essay: 4 },
+  matrixRows: VINHLOC_MATRIX_12,
+  specUnits: VINHLOC_SPEC_12,
   topicsList: [
-    'Ứng dụng đạo hàm để khảo sát hàm số',
-    'Vectơ và hệ tọa độ trong không gian'
+    'Ứng dụng đạo hàm để khảo sát và vẽ đồ thị hàm số',
+    'Tọa độ của vectơ trong không gian'
   ]
 };
 

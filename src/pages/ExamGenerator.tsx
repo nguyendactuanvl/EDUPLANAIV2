@@ -3,6 +3,9 @@ import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { embedTikzSvgsInText } from "../components/TikzRenderer";
 import { embedBbtSvgsInText, convertBbtTableToSvg, analyzeFunctionToBbt, generateBbtSvg, autoEnrichTextWithVisuals, aiFixQuestionVisuals } from "../lib/bbtRenderer";
 import { apiFetch } from '../lib/apiFetch';
+import { aiCacheService, generateHashKey } from '../services/aiCacheService';
+import { asyncEnrichExamQuestions } from '../lib/workerHelper';
+import { AiCacheIndicator } from '../components/AiCacheIndicator';
 
 import { fullPlan } from "../data/mockData";
 import Markdown from 'react-markdown';
@@ -166,6 +169,7 @@ export function ExamGenerator() {
   const [aiSimTarget, setAiSimTarget] = useState<{ qIndex: number; prompt: string; target: "content" | "solution" } | null>(null);
 
   const [activeTab, setActiveTab] = useState<"matrix" | "exam" | "shuffle" | "banks" | "results">("matrix");
+  const [cacheInfo, setCacheInfo] = useState<{ isFromCache: boolean; cachedAt?: number; hits?: number } | null>(null);
   const [examResults, setExamResults] = useState<any[]>([]);
   const [resultsLoading, setResultsLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -1626,7 +1630,7 @@ ${pin ? `🔑 Hoặc vào trang: ${publicBase} và nhập Mã phòng thi: ${pin}
     setQPoints({ mc: "0.25", tf: "1", sa: "0.5", essay: "1" });
   };
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (bypassCache: boolean = false) => {
     if (generateMode === "from_matrix_file" && !matrixBase64) {
       alert("Bạn đã chọn 'Bám sát Ma trận đính kèm' nhưng chưa tải file lên. Vui lòng tải file ma trận lên trước.");
       return;
@@ -1716,22 +1720,51 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
         finalPrompt += "\n\nYÊU CẦU QUAN TRỌNG: Hãy sử dụng file đính kèm làm ma trận đề. Soạn các câu hỏi bám sát theo cấu trúc, số lượng câu, mức độ và nội dung được quy định trong file ma trận tải lên này.";
       }
 
+      const requestPayload = { 
+        subject, grade, duration, examType, matrix, customPrompt: finalPrompt,
+        qCounts: activeQCounts,
+        matrixFile: matrixBase64,
+        selectedTopics,
+        detailedSolution: outputConfig.detailedSolution,
+        realWorldConfig: {
+          enabled: enableRealWorld,
+          level: realWorldLevel
+        }
+      };
+
+      const cacheKey = generateHashKey('exam', requestPayload);
+
+      // Check Cache unless explicitly bypassed
+      if (!bypassCache) {
+        const cached = await aiCacheService.get(cacheKey);
+        if (cached && cached.data && Array.isArray(cached.data.questions) && cached.data.questions.length > 0) {
+          // Worker-accelerated question enrichment & LaTeX normalization
+          const workerEnriched = await asyncEnrichExamQuestions(cached.data.questions);
+          setExamName(cached.data.examName || "Đề kiểm tra");
+          setQuestions(workerEnriched);
+          setCacheInfo({ isFromCache: true, cachedAt: cached.cachedAt, hits: cached.hits });
+          
+          if (generateMode === "from_matrix_file" || autoDetectStructure) {
+            const mcCount = workerEnriched.filter((q: any) => q.type === 'mc').length;
+            const tfCount = workerEnriched.filter((q: any) => q.type === 'tf').length;
+            const saCount = workerEnriched.filter((q: any) => q.type === 'sa').length;
+            const esCount = workerEnriched.filter((q: any) => q.type === 'essay').length;
+            setQCounts({ mc: mcCount, tf: tfCount, sa: saCount, essay: esCount });
+            setQEnabled({ mc: mcCount > 0, tf: tfCount > 0, sa: saCount > 0, essay: esCount > 0 });
+          }
+
+          setActiveTab("exam");
+          setIsGenerating(false);
+          return;
+        }
+      }
+
       const response = await apiFetch("/api/generate-exam", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ 
-          subject, grade, duration, examType, matrix, customPrompt: finalPrompt,
-          qCounts: activeQCounts,
-          matrixFile: matrixBase64,
-          selectedTopics,
-          detailedSolution: outputConfig.detailedSolution,
-          realWorldConfig: {
-            enabled: enableRealWorld,
-            level: realWorldLevel
-          }
-        })
+        body: JSON.stringify(requestPayload)
       });
 
       if (!response.ok) {
@@ -1753,7 +1786,9 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
       const data = parseApiResponse<any>(text);
       if (data && Array.isArray(data.questions) && data.questions.length > 0) {
         setExamName(data.examName || "Đề kiểm tra");
-        let formatted = data.questions.map((q: any, idx: number) => ({
+        
+        // Offload heavy question formatting to Web Worker
+        let formatted = await asyncEnrichExamQuestions(data.questions.map((q: any, idx: number) => ({
           ...q,
           id: q.id || idx + 1,
           topic: q.topic || 'Chủ đề trọng tâm',
@@ -1762,7 +1797,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
           content: autoEnrichTextWithVisuals(q.content || (q as any).question || (q as any).text || '', false, q.options),
           solution: autoEnrichTextWithVisuals((q.solution || q.explanation || "").trim(), true),
           explanation: autoEnrichTextWithVisuals((q.solution || q.explanation || "").trim(), true)
-        }));
+        })));
 
         // Nếu có ảnh / file đính kèm (matrixBase64), tự động crop và nhúng ảnh vào câu hỏi
         if (matrixBase64) {
@@ -1772,6 +1807,10 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
             console.warn("Lỗi tự động crop hình vẽ từ file ma trận/đề thi:", cropErr);
           }
         }
+
+        // Save AI response to cache
+        await aiCacheService.set(cacheKey, 'exam', { examName: data.examName, questions: formatted }, data.examName);
+        setCacheInfo({ isFromCache: false });
 
         setQuestions(formatted);
 
@@ -2062,56 +2101,82 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                    </button>
                 </div>
 
-                {/* BANNER MA TRẬN NĂNG LỰC & BẢN ĐẶC TẢ CHI TIẾT */}
-                <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-2xs">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 bg-indigo-600 text-white rounded text-[11px] font-bold uppercase tracking-wider">
-                        Khung chuẩn GDPT 2018
-                      </span>
-                      <h4 className="font-extrabold text-slate-900 text-sm sm:text-base">
-                        Ma trận theo Năng lực môn học & Bản đặc tả chi tiết (Mẫu hình ảnh)
-                      </h4>
+                {/* BANNER MA TRẬN NĂNG LỰC & BẢN ĐẶC TẢ CHI TIẾT - CHUẨN ĐẸP KHOA HỌC */}
+                <div className="relative overflow-hidden bg-gradient-to-br from-indigo-50/90 via-white to-blue-50/70 border border-indigo-200/90 rounded-2xl p-5 sm:p-6 shadow-sm hover:shadow-md transition-shadow">
+                  {/* Subtle decorative glow */}
+                  <div className="absolute top-0 right-0 -mr-16 -mt-16 w-56 h-56 bg-gradient-to-br from-indigo-400/10 to-blue-400/10 rounded-full blur-2xl pointer-events-none" />
+
+                  {/* Header: Icon + Badges + Title */}
+                  <div className="relative flex flex-col md:flex-row md:items-start justify-between gap-4 mb-4 pb-3.5 border-b border-indigo-100/80">
+                    <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                      <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-700 to-blue-600 text-white flex items-center justify-center shadow-sm shrink-0 mt-0.5">
+                        <FileSpreadsheet className="w-6 h-6" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                          <span className="px-2.5 py-0.5 bg-indigo-600 text-white rounded-md text-[11px] font-bold uppercase tracking-wider shadow-2xs whitespace-nowrap">
+                            Khung chuẩn GDPT 2018
+                          </span>
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded-md text-[11px] font-semibold whitespace-nowrap">
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Chuẩn Bộ GD&ĐT
+                          </span>
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200/70 rounded-md text-[11px] font-medium whitespace-nowrap">
+                            Đầy đủ Ma trận & Bản đặc tả
+                          </span>
+                        </div>
+                        <h4 className="font-extrabold text-slate-900 text-base sm:text-lg lg:text-xl tracking-tight leading-snug break-normal">
+                          Ma trận theo Năng lực môn học & Bản đặc tả chi tiết (Mẫu hình ảnh)
+                        </h4>
+                      </div>
                     </div>
-                    <p className="text-xs text-slate-600 leading-relaxed max-w-2xl">
-                      Thiết lập ma trận đánh giá năng lực môn học & bảng đặc tả chi tiết kĩ thuật đề kiểm tra theo chuẩn chương trình GDPT 2018. Hệ thống tích hợp sẵn <strong>Thư viện Ma trận đa môn học</strong> (Toán, Vật lí, Hóa học, Sinh học, Tiếng Anh, Ngữ văn...) cho phép chọn nhanh, tùy chỉnh và xuất Word/Excel theo quy định của Bộ GD&ĐT.
-                    </p>
                   </div>
-                  <div className="flex items-center gap-2 flex-wrap shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setShowAiMatrixSuggestModal(true)}
-                      className="px-4 py-2 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white font-black rounded-lg text-xs flex items-center gap-2 shadow-sm transition-all cursor-pointer"
-                      title="AI tự động tính toán, phân bổ câu lệnh hỏi theo số câu, thời gian và mục tiêu năng lực GDPT 2018"
-                    >
-                      <Sparkles className="w-4 h-4 fill-white" />
-                      <span>🤖 AI Đề xuất Ma trận GDPT 2018</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowCompetencyMatrixModal(true)}
-                      className="px-4 py-2 bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-extrabold rounded-lg text-xs flex items-center gap-2 shadow-sm transition-all cursor-pointer"
-                    >
-                      <BookOpen className="w-4 h-4" />
-                      <span>📚 Thư viện Ma trận Đa Môn</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowCompetencyMatrixModal(true)}
-                      className="px-3.5 py-2 bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-200 font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-                    >
-                      <Eye className="w-4 h-4 text-indigo-600" />
-                      <span>Xem & Tùy chỉnh</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleLoadCompetencyExam11}
-                      className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold rounded-lg text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                      title="Nạp ngay 23 câu hỏi mẫu Toán 11 chuẩn 100% theo các mã câu trong ma trận hình ảnh"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-600 fill-amber-500" />
-                      <span>⚡ Nạp Đề Mẫu Chuẩn Ma trận này</span>
-                    </button>
+
+                  {/* Description */}
+                  <p className="relative text-xs sm:text-sm text-slate-600 leading-relaxed mb-4 max-w-4xl">
+                    Thiết lập ma trận đánh giá năng lực môn học & bảng đặc tả chi tiết kĩ thuật đề kiểm tra theo chuẩn chương trình GDPT 2018. Hệ thống tích hợp sẵn <strong className="text-indigo-900 font-semibold">Thư viện Ma trận đa môn học</strong> (Toán, Vật lí, Hóa học, Sinh học, Tiếng Anh, Ngữ văn...) cho phép chọn nhanh, tùy chỉnh tỷ lệ nhận biết - thông hiểu - vận dụng và xuất Word/Excel theo quy định của Bộ GD&ĐT.
+                  </p>
+
+                  {/* Action Toolbar */}
+                  <div className="relative pt-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setShowAiMatrixSuggestModal(true)}
+                        className="px-4 py-2 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white font-bold rounded-lg text-xs sm:text-sm flex items-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer active:scale-95 whitespace-nowrap"
+                        title="AI tự động tính toán, phân bổ câu lệnh hỏi theo số câu, thời gian và mục tiêu năng lực GDPT 2018"
+                      >
+                        <Sparkles className="w-4 h-4 fill-white" />
+                        <span>🤖 AI Đề xuất Ma trận GDPT 2018</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowCompetencyMatrixModal(true)}
+                        className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold rounded-lg text-xs sm:text-sm flex items-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer active:scale-95 whitespace-nowrap"
+                      >
+                        <BookOpen className="w-4 h-4" />
+                        <span>📚 Thư viện Ma trận Đa Môn</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowCompetencyMatrixModal(true)}
+                        className="px-3.5 py-2 bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-200 font-semibold rounded-lg text-xs sm:text-sm flex items-center gap-1.5 shadow-2xs hover:border-indigo-300 transition-all cursor-pointer active:scale-95 whitespace-nowrap"
+                      >
+                        <Eye className="w-4 h-4 text-indigo-600" />
+                        <span>Xem & Tùy chỉnh</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleLoadCompetencyExam11}
+                        className="w-full lg:w-auto px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300/80 font-bold rounded-lg text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs active:scale-95 whitespace-nowrap"
+                        title="Nạp ngay 23 câu hỏi mẫu Toán 11 chuẩn 100% theo các mã câu trong ma trận hình ảnh"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-amber-600 fill-amber-500" />
+                        <span>⚡ Nạp Đề Mẫu Chuẩn Ma trận này</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -2646,11 +2711,20 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                          </div>
                        </div>
                      )}
-                     <div className="flex gap-4">
-                     <button onClick={handleGenerate} disabled={isGenerating} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg flex items-center gap-2 transition-colors disabled:opacity-70 shadow-sm">
+                     <div className="flex flex-wrap items-center gap-4">
+                     <button onClick={() => handleGenerate(false)} disabled={isGenerating} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg flex items-center gap-2 transition-colors disabled:opacity-70 shadow-sm cursor-pointer">
                         {isGenerating ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Sparkles className="w-5 h-5" />} 
                         {isGenerating ? "ĐANG TẠO ĐỀ..." : "+ TẠO ĐỀ BẰNG AI"}
                      </button>
+                     {cacheInfo && (
+                       <AiCacheIndicator
+                         isFromCache={cacheInfo.isFromCache}
+                         cachedAt={cacheInfo.cachedAt}
+                         hits={cacheInfo.hits}
+                         onForceRefresh={() => handleGenerate(true)}
+                         moduleName="exam"
+                       />
+                     )}
                      <button onClick={() => {
                        setQCounts({ mc: 20, tf: 0, sa: 0, essay: 0 });
                        setMatrix(""); setCustomPrompt(""); setMatrixFile(null); setMatrixBase64(null);
@@ -2985,8 +3059,31 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                                 </button>
                             </div>
                           </div>
-                          <div id="matrix-table-wrap">
-                              <table className="w-full border-collapse border border-black text-[13px] min-w-[1000px] font-serif text-black" style={{fontFamily: '"Times New Roman", Times, serif'}}>
+                          <div id="matrix-table-wrap" className="matrix-table">
+                            <div className="text-center mb-4">
+                              <table className="w-full border-none mb-3 borderless text-center font-serif" style={{ width: '100%' }}>
+                                <tbody>
+                                  <tr>
+                                    <td className="w-1/2 align-top text-center" style={{ border: 'none' }}>
+                                      <div className="font-bold text-[12px]">SỞ GIÁO DỤC VÀ ĐÀO TẠO</div>
+                                      <div className="font-bold text-[12px]">TRƯỜNG THPT .....................</div>
+                                      <div className="text-[11px] italic">TỔ TOÁN - TIN HỌC</div>
+                                    </td>
+                                    <td className="w-1/2 align-top text-center" style={{ border: 'none' }}>
+                                      <div className="font-bold text-[12px]">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
+                                      <div className="font-bold text-[12px] underline">Độc lập - Tự do - Hạnh phúc</div>
+                                      <div className="text-[10px] italic mt-0.5">........., ngày ..... tháng ..... năm 202...</div>
+                                    </td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                              <h2 className="text-base font-bold uppercase font-serif">MA TRẬN ĐỀ KIỂM TRA ĐỊNH KỲ</h2>
+                              <h3 className="text-sm font-bold uppercase font-serif">MÔN TOÁN - LỚP {grade}</h3>
+                              <p className="text-xs italic text-slate-600 font-serif">
+                                ({examName || `ĐỀ KIỂM TRA MÔN TOÁN - KHỐI ${grade}`} - Thời gian làm bài: {duration} phút)
+                              </p>
+                            </div>
+                            <table className="w-full border-collapse border border-black text-[13px] min-w-[1000px] font-serif text-black" style={{fontFamily: '"Times New Roman", Times, serif'}}>
                             <thead>
                               <tr>
                                 <th className="border border-black p-1 text-center font-bold" rowSpan={4}>TT</th>
@@ -3006,20 +3103,31 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                                 <th className="border border-black p-1 text-center font-bold" colSpan={4}>"Đúng - Sai"</th>
                               </tr>
                               <tr>
-                                {Array.from({length: 4}).map((_, i) => (
-                                    <td key={`sub-${i}`} className="p-0 border-0">
-                                      <table className="w-full h-full border-collapse"><tbody><tr>
-                                        <th className="border-r border-black p-1 text-center font-bold w-1/4">Biết</th>
-                                        <th className="border-r border-black p-1 text-center font-bold w-1/4">Hiểu</th>
-                                        <th className="border-r border-black p-1 text-center font-bold w-1/4">VD</th>
-                                        <th className="border-0 p-1 text-center font-bold w-1/4">VDC</th>
-                                      </tr></tbody></table>
-                                    </td>
-                                ))}
-                                <th className="border border-black p-1 text-center font-bold">Biết</th>
-                                <th className="border border-black p-1 text-center font-bold">Hiểu</th>
-                                <th className="border border-black p-1 text-center font-bold">VD</th>
-                                <th className="border border-black p-1 text-center font-bold">VDC</th>
+                                {/* Nhiều lựa chọn: 4 mức độ */}
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">Biết</th>
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">Hiểu</th>
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">VD</th>
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">VDC</th>
+                                {/* Đúng - Sai: 4 mức độ */}
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">Biết</th>
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">Hiểu</th>
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">VD</th>
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">VDC</th>
+                                {/* Trả lời ngắn: 4 mức độ */}
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">Biết</th>
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">Hiểu</th>
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">VD</th>
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">VDC</th>
+                                {/* Tự luận: 4 mức độ */}
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">Biết</th>
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">Hiểu</th>
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">VD</th>
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">VDC</th>
+                                {/* Tổng: 4 mức độ */}
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">Biết</th>
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">Hiểu</th>
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">VD</th>
+                                <th className="border border-black p-1 text-center font-bold text-[11px]">VDC</th>
                               </tr>
                             </thead>
                             
@@ -3270,8 +3378,31 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                             </button>
                         </div>
                       </div>
-                      <div id="spec-table-wrap">
-                          <table className="w-full border-collapse border border-black text-[13px] min-w-[1000px] font-serif text-black" style={{fontFamily: '"Times New Roman", Times, serif'}}>
+                      <div id="spec-table-wrap" className="spec-table">
+                        <div className="text-center mb-4">
+                          <table className="w-full border-none mb-3 borderless text-center font-serif" style={{ width: '100%' }}>
+                            <tbody>
+                              <tr>
+                                <td className="w-1/2 align-top text-center" style={{ border: 'none' }}>
+                                  <div className="font-bold text-[12px]">SỞ GIÁO DỤC VÀ ĐÀO TẠO</div>
+                                  <div className="font-bold text-[12px]">TRƯỜNG THPT .....................</div>
+                                  <div className="text-[11px] italic">TỔ TOÁN - TIN HỌC</div>
+                                </td>
+                                <td className="w-1/2 align-top text-center" style={{ border: 'none' }}>
+                                  <div className="font-bold text-[12px]">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
+                                  <div className="font-bold text-[12px] underline">Độc lập - Tự do - Hạnh phúc</div>
+                                  <div className="text-[10px] italic mt-0.5">........., ngày ..... tháng ..... năm 202...</div>
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                          <h2 className="text-base font-bold uppercase font-serif">BẢN ĐẶC TẢ KĨ THUẬT ĐỀ KIỂM TRA ĐỊNH KỲ</h2>
+                          <h3 className="text-sm font-bold uppercase font-serif">MÔN TOÁN - LỚP {grade}</h3>
+                          <p className="text-xs italic text-slate-600 font-serif">
+                            (Khung yêu cầu cần đạt và quy cách câu hỏi chuẩn Bộ GD&ĐT)
+                          </p>
+                        </div>
+                        <table className="w-full border-collapse border border-black text-[13px] min-w-[1000px] font-serif text-black" style={{fontFamily: '"Times New Roman", Times, serif'}}>
                             <thead>
                               <tr className="bg-slate-50 text-center font-bold">
                                 <th className="border border-black p-2 w-12" rowSpan={2}>TT</th>

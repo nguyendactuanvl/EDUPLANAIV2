@@ -1,13 +1,12 @@
 import React, { useState } from "react";
-import { Grade9Graphing } from "./Grade9Graphing";
+import { Grades6To9GeometryHub } from "./Grades6To9GeometryHub";
 import { Grade10Graphing } from "./Grade10Graphing";
 import { Grade11Graphing } from "./Grade11Graphing";
 import { Grade12Graphing } from "./Grade12Graphing";
-import { GradeLevel } from "./types";
 import { Compass, GraduationCap, Sparkles, BookOpen } from "lucide-react";
 
 export const GraphingAndAnalysisMain: React.FC = () => {
-  const [activeGrade, setActiveGrade] = useState<GradeLevel>("grade12");
+  const [activeGrade, setActiveGrade] = useState<string>("thcs");
 
   return (
     <div className="flex flex-col gap-3 max-w-[95rem] mx-auto w-full p-2 sm:p-4">
@@ -15,66 +14,66 @@ export const GraphingAndAnalysisMain: React.FC = () => {
       <div className="bg-white p-2 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <div className="p-1.5 bg-blue-100 text-blue-700 rounded-lg">
-            <Compass className="w-4 h-4" />
+            <Compass className="w-5 h-5" />
           </div>
           <div>
             <h2 className="text-xs font-bold text-slate-800">
-              Công cụ Hỗ trợ Vẽ hình & Khảo sát hàm số (KSHS)
+              Hỗ trợ Vẽ hình & Khảo sát hàm số (KSHS) • Lớp 6 đến Lớp 12
             </h2>
             <p className="text-[10px] text-slate-500">
-              Chương trình chuẩn Toán từ Lớp 9 đến Lớp 12
+              Mô phỏng hình học THCS (Lớp 6, 7, 8, 9) & Khảo sát hàm số THPT (Lớp 10, 11, 12)
             </p>
           </div>
         </div>
 
         {/* Grade Navigation pills */}
-        <div className="flex items-center bg-slate-100 p-0.5 rounded-lg text-[11px] font-semibold gap-0.5">
+        <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-semibold gap-1 overflow-x-auto">
           <button
-            onClick={() => setActiveGrade("grade9")}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition-all ${
-              activeGrade === "grade9"
-                ? "bg-white text-blue-700 font-bold shadow-2xs"
+            onClick={() => setActiveGrade("thcs")}
+            className={`px-3 py-1.5 rounded-lg transition-all whitespace-nowrap ${
+              activeGrade === "thcs"
+                ? "bg-indigo-600 text-white font-bold shadow-2xs"
                 : "text-slate-600 hover:text-slate-900"
             }`}
           >
-            <span>Lớp 9</span>
+            <span>THCS (Lớp 6-9: Hình học & Đồ thị)</span>
           </button>
           <button
             onClick={() => setActiveGrade("grade10")}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition-all ${
+            className={`px-3 py-1.5 rounded-lg transition-all whitespace-nowrap ${
               activeGrade === "grade10"
-                ? "bg-white text-indigo-700 font-bold shadow-2xs"
+                ? "bg-indigo-600 text-white font-bold shadow-2xs"
                 : "text-slate-600 hover:text-slate-900"
             }`}
           >
-            <span>Lớp 10</span>
+            <span>Lớp 10 (KSHS)</span>
           </button>
           <button
             onClick={() => setActiveGrade("grade11")}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition-all ${
+            className={`px-3 py-1.5 rounded-lg transition-all whitespace-nowrap ${
               activeGrade === "grade11"
-                ? "bg-white text-purple-700 font-bold shadow-2xs"
+                ? "bg-purple-600 text-white font-bold shadow-2xs"
                 : "text-slate-600 hover:text-slate-900"
             }`}
           >
-            <span>Lớp 11</span>
+            <span>Lớp 11 (KSHS)</span>
           </button>
           <button
             onClick={() => setActiveGrade("grade12")}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition-all ${
+            className={`px-3 py-1.5 rounded-lg transition-all whitespace-nowrap ${
               activeGrade === "grade12"
-                ? "bg-white text-emerald-700 font-bold shadow-2xs"
+                ? "bg-emerald-600 text-white font-bold shadow-2xs"
                 : "text-slate-600 hover:text-slate-900"
             }`}
           >
-            <span>Lớp 12</span>
+            <span>Lớp 12 (KSHS)</span>
           </button>
         </div>
       </div>
 
       {/* Grade Content */}
       <div className="transition-all flex-1">
-        {activeGrade === "grade9" && <Grade9Graphing />}
+        {activeGrade === "thcs" && <Grades6To9GeometryHub />}
         {activeGrade === "grade10" && <Grade10Graphing />}
         {activeGrade === "grade11" && <Grade11Graphing />}
         {activeGrade === "grade12" && <Grade12Graphing />}

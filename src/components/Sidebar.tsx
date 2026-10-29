@@ -1,8 +1,8 @@
 import { 
   Trophy, BookOpen, Calendar, FileText, Settings, Sparkles, Clock, 
-  ClipboardList, FileEdit, FileCheck, Users, ShieldCheck, CalendarDays, 
+  ClipboardList, FileEdit, FileCheck, Users, ShieldCheck, 
   Key, Calculator, HelpCircle, PlayCircle, PenTool, ScanLine, Sun, Moon, GraduationCap, BarChart3,
-  Lock
+  Lock, Shuffle, PieChart
 } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -27,19 +27,21 @@ export function Sidebar({
     {
       title: "Chuyên môn & Soạn giảng",
       items: [
+        { id: "worksheets", label: "1. Phiếu học tập", icon: ClipboardList },
+        { id: "exercise", label: "2. Giải bài tập", icon: Sparkles },
+        { id: "pdf2word", label: "3. Chuyển PDF sang Word", icon: FileEdit },
+        { id: "exam_shuffler", label: "4. Khảo thí, Trộn Đề & Chấm OMR", icon: Shuffle },
+        { id: "exam", label: "5. Tạo & Trộn đề (Ma trận)", icon: FileCheck },
+        { id: "khgd", label: "6. Kế hoạch giáo dục", icon: Calendar },
+        { id: "khdh", label: "7. Kế hoạch dạy học", icon: BookOpen },
         { id: "math_tools", label: "Công cụ Toán học", icon: Calculator },
         { id: "de_online_pdf", label: "Đề online từ file PDF của GV", icon: FileText },
-        { id: "exam", label: "Tạo & Trộn đề", icon: FileCheck },
-        { id: "exam_stats", label: "Dashboard Thống kê kết quả thi", icon: BarChart3 },
         { id: "hsa_tsa", label: "Ôn thi HSA & TSA (ĐGNL)", icon: GraduationCap },
-        { id: "khgd", label: "Kế hoạch giáo dục", icon: Calendar },
-        { id: "khdh", label: "Kế hoạch dạy học", icon: BookOpen },
-        { id: "worksheets", label: "Phiếu học tập", icon: ClipboardList },
-        { id: "exercise", label: "Giải bài tập", icon: Sparkles },
-        { id: "pdf2word", label: "Chuyển PDF sang Word", icon: FileEdit },
         { id: "ai_studio", label: "AI Studio & Sáng tạo", icon: Sparkles },
         { id: "math_ocr", label: "Math OCR & LaTeX (Word)", icon: ScanLine },
         { id: "ink", label: "EduPlan AI Ink (Bảng vẽ)", icon: PenTool },
+        { id: "exam_stats", label: "Dashboard Thống kê kết quả thi", icon: BarChart3 },
+        { id: "overall_dashboard", label: "Dashboard Tổng quan (Tất cả lớp)", icon: PieChart },
       ]
     },
     {
@@ -54,7 +56,6 @@ export function Sidebar({
       title: "Tiện ích & Hồ sơ",
       items: [
         { id: "user_guide", label: "Hướng dẫn sử dụng", icon: HelpCircle, isAction: true },
-        { id: "timetable", label: "TKB & Công việc", icon: CalendarDays },
         { id: "circulars", label: "Tài liệu & Thông tư", icon: FileText },
         { id: "history", label: "Lịch sử đã tạo", icon: Clock },
       ]
@@ -69,8 +70,7 @@ export function Sidebar({
           <h1 className="text-xl font-bold">EduPlan AI</h1>
         </div>
         <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-          Ứng dụng đa năng cho GV<br/>
-          (LH Zalo 0835606162)
+          Ứng dụng đa năng cho GV
         </p>
       </div>
 
@@ -84,7 +84,6 @@ export function Sidebar({
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
-                const isAction = (item as any).isAction;
                 return (
                   <li key={item.id}>
                     <button
@@ -157,4 +156,3 @@ export function Sidebar({
     </div>
   );
 }
-

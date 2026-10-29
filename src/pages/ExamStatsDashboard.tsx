@@ -6,6 +6,8 @@ import {
   TrendingUp, Sparkles, Check, Printer, PieChart, Info, HelpCircle
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import { fetchExamFromCloud, saveExamToCloud } from "../lib/cloudExamStore";
 import { registerExamUrlMapping } from "../lib/smartRouter";
 
@@ -77,29 +79,115 @@ export function ExamStatsDashboard({ initialExamId, onBackToExam }: ExamStatsDas
 
   // Auto-refresh interval ref
   const autoRefreshTimerRef = useRef<any>(null);
+  const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
+  const dashboardRef = useRef<HTMLDivElement>(null);
 
-  // 1. Load history from localStorage
+  const handleExportPdf = async () => {
+    if (!dashboardRef.current) return;
+    try {
+      setIsExportingPdf(true);
+      const canvas = await html2canvas(dashboardRef.current, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        windowWidth: 1280
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      let heightLeft = pdfHeight;
+      let position = 0;
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft >= 0) {
+        position = heightLeft - pdfHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pageHeight;
+      }
+
+      pdf.save(`Bao_Cao_Ket_Qua_Thi_${selectedRoomId || 'Chung'}_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (error) {
+      console.error("Export PDF error:", error);
+      alert("Không thể xuất file PDF. Vui lòng thử lại.");
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
+  // 1. Load history from all localStorage sources
   const loadSavedRooms = () => {
+    const combined: ExamRoom[] = [];
+    const seenCodes = new Set<string>();
+
+    const addRooms = (rawList: any[]) => {
+      if (!Array.isArray(rawList)) return;
+      rawList.forEach((item: any) => {
+        const code = String(item.code || item.id || item.examId || item.pin || "").trim().toUpperCase();
+        if (code && !seenCodes.has(code)) {
+          seenCodes.add(code);
+          combined.push({
+            ...item,
+            id: code,
+            code: code,
+            title: item.title || item.examTitle || item.examName || `Phòng thi ${code}`,
+            duration: item.duration || item.examDuration || 45,
+            submissions: Array.isArray(item.submissions) ? item.submissions : []
+          });
+        }
+      });
+    };
+
+    // 1. Primary teacher exams history
     try {
       const raw = localStorage.getItem("eduplan_teacher_exams_history");
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          // Normalize room keys
-          const normalized: ExamRoom[] = parsed.map((item: any) => ({
-            ...item,
-            id: String(item.id || item.code || item.examId || item.pin || "").toUpperCase(),
-            code: String(item.code || item.id || item.examId || item.pin || "").toUpperCase(),
-            title: item.title || item.examTitle || item.examName || `Phòng thi ${item.code || item.id || ""}`
-          }));
-          setRoomsList(normalized);
-          return normalized;
+      if (raw) addRooms(JSON.parse(raw));
+    } catch (e) {}
+
+    // 2. Worksheet & Shuffled exam histories
+    try {
+      const raw = localStorage.getItem("eduplan_worksheet_exams_history");
+      if (raw) addRooms(JSON.parse(raw));
+    } catch (e) {}
+
+    try {
+      const raw = localStorage.getItem("eduplan_shuffled_exams_history");
+      if (raw) addRooms(JSON.parse(raw));
+    } catch (e) {}
+
+    // 3. Scan examCache_ keys in localStorage
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith("examCache_")) {
+          const code = key.replace("examCache_", "").trim().toUpperCase();
+          if (code && !seenCodes.has(code)) {
+            try {
+              const parsed = JSON.parse(localStorage.getItem(key) || "{}");
+              if (parsed && typeof parsed === 'object') {
+                seenCodes.add(code);
+                combined.push({
+                  ...parsed,
+                  id: code,
+                  code: code,
+                  title: parsed.examTitle || parsed.title || parsed.examName || `Phòng thi ${code}`,
+                  duration: parsed.duration || parsed.examDuration || 45,
+                  submissions: Array.isArray(parsed.submissions) ? parsed.submissions : []
+                });
+              }
+            } catch (e) {}
+          }
         }
       }
-    } catch (e) {
-      console.warn("Lỗi tải lịch sử phòng thi:", e);
-    }
-    return [];
+    } catch (e) {}
+
+    setRoomsList(combined);
+    return combined;
   };
 
   // Initial load
@@ -521,7 +609,7 @@ export function ExamStatsDashboard({ initialExamId, onBackToExam }: ExamStatsDas
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/70 p-4 sm:p-6 lg:p-8 space-y-6">
+    <div ref={dashboardRef} className="min-h-screen bg-slate-50/70 p-4 sm:p-6 lg:p-8 space-y-6">
       
       {/* Top Header Bar */}
       <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -623,6 +711,16 @@ export function ExamStatsDashboard({ initialExamId, onBackToExam }: ExamStatsDas
           >
             <Download className="w-4 h-4" />
             <span>Xuất Excel (.xlsx)</span>
+          </button>
+
+          {/* Export PDF Button */}
+          <button
+            onClick={handleExportPdf}
+            disabled={isExportingPdf}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-bold rounded-xl flex items-center gap-2 transition-all cursor-pointer shadow-2xs disabled:opacity-50"
+          >
+            <Printer className={`w-4 h-4 ${isExportingPdf ? 'animate-spin' : ''}`} />
+            <span>{isExportingPdf ? "Đang xuất PDF..." : "Xuất báo cáo PDF"}</span>
           </button>
         </div>
       </div>

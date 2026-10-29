@@ -89,30 +89,176 @@ export function autoWrapNakedMathExpression(text: string): string {
   return t;
 }
 
+export function fixUnbalancedLeftRight(mathStr: string): string {
+  if (!mathStr || (!mathStr.includes('\\left') && !mathStr.includes('\\right'))) return mathStr;
+  let s = mathStr;
+
+  // 0. Sửa các ngoặc đơn giản \left( SCD \right) -> (SCD), \left[ a; b \right] -> [a; b] không chứa phân số phức tạp
+  s = s.replace(/\\left\s*\(([a-zA-Z0-9\s,;._\+\-\*\/]+?)\\right\s*\)/g, '($1)');
+  s = s.replace(/\\left\s*\[([a-zA-Z0-9\s,;._\+\-\*\/]+?)\\right\s*\]/g, '[$1]');
+  s = s.replace(/\\left\s*\\\{([a-zA-Z0-9\s,;._\+\-\*\/]+?)\\right\s*\\\}/g, '\\{$1\\}');
+
+  // 1. Sửa ngoặc nhọn unescaped sau \left / \right (vd: \left{ -> \left\{, \right} -> \right\})
+  s = s.replace(/\\left\s*\{/g, '\\left\\{');
+  s = s.replace(/\\right\s*\}/g, '\\right\\}');
+  s = s.replace(/\\left\s*\}/g, '\\left\\}');
+  s = s.replace(/\\right\s*\{/g, '\\right\\{');
+
+  // 1.5. Chuyển đổi hệ phương trình / hàm số từng khúc từ \left\{ ... \right. sang \begin{cases} ... \end{cases}
+  // Giúp KaTeX và MathJax hiển thị trơn tru, triệt tiêu 100% lỗi "Missing \left or extra \right"
+  s = s.replace(/\\left\s*\\\{\s*(?:\\begin\s*\{(?:matrix|array|aligned)\}(?:\{[^}]*\})?)?([\s\S]*?)(?:\\end\s*\{(?:matrix|array|aligned)\})?\s*\\right\s*\./g, (_m, body) => {
+    return `\\begin{cases} ${body.trim()} \\end{cases}`;
+  });
+  s = s.replace(/\\left\s*\\\{\s*(\\begin\s*\{cases\}[\s\S]*?\\end\s*\{cases\})\s*(?:\\right\s*\.)?/g, '$1');
+
+  // 2. Tự động cân bằng số lượng \left và \right trong từng khối $...$
+  s = s.replace(/\$([^$]+)\$/g, (match, inner) => {
+    const lefts = (inner.match(/\\left\b/g) || []).length;
+    const rights = (inner.match(/\\right\b/g) || []).length;
+    if (lefts > rights) {
+      return `$${inner}${' \\right.'.repeat(lefts - rights)}$`;
+    } else if (rights > lefts) {
+      return `$${'\\left.'.repeat(rights - lefts)} ${inner}$`;
+    }
+    return match;
+  });
+
+  // 3. Nếu chuỗi không chứa $ nhưng có \left và \right không cân bằng
+  if (!s.includes('$')) {
+    const lefts = (s.match(/\\left\b/g) || []).length;
+    const rights = (s.match(/\\right\b/g) || []).length;
+    if (lefts > rights) {
+      s += ' \\right.'.repeat(lefts - rights);
+    } else if (rights > lefts) {
+      s = '\\left.'.repeat(rights - lefts) + ' ' + s;
+    }
+  }
+
+  return s;
+}
+
 export function fixTrigAndMathSyntax(text: string): string {
   if (!text) return '';
   let s = String(text);
 
-  // 1. Sửa các lệnh lượng giác/logarit/giới hạn/lượng giác ngược dính chữ (vd: \sinA -> \sin A, \cosB -> \cos B)
+  // 1. Cân bằng \left và \right phòng chống lỗi KaTeX/MathJax "Missing \left or extra \right"
+  s = fixUnbalancedLeftRight(s);
+
+  // 2. Sửa các lệnh lượng giác/logarit/giới hạn/lượng giác ngược dính chữ (vd: \sinA -> \sin A, \cosB -> \cos B)
   s = s.replace(/\\(sin|cos|tan|cot|lim|ln|log|arcsin|arccos|arctan)(?!h\b)([A-Za-z])(?![a-zA-Z0-9])/g, (_m, fn, arg) => `\\${fn} ${arg}`);
 
-  // 2. Sửa lỗi double $$ bị rách ở giữa công thức inline (vd: $\frac{a}{\sin A} = \frac{b}{\sin B}$$ = \frac{c}{\sin C} = R)
+  // 3. Chuẩn hóa block math $$...$$ thành inline math $...$ để tránh nuốt ký tự hoặc vỡ hiển thị
+  s = s.replace(/\$\$([\s\S]*?)\$\$/g, (_m, body) => '$' + body.trim() + '$');
   s = s.replace(/(?<=\$[^$\n]+)\$\$(?=[^$\n]+\$)/g, ' ');
   s = s.replace(/(?<=\$[^$\n]+)\$\$(?=\s*[\=\+\-\<>]|\s*[a-zA-Z0-9\\])/g, ' ');
-  s = s.replace(/\$\$/g, ' ');
+  s = s.replace(/\$\$/g, '$');
 
-  // 3. Dọn khoảng trắng thừa
+  // 4. Dọn khoảng trắng thừa
   s = s.replace(/ {2,}/g, ' ');
 
-  // 4. Cân bằng dấu $ nếu chuỗi bắt đầu bằng $ và có số lượng $ lẻ
+  // 5. Cân bằng dấu $ nếu có số lượng $ lẻ
   const dollarMatches = s.match(/\$/g) || [];
   if (dollarMatches.length % 2 !== 0) {
     if (s.trim().startsWith('$') && !s.trim().endsWith('$')) {
       s = s.trim() + '$';
     } else if (!s.trim().startsWith('$') && s.trim().endsWith('$')) {
-      s = '$' + s.trim();
+      const withoutTrailingDollar = s.trim().replace(/\$$/, '');
+      const hasVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(withoutTrailingDollar);
+      if (!hasVietnamese) {
+        s = '$' + s.trim();
+      } else {
+        s = withoutTrailingDollar;
+      }
     }
   }
+
+  return s;
+}
+
+/**
+ * Tự động bảo toàn và bổ sung ngoặc tròn cho hàm mũ có cơ số là phân số hoặc số âm:
+ * Ví dụ:
+ * - \frac{5}{3}^n -> \left(\frac{5}{3}\right)^n
+ * - {\frac{4}{3}}^n -> \left(\frac{4}{3}\right)^n
+ * - {-2}^n -> \left(-2\right)^n
+ * - u_n = -2^n -> u_n = \left(-2\right)^n
+ * - {-\frac{1}{2}}^n -> \left(-\frac{1}{2}\right)^n
+ */
+export function wrapFractionAndNegativePowers(text: string): string {
+  if (!text) return '';
+  let s = String(text);
+
+  // 1. {-2}^n, {-3}^{n+1}, {-a}^n -> \left(-2\right)^n
+  s = s.replace(/(?<!\\left\s*\(|\()\{\s*(-\s*(?:[0-9]+(?:\.[0-9]+)?|[a-zA-Z]))\s*\}\^(\{?[^{}\s\$,]+\}?)/g, '\\left($1\\right)^$2');
+
+  // 2. {\frac{a}{b}}^n hoặc {-\frac{a}{b}}^n -> \left(\frac{a}{b}\right)^n
+  s = s.replace(/(?<!\\left\s*\(|\()\{\s*(-?\\frac\{[^{}]+\}\{[^{}]+\})\s*\}\^(\{?[^{}\s\$,]+\}?)/g, '\\left($1\\right)^$2');
+
+  // 3. \frac{a}{b}^n hoặc -\frac{a}{b}^n -> \left(\frac{a}{b}\right)^n
+  s = s.replace(/(?<!\\left\s*\(|\()(?<![\w\\])(-?\\frac\{[^{}]+\}\{[^{}]+\})\^(\{?[^{}\s\$,]+\}?)/g, '\\left($1\\right)^$2');
+
+  // 4. Phân số có biểu thức lồng dấu ngoặc nhọn: {\frac{\sqrt{2}}{3}}^n hoặc \frac{\sqrt{2}}{3}^n
+  s = s.replace(/(?<!\\left\s*\(|\()\{\s*(-?\\frac\{(?:[^{}]|\{[^{}]*\})+\}\{(?:[^{}]|\{[^{}]*\})+\})\s*\}\^(\{?[^{}\s\$,]+\}?)/g, '\\left($1\\right)^$2');
+  s = s.replace(/(?<!\\left\s*\(|\()(?<![\w\\])(-?\\frac\{(?:[^{}]|\{[^{}]*\})+\}\{(?:[^{}]|\{[^{}]*\})+\})\^(\{?[^{}\s\$,]+\}?)/g, '\\left($1\\right)^$2');
+
+  // 5. Trong dãy số / cấp số nhân / giới hạn dạng u_n = -2^n hoặc q = -2 => (-2)^n
+  s = s.replace(/(\bu_n\s*=\s*)(-\s*[0-9]+)\^([a-zA-Z0-9]+|\{[^}]+\})/g, '$1\\left($2\\right)^$3');
+
+  return s;
+}
+
+/**
+ * Chuyển đổi môi trường LaTeX tabular (\begin{center}\begin{tabular}...\end{tabular}\end{center})
+ * sang định dạng Markdown table chuẩn để hiển thị đẹp mắt, có viền, co giãn tốt trên mọi thiết bị.
+ */
+export function convertLatexTabularToMarkdown(text: string): string {
+  if (!text || !text.includes('tabular')) return text;
+
+  // 1. Gỡ bỏ \begin{center} ... \end{center} bọc ngoài tabular
+  let s = text.replace(/\\begin\s*\{center\}\s*(\\begin\s*\{tabular\}[\s\S]*?\\end\s*\{tabular\})\s*\\end\s*\{center\}/gi, '$1');
+
+  // 2. Chuyển đổi từng khối tabular
+  s = s.replace(/\\begin\s*\{tabular\}\s*\{[^}]*\}\s*([\s\S]*?)\s*\\end\s*\{tabular\}/gi, (_match, body) => {
+    const cleanBody = body
+      .replace(/\\hline/gi, '')
+      .replace(/\\cline\s*\{[^}]*\}/gi, '')
+      .trim();
+
+    const rawRows = cleanBody.split(/\\\\/);
+    const rows = rawRows
+      .map((r: string) => r.trim())
+      .filter((r: string) => r.length > 0);
+
+    if (rows.length === 0) return '';
+
+    const parsedRows = rows.map((r: string) => {
+      return r.split('&').map((cell: string) => {
+        let c = cell.trim();
+        // Nếu ô bảng chứa biến hoặc công thức nhưng chưa được kẹp $, tự động kẹp $
+        if (c && !c.includes('$') && (/^[a-zA-Z0-9\+\-\*\/\=><\s,;\.\^_{}]+$/.test(c) || /\\frac|\\sqrt|\\pi/.test(c))) {
+          c = `$${c}$`;
+        }
+        return c;
+      });
+    });
+
+    const maxCols = Math.max(...parsedRows.map((r: string[]) => r.length));
+    if (maxCols === 0) return '';
+
+    const tableLines: string[] = [];
+    const headerRow = parsedRows[0];
+    while (headerRow.length < maxCols) headerRow.push('');
+    tableLines.push('| ' + headerRow.join(' | ') + ' |');
+    tableLines.push('| ' + Array(maxCols).fill(':---:').join(' | ') + ' |');
+
+    for (let i = 1; i < parsedRows.length; i++) {
+      const row = parsedRows[i];
+      while (row.length < maxCols) row.push('');
+      tableLines.push('| ' + row.join(' | ') + ' |');
+    }
+
+    return '\n\n' + tableLines.join('\n') + '\n\n';
+  });
 
   return s;
 }
@@ -121,7 +267,20 @@ export function normalizeMathText(text: any): string {
   if (text === null || text === undefined) return '';
   if (typeof text !== 'string') text = String(text);
 
+  // 0. Chuyển đổi môi trường LaTeX tabular sang Markdown table
+  text = convertLatexTabularToMarkdown(text);
+
+  // Chuẩn hóa \underline{A}, \underline{B}, \underline{C}, \underline{D} và \textbf{...} ngoài công thức
+  text = text.replace(/\\underline\{([A-D])\}/g, '**$1**');
+  text = text.replace(/\\underline\{([^}]+)\}/g, '<u>**$1**</u>');
+  text = text.replace(/\\textbf\{([^}]+)\}/g, '**$1**');
+
+  // Gỡ bỏ thẻ LaTeX \begin{center} và \end{center} trôi nổi
+  text = text.replace(/\\begin\s*\{center\}/gi, '\n');
+  text = text.replace(/\\end\s*\{center\}/gi, '\n');
+
   let t = fixTrigAndMathSyntax(text.normalize("NFC"));
+  t = wrapFractionAndNegativePowers(t);
 
   // 0. Chuẩn hóa các dấu ngoặc kép bị escape \" bên trong hoặc xung quanh công thức
   t = t.replace(/\\"/g, '"');
@@ -183,9 +342,13 @@ export function normalizeMathText(text: any): string {
   t = t.replace(/\\backslash\s*(leq|geq|neq|frac|sqrt|in|notin|cap|cup|setminus|forall|exists|mathbb|pi|alpha|beta)\b/gi, '\\$1');
   t = t.replace(/\\backslash\s*/gi, '\\');
 
-  // B. Chuẩn hóa ngay \geq và \leq trước tiên để tránh nhầm lẫn với eq
-  t = t.replace(/\\(geq|ge)\s*([0-9a-zA-Z]?)/g, (_m, _op, next) => next ? `\\ge ${next} ` : '\\ge ');
-  t = t.replace(/\\(leq|le)\s*([0-9a-zA-Z]?)/g, (_m, _op, next) => next ? `\\le ${next} ` : '\\le ');
+  // B. Chuẩn hóa ngay \geq và \leq trước tiên để tránh nhầm lẫn với eq (TUYỆT ĐỐI không cắt nhầm \left, \leftarrow...)
+  t = t.replace(/\\(geq|ge)(?![a-zA-Z])/g, '\\ge ');
+  t = t.replace(/\\(leq|le)(?![a-zA-Z])/g, '\\le ');
+  t = t.replace(/\\(geq|ge)([0-9])/g, '\\ge $2');
+  t = t.replace(/\\(leq|le)([0-9])/g, '\\le $2');
+  t = t.replace(/\\(geq|ge)([xyzmnabckXYZMNABCK])(?![a-zA-Z])/g, '\\ge $2');
+  t = t.replace(/\\(leq|le)([xyzmnabckXYZMNABCK])(?![a-zA-Z])/g, '\\le $2');
   t = t.replace(/([0-9a-zA-Z\$\)\}\]])\s*(?:\\)?(geq)\s*([0-9a-zA-Z\$\(\{\]\-\+])/gi, '$1 \\ge $3');
   t = t.replace(/([0-9a-zA-Z\$\)\}\]])\s*(?:\\)?(leq)\s*([0-9a-zA-Z\$\(\{\]\-\+])/gi, '$1 \\le $3');
 
@@ -230,20 +393,27 @@ export function normalizeMathText(text: any): string {
 
   // E. Chuẩn hóa dứt điểm \ge, \le, \neq, \frac
   t = t.replace(/\\dfrac\b/g, '\\frac');
-  t = t.replace(/\\geq\b/g, '\\ge');
-  t = t.replace(/\\leq\b/g, '\\le');
-  t = t.replace(/\\ge([0-9a-zA-Z])/g, '\\ge $1');
-  t = t.replace(/\\le([0-9a-zA-Z])/g, '\\le $1');
-  t = t.replace(/\\neq([0-9a-zA-Z])/g, '\\neq $1');
+  t = t.replace(/\\geq(?![a-zA-Z])/g, '\\ge');
+  t = t.replace(/\\leq(?![a-zA-Z])/g, '\\le');
+  t = t.replace(/\\ge([0-9])/g, '\\ge $1');
+  t = t.replace(/\\le([0-9])/g, '\\le $1');
+  t = t.replace(/\\ge([xyzmnabckXYZMNABCK])(?![a-zA-Z])/g, '\\ge $1');
+  t = t.replace(/\\le([xyzmnabckXYZMNABCK])(?![a-zA-Z])/g, '\\le $1');
+  t = t.replace(/\\neq([0-9])/g, '\\neq $1');
+  t = t.replace(/\\neq([xyzmnabckXYZMNABCK])(?![a-zA-Z])/g, '\\neq $1');
 
   // Chuẩn hóa dấu + và - đứng độc lập trong mô tả bảng biến thiên (vd: từ + sang -)
   t = t.replace(/(\btừ\s*)([+\-])(\s*sang\s*)([+\-])/gi, '$1$$$2$$$3$$$4$$');
 
-  // Fix common math environments
+  // Fix common math environments and piecewise cases
   t = t.replace(/\\*begin\s*\{?cases\*?\}?/gi, '\\begin{cases}');
   t = t.replace(/\\*end\s*\{?cases\*?\}?/gi, '\\end{cases}');
   t = t.replace(/\\*begin\s*\{?aligned\*?\}?/gi, '\\begin{aligned}');
   t = t.replace(/\\*end\s*\{?aligned\*?\}?/gi, '\\end{aligned}');
+  t = t.replace(/\\left\s*\\\{\s*(?:\\begin\s*\{(?:matrix|array|aligned)\}(?:\{[^}]*\})?)?([\s\S]*?)(?:\\end\s*\{(?:matrix|array|aligned)\})?\s*\\right\s*\./g, (_m, body) => {
+    return `\\begin{cases} ${body.trim()} \\end{cases}`;
+  });
+  t = t.replace(/\\left\s*\\\{\s*(\\begin\s*\{cases\}[\s\S]*?\\end\s*\{cases\})\s*(?:\\right\s*\.)?/g, '$1');
 
   // Chuẩn hóa \begin{array} {|c|c|c|\n\n} -> \begin{array}{|c|c|c|}
   t = t.replace(/\\begin\s*\{array\}\s*\{([\s\S]*?)\}/gi, (_match, cols) => {
@@ -273,6 +443,7 @@ export function normalizeMathText(text: any): string {
   // Clean leaked undefined/null
   t = t.replace(/(?<![a-zA-Z0-9_\$])(?:undefined|null)(?![a-zA-Z0-9_\$])/g, '');
 
+  t = wrapFractionAndNegativePowers(t);
   return t;
 }
 
@@ -380,11 +551,18 @@ export function wrapNakedMathInDocument(text: string): string {
 
   // 4. Tự động bọc phương trình đứng độc lập trong câu hỏi
   // ví dụ: "y = \frac{1}{\sqrt{x - 1}}" -> "$y = \frac{1}{\sqrt{x - 1}}$"
+  //        "y = f(x)" -> "$y = f(x)$"
   //        "P = \frac{\sin 2x + \sin x}{1 + \cos x + \cos 2x}" -> "$P = \frac{\sin 2x + \sin x}{1 + \cos x + \cos 2x}$"
-  s = s.replace(/(?<![\$\w])\b([yfxP]\s*=\s*(?:\\(?:frac|sqrt)|[0-9a-zA-Z\(\)\+\-\*\/\^\_]+)(?:\{[^{}]*\}|[^\$\n,;!?])+?)(?=[,;!?]|\s+(?:với|khi|thì|tại|trong|ta\s+được|đáp\s+án|[A-D][\.\:\)])|\n|$)/g, (_m, expr) => {
+  s = s.replace(/(?<![\$\w])\b([yfxP]\s*=\s*(?:\\(?:frac|sqrt)|[0-9a-zA-Z\(\)\+\-\*\/\^\_]+)(?:\{[^{}]*\}|[0-9a-zA-Z\(\)\+\-\*\/\^\_\s\\]*?))(?=[,;!?]|\s+[a-zà-ỹÀ-Ỹ]|\s+(?:với|khi|thì|tại|trong|ta\s+được|đáp\s+án|[A-D][\.\:\)])|\n|$)/g, (_m, expr) => {
     let clean = expr.trim();
     if (clean.includes('$')) return expr;
+    if (/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(clean)) return expr;
     return `$${clean}$`;
+  });
+
+  // 4.5. Tự động bọc $...$ cho các môi trường toán trần trụi: \begin{cases}...\end{cases}, f(x) = \begin{cases}...\end{cases}
+  s = s.replace(/(?<!\$)(?:([a-zA-Z]\s*(?:\([a-zA-Z0-9,\s]+\))?\s*=\s*)?(\\begin\s*\{(?:cases|aligned|matrix|pmatrix|bmatrix)\}[\s\S]*?\\end\s*\{(?:cases|aligned|matrix|pmatrix|bmatrix)\}))(?!\$)/g, (_m, prefix, env) => {
+    return `$${(prefix || '')}${env}$`;
   });
 
   return s;
@@ -639,10 +817,25 @@ export function setupGlobalMathObserver() {
           const node = mutation.addedNodes[i];
           if (node.nodeType === Node.ELEMENT_NODE) {
             const el = node as HTMLElement;
-            const tag = el.tagName;
-            if (['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT', 'PRE', 'CODE'].includes(tag)) {
+            const tag = el.tagName ? el.tagName.toUpperCase() : '';
+
+            // Skip MathJax, SVG, and code nodes generated by rendering engines
+            if (
+              tag.startsWith('MJX') ||
+              tag === 'SVG' ||
+              tag === 'PATH' ||
+              tag === 'G' ||
+              tag === 'RECT' ||
+              tag === 'TEXT' ||
+              ['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT', 'PRE', 'CODE'].includes(tag) ||
+              el.classList.contains('MathJax') ||
+              el.classList.contains('math-view-container') ||
+              el.closest('mjx-container') ||
+              el.hasAttribute('data-latex')
+            ) {
               continue;
             }
+
             const text = el.textContent || '';
             if (text.includes('$') || text.includes('`') || text.includes('\\')) {
               shouldRender = true;
@@ -651,6 +844,16 @@ export function setupGlobalMathObserver() {
           }
         }
       } else if (mutation.type === 'characterData') {
+        const parent = mutation.target.parentElement;
+        if (
+          parent &&
+          (parent.tagName.toUpperCase().startsWith('MJX') ||
+            parent.closest('mjx-container') ||
+            parent.closest('.math-view-container') ||
+            parent.classList.contains('MathJax'))
+        ) {
+          continue;
+        }
         const text = mutation.target.textContent || '';
         if (text.includes('$') || text.includes('`') || text.includes('\\')) {
           shouldRender = true;

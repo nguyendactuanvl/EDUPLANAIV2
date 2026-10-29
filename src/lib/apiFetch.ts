@@ -170,6 +170,10 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
         throw new Error("Máy chủ đang tạm thời bảo trì hoặc quá tải yêu cầu. Thầy cô vui lòng bấm 'Thử tạo lại' hoặc thiết lập API Key cá nhân trong phần Cài đặt.");
       }
     }
+
+    if (response.headers.get('x-custom-key-failed') === 'true') {
+      localStorage.removeItem(API_KEY_STORAGE);
+    }
     if (response.ok) {
       // Bọc hàm response.json() để tự động chặn lỗi SERVER_ERROR hoặc công thức LaTeX có dấu \ chưa escape
       response.json = async () => {
@@ -214,10 +218,12 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
     const isQuotaError = response.status === 429 || errorMsg.includes("vượt quá giới hạn") || errorMsg.includes("quota") || errorMsg.includes("429");
     const isInvalidKeyError = response.status === 400 && (errorMsg.includes("API_KEY_INVALID") || errorMsg.includes("API Key không hợp lệ") || errorMsg.includes("API key not valid"));
 
-    // If Custom key is used and it's invalid or auth error, tell the user explicitly
+    // If Custom key is used and it's invalid or auth error, auto-remove and seamlessly retry with system key
     if ((isAuthError || isInvalidKeyError) && customKeyUsed) {
       localStorage.removeItem(API_KEY_STORAGE);
-      throw new Error("API Key cá nhân của bạn không hợp lệ, đã bị vô hiệu hóa, hoặc đã bị xóa (Lỗi 400/401). Vui lòng kiểm tra lại. Hệ thống đã tự động gỡ API Key lỗi này.");
+      console.warn("[apiFetch] Custom API key invalid/expired. Removed from localStorage, automatically retrying with system key...");
+      skipCustomKey = true;
+      continue;
     }
     
     if (isQuotaError || response.status === 503 || errorMsg.toLowerCase().includes("overloaded")) {

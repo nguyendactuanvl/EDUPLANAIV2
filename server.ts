@@ -1,4 +1,6 @@
+import "dotenv/config";
 import path from "path";
+import fs from "fs";
 import express from "express";
 import app from "./api/index.ts";
 
@@ -15,6 +17,20 @@ async function startServer() {
         appType: "spa",
       });
       app.use(vite.middlewares);
+
+      app.get("*", async (req, res, next) => {
+        if (req.path.startsWith("/api/")) {
+          return next();
+        }
+        try {
+          const indexPath = path.resolve(process.cwd(), "index.html");
+          let template = fs.readFileSync(indexPath, "utf-8");
+          template = await vite.transformIndexHtml(req.originalUrl, template);
+          res.status(200).set({ "Content-Type": "text/html" }).end(template);
+        } catch (e) {
+          next(e);
+        }
+      });
     } else {
       const distPath = path.join(process.cwd(), "dist");
       app.use(

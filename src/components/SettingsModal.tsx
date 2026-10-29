@@ -32,11 +32,22 @@ export function SettingsModal({ isOpen, onClose, defaultTab }: SettingsModalProp
   }, [isOpen, defaultTab]);
 
   const handleSaveApiKey = () => {
-    localStorage.setItem("eduplan_gemini_api_key_v2", apiKey.trim());
+    const clean = apiKey.trim();
+    if (clean) {
+      localStorage.setItem("eduplan_gemini_api_key_v2", clean);
+    } else {
+      localStorage.removeItem("eduplan_gemini_api_key_v2");
+    }
     setIsSaved(true);
     setTimeout(() => {
       onClose();
     }, 1000);
+  };
+
+  const handleClearApiKey = () => {
+    localStorage.removeItem("eduplan_gemini_api_key_v2");
+    setApiKey("");
+    setIsSaved(true);
   };
 
   if (!isOpen) return null;
@@ -204,22 +215,35 @@ export function SettingsModal({ isOpen, onClose, defaultTab }: SettingsModalProp
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-xl transition-colors cursor-pointer"
-          >
-            Đóng
-          </button>
-          {activeTab === "apikey" && (
+        <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center gap-3">
+          <div>
+            {activeTab === "apikey" && apiKey && (
+              <button
+                type="button"
+                onClick={handleClearApiKey}
+                className="text-xs text-rose-600 hover:text-rose-800 hover:underline font-semibold cursor-pointer"
+              >
+                Xóa Key (Dùng máy chủ mặc định)
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
             <button
-              onClick={handleSaveApiKey}
-              className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors cursor-pointer shadow-xs"
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-xl transition-colors cursor-pointer"
             >
-              <Save className="w-4 h-4" />
-              {isSaved ? "Đã lưu!" : "Lưu API Key"}
+              Đóng
             </button>
-          )}
+            {activeTab === "apikey" && (
+              <button
+                onClick={handleSaveApiKey}
+                className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors cursor-pointer shadow-xs"
+              >
+                <Save className="w-4 h-4" />
+                {isSaved ? "Đã lưu!" : "Lưu API Key"}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

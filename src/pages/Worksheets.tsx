@@ -1,4 +1,4 @@
-import { apiFetch } from '../lib/apiFetch';
+import { apiFetch, getApiHeaders } from '../lib/apiFetch';
 import { useSubjects } from '../lib/subjects';
 import LZString from 'lz-string';
 import { exportHtmlToWord, exportElementToImage } from "../lib/exportUtils";
@@ -1287,9 +1287,9 @@ export function Worksheets() {
 
       const response = await fetch('/api/generate-worksheet-stream', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-        },
+        headers: getApiHeaders({
+          headers: { 'Content-Type': 'application/json' }
+        }),
         body: JSON.stringify({
           lesson: customLessonName,
           chapter: selectedChapterName,
@@ -1311,6 +1311,10 @@ export function Worksheets() {
           hasParametric
         })
       });
+
+      if (response.headers.get('x-custom-key-failed') === 'true') {
+        localStorage.removeItem('eduplan_gemini_api_key_v2');
+      }
 
       if (!response.ok || !response.body) {
         // Fallback to non-stream if streaming unavailable

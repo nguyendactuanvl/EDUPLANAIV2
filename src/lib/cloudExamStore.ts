@@ -121,12 +121,17 @@ async function safeFetchKVValue(url: string): Promise<string> {
     const text = await res.text();
     if (!text || !text.trim()) return '';
     const trimmed = text.trim();
-    if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith('{') || trimmed.startsWith('['))) {
+    if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || trimmed.startsWith('{') || trimmed.startsWith('[')) {
       try {
         const parsed = JSON.parse(trimmed);
-        return typeof parsed === 'string' ? parsed : JSON.stringify(parsed);
+        if (typeof parsed === 'string') return parsed;
+        if (parsed !== null && typeof parsed === 'object') {
+          if (typeof (parsed as any).Value === 'string') return (parsed as any).Value;
+          return JSON.stringify(parsed);
+        }
+        return String(parsed);
       } catch (e) {
-        return trimmed.replace(/^"|"$/g, '');
+        return '';
       }
     }
     return trimmed;
@@ -170,12 +175,12 @@ export async function saveExamToCloud(examId: string, data: any): Promise<boolea
     }).catch(err => console.warn('Webhook exam backup async notice:', err));
   } catch (e) {}
 
-  // 4. Sync to Cloud KV with hex chunking
+  // 4. Sync to Cloud KV with safe URL-encoded chunking
   try {
     const jsonStr = JSON.stringify(data);
-    const compressed = LZString.compressToUTF16(jsonStr);
-    const hex = strToHex(compressed);
-    const count = Math.ceil(hex.length / CHUNK_SIZE);
+    const compressed = LZString.compressToEncodedURIComponent(jsonStr);
+    const hexPayload = strToHex(compressed);
+    const count = Math.ceil(hexPayload.length / CHUNK_SIZE);
 
     // Save count
     await fetchWithRetry(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${cleanId}_C/${count}`, {
@@ -185,9 +190,9 @@ export async function saveExamToCloud(examId: string, data: any): Promise<boolea
     // Save all chunks in parallel
     const chunkPromises: Promise<any>[] = [];
     for (let i = 0; i < count; i++) {
-      const chunk = hex.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+      const chunk = hexPayload.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
       chunkPromises.push(
-        fetchWithRetry(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${cleanId}_${i}/${chunk}`, {
+        fetchWithRetry(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${cleanId}__${i}/${chunk}`, {
           method: 'POST'
         })
       );
@@ -195,7 +200,6 @@ export async function saveExamToCloud(examId: string, data: any): Promise<boolea
     await Promise.all(chunkPromises);
     return true;
   } catch (err) {
-    console.warn('Cloud KV upload error after retries:', err);
     return true;
   }
 }
@@ -225,6 +229,20 @@ export function isValidExamPayload(data: any): boolean {
 }
 
 /**
+ * Helper safely parsing JSON without throwing SyntaxError
+ */
+function safeJsonParse(str?: string | null): any {
+  if (!str || typeof str !== 'string') return null;
+  const trimmed = str.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
  * Fetches exam data from:
  * 1. Client localStorage
  * 2. Backend API (/api/exams/:id)
@@ -240,7 +258,7 @@ export async function fetchExamFromCloud(examId: string): Promise<any> {
   try {
     const cached = localStorage.getItem(`examCache_${cleanId}`);
     if (cached) {
-      const parsed = JSON.parse(cached);
+      const parsed = safeJsonParse(cached);
       if (isValidExamPayload(parsed)) {
         return parsed;
       }
@@ -259,11 +277,9 @@ export async function fetchExamFromCloud(examId: string): Promise<any> {
         return data;
       }
     }
-  } catch (e) {
-    console.warn('Backend API exam fetch error:', e);
-  }
+  } catch (e) {}
 
-  // 3. Try Distributed Cloud KV with hex chunking
+  // 3. Try Distributed Cloud KV with safe chunking
   try {
     const countVal = await safeFetchKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}_C`);
     const readCount = parseInt(countVal, 10);
@@ -271,16 +287,31 @@ export async function fetchExamFromCloud(examId: string): Promise<any> {
       const chunkPromises: Promise<string>[] = [];
       for (let i = 0; i < readCount; i++) {
         chunkPromises.push(
-          safeFetchKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}_${i}`)
+          safeFetchKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}__${i}`)
+            .then(val => val || safeFetchKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}_${i}`))
         );
       }
       const chunks = await Promise.all(chunkPromises);
-      const hexReconstructed = chunks.join('');
-      if (hexReconstructed) {
-        const restoredUtf16 = hexToStr(hexReconstructed);
-        const decompressed = LZString.decompressFromUTF16(restoredUtf16);
+      const reconstructed = chunks.join('');
+      if (reconstructed) {
+        let decompressed: string | null = null;
+        try {
+          const restored = hexToStr(reconstructed);
+          decompressed = LZString.decompressFromEncodedURIComponent(restored) ||
+                         LZString.decompressFromUTF16(restored) ||
+                         LZString.decompress(restored);
+        } catch (e) {}
+
+        if (!decompressed) {
+          try {
+            decompressed = LZString.decompressFromEncodedURIComponent(reconstructed) ||
+                           LZString.decompressFromUTF16(reconstructed) ||
+                           LZString.decompress(reconstructed);
+          } catch (e) {}
+        }
+
         if (decompressed) {
-          const parsed = JSON.parse(decompressed);
+          const parsed = safeJsonParse(decompressed);
           if (isValidExamPayload(parsed)) {
             try {
               localStorage.setItem(`examCache_${cleanId}`, JSON.stringify(parsed));
@@ -290,17 +321,19 @@ export async function fetchExamFromCloud(examId: string): Promise<any> {
         }
       }
     }
-  } catch (kvErr) {
-    console.warn('Cloud KV chunked fetch error:', kvErr);
-  }
+  } catch (kvErr) {}
 
   // 4. Try legacy single-key Cloud KV
   try {
     const val = await safeFetchKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}`);
     if (val && typeof val === 'string') {
-      const decomp = LZString.decompressFromEncodedURIComponent(val);
+      let decomp: string | null = null;
+      try {
+        decomp = LZString.decompressFromEncodedURIComponent(val) || LZString.decompressFromUTF16(val) || LZString.decompress(val) || val;
+      } catch (e) {}
+
       if (decomp) {
-        const parsed = JSON.parse(decomp);
+        const parsed = safeJsonParse(decomp);
         if (isValidExamPayload(parsed)) {
           try {
             localStorage.setItem(`examCache_${cleanId}`, JSON.stringify(parsed));
@@ -329,4 +362,11 @@ export async function fetchExamFromCloud(examId: string): Promise<any> {
 
   return null;
 }
+
+// Bind functions globally on window object to prevent any 'fetchExamFromCloud is not defined' error
+if (typeof window !== 'undefined') {
+  (window as any).fetchExamFromCloud = fetchExamFromCloud;
+  (window as any).saveExamToCloud = saveExamToCloud;
+}
+
 

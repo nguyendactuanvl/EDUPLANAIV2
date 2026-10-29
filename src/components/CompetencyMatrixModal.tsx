@@ -4,7 +4,7 @@ import {
   FileSpreadsheet, Eye, ChevronDown, ChevronRight, Edit3, Plus, Trash2, 
   BookOpen, Search, Filter, Layers, CheckCircle2, Bookmark, ArrowRight,
   GraduationCap, HelpCircle, Save, RotateCcw, BarChart3, Upload, Move,
-  PieChart as PieIcon, FolderHeart, Cloud
+  PieChart as PieIcon, FolderHeart, Cloud, School
 } from 'lucide-react';
 import { exportHtmlToWord } from '../lib/exportUtils';
 import * as XLSX from 'xlsx';
@@ -24,6 +24,8 @@ import { MatrixDragDropConfigurator } from './matrix/MatrixDragDropConfigurator'
 import { GoogleDriveMatrixModal } from './GoogleDriveMatrixModal';
 import { autoSaveMatrixToGoogleDrive } from '../lib/googleDrive';
 import { getCachedToken } from '../lib/googleAuth';
+import { HeaderConfigModal } from './HeaderConfigModal';
+import { HeaderConfig, getHeaderConfig, saveHeaderConfig } from '../lib/headerConfig';
 
 // Re-export for external consumers
 export type { MatrixRowItem, SpecUnitItem };
@@ -147,6 +149,7 @@ export function CompetencyMatrixModal({
   const [appliedNotification, setAppliedNotification] = useState<string | null>(null);
   const [showAiModal, setShowAiModal] = useState<boolean>(false);
   const [showDriveModal, setShowDriveModal] = useState<boolean>(false);
+  const [showWordExportDropdown, setShowWordExportDropdown] = useState<boolean>(false);
 
   // Auto-save to Google Drive states (30s debounce)
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle');
@@ -484,12 +487,31 @@ export function CompetencyMatrixModal({
     }
   };
 
-  // Export Word (.doc)
-  const handleExportWord = (targetTemplate?: ExamMatrixTemplate) => {
+  // Export Word (.docx) chuẩn sư phạm Bộ GD&ĐT
+  const handleExportWord = (scope: 'full' | 'matrix' | 'spec' = 'full', targetTemplate?: ExamMatrixTemplate) => {
     const tpl = targetTemplate || currentTemplate;
-    const el = document.getElementById('competency-matrix-export-wrap');
+    setShowWordExportDropdown(false);
+
+    let targetElId = 'pedagogical-matrix-full-export';
+    let fileSuffix = 'Ma_Tran_Va_Ban_Dac_Ta';
+    if (scope === 'matrix') {
+      targetElId = 'pedagogical-matrix-only-export';
+      fileSuffix = 'Ma_Tran';
+    } else if (scope === 'spec') {
+      targetElId = 'pedagogical-spec-only-export';
+      fileSuffix = 'Ban_Dac_Ta';
+    }
+
+    let el = document.getElementById(targetElId);
+    if (!el) {
+      el = document.getElementById('competency-matrix-export-wrap');
+    }
     if (!el) return;
-    exportHtmlToWord(el, `Ma_Tran_GDPT2018_${tpl.subjectName}_${tpl.grade}_${title.replace(/\s+/g, '_')}.doc`);
+
+    exportHtmlToWord(
+      el,
+      `${fileSuffix}_GDPT2018_${tpl.subjectName}_Lop${tpl.grade}_${title.replace(/\s+/g, '_')}.docx`
+    );
   };
 
   // Export Excel (.xlsx)
@@ -672,14 +694,59 @@ export function CompetencyMatrixModal({
 
           {/* Controls: Tải / Thoát */}
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => handleExportWord()}
-              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
-              title="Xuất tài liệu Word (.doc)"
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Word</span>
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowWordExportDropdown(prev => !prev)}
+                className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                title="Tải tài liệu Word (.docx) chuẩn sư phạm Bộ GD&ĐT"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Word (.docx)</span>
+                <ChevronDown className={`w-3 h-3 transition-transform ${showWordExportDropdown ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showWordExportDropdown && (
+                <div className="absolute right-0 mt-1.5 w-64 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
+                  <div className="px-3 py-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-700">
+                    Tải Word Chuẩn Sư Phạm (A4 Ngang)
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleExportWord('full')}
+                    className="w-full px-3 py-2 text-left text-xs text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-slate-700/60 font-semibold flex items-center gap-2 cursor-pointer"
+                  >
+                    <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
+                    <div>
+                      <div className="font-bold text-indigo-700 dark:text-indigo-300">Trọn bộ Ma trận & Đặc tả</div>
+                      <div className="text-[10px] text-slate-500">Đầy đủ tiêu đề, 2 bảng chuẩn và chữ ký</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExportWord('matrix')}
+                    className="w-full px-3 py-2 text-left text-xs text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-700/60 font-semibold flex items-center gap-2 cursor-pointer"
+                  >
+                    <Layers className="w-4 h-4 text-blue-500 shrink-0" />
+                    <div>
+                      <div className="font-bold">Chỉ tải Bảng Ma trận</div>
+                      <div className="text-[10px] text-slate-500">Khung ma trận năng lực 18 cột GDPT 2018</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExportWord('spec')}
+                    className="w-full px-3 py-2 text-left text-xs text-slate-700 dark:text-slate-200 hover:bg-emerald-50 dark:hover:bg-slate-700/60 font-semibold flex items-center gap-2 cursor-pointer"
+                  >
+                    <Eye className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <div>
+                      <div className="font-bold">Chỉ tải Bản đặc tả chi tiết</div>
+                      <div className="text-[10px] text-slate-500">Yêu cầu cần đạt và phân bổ các phần thi</div>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
             <button
               onClick={() => handleExportExcel()}
               className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
@@ -1788,6 +1855,631 @@ export function CompetencyMatrixModal({
           handleSelectTemplate(driveTpl, 'matrix');
         }}
       />
+
+      {/* Container chuẩn hóa xuất tài liệu Word & In ấn sư phạm Bộ GD&ĐT */}
+      <PedagogicalMatrixExportView
+        tpl={currentTemplate}
+        docTitle={title}
+        matrixRows={matrixData}
+        specUnits={specData}
+        idPrefix="pedagogical-matrix"
+      />
+    </div>
+  );
+}
+
+// ============================================================================
+// COMPONENT CHUẨN SƯ PHẠM XUẤT TÀI LIỆU WORD & IN ẤN (KHÔNG CHỨA INPUT / BUTTON)
+// ============================================================================
+
+export function PedagogicalMatrixExportView({
+  tpl,
+  docTitle,
+  matrixRows,
+  specUnits,
+  idPrefix
+}: {
+  tpl: ExamMatrixTemplate;
+  docTitle: string;
+  matrixRows: MatrixRowItem[];
+  specUnits: SpecUnitItem[];
+  idPrefix: string;
+}) {
+  const isVinhLoc = useMemo(() => {
+    return matrixRows.some(r => r.nlc || r.ds || r.tln || r.tl) || 
+      tpl.badge?.includes('EDUPLAN AI') || 
+      tpl.badge?.includes('19') ||
+      (tpl.subjectId === 'toan' && ['10', '11', '12'].includes(tpl.grade));
+  }, [matrixRows, tpl]);
+
+  const vlTotals = useMemo(() => {
+    let nlcBiet = 0, nlcHieu = 0, nlcVd = 0;
+    let dsBiet = 0, dsHieu = 0, dsVd = 0;
+    let tlnBiet = 0, tlnHieu = 0, tlnVd = 0;
+    let tlBiet = 0, tlHieu = 0, tlVd = 0;
+
+    matrixRows.forEach(r => {
+      if (r.nlc) {
+        nlcBiet += countMatrixCommands(r.nlc.biet);
+        nlcHieu += countMatrixCommands(r.nlc.hieu);
+        nlcVd += countMatrixCommands(r.nlc.vd);
+      }
+      if (r.ds) {
+        dsBiet += countMatrixCommands(r.ds.biet);
+        dsHieu += countMatrixCommands(r.ds.hieu);
+        dsVd += countMatrixCommands(r.ds.vd);
+      }
+      if (r.tln) {
+        tlnBiet += countMatrixCommands(r.tln.biet);
+        tlnHieu += countMatrixCommands(r.tln.hieu);
+        tlnVd += countMatrixCommands(r.tln.vd);
+      }
+      if (r.tl) {
+        tlBiet += countMatrixCommands(r.tl.biet);
+        tlHieu += countMatrixCommands(r.tl.hieu);
+        tlVd += countMatrixCommands(r.tl.vd);
+      }
+    });
+
+    const tongBiet = nlcBiet + dsBiet + tlnBiet + tlBiet;
+    const tongHieu = nlcHieu + dsHieu + tlnHieu + tlHieu;
+    const tongVd = nlcVd + dsVd + tlnVd + tlVd;
+    const totalQuestions = tongBiet + tongHieu + tongVd;
+
+    const scoreNlcBiet = nlcBiet * 0.25;
+    const scoreNlcHieu = nlcHieu * 0.25;
+    const scoreNlcVd = nlcVd * 0.25;
+
+    const scoreDsBiet = dsBiet * 0.25;
+    const scoreDsHieu = dsHieu * 0.25;
+    const scoreDsVd = dsVd * 0.25;
+
+    const scoreTlnBiet = tlnBiet * 0.5;
+    const scoreTlnHieu = tlnHieu * 0.5;
+    const scoreTlnVd = tlnVd * 0.5;
+
+    let scoreTlBiet = 0, scoreTlHieu = 0, scoreTlVd = 0;
+    matrixRows.forEach(r => {
+      if (r.tl?.biet) scoreTlBiet += countMatrixScore(r.tl.biet);
+      if (r.tl?.hieu) scoreTlHieu += countMatrixScore(r.tl.hieu);
+      if (r.tl?.vd) scoreTlVd += countMatrixScore(r.tl.vd);
+    });
+    if (scoreTlBiet === 0 && tlBiet > 0) scoreTlBiet = tlBiet * 0.5;
+    if (scoreTlHieu === 0 && tlHieu > 0) scoreTlHieu = 1.0;
+    if (scoreTlVd === 0 && tlVd > 0) scoreTlVd = 2.0;
+
+    const scoreBiet = scoreNlcBiet + scoreDsBiet + scoreTlnBiet + scoreTlBiet;
+    const scoreHieu = scoreNlcHieu + scoreDsHieu + scoreTlnHieu + scoreTlHieu;
+    const scoreVd = scoreNlcVd + scoreDsVd + scoreTlnVd + scoreTlVd;
+
+    return {
+      counts: {
+        nlc: { biet: nlcBiet || 8, hieu: nlcHieu || 4, vd: nlcVd || 0 },
+        ds: { biet: dsBiet || 4, hieu: dsHieu || 4, vd: dsVd || 0 },
+        tln: { biet: tlnBiet || 2, hieu: tlnHieu || 2, vd: tlnVd || 0 },
+        tl: { biet: tlBiet || 0, hieu: tlHieu || 2, vd: tlVd || 2 },
+        tong: { biet: tongBiet || 14, hieu: tongHieu || 12, vd: tongVd || 2 },
+        totalQuestions: totalQuestions || 28
+      },
+      scores: {
+        nlc: { biet: scoreNlcBiet || 2.0, hieu: scoreNlcHieu || 1.0, vd: scoreNlcVd || 0 },
+        ds: { biet: scoreDsBiet || 1.0, hieu: scoreDsHieu || 1.0, vd: scoreDsVd || 0 },
+        tln: { biet: scoreTlnBiet || 1.0, hieu: scoreTlnHieu || 1.0, vd: scoreTlnVd || 0 },
+        tl: { biet: scoreTlBiet || 0, hieu: scoreTlHieu || 1.0, vd: scoreTlVd || 2.0 },
+        tong: { biet: scoreBiet || 4.0, hieu: scoreHieu || 3.0, vd: scoreVd || 3.0 },
+        totalScore: 10.0
+      }
+    };
+  }, [matrixRows]);
+
+  const totals = useMemo(() => {
+    let c1BietCount = 0; let c1BietScore = 0;
+    let c1HieuCount = 0; let c1HieuScore = 0;
+    let c1VdCount = 0;   let c1VdScore = 0;
+    let c2BietCount = 0; let c2BietScore = 0;
+    let c2HieuCount = 0; let c2HieuScore = 0;
+    let c2VdCount = 0;   let c2VdScore = 0;
+    let c3BietCount = 0; let c3BietScore = 0;
+    let c3HieuCount = 0; let c3HieuScore = 0;
+    let c3VdCount = 0;   let c3VdScore = 0;
+
+    matrixRows.forEach(row => {
+      if (row.gqvd) {
+        c1BietCount += countMatrixCommands(row.gqvd.biet);
+        c1BietScore += countMatrixScore(row.gqvd.biet);
+        c1HieuCount += countMatrixCommands(row.gqvd.hieu);
+        c1HieuScore += countMatrixScore(row.gqvd.hieu);
+        c1VdCount += countMatrixCommands(row.gqvd.vd);
+        c1VdScore += countMatrixScore(row.gqvd.vd);
+      }
+      if (row.tuduy) {
+        c2BietCount += countMatrixCommands(row.tuduy.biet);
+        c2BietScore += countMatrixScore(row.tuduy.biet);
+        c2HieuCount += countMatrixCommands(row.tuduy.hieu);
+        c2HieuScore += countMatrixScore(row.tuduy.hieu);
+        c2VdCount += countMatrixCommands(row.tuduy.vd);
+        c2VdScore += countMatrixScore(row.tuduy.vd);
+      }
+      if (row.mohinh) {
+        c3BietCount += countMatrixCommands(row.mohinh.biet);
+        c3BietScore += countMatrixScore(row.mohinh.biet);
+        c3HieuCount += countMatrixCommands(row.mohinh.hieu);
+        c3HieuScore += countMatrixScore(row.mohinh.hieu);
+        c3VdCount += countMatrixCommands(row.mohinh.vd);
+        c3VdScore += countMatrixScore(row.mohinh.vd);
+      }
+    });
+
+    const bietScore = c1BietScore + c2BietScore + c3BietScore;
+    const hieuScore = c1HieuScore + c2HieuScore + c3HieuScore;
+    const vdScore = c1VdScore + c2VdScore + c3VdScore;
+    const totalScore = bietScore + hieuScore + vdScore;
+
+    const totalQuestions =
+      c1BietCount + c1HieuCount + c1VdCount +
+      c2BietCount + c2HieuCount + c2VdCount +
+      c3BietCount + c3HieuCount + c3VdCount;
+
+    return {
+      counts: {
+        c1: { biet: c1BietCount, hieu: c1HieuCount, vd: c1VdCount },
+        c2: { biet: c2BietCount, hieu: c2HieuCount, vd: c2VdCount },
+        c3: { biet: c3BietCount, hieu: c3HieuCount, vd: c3VdCount },
+      },
+      scores: {
+        c1: { biet: c1BietScore, hieu: c1HieuScore, vd: c1VdScore },
+        c2: { biet: c2BietScore, hieu: c2HieuScore, vd: c2VdScore },
+        c3: { biet: c3BietScore, hieu: c3HieuScore, vd: c3VdScore },
+      },
+      cognitivePercent: {
+        biet: totalScore > 0 ? Math.round((bietScore / totalScore) * 100) : 40,
+        hieu: totalScore > 0 ? Math.round((hieuScore / totalScore) * 100) : 30,
+        vd: totalScore > 0 ? Math.round((vdScore / totalScore) * 100) : 30,
+      },
+      totalQuestions: totalQuestions || 24,
+      totalScore: totalScore || 10,
+    };
+  }, [matrixRows]);
+
+  const groupedTopics = useMemo(() => {
+    const groups: { topic: string; rows: MatrixRowItem[] }[] = [];
+    matrixRows.forEach(item => {
+      const existing = groups.find(g => g.topic === item.topic);
+      if (existing) {
+        existing.rows.push(item);
+      } else {
+        groups.push({ topic: item.topic, rows: [item] });
+      }
+    });
+    return groups;
+  }, [matrixRows]);
+
+  const renderHeader = (subTitleText: string) => (
+    <div style={{ marginBottom: '16px' }}>
+      <table style={{ width: '100%', border: 'none', marginBottom: '12px' }} className="borderless">
+        <tbody>
+          <tr>
+            <td style={{ width: '45%', textAlign: 'center', verticalAlign: 'top', border: 'none', padding: '4px' }}>
+              <div style={{ fontSize: '11pt', fontWeight: 'bold' }}>SỞ GIÁO DỤC VÀ ĐÀO TẠO</div>
+              <div style={{ fontSize: '11pt', fontWeight: 'bold' }}>TRƯỜNG THPT .....................</div>
+              <div style={{ fontSize: '10pt', fontStyle: 'italic' }}>TỔ CHUYÊN MÔN: {tpl.subjectName.toUpperCase()}</div>
+            </td>
+            <td style={{ width: '55%', textAlign: 'center', verticalAlign: 'top', border: 'none', padding: '4px' }}>
+              <div style={{ fontSize: '11pt', fontWeight: 'bold' }}>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
+              <div style={{ fontSize: '11pt', fontWeight: 'bold', textDecoration: 'underline' }}>Độc lập - Tự do - Hạnh phúc</div>
+              <div style={{ fontSize: '9.5pt', fontStyle: 'italic', marginTop: '4px' }}>........., ngày ..... tháng ..... năm 202...</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style={{ textAlign: 'center', marginBottom: '14px' }}>
+        <h2 style={{ fontSize: '14pt', fontWeight: 'bold', textTransform: 'uppercase', margin: '4px 0' }}>
+          {subTitleText}
+        </h2>
+        <h3 style={{ fontSize: '12pt', fontWeight: 'bold', textTransform: 'uppercase', margin: '2px 0' }}>
+          MÔN: {tpl.subjectName.toUpperCase()} - KHỐI {tpl.grade} - NĂM HỌC 2025 - 2026
+        </h3>
+        <p style={{ fontSize: '10pt', fontStyle: 'italic', margin: '2px 0' }}>
+          ({docTitle} - Thời gian làm bài: {tpl.durationMinutes} phút - Không kể thời gian phát đề)
+        </p>
+      </div>
+    </div>
+  );
+
+  const renderMatrix = () => {
+    if (isVinhLoc) {
+      return (
+        <div style={{ width: '100%' }}>
+          <table className="w-full border-collapse border border-black text-[10.5px] font-serif text-black" style={{ fontFamily: '"Times New Roman", Times, serif', width: '100%' }}>
+            <thead>
+              <tr className="bg-slate-100 font-bold text-center">
+                <th className="border border-black p-1 text-center" style={{ width: '3.5%' }} rowSpan={3}>TT</th>
+                <th className="border border-black p-1 text-center" style={{ width: '16%' }} rowSpan={3}>Chương / Chủ đề</th>
+                <th className="border border-black p-1 text-center" style={{ width: '17%' }} rowSpan={3}>Nội dung / Đơn vị kiến thức</th>
+                <th className="border border-black p-1 text-center" colSpan={12}>MỨC ĐỘ ĐÁNH GIÁ</th>
+                <th className="border border-black p-1 text-center" colSpan={3} rowSpan={2}>TỔNG</th>
+                <th className="border border-black p-1 text-center" style={{ width: '6.5%' }} rowSpan={3}>Tỉ lệ %</th>
+              </tr>
+              <tr className="bg-slate-50 font-bold text-center">
+                <th className="border border-black p-1 text-center" colSpan={9}>TNKQ</th>
+                <th className="border border-black p-1 text-center" colSpan={3}>Tự luận</th>
+              </tr>
+              <tr className="bg-slate-100 font-bold text-center text-[9.5px]">
+                <th className="border border-black p-1 text-center">Nhiều LC<br/>Biết</th>
+                <th className="border border-black p-1 text-center">Nhiều LC<br/>Hiểu</th>
+                <th className="border border-black p-1 text-center">Nhiều LC<br/>VD</th>
+                <th className="border border-black p-1 text-center">Đúng-Sai<br/>Biết</th>
+                <th className="border border-black p-1 text-center">Đúng-Sai<br/>Hiểu</th>
+                <th className="border border-black p-1 text-center">Đúng-Sai<br/>VD</th>
+                <th className="border border-black p-1 text-center">TL ngắn<br/>Biết</th>
+                <th className="border border-black p-1 text-center">TL ngắn<br/>Hiểu</th>
+                <th className="border border-black p-1 text-center">TL ngắn<br/>VD</th>
+                <th className="border border-black p-1 text-center">TL<br/>Biết</th>
+                <th className="border border-black p-1 text-center">TL<br/>Hiểu</th>
+                <th className="border border-black p-1 text-center">TL<br/>VD</th>
+                <th className="border border-black p-1 text-center">Biết</th>
+                <th className="border border-black p-1 text-center">Hiểu</th>
+                <th className="border border-black p-1 text-center">VD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groupedTopics.map((group, gIdx) => {
+                return group.rows.map((row, rIdx) => {
+                  const bietSum = row.tong?.biet ?? (countMatrixCommands(row.nlc?.biet||'') + countMatrixCommands(row.ds?.biet||'') + countMatrixCommands(row.tln?.biet||'') + countMatrixCommands(row.tl?.biet||''));
+                  const hieuSum = row.tong?.hieu ?? (countMatrixCommands(row.nlc?.hieu||'') + countMatrixCommands(row.ds?.hieu||'') + countMatrixCommands(row.tln?.hieu||'') + countMatrixCommands(row.tl?.hieu||''));
+                  const vdSum = row.tong?.vd ?? (countMatrixCommands(row.nlc?.vd||'') + countMatrixCommands(row.ds?.vd||'') + countMatrixCommands(row.tln?.vd||'') + countMatrixCommands(row.tl?.vd||''));
+
+                  return (
+                    <tr key={row.id}>
+                      {rIdx === 0 && (
+                        <>
+                          <td className="border border-black p-1 text-center font-bold" rowSpan={group.rows.length}>
+                            {gIdx + 1}
+                          </td>
+                          <td className="border border-black p-1 font-bold" rowSpan={group.rows.length}>
+                            {row.topic}
+                          </td>
+                        </>
+                      )}
+                      <td className="border border-black p-1">{row.unit}</td>
+                      <td className="border border-black p-1 text-center font-bold text-blue-700">{row.nlc?.biet || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-blue-700">{row.nlc?.hieu || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-blue-700">{row.nlc?.vd || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-indigo-700">{row.ds?.biet || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-indigo-700">{row.ds?.hieu || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-indigo-700">{row.ds?.vd || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-purple-700">{row.tln?.biet || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-purple-700">{row.tln?.hieu || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-purple-700">{row.tln?.vd || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-rose-700">{row.tl?.biet || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-rose-700">{row.tl?.hieu || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-rose-700">{row.tl?.vd || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold">{bietSum || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold">{hieuSum || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold">{vdSum || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold">{row.tiLe || '-'}</td>
+                    </tr>
+                  );
+                });
+              })}
+
+              {/* Dòng 1: Tổng số câu */}
+              <tr className="bg-slate-100 font-bold text-center">
+                <td className="border border-black p-1 text-center font-bold" colSpan={3}>Tổng số câu</td>
+                <td className="border border-black p-1 text-center font-bold text-blue-700">{vlTotals.counts.nlc.biet}</td>
+                <td className="border border-black p-1 text-center font-bold text-blue-700">{vlTotals.counts.nlc.hieu}</td>
+                <td className="border border-black p-1 text-center font-bold text-blue-700">{vlTotals.counts.nlc.vd || '-'}</td>
+                <td className="border border-black p-1 text-center font-bold text-indigo-700">{vlTotals.counts.ds.biet}</td>
+                <td className="border border-black p-1 text-center font-bold text-indigo-700">{vlTotals.counts.ds.hieu}</td>
+                <td className="border border-black p-1 text-center font-bold text-indigo-700">{vlTotals.counts.ds.vd || '-'}</td>
+                <td className="border border-black p-1 text-center font-bold text-purple-700">{vlTotals.counts.tln.biet}</td>
+                <td className="border border-black p-1 text-center font-bold text-purple-700">{vlTotals.counts.tln.hieu}</td>
+                <td className="border border-black p-1 text-center font-bold text-purple-700">{vlTotals.counts.tln.vd || '-'}</td>
+                <td className="border border-black p-1 text-center font-bold text-rose-700">{vlTotals.counts.tl.biet || '-'}</td>
+                <td className="border border-black p-1 text-center font-bold text-rose-700">{vlTotals.counts.tl.hieu}</td>
+                <td className="border border-black p-1 text-center font-bold text-rose-700">{vlTotals.counts.tl.vd}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.counts.tong.biet}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.counts.tong.hieu}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.counts.tong.vd}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.counts.totalQuestions} lệnh hỏi</td>
+              </tr>
+
+              {/* Dòng 2: Tổng số điểm */}
+              <tr className="bg-slate-50 font-bold text-center">
+                <td className="border border-black p-1 text-center font-bold" colSpan={3}>Tổng số điểm</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.nlc.biet.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.nlc.hieu.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.nlc.vd ? vlTotals.scores.nlc.vd.toFixed(1) : '-'}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.ds.biet.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.ds.hieu.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.ds.vd ? vlTotals.scores.ds.vd.toFixed(1) : '-'}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.tln.biet.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.tln.hieu.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.tln.vd ? vlTotals.scores.tln.vd.toFixed(1) : '-'}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.tl.biet ? vlTotals.scores.tl.biet.toFixed(1) : '-'}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.tl.hieu.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.tl.vd.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.tong.biet.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.tong.hieu.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.tong.vd.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold text-emerald-800">10.0đ</td>
+              </tr>
+
+              {/* Dòng 3: Tỉ lệ % */}
+              <tr className="bg-slate-100 font-bold text-center">
+                <td className="border border-black p-1 text-center font-bold" colSpan={3}>Tỉ lệ %</td>
+                <td className="border border-black p-1 text-center font-bold" colSpan={9}>70% (TNKQ: 7.0 điểm)</td>
+                <td className="border border-black p-1 text-center font-bold" colSpan={3}>30% (Tự luận: 3.0 điểm)</td>
+                <td className="border border-black p-1 text-center font-bold">40%</td>
+                <td className="border border-black p-1 text-center font-bold">30%</td>
+                <td className="border border-black p-1 text-center font-bold">30%</td>
+                <td className="border border-black p-1 text-center font-bold text-emerald-800">100%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ width: '100%' }}>
+        <table className="w-full border-collapse border border-black text-[11px] font-serif text-black" style={{ fontFamily: '"Times New Roman", Times, serif', width: '100%' }}>
+          <thead>
+            <tr className="bg-slate-100 font-bold text-center">
+              <th className="border border-black p-1 text-center" style={{ width: '4%' }} rowSpan={3}>TT</th>
+              <th className="border border-black p-1 text-center" style={{ width: '14%' }} rowSpan={3}>Chủ đề</th>
+              <th className="border border-black p-1 text-center" style={{ width: '16%' }} rowSpan={3}>Nội dung / Đơn vị kiến thức</th>
+              <th className="border border-black p-1 text-center" colSpan={9}>NĂNG LỰC MÔN HỌC</th>
+              <th className="border border-black p-1 text-center" colSpan={3} rowSpan={2}>SỐ LỆNH HỎI</th>
+              <th className="border border-black p-1 text-center" style={{ width: '5%' }} rowSpan={3}>Tổng số lệnh</th>
+              <th className="border border-black p-1 text-center" style={{ width: '5%' }} rowSpan={3}>Điểm số</th>
+              <th className="border border-black p-1 text-center" style={{ width: '5%' }} rowSpan={3}>Tỉ lệ % điểm</th>
+              <th className="border border-black p-1 text-center" colSpan={3}>Tỉ lệ tư duy (%)</th>
+            </tr>
+            <tr className="bg-slate-50 font-bold text-center">
+              <th className="border border-black p-1 text-center" colSpan={3}>Năng lực {tpl.competencyHeaders.c1}</th>
+              <th className="border border-black p-1 text-center" colSpan={3}>Năng lực {tpl.competencyHeaders.c2}</th>
+              <th className="border border-black p-1 text-center" colSpan={3}>Năng lực {tpl.competencyHeaders.c3}</th>
+              <th className="border border-black p-1 text-center" style={{ width: '4%' }} rowSpan={2}>Biết<br/>({totals.cognitivePercent.biet}%)</th>
+              <th className="border border-black p-1 text-center" style={{ width: '4%' }} rowSpan={2}>Hiểu<br/>({totals.cognitivePercent.hieu}%)</th>
+              <th className="border border-black p-1 text-center" style={{ width: '4%' }} rowSpan={2}>Vận dụng<br/>({totals.cognitivePercent.vd}%)</th>
+            </tr>
+            <tr className="bg-slate-100 font-bold text-center text-[10px]">
+              <th className="border border-black p-1 text-center">Biết</th>
+              <th className="border border-black p-1 text-center">Hiểu</th>
+              <th className="border border-black p-1 text-center">Vận dụng</th>
+              <th className="border border-black p-1 text-center">Biết</th>
+              <th className="border border-black p-1 text-center">Hiểu</th>
+              <th className="border border-black p-1 text-center">Vận dụng</th>
+              <th className="border border-black p-1 text-center">Biết</th>
+              <th className="border border-black p-1 text-center">Hiểu</th>
+              <th className="border border-black p-1 text-center">Vận dụng</th>
+              <th className="border border-black p-1 text-center">Biết</th>
+              <th className="border border-black p-1 text-center">Hiểu</th>
+              <th className="border border-black p-1 text-center">Vận dụng</th>
+            </tr>
+          </thead>
+          <tbody>
+            {groupedTopics.map((group, gIdx) => {
+              return group.rows.map((row, rIdx) => {
+                const rowBietCommands = countMatrixCommands(row.gqvd?.biet || '') + countMatrixCommands(row.tuduy?.biet || '') + countMatrixCommands(row.mohinh?.biet || '');
+                const rowHieuCommands = countMatrixCommands(row.gqvd?.hieu || '') + countMatrixCommands(row.tuduy?.hieu || '') + countMatrixCommands(row.mohinh?.hieu || '');
+                const rowVdCommands = countMatrixCommands(row.gqvd?.vd || '') + countMatrixCommands(row.tuduy?.vd || '') + countMatrixCommands(row.mohinh?.vd || '');
+                const rowTotalCommands = rowBietCommands + rowHieuCommands + rowVdCommands;
+                const rowScore = (
+                  countMatrixScore(row.gqvd?.biet || '') + countMatrixScore(row.gqvd?.hieu || '') + countMatrixScore(row.gqvd?.vd || '') +
+                  countMatrixScore(row.tuduy?.biet || '') + countMatrixScore(row.tuduy?.hieu || '') + countMatrixScore(row.tuduy?.vd || '') +
+                  countMatrixScore(row.mohinh?.biet || '') + countMatrixScore(row.mohinh?.hieu || '') + countMatrixScore(row.mohinh?.vd || '')
+                );
+                const rowPercent = totals.totalScore > 0 ? Math.round((rowScore / totals.totalScore) * 100) : 0;
+
+                return (
+                  <tr key={row.id}>
+                    {rIdx === 0 && (
+                      <>
+                        <td className="border border-black p-1 text-center font-bold" rowSpan={group.rows.length}>
+                          {gIdx + 1}
+                        </td>
+                        <td className="border border-black p-1 font-bold" rowSpan={group.rows.length}>
+                          {row.topic}
+                        </td>
+                      </>
+                    )}
+                    <td className="border border-black p-1">{row.unit}</td>
+                    <td className="border border-black p-1 text-center font-bold">{row.gqvd?.biet || '-'}</td>
+                    <td className="border border-black p-1 text-center font-bold">{row.gqvd?.hieu || '-'}</td>
+                    <td className="border border-black p-1 text-center font-bold">{row.gqvd?.vd || '-'}</td>
+                    <td className="border border-black p-1 text-center font-bold">{row.tuduy?.biet || '-'}</td>
+                    <td className="border border-black p-1 text-center font-bold">{row.tuduy?.hieu || '-'}</td>
+                    <td className="border border-black p-1 text-center font-bold">{row.tuduy?.vd || '-'}</td>
+                    <td className="border border-black p-1 text-center font-bold">{row.mohinh?.biet || '-'}</td>
+                    <td className="border border-black p-1 text-center font-bold">{row.mohinh?.hieu || '-'}</td>
+                    <td className="border border-black p-1 text-center font-bold">{row.mohinh?.vd || '-'}</td>
+                    <td className="border border-black p-1 text-center font-bold">{rowBietCommands || '-'}</td>
+                    <td className="border border-black p-1 text-center font-bold">{rowHieuCommands || '-'}</td>
+                    <td className="border border-black p-1 text-center font-bold">{rowVdCommands || '-'}</td>
+                    <td className="border border-black p-1 text-center font-bold">{rowTotalCommands || '-'}</td>
+                    <td className="border border-black p-1 text-center font-bold">{rowScore ? rowScore.toFixed(2) : '-'}</td>
+                    <td className="border border-black p-1 text-center font-bold">{rowPercent ? `${rowPercent}%` : '-'}</td>
+                    <td className="border border-black p-1 text-center">-</td>
+                    <td className="border border-black p-1 text-center">-</td>
+                    <td className="border border-black p-1 text-center">-</td>
+                  </tr>
+                );
+              });
+            })}
+
+            {/* Dòng tổng 1 */}
+            <tr className="bg-slate-100 font-bold text-center">
+              <td className="border border-black p-1 text-center font-bold" colSpan={3}>Tổng số lệnh hỏi</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.counts.c1.biet}</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.counts.c1.hieu}</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.counts.c1.vd}</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.counts.c2.biet}</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.counts.c2.hieu}</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.counts.c2.vd}</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.counts.c3.biet}</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.counts.c3.hieu}</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.counts.c3.vd}</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.counts.c1.biet + totals.counts.c2.biet + totals.counts.c3.biet}</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.counts.c1.hieu + totals.counts.c2.hieu + totals.counts.c3.hieu}</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.counts.c1.vd + totals.counts.c2.vd + totals.counts.c3.vd}</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.totalQuestions}</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.totalScore.toFixed(1)}</td>
+              <td className="border border-black p-1 text-center font-bold">100%</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.cognitivePercent.biet}%</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.cognitivePercent.hieu}%</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.cognitivePercent.vd}%</td>
+            </tr>
+
+            {/* Dòng tổng 2 */}
+            <tr className="bg-slate-50 font-bold text-center">
+              <td className="border border-black p-1 text-center font-bold" colSpan={3}>Tổng số điểm</td>
+              <td className="border border-black p-1 text-center">{totals.scores.c1.biet.toFixed(2)}</td>
+              <td className="border border-black p-1 text-center">{totals.scores.c1.hieu.toFixed(2)}</td>
+              <td className="border border-black p-1 text-center">{totals.scores.c1.vd.toFixed(2)}</td>
+              <td className="border border-black p-1 text-center">{totals.scores.c2.biet.toFixed(2)}</td>
+              <td className="border border-black p-1 text-center">{totals.scores.c2.hieu.toFixed(2)}</td>
+              <td className="border border-black p-1 text-center">{totals.scores.c2.vd.toFixed(2)}</td>
+              <td className="border border-black p-1 text-center">{totals.scores.c3.biet.toFixed(2)}</td>
+              <td className="border border-black p-1 text-center">{totals.scores.c3.hieu.toFixed(2)}</td>
+              <td className="border border-black p-1 text-center">{totals.scores.c3.vd.toFixed(2)}</td>
+              <td className="border border-black p-1 text-center font-bold">{(totals.scores.c1.biet + totals.scores.c2.biet + totals.scores.c3.biet).toFixed(2)}</td>
+              <td className="border border-black p-1 text-center font-bold">{(totals.scores.c1.hieu + totals.scores.c2.hieu + totals.scores.c3.hieu).toFixed(2)}</td>
+              <td className="border border-black p-1 text-center font-bold">{(totals.scores.c1.vd + totals.scores.c2.vd + totals.scores.c3.vd).toFixed(2)}</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.totalQuestions}</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.totalScore.toFixed(1)}</td>
+              <td className="border border-black p-1 text-center font-bold">100%</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.cognitivePercent.biet}%</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.cognitivePercent.hieu}%</td>
+              <td className="border border-black p-1 text-center font-bold">{totals.cognitivePercent.vd}%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const renderSpec = () => (
+    <div style={{ width: '100%' }}>
+      <table className="w-full border-collapse border border-black text-[11px] font-serif text-black" style={{ fontFamily: '"Times New Roman", Times, serif', width: '100%' }}>
+        <thead>
+          <tr className="bg-slate-100 font-bold text-center">
+            <th className="border border-black p-1.5" style={{ width: '4%' }}>TT</th>
+            <th className="border border-black p-1.5" style={{ width: '13%' }}>Chủ đề</th>
+            <th className="border border-black p-1.5" style={{ width: '15%' }}>Nội dung kiến thức</th>
+            <th className="border border-black p-1.5" style={{ width: '38%' }}>Mức độ đánh giá / Yêu cầu cần đạt</th>
+            <th className="border border-black p-1.5" style={{ width: '6%' }}>Phần I<br/>(TNKQ)</th>
+            <th className="border border-black p-1.5" style={{ width: '6%' }}>Phần II<br/>(Đúng/Sai)</th>
+            <th className="border border-black p-1.5" style={{ width: '6%' }}>Phần III<br/>(Trả lời ngắn)</th>
+            <th className="border border-black p-1.5" style={{ width: '6%' }}>Phần IV<br/>(Tự luận)</th>
+            <th className="border border-black p-1.5" style={{ width: '6%' }}>Điểm số</th>
+          </tr>
+        </thead>
+        <tbody>
+          {specUnits.map((spec, sIdx) => (
+            <tr key={spec.id || sIdx}>
+              <td className="border border-black p-1.5 text-center font-bold">{sIdx + 1}</td>
+              <td className="border border-black p-1.5 font-bold">{spec.topic}</td>
+              <td className="border border-black p-1.5">{spec.unit}</td>
+              <td className="border border-black p-1.5 text-left">
+                {spec.bietSpec && (
+                  <div style={{ marginBottom: '4px' }}>
+                    <strong>Nhận biết: </strong>
+                    <span>{spec.bietSpec}</span>
+                  </div>
+                )}
+                {spec.hieuSpec && (
+                  <div style={{ marginBottom: '4px' }}>
+                    <strong>Thông hiểu: </strong>
+                    <span>{spec.hieuSpec}</span>
+                  </div>
+                )}
+                {spec.vdSpec && (
+                  <div>
+                    <strong>Vận dụng: </strong>
+                    <span>{spec.vdSpec}</span>
+                  </div>
+                )}
+              </td>
+              <td className="border border-black p-1.5 text-center font-bold">{spec.assignedQuestions?.part1 || spec.part1 || '-'}</td>
+              <td className="border border-black p-1.5 text-center font-bold">{spec.assignedQuestions?.part2 || spec.part2 || '-'}</td>
+              <td className="border border-black p-1.5 text-center font-bold">{spec.assignedQuestions?.part3 || spec.part3 || '-'}</td>
+              <td className="border border-black p-1.5 text-center font-bold">{spec.assignedQuestions?.essay || spec.part4 || '-'}</td>
+              <td className="border border-black p-1.5 text-center font-bold">{spec.points ? `${spec.points.toFixed(2)}đ` : '1.0đ'}</td>
+            </tr>
+          ))}
+          <tr className="bg-slate-100 font-bold text-center">
+            <td className="border border-black p-1.5" colSpan={4}>TỔNG CỘNG ĐỀ KIỂM TRA</td>
+            <td className="border border-black p-1.5 text-blue-700">{isVinhLoc ? '12 câu (3.0đ)' : '16 câu (4.0đ)'}</td>
+            <td className="border border-black p-1.5 text-indigo-700">2 câu (2.0đ)</td>
+            <td className="border border-black p-1.5 text-purple-700">{isVinhLoc ? '4 câu (2.0đ)' : '2 câu (1.0đ)'}</td>
+            <td className="border border-black p-1.5 text-rose-700">{isVinhLoc ? '4 câu (3.0đ)' : '3 câu (3.0đ)'}</td>
+            <td className="border border-black p-1.5 text-emerald-800">10.0đ (100%)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+
+  const renderSignatures = () => (
+    <table style={{ width: '100%', border: 'none', marginTop: '28px' }} className="borderless">
+      <tbody>
+        <tr>
+          <td style={{ width: '50%', textAlign: 'center', verticalAlign: 'top', border: 'none', padding: '6px' }}>
+            <div style={{ fontSize: '11pt', fontWeight: 'bold' }}>NGƯỜI RA ĐỀ</div>
+            <div style={{ fontSize: '9.5pt', fontStyle: 'italic' }}>(Ký và ghi rõ họ tên)</div>
+            <div style={{ height: '70px' }}></div>
+          </td>
+          <td style={{ width: '50%', textAlign: 'center', verticalAlign: 'top', border: 'none', padding: '6px' }}>
+            <div style={{ fontSize: '11pt', fontWeight: 'bold' }}>TỔ TRƯỞNG CHUYÊN MÔN</div>
+            <div style={{ fontSize: '9.5pt', fontStyle: 'italic' }}>(Ký và ghi rõ họ tên)</div>
+            <div style={{ height: '70px' }}></div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  );
+
+  return (
+    <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1200px' }} aria-hidden="true">
+      {/* 1. TRỌN BỘ MA TRẬN & ĐẶC TẢ */}
+      <div id={`${idPrefix}-full-export`} className="matrix-table p-6 bg-white text-black font-serif" style={{ fontFamily: '"Times New Roman", Times, serif' }}>
+        {renderHeader('MA TRẬN VÀ BẢN ĐẶC TẢ ĐỀ KIỂM TRA ĐỊNH KỲ')}
+        <div style={{ marginTop: '14px', marginBottom: '8px' }}>
+          <h3 style={{ fontSize: '12pt', fontWeight: 'bold', textTransform: 'uppercase', textAlign: 'center', margin: '6px 0' }}>
+            I. KHUNG MA TRẬN ĐỀ KIỂM TRA ĐÁNH GIÁ NĂNG LỰC THEO CHƯƠNG TRÌNH GDPT 2018
+          </h3>
+          {renderMatrix()}
+        </div>
+        <div style={{ pageBreakBefore: 'always', marginTop: '24px', marginBottom: '8px' }}></div>
+        <div style={{ marginTop: '14px', marginBottom: '8px' }}>
+          <h3 style={{ fontSize: '12pt', fontWeight: 'bold', textTransform: 'uppercase', textAlign: 'center', margin: '6px 0' }}>
+            II. BẢN ĐẶC TẢ KĨ THUẬT ĐỀ KIỂM TRA ĐỊNH KỲ
+          </h3>
+          {renderSpec()}
+        </div>
+        {renderSignatures()}
+      </div>
+
+      {/* 2. CHỈ MA TRẬN */}
+      <div id={`${idPrefix}-only-export`} className="matrix-table p-6 bg-white text-black font-serif" style={{ fontFamily: '"Times New Roman", Times, serif' }}>
+        {renderHeader('MA TRẬN ĐỀ KIỂM TRA ĐÁNH GIÁ NĂNG LỰC GDPT 2018')}
+        <div style={{ marginTop: '14px', marginBottom: '8px' }}>
+          {renderMatrix()}
+        </div>
+        {renderSignatures()}
+      </div>
+
+      {/* 3. CHỈ BẢN ĐẶC TẢ */}
+      <div id={`${idPrefix}-spec-only-export`} className="matrix-table p-6 bg-white text-black font-serif" style={{ fontFamily: '"Times New Roman", Times, serif' }}>
+        {renderHeader('BẢN ĐẶC TẢ KĨ THUẬT ĐỀ KIỂM TRA ĐỊNH KỲ')}
+        <div style={{ marginTop: '14px', marginBottom: '8px' }}>
+          {renderSpec()}
+        </div>
+        {renderSignatures()}
+      </div>
     </div>
   );
 }
@@ -1812,6 +2504,13 @@ export function CompetencyMatrixInlineView({
   specUnits?: SpecUnitItem[];
 }) {
   const [showSpecTable, setShowSpecTable] = useState(true);
+  const [showInlineWordDropdown, setShowInlineWordDropdown] = useState(false);
+
+  const inlineTemplate = useMemo<ExamMatrixTemplate>(() => {
+    if (grade === '12') return TEMPLATE_TOAN_12_GK1;
+    if (grade === '10') return ALL_MATRIX_TEMPLATES.find(t => t.grade === '10') || TEMPLATE_TOAN_11_GK1;
+    return TEMPLATE_TOAN_11_GK1;
+  }, [grade]);
 
   // Dynamic matrix and spec data selection based on props or grade
   const activeMatrix = useMemo(() => {
@@ -1830,70 +2529,241 @@ export function CompetencyMatrixInlineView({
 
   const gradeDisplay = grade === '12' ? 'KHỐI 12' : grade === '10' ? 'KHỐI 10' : 'KHỐI 11';
 
-  const handleExportWord = () => {
-    const el = document.getElementById('competency-matrix-inline-container');
+  const isVinhLoc = useMemo(() => {
+    return activeMatrix.some(r => r.nlc || r.ds || r.tln || r.tl) || 
+      inlineTemplate.badge?.includes('EDUPLAN AI') || 
+      inlineTemplate.badge?.includes('19') ||
+      ['10', '11', '12'].includes(grade);
+  }, [activeMatrix, inlineTemplate, grade]);
+
+  const groupedTopics = useMemo(() => {
+    const groups: { topic: string; rows: MatrixRowItem[] }[] = [];
+    activeMatrix.forEach(item => {
+      const existing = groups.find(g => g.topic === item.topic);
+      if (existing) {
+        existing.rows.push(item);
+      } else {
+        groups.push({ topic: item.topic, rows: [item] });
+      }
+    });
+    return groups;
+  }, [activeMatrix]);
+
+  const vlTotals = useMemo(() => {
+    let nlcBiet = 0, nlcHieu = 0, nlcVd = 0;
+    let dsBiet = 0, dsHieu = 0, dsVd = 0;
+    let tlnBiet = 0, tlnHieu = 0, tlnVd = 0;
+    let tlBiet = 0, tlHieu = 0, tlVd = 0;
+
+    activeMatrix.forEach(r => {
+      if (r.nlc) {
+        nlcBiet += countMatrixCommands(r.nlc.biet);
+        nlcHieu += countMatrixCommands(r.nlc.hieu);
+        nlcVd += countMatrixCommands(r.nlc.vd);
+      }
+      if (r.ds) {
+        dsBiet += countMatrixCommands(r.ds.biet);
+        dsHieu += countMatrixCommands(r.ds.hieu);
+        dsVd += countMatrixCommands(r.ds.vd);
+      }
+      if (r.tln) {
+        tlnBiet += countMatrixCommands(r.tln.biet);
+        tlnHieu += countMatrixCommands(r.tln.hieu);
+        tlnVd += countMatrixCommands(r.tln.vd);
+      }
+      if (r.tl) {
+        tlBiet += countMatrixCommands(r.tl.biet);
+        tlHieu += countMatrixCommands(r.tl.hieu);
+        tlVd += countMatrixCommands(r.tl.vd);
+      }
+    });
+
+    const tongBiet = nlcBiet + dsBiet + tlnBiet + tlBiet;
+    const tongHieu = nlcHieu + dsHieu + tlnHieu + tlHieu;
+    const tongVd = nlcVd + dsVd + tlnVd + tlVd;
+    const totalQuestions = tongBiet + tongHieu + tongVd;
+
+    const scoreNlcBiet = nlcBiet * 0.25;
+    const scoreNlcHieu = nlcHieu * 0.25;
+    const scoreNlcVd = nlcVd * 0.25;
+
+    const scoreDsBiet = dsBiet * 0.25;
+    const scoreDsHieu = dsHieu * 0.25;
+    const scoreDsVd = dsVd * 0.25;
+
+    const scoreTlnBiet = tlnBiet * 0.5;
+    const scoreTlnHieu = tlnHieu * 0.5;
+    const scoreTlnVd = tlnVd * 0.5;
+
+    let scoreTlBiet = 0, scoreTlHieu = 0, scoreTlVd = 0;
+    activeMatrix.forEach(r => {
+      if (r.tl?.biet) scoreTlBiet += countMatrixScore(r.tl.biet);
+      if (r.tl?.hieu) scoreTlHieu += countMatrixScore(r.tl.hieu);
+      if (r.tl?.vd) scoreTlVd += countMatrixScore(r.tl.vd);
+    });
+    if (scoreTlBiet === 0 && tlBiet > 0) scoreTlBiet = tlBiet * 0.5;
+    if (scoreTlHieu === 0 && tlHieu > 0) scoreTlHieu = 1.0;
+    if (scoreTlVd === 0 && tlVd > 0) scoreTlVd = 2.0;
+
+    const scoreBiet = scoreNlcBiet + scoreDsBiet + scoreTlnBiet + scoreTlBiet;
+    const scoreHieu = scoreNlcHieu + scoreDsHieu + scoreTlnHieu + scoreTlHieu;
+    const scoreVd = scoreNlcVd + scoreDsVd + scoreTlnVd + scoreTlVd;
+
+    return {
+      counts: {
+        nlc: { biet: nlcBiet || 8, hieu: nlcHieu || 4, vd: nlcVd || 0 },
+        ds: { biet: dsBiet || 4, hieu: dsHieu || 4, vd: dsVd || 0 },
+        tln: { biet: tlnBiet || 2, hieu: tlnHieu || 2, vd: tlnVd || 0 },
+        tl: { biet: tlBiet || 0, hieu: tlHieu || 2, vd: tlVd || 2 },
+        tong: { biet: tongBiet || 14, hieu: tongHieu || 12, vd: tongVd || 2 },
+        totalQuestions: totalQuestions || 28
+      },
+      scores: {
+        nlc: { biet: scoreNlcBiet || 2.0, hieu: scoreNlcHieu || 1.0, vd: scoreNlcVd || 0 },
+        ds: { biet: scoreDsBiet || 1.0, hieu: scoreDsHieu || 1.0, vd: scoreDsVd || 0 },
+        tln: { biet: scoreTlnBiet || 1.0, hieu: scoreTlnHieu || 1.0, vd: scoreTlnVd || 0 },
+        tl: { biet: scoreTlBiet || 0, hieu: scoreTlHieu || 1.0, vd: scoreTlVd || 2.0 },
+        tong: { biet: scoreBiet || 4.0, hieu: scoreHieu || 3.0, vd: scoreVd || 3.0 },
+        totalScore: 10.0
+      }
+    };
+  }, [activeMatrix]);
+
+  const handleExportWord = (scope: 'full' | 'matrix' | 'spec' = 'full') => {
+    setShowInlineWordDropdown(false);
+    let targetElId = 'pedagogical-inline-full-export';
+    let fileSuffix = 'Ma_Tran_Va_Ban_Dac_Ta';
+    if (scope === 'matrix') {
+      targetElId = 'pedagogical-inline-only-export';
+      fileSuffix = 'Ma_Tran';
+    } else if (scope === 'spec') {
+      targetElId = 'pedagogical-inline-spec-only-export';
+      fileSuffix = 'Ban_Dac_Ta';
+    }
+
+    const el = document.getElementById(targetElId) || document.getElementById('competency-matrix-inline-container');
     if (!el) return;
-    exportHtmlToWord(el, `Ma_Tran_Nang_Luc_GDPT11_${(examTitle || 'De_Kiem_Tra').replace(/\s+/g, '_')}.doc`);
+
+    exportHtmlToWord(
+      el,
+      `${fileSuffix}_GDPT2018_${inlineTemplate.subjectName}_Lop${inlineTemplate.grade}_${(examTitle || 'De_Kiem_Tra').replace(/\s+/g, '_')}.docx`
+    );
   };
 
   const handleExportExcel = () => {
     try {
       const wb = XLSX.utils.book_new();
-      const matrixAoa: any[][] = [
-        [examTitle.toUpperCase()],
-        [],
-        ['TT', 'Chủ đề', 'Nội dung/ Đơn vị kiến thức', 'GQVĐ - Biết', 'GQVĐ - Hiểu', 'GQVĐ - VD', 'Tư duy - Biết', 'Tư duy - Hiểu', 'Tư duy - VD', 'Mô hình - Biết', 'Mô hình - Hiểu', 'Mô hình - VD', 'Tổng số lệnh', 'Điểm', 'Tỉ lệ %']
-      ];
 
-      SAMPLE_COMPETENCY_MATRIX_11.forEach((r, idx) => {
+      if (isVinhLoc) {
+        const matrixAoa: any[][] = [
+          [examTitle.toUpperCase()],
+          [`KHUNG MA TRẬN ĐỀ KIỂM TRA MÔN TOÁN - ${gradeDisplay} (19 CỘT MẪU THPT VINH LỘC 2026-2027)`],
+          [],
+          [
+            'TT', 'Chương / Chủ đề', 'Nội dung / Đơn vị kiến thức',
+            'Nhiều LC - Biết', 'Nhiều LC - Hiểu', 'Nhiều LC - VD',
+            'Đúng-Sai - Biết', 'Đúng-Sai - Hiểu', 'Đúng-Sai - VD',
+            'TL ngắn - Biết', 'TL ngắn - Hiểu', 'TL ngắn - VD',
+            'Tự luận - Biết', 'Tự luận - Hiểu', 'Tự luận - VD',
+            'Tổng Biết', 'Tổng Hiểu', 'Tổng VD', 'Tỉ lệ %'
+          ]
+        ];
+
+        let tt = 1;
+        groupedTopics.forEach(group => {
+          group.rows.forEach(r => {
+            const bietSum = r.tong?.biet ?? (countMatrixCommands(r.nlc?.biet||'') + countMatrixCommands(r.ds?.biet||'') + countMatrixCommands(r.tln?.biet||'') + countMatrixCommands(r.tl?.biet||''));
+            const hieuSum = r.tong?.hieu ?? (countMatrixCommands(r.nlc?.hieu||'') + countMatrixCommands(r.ds?.hieu||'') + countMatrixCommands(r.tln?.hieu||'') + countMatrixCommands(r.tl?.hieu||''));
+            const vdSum = r.tong?.vd ?? (countMatrixCommands(r.nlc?.vd||'') + countMatrixCommands(r.ds?.vd||'') + countMatrixCommands(r.tln?.vd||'') + countMatrixCommands(r.tl?.vd||''));
+
+            matrixAoa.push([
+              tt++,
+              r.topic,
+              r.unit,
+              r.nlc?.biet || '-', r.nlc?.hieu || '-', r.nlc?.vd || '-',
+              r.ds?.biet || '-', r.ds?.hieu || '-', r.ds?.vd || '-',
+              r.tln?.biet || '-', r.tln?.hieu || '-', r.tln?.vd || '-',
+              r.tl?.biet || '-', r.tl?.hieu || '-', r.tl?.vd || '-',
+              bietSum, hieuSum, vdSum,
+              r.tiLe || '-'
+            ]);
+          });
+        });
+
         matrixAoa.push([
-          idx + 1,
-          r.topic,
-          r.unit,
-          r.gqvd.biet,
-          r.gqvd.hieu,
-          r.gqvd.vd,
-          r.tuduy.biet,
-          r.tuduy.hieu,
-          r.tuduy.vd,
-          r.mohinh.biet,
-          r.mohinh.hieu,
-          r.mohinh.vd,
-          2,
-          '0.5-1.0',
-          '5-10%'
+          'Tổng số câu', '', '',
+          vlTotals.counts.nlc.biet, vlTotals.counts.nlc.hieu, vlTotals.counts.nlc.vd || '-',
+          vlTotals.counts.ds.biet, vlTotals.counts.ds.hieu, vlTotals.counts.ds.vd || '-',
+          vlTotals.counts.tln.biet, vlTotals.counts.tln.hieu, vlTotals.counts.tln.vd || '-',
+          vlTotals.counts.tl.biet || '-', vlTotals.counts.tl.hieu, vlTotals.counts.tl.vd,
+          vlTotals.counts.tong.biet, vlTotals.counts.tong.hieu, vlTotals.counts.tong.vd,
+          `${vlTotals.counts.totalQuestions} lệnh hỏi`
         ]);
-      });
 
-      matrixAoa.push(['Tổng số lệnh hỏi', '', '', '7', '3', '1', '5', '3', '1', '2', '1', '1', '24', '10.0đ', '100%']);
-      matrixAoa.push(['Tổng số điểm', '', '', '1.75', '1.0', '1.0', '1.75', '1.25', '1.0', '0.5', '0.75', '1.0', '24', '10.0đ', '100%']);
-      matrixAoa.push(['Tỉ lệ tư duy', '', '', 'Biết: 40%', '', '', 'Hiểu: 30%', '', '', 'Vận dụng: 30%', '', '', '', '10.0đ', '100%']);
+        matrixAoa.push([
+          'Tổng số điểm', '', '',
+          vlTotals.scores.nlc.biet.toFixed(1), vlTotals.scores.nlc.hieu.toFixed(1), vlTotals.scores.nlc.vd ? vlTotals.scores.nlc.vd.toFixed(1) : '-',
+          vlTotals.scores.ds.biet.toFixed(1), vlTotals.scores.ds.hieu.toFixed(1), vlTotals.scores.ds.vd ? vlTotals.scores.ds.vd.toFixed(1) : '-',
+          vlTotals.scores.tln.biet.toFixed(1), vlTotals.scores.tln.hieu.toFixed(1), vlTotals.scores.tln.vd ? vlTotals.scores.tln.vd.toFixed(1) : '-',
+          vlTotals.scores.tl.biet ? vlTotals.scores.tl.biet.toFixed(1) : '-', vlTotals.scores.tl.hieu.toFixed(1), vlTotals.scores.tl.vd.toFixed(1),
+          vlTotals.scores.tong.biet.toFixed(1), vlTotals.scores.tong.hieu.toFixed(1), vlTotals.scores.tong.vd.toFixed(1),
+          '10.0đ'
+        ]);
 
-      const ws = XLSX.utils.aoa_to_sheet(matrixAoa);
-      XLSX.utils.book_append_sheet(wb, ws, "Ma_Tran_GDPT_2018");
+        matrixAoa.push([
+          'Tỉ lệ %', '', '',
+          'TNKQ: 70% (7.0 điểm)', '', '', '', '', '', '', '', '',
+          'Tự luận: 30% (3.0 điểm)', '', '',
+          '40%', '30%', '30%', '100%'
+        ]);
+
+        const ws = XLSX.utils.aoa_to_sheet(matrixAoa);
+        XLSX.utils.book_append_sheet(wb, ws, "Ma_Tran_19_Cot_Vinh_Loc");
+      } else {
+        const matrixAoa: any[][] = [
+          [examTitle.toUpperCase()],
+          [],
+          ['TT', 'Chủ đề', 'Nội dung/ Đơn vị kiến thức', 'GQVĐ - Biết', 'GQVĐ - Hiểu', 'GQVĐ - VD', 'Tư duy - Biết', 'Tư duy - Hiểu', 'Tư duy - VD', 'Mô hình - Biết', 'Mô hình - Hiểu', 'Mô hình - VD', 'Tổng số lệnh', 'Điểm', 'Tỉ lệ %']
+        ];
+
+        activeMatrix.forEach((r, idx) => {
+          matrixAoa.push([
+            idx + 1,
+            r.topic,
+            r.unit,
+            r.gqvd?.biet || '-', r.gqvd?.hieu || '-', r.gqvd?.vd || '-',
+            r.tuduy?.biet || '-', r.tuduy?.hieu || '-', r.tuduy?.vd || '-',
+            r.mohinh?.biet || '-', r.mohinh?.hieu || '-', r.mohinh?.vd || '-',
+            2, '0.5-1.0', '5-10%'
+          ]);
+        });
+
+        const ws = XLSX.utils.aoa_to_sheet(matrixAoa);
+        XLSX.utils.book_append_sheet(wb, ws, "Ma_Tran_GDPT_2018");
+      }
 
       const specAoa: any[][] = [
-        ['BẢN ĐẶC TẢ CHI TIẾT KĨ THUẬT ĐỀ KIỂM TRA'],
+        [`BẢN ĐẶC TẢ CHI TIẾT KĨ THUẬT ĐỀ KIỂM TRA MÔN TOÁN - ${gradeDisplay}`],
         [],
         ['TT', 'Chủ đề', 'Nội dung kiến thức', 'Yêu cầu cần đạt', 'Phần I (TN)', 'Phần II (Đ/S)', 'Phần III (TLN)', 'Tự luận', 'Điểm']
       ];
-      SAMPLE_SPEC_LIST_11.forEach((s, idx) => {
+      activeSpec.forEach((s, idx) => {
         specAoa.push([
           idx + 1,
           s.topic,
           s.unit,
           `Nhận biết:\n${s.bietSpec}\n\nThông hiểu:\n${s.hieuSpec}\n\nVận dụng:\n${s.vdSpec}`,
-          s.assignedQuestions.part1,
-          s.assignedQuestions.part2,
-          s.assignedQuestions.part3,
-          s.assignedQuestions.essay,
-          `${s.points.toFixed(2)}đ`
+          s.assignedQuestions?.part1 || '-',
+          s.assignedQuestions?.part2 || '-',
+          s.assignedQuestions?.part3 || '-',
+          s.assignedQuestions?.essay || '-',
+          s.points ? `${s.points.toFixed(2)}đ` : '1.0đ'
         ]);
       });
       const wsSpec = XLSX.utils.aoa_to_sheet(specAoa);
       XLSX.utils.book_append_sheet(wb, wsSpec, "Ban_Dac_Ta_Chi_Tiet");
 
-      XLSX.writeFile(wb, `Ma_Tran_Va_Ban_Dac_Ta_GDPT11.xlsx`);
+      XLSX.writeFile(wb, `Ma_Tran_Va_Ban_Dac_Ta_GDPT_${inlineTemplate.subjectName}_${gradeDisplay}.xlsx`);
     } catch (e) {
       console.error(e);
       alert("Không thể xuất file Excel. Vui lòng thử lại!");
@@ -1903,21 +2773,21 @@ export function CompetencyMatrixInlineView({
   return (
     <div className="space-y-6" id="competency-matrix-inline-container">
       {/* Thanh công cụ tương tác */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 p-4 rounded-xl border border-indigo-200 no-print shadow-2xs">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 bg-indigo-600 text-white rounded text-[11px] font-bold uppercase tracking-wider">
-              Khung chuẩn GDPT 2018
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 p-4 rounded-xl border border-indigo-200 no-print shadow-2xs w-full">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="px-2.5 py-0.5 bg-indigo-600 text-white rounded text-[11px] font-bold uppercase tracking-wider whitespace-nowrap">
+              Khung chuẩn GDPT 2018 • THPT EDUPLAN AI
             </span>
             <span className="text-xs font-semibold text-indigo-900">
-              Thư viện Mẫu Đa Môn & Chuẩn Hình Ảnh Bộ GD&ĐT
+              Mẫu ma trận 19 cột & Bản đặc tả chi tiết 28 lệnh hỏi
             </span>
           </div>
           <h3 className="font-extrabold text-slate-900 text-base mt-1">
-            Ma trận theo Năng lực môn học & Bản đặc tả chi tiết ({examTitle || "Toán 11"})
+            Ma trận 19 cột & Bản đặc tả chi tiết ({examTitle || `Toán ${grade}`})
           </h3>
           <p className="text-xs text-slate-600 mt-0.5">
-            Phân bổ 3 năng lực cốt lõi: <strong>Giải quyết vấn đề</strong> (11 lệnh hỏi), <strong>Tư duy</strong> (9 lệnh hỏi), <strong>Mô hình hoá</strong> (4 lệnh hỏi). Tỉ lệ: 40% Biết - 30% Hiểu - 30% Vận dụng.
+            Cấu trúc 4 phần chuẩn: <strong>Phần I</strong> (12 câu TNKQ - 3.0đ), <strong>Phần II</strong> (2 câu Đúng/Sai 8 lệnh - 2.0đ), <strong>Phần III</strong> (4 câu TLN - 2.0đ), <strong>Phần IV</strong> (4 câu Tự luận - 3.0đ). Tỉ lệ: 40% Biết - 30% Hiểu - 30% Vận dụng.
           </p>
         </div>
 
@@ -1929,7 +2799,7 @@ export function CompetencyMatrixInlineView({
             title="Mở Thư viện Ma trận đa môn học để đổi môn hoặc chỉnh sửa chi tiết"
           >
             <BookOpen className="w-3.5 h-3.5" />
-            <span>📚 Thư viện Ma trận (Đa môn)</span>
+            <span>📚 Thư viện Ma trận</span>
           </button>
 
           {onLoadSampleExam && (
@@ -1937,10 +2807,10 @@ export function CompetencyMatrixInlineView({
               type="button"
               onClick={onLoadSampleExam}
               className="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
-              title="Nạp ngay bộ 23 câu hỏi khớp 100% mã câu trong ma trận này"
+              title="Nạp ngay bộ 28 lệnh hỏi khớp 100% mã câu trong ma trận này"
             >
               <Sparkles className="w-3.5 h-3.5 fill-slate-950" />
-              <span>Nạp 23 câu mẫu</span>
+              <span>Nạp 28 lệnh mẫu</span>
             </button>
           )}
 
@@ -1953,14 +2823,59 @@ export function CompetencyMatrixInlineView({
             <span>{showSpecTable ? 'Ẩn Bảng đặc tả' : 'Hiện Bảng đặc tả'}</span>
           </button>
 
-          <button
-            type="button"
-            onClick={handleExportWord}
-            className="px-3 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer transition-all"
-          >
-            <FileText className="w-3.5 h-3.5" />
-            <span>Xuất Word (.doc)</span>
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowInlineWordDropdown(prev => !prev)}
+              className="px-3 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer transition-all"
+              title="Tải tài liệu Word (.docx) chuẩn sư phạm Bộ GD&ĐT"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Xuất Word (.docx)</span>
+              <ChevronDown className={`w-3 h-3 transition-transform ${showInlineWordDropdown ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showInlineWordDropdown && (
+              <div className="absolute right-0 mt-1.5 w-64 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
+                <div className="px-3 py-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                  Tải Word Chuẩn Sư Phạm (A4 Ngang)
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleExportWord('full')}
+                  className="w-full px-3 py-2 text-left text-xs text-slate-700 hover:bg-indigo-50 font-semibold flex items-center gap-2 cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
+                  <div>
+                    <div className="font-bold text-indigo-700">Trọn bộ Ma trận & Đặc tả</div>
+                    <div className="text-[10px] text-slate-500">Đầy đủ tiêu đề, 2 bảng chuẩn và chữ ký</div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExportWord('matrix')}
+                  className="w-full px-3 py-2 text-left text-xs text-slate-700 hover:bg-blue-50 font-semibold flex items-center gap-2 cursor-pointer"
+                >
+                  <Layers className="w-4 h-4 text-blue-500 shrink-0" />
+                  <div>
+                    <div className="font-bold">Chỉ tải Bảng Ma trận</div>
+                    <div className="text-[10px] text-slate-500">Khung ma trận 19 cột THPT EDUPLAN AI</div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExportWord('spec')}
+                  className="w-full px-3 py-2 text-left text-xs text-slate-700 hover:bg-emerald-50 font-semibold flex items-center gap-2 cursor-pointer"
+                >
+                  <Eye className="w-4 h-4 text-emerald-500 shrink-0" />
+                  <div>
+                    <div className="font-bold">Chỉ tải Bản đặc tả chi tiết</div>
+                    <div className="text-[10px] text-slate-500">Yêu cầu cần đạt và phân bổ các phần thi</div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
 
           <button
             type="button"
@@ -1982,331 +2897,222 @@ export function CompetencyMatrixInlineView({
         </div>
       </div>
 
-      {/* I. BẢNG MA TRẬN THEO NĂNG LỰC MÔN HỌC (CHUẨN HÌNH ẢNH) */}
+      {/* I. BẢNG MA TRẬN 19 CỘT MẪU THPT VINH LỘC HOẶC KHUNG NĂNG LỰC */}
       <div className="overflow-x-auto bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
         <div className="text-center mb-3">
           <h3 className="text-base sm:text-lg font-bold uppercase text-black" style={{ fontFamily: '"Times New Roman", Times, serif' }}>
-            I. MA TRẬN ĐỀ KIỂM TRA GIỮA HỌC KÌ I MÔN TOÁN - KHỐI 11 NĂM HỌC 2025-2026
+            {isVinhLoc 
+              ? `I. MA TRẬN ĐỀ KIỂM TRA GIỮA HỌC KÌ I MÔN TOÁN - ${gradeDisplay} (KHUNG 19 CỘT MẪU THPT VINH LỘC 2026-2027)`
+              : `I. MA TRẬN ĐỀ KIỂM TRA GIỮA HỌC KÌ I - ${gradeDisplay} (CHUẨN GDPT 2018)`}
           </h3>
         </div>
 
-        <table className="w-full border-collapse border border-black text-[12px] min-w-[1100px] font-serif text-black" style={{ fontFamily: '"Times New Roman", Times, serif' }}>
-          <thead>
-            {/* Hàng 1 */}
-            <tr className="bg-slate-100 font-bold text-center">
-              <th className="border border-black p-1.5 w-10" rowSpan={3}>TT</th>
-              <th className="border border-black p-1.5 w-44" rowSpan={3}>Chủ đề</th>
-              <th className="border border-black p-1.5 w-52" rowSpan={3}>Nội dung/ Đơn vị kiến thức</th>
-              <th className="border border-black p-1.5" colSpan={9}>NĂNG LỰC MÔN HỌC</th>
-              <th className="border border-black p-1.5" colSpan={3} rowSpan={2}>SỐ LỆNH HỎI</th>
-              <th className="border border-black p-1.5 w-14" rowSpan={3}>Tổng số lệnh hỏi</th>
-              <th className="border border-black p-1.5 w-14" rowSpan={3}>Điểm số</th>
-              <th className="border border-black p-1.5 w-14" rowSpan={3}>Tỉ lệ % điểm</th>
-              <th className="border border-black p-1.5" colSpan={3}>Tỉ lệ mức độ tư duy (%)</th>
-            </tr>
-            {/* Hàng 2 */}
-            <tr className="bg-slate-50 font-bold text-center">
-              <th className="border border-black p-1" colSpan={3}>Năng lực Giải quyết vấn đề toán học</th>
-              <th className="border border-black p-1" colSpan={3}>Năng lực Tư duy và lập luận toán học</th>
-              <th className="border border-black p-1" colSpan={3}>Năng lực Mô hình hoá toán học</th>
-              <th className="border border-black p-1 w-12" rowSpan={2}>Biết<br/>(40%)</th>
-              <th className="border border-black p-1 w-12" rowSpan={2}>Hiểu<br/>(30%)</th>
-              <th className="border border-black p-1 w-12" rowSpan={2}>Vận dụng<br/>(30%)</th>
-            </tr>
-            {/* Hàng 3 */}
-            <tr className="bg-slate-100 font-bold text-center text-[11px]">
-              <th className="border border-black p-1 w-10">Biết</th>
-              <th className="border border-black p-1 w-10">Hiểu</th>
-              <th className="border border-black p-1 w-10">Vận dụng</th>
-              <th className="border border-black p-1 w-10">Biết</th>
-              <th className="border border-black p-1 w-10">Hiểu</th>
-              <th className="border border-black p-1 w-10">Vận dụng</th>
-              <th className="border border-black p-1 w-10">Biết</th>
-              <th className="border border-black p-1 w-10">Hiểu</th>
-              <th className="border border-black p-1 w-10">Vận dụng</th>
-              <th className="border border-black p-1 w-10">Biết</th>
-              <th className="border border-black p-1 w-10">Hiểu</th>
-              <th className="border border-black p-1 w-10">Vận dụng</th>
-            </tr>
-          </thead>
+        {isVinhLoc ? (
+          <table className="w-full border-collapse border border-black text-[12px] min-w-[1100px] font-serif text-black" style={{ fontFamily: '"Times New Roman", Times, serif' }}>
+            <thead>
+              {/* Hàng 1 */}
+              <tr className="bg-slate-100 font-bold text-center">
+                <th className="border border-black p-1.5 w-10" rowSpan={3}>TT</th>
+                <th className="border border-black p-1.5 w-44" rowSpan={3}>Chương / Chủ đề</th>
+                <th className="border border-black p-1.5 w-52" rowSpan={3}>Nội dung / Đơn vị kiến thức</th>
+                <th className="border border-black p-1.5" colSpan={12}>MỨC ĐỘ ĐÁNH GIÁ</th>
+                <th className="border border-black p-1.5" colSpan={3} rowSpan={2}>TỔNG</th>
+                <th className="border border-black p-1.5 w-16" rowSpan={3}>Tỉ lệ %</th>
+              </tr>
+              {/* Hàng 2 */}
+              <tr className="bg-slate-50 font-bold text-center">
+                <th className="border border-black p-1" colSpan={9}>TNKQ</th>
+                <th className="border border-black p-1" colSpan={3}>Tự luận</th>
+              </tr>
+              {/* Hàng 3 */}
+              <tr className="bg-slate-100 font-bold text-center text-[11px]">
+                <th className="border border-black p-1 w-11">Nhiều LC<br/>Biết</th>
+                <th className="border border-black p-1 w-11">Nhiều LC<br/>Hiểu</th>
+                <th className="border border-black p-1 w-11">Nhiều LC<br/>VD</th>
+                <th className="border border-black p-1 w-11">Đúng-Sai<br/>Biết</th>
+                <th className="border border-black p-1 w-11">Đúng-Sai<br/>Hiểu</th>
+                <th className="border border-black p-1 w-11">Đúng-Sai<br/>VD</th>
+                <th className="border border-black p-1 w-11">TL ngắn<br/>Biết</th>
+                <th className="border border-black p-1 w-11">TL ngắn<br/>Hiểu</th>
+                <th className="border border-black p-1 w-11">TL ngắn<br/>VD</th>
+                <th className="border border-black p-1 w-11">TL<br/>Biết</th>
+                <th className="border border-black p-1 w-11">TL<br/>Hiểu</th>
+                <th className="border border-black p-1 w-11">TL<br/>VD</th>
+                <th className="border border-black p-1 w-11">Biết</th>
+                <th className="border border-black p-1 w-11">Hiểu</th>
+                <th className="border border-black p-1 w-11">VD</th>
+              </tr>
+            </thead>
 
-          <tbody>
-            {/* 1. HÀM SỐ LƯỢNG GIÁC - PT LƯỢNG GIÁC */}
-            <tr>
-              <td className="border border-black p-1 text-center font-bold" rowSpan={4}>1</td>
-              <td className="border border-black p-1 font-bold" rowSpan={4}>HÀM SỐ LƯỢNG GIÁC - PT LƯỢNG GIÁC</td>
-              <td className="border border-black p-1">1. Giá trị lượng giác</td>
-              <td className="border border-black p-1 text-center font-bold text-blue-700">I.1</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold">1</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold">1</td>
-              <td className="border border-black p-1 text-center font-bold">0.25</td>
-              <td className="border border-black p-1 text-center font-bold">2.5%</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-            </tr>
+            <tbody>
+              {groupedTopics.map((group, gIdx) => {
+                return group.rows.map((row, rIdx) => {
+                  const bietSum = row.tong?.biet ?? (countMatrixCommands(row.nlc?.biet||'') + countMatrixCommands(row.ds?.biet||'') + countMatrixCommands(row.tln?.biet||'') + countMatrixCommands(row.tl?.biet||''));
+                  const hieuSum = row.tong?.hieu ?? (countMatrixCommands(row.nlc?.hieu||'') + countMatrixCommands(row.ds?.hieu||'') + countMatrixCommands(row.tln?.hieu||'') + countMatrixCommands(row.tl?.hieu||''));
+                  const vdSum = row.tong?.vd ?? (countMatrixCommands(row.nlc?.vd||'') + countMatrixCommands(row.ds?.vd||'') + countMatrixCommands(row.tln?.vd||'') + countMatrixCommands(row.tl?.vd||''));
 
-            <tr>
-              <td className="border border-black p-1">2. Công thức lượng giác</td>
-              <td className="border border-black p-1 text-center font-bold text-blue-700">I.2, II.1ab</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold text-indigo-700">I.3</td>
-              <td className="border border-black p-1 text-center font-bold text-indigo-700">II.1cd</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold">4</td>
-              <td className="border border-black p-1 text-center font-bold">2</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold">6</td>
-              <td className="border border-black p-1 text-center font-bold">2.0</td>
-              <td className="border border-black p-1 text-center font-bold">20%</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-            </tr>
+                  return (
+                    <tr key={row.id} className="hover:bg-slate-50 transition-colors">
+                      {rIdx === 0 && (
+                        <>
+                          <td className="border border-black p-1 text-center font-bold" rowSpan={group.rows.length}>
+                            {gIdx + 1}
+                          </td>
+                          <td className="border border-black p-1 font-bold" rowSpan={group.rows.length}>
+                            {row.topic}
+                          </td>
+                        </>
+                      )}
+                      <td className="border border-black p-1">{row.unit}</td>
+                      <td className="border border-black p-1 text-center font-bold text-blue-700">{row.nlc?.biet || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-blue-700">{row.nlc?.hieu || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-blue-700">{row.nlc?.vd || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-indigo-700">{row.ds?.biet || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-indigo-700">{row.ds?.hieu || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-indigo-700">{row.ds?.vd || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-purple-700">{row.tln?.biet || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-purple-700">{row.tln?.hieu || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-purple-700">{row.tln?.vd || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-rose-700">{row.tl?.biet || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-rose-700">{row.tl?.hieu || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-rose-700">{row.tl?.vd || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold bg-slate-50">{bietSum || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold bg-slate-50">{hieuSum || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold bg-slate-50">{vdSum || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold text-emerald-800">{row.tiLe || '-'}</td>
+                    </tr>
+                  );
+                });
+              })}
 
-            <tr>
-              <td className="border border-black p-1">3. Hàm số lượng giác</td>
-              <td className="border border-black p-1 text-center font-bold text-blue-700">I.4</td>
-              <td className="border border-black p-1 text-center font-bold text-blue-700">I.5</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold text-indigo-700">III.1</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold">1</td>
-              <td className="border border-black p-1 text-center font-bold">2</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold">3</td>
-              <td className="border border-black p-1 text-center font-bold">1.0</td>
-              <td className="border border-black p-1 text-center font-bold">10%</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-            </tr>
+              {/* Dòng 1: Tổng số câu */}
+              <tr className="bg-slate-100 font-bold text-center">
+                <td className="border border-black p-1 text-center font-bold" colSpan={3}>Tổng số câu</td>
+                <td className="border border-black p-1 text-center font-bold text-blue-700">{vlTotals.counts.nlc.biet}</td>
+                <td className="border border-black p-1 text-center font-bold text-blue-700">{vlTotals.counts.nlc.hieu}</td>
+                <td className="border border-black p-1 text-center font-bold text-blue-700">{vlTotals.counts.nlc.vd || '-'}</td>
+                <td className="border border-black p-1 text-center font-bold text-indigo-700">{vlTotals.counts.ds.biet}</td>
+                <td className="border border-black p-1 text-center font-bold text-indigo-700">{vlTotals.counts.ds.hieu}</td>
+                <td className="border border-black p-1 text-center font-bold text-indigo-700">{vlTotals.counts.ds.vd || '-'}</td>
+                <td className="border border-black p-1 text-center font-bold text-purple-700">{vlTotals.counts.tln.biet}</td>
+                <td className="border border-black p-1 text-center font-bold text-purple-700">{vlTotals.counts.tln.hieu}</td>
+                <td className="border border-black p-1 text-center font-bold text-purple-700">{vlTotals.counts.tln.vd || '-'}</td>
+                <td className="border border-black p-1 text-center font-bold text-rose-700">{vlTotals.counts.tl.biet || '-'}</td>
+                <td className="border border-black p-1 text-center font-bold text-rose-700">{vlTotals.counts.tl.hieu}</td>
+                <td className="border border-black p-1 text-center font-bold text-rose-700">{vlTotals.counts.tl.vd}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.counts.tong.biet}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.counts.tong.hieu}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.counts.tong.vd}</td>
+                <td className="border border-black p-1 text-center font-bold text-indigo-900">{vlTotals.counts.totalQuestions} lệnh hỏi</td>
+              </tr>
 
-            <tr>
-              <td className="border border-black p-1">4. Phương trình lượng giác cơ bản</td>
-              <td className="border border-black p-1 text-center font-bold text-blue-700">I.7</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold text-blue-700">TL1</td>
-              <td className="border border-black p-1 text-center font-bold text-indigo-700">I.6</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold">2</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold">1</td>
-              <td className="border border-black p-1 text-center font-bold">3</td>
-              <td className="border border-black p-1 text-center font-bold">1.5</td>
-              <td className="border border-black p-1 text-center font-bold">15%</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-            </tr>
+              {/* Dòng 2: Tổng số điểm */}
+              <tr className="bg-slate-50 font-bold text-center">
+                <td className="border border-black p-1 text-center font-bold" colSpan={3}>Tổng số điểm</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.nlc.biet.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.nlc.hieu.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.nlc.vd ? vlTotals.scores.nlc.vd.toFixed(1) : '-'}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.ds.biet.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.ds.hieu.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.ds.vd ? vlTotals.scores.ds.vd.toFixed(1) : '-'}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.tln.biet.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.tln.hieu.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.tln.vd ? vlTotals.scores.tln.vd.toFixed(1) : '-'}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.tl.biet ? vlTotals.scores.tl.biet.toFixed(1) : '-'}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.tl.hieu.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.tl.vd.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.tong.biet.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.tong.hieu.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold">{vlTotals.scores.tong.vd.toFixed(1)}</td>
+                <td className="border border-black p-1 text-center font-bold text-emerald-800">10.0đ</td>
+              </tr>
 
-            {/* 2. DÃY SỐ - CẤP SỐ CỘNG - CẤP SỐ NHÂN */}
-            <tr>
-              <td className="border border-black p-1 text-center font-bold" rowSpan={3}>2</td>
-              <td className="border border-black p-1 font-bold" rowSpan={3}>DÃY SỐ - CẤP SỐ CỘNG - CẤP SỐ NHÂN</td>
-              <td className="border border-black p-1">1. Dãy số</td>
-              <td className="border border-black p-1 text-center font-bold text-blue-700">I.8</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold text-indigo-700">I.9</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold">2</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold">2</td>
-              <td className="border border-black p-1 text-center font-bold">0.5</td>
-              <td className="border border-black p-1 text-center font-bold">5%</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-            </tr>
-
-            <tr>
-              <td className="border border-black p-1">2. Cấp số cộng</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold text-indigo-700">I.10</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold text-purple-700">TL2</td>
-              <td className="border border-black p-1 text-center font-bold">1</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold">1</td>
-              <td className="border border-black p-1 text-center font-bold">2</td>
-              <td className="border border-black p-1 text-center font-bold">1.25</td>
-              <td className="border border-black p-1 text-center font-bold">12.5%</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-            </tr>
-
-            <tr>
-              <td className="border border-black p-1">3. Cấp số nhân</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold text-blue-700">I.11</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold text-indigo-700">I.12</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold">2</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold">2</td>
-              <td className="border border-black p-1 text-center font-bold">0.5</td>
-              <td className="border border-black p-1 text-center font-bold">5%</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-            </tr>
-
-            {/* 3. QUAN HỆ SONG SONG TRONG KHÔNG GIAN */}
-            <tr>
-              <td className="border border-black p-1 text-center font-bold" rowSpan={3}>3</td>
-              <td className="border border-black p-1 font-bold" rowSpan={3}>QUAN HỆ SONG SONG TRONG KHÔNG GIAN</td>
-              <td className="border border-black p-1">1. Đường thẳng và mặt phẳng</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold text-blue-700">II.2b, II.2c</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold text-purple-700">I.13</td>
-              <td className="border border-black p-1 text-center font-bold text-purple-700">I.14</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold">1</td>
-              <td className="border border-black p-1 text-center font-bold">3</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold">4</td>
-              <td className="border border-black p-1 text-center font-bold">1.0</td>
-              <td className="border border-black p-1 text-center font-bold">10%</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-            </tr>
-
-            <tr>
-              <td className="border border-black p-1">2. Hai đường thẳng song song</td>
-              <td className="border border-black p-1 text-center font-bold text-blue-700">II.2a</td>
-              <td className="border border-black p-1 text-center font-bold text-blue-700">II.2d</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold text-indigo-700">I.15</td>
-              <td className="border border-black p-1 text-center font-bold text-indigo-700">III.2</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold">2</td>
-              <td className="border border-black p-1 text-center font-bold">2</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold">4</td>
-              <td className="border border-black p-1 text-center font-bold">1.25</td>
-              <td className="border border-black p-1 text-center font-bold">12.5%</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-            </tr>
-
-            <tr>
-              <td className="border border-black p-1">3. Đường thẳng và mặt phẳng song song</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold text-indigo-700">TL3</td>
-              <td className="border border-black p-1 text-center font-bold text-purple-700">I.16</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold">1</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center font-bold">1</td>
-              <td className="border border-black p-1 text-center font-bold">2</td>
-              <td className="border border-black p-1 text-center font-bold">1.25</td>
-              <td className="border border-black p-1 text-center font-bold">12.5%</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-              <td className="border border-black p-1 text-center">-</td>
-            </tr>
-
-            {/* Dòng Tổng số lệnh hỏi */}
-            <tr className="bg-slate-100 font-bold text-center">
-              <td className="border border-black p-1" colSpan={3}>Tổng số lệnh hỏi</td>
-              <td className="border border-black p-1 text-blue-700">7</td>
-              <td className="border border-black p-1 text-blue-700">3</td>
-              <td className="border border-black p-1 text-blue-700">1</td>
-              <td className="border border-black p-1 text-indigo-700">5</td>
-              <td className="border border-black p-1 text-indigo-700">3</td>
-              <td className="border border-black p-1 text-indigo-700">1</td>
-              <td className="border border-black p-1 text-purple-700">2</td>
-              <td className="border border-black p-1 text-purple-700">1</td>
-              <td className="border border-black p-1 text-purple-700">1</td>
-              <td className="border border-black p-1">14</td>
-              <td className="border border-black p-1">7</td>
-              <td className="border border-black p-1">3</td>
-              <td className="border border-black p-1 text-emerald-800">24</td>
-              <td className="border border-black p-1 text-emerald-800">10.0</td>
-              <td className="border border-black p-1 text-emerald-800">100%</td>
-              <td className="border border-black p-1">40%</td>
-              <td className="border border-black p-1">30%</td>
-              <td className="border border-black p-1">30%</td>
-            </tr>
-
-            {/* Dòng Tổng số điểm */}
-            <tr className="bg-slate-50 font-bold text-center">
-              <td className="border border-black p-1" colSpan={3}>Tổng số điểm</td>
-              <td className="border border-black p-1">1.75</td>
-              <td className="border border-black p-1">1.00</td>
-              <td className="border border-black p-1">1.00</td>
-              <td className="border border-black p-1">1.75</td>
-              <td className="border border-black p-1">1.25</td>
-              <td className="border border-black p-1">1.00</td>
-              <td className="border border-black p-1">0.50</td>
-              <td className="border border-black p-1">0.75</td>
-              <td className="border border-black p-1">1.00</td>
-              <td className="border border-black p-1">4.00</td>
-              <td className="border border-black p-1">3.00</td>
-              <td className="border border-black p-1">3.00</td>
-              <td className="border border-black p-1">24</td>
-              <td className="border border-black p-1 text-emerald-800">10.0</td>
-              <td className="border border-black p-1 text-emerald-800">100%</td>
-              <td className="border border-black p-1">40%</td>
-              <td className="border border-black p-1">30%</td>
-              <td className="border border-black p-1">30%</td>
-            </tr>
-          </tbody>
-        </table>
+              {/* Dòng 3: Tỉ lệ % */}
+              <tr className="bg-slate-100 font-bold text-center">
+                <td className="border border-black p-1 text-center font-bold" colSpan={3}>Tỉ lệ %</td>
+                <td className="border border-black p-1 text-center font-bold" colSpan={9}>70% (TNKQ: 7.0 điểm)</td>
+                <td className="border border-black p-1 text-center font-bold" colSpan={3}>30% (Tự luận: 3.0 điểm)</td>
+                <td className="border border-black p-1 text-center font-bold">40%</td>
+                <td className="border border-black p-1 text-center font-bold">30%</td>
+                <td className="border border-black p-1 text-center font-bold">30%</td>
+                <td className="border border-black p-1 text-center font-bold text-emerald-800">100%</td>
+              </tr>
+            </tbody>
+          </table>
+        ) : (
+          <table className="w-full border-collapse border border-black text-[12px] min-w-[1100px] font-serif text-black" style={{ fontFamily: '"Times New Roman", Times, serif' }}>
+            <thead>
+              <tr className="bg-slate-100 font-bold text-center">
+                <th className="border border-black p-1.5 w-10" rowSpan={3}>TT</th>
+                <th className="border border-black p-1.5 w-44" rowSpan={3}>Chủ đề</th>
+                <th className="border border-black p-1.5 w-52" rowSpan={3}>Nội dung/ Đơn vị kiến thức</th>
+                <th className="border border-black p-1.5" colSpan={9}>NĂNG LỰC MÔN HỌC</th>
+                <th className="border border-black p-1.5" colSpan={3} rowSpan={2}>SỐ LỆNH HỎI</th>
+                <th className="border border-black p-1.5 w-14" rowSpan={3}>Tổng số lệnh hỏi</th>
+                <th className="border border-black p-1.5 w-14" rowSpan={3}>Điểm số</th>
+                <th className="border border-black p-1.5 w-14" rowSpan={3}>Tỉ lệ % điểm</th>
+                <th className="border border-black p-1.5" colSpan={3}>Tỉ lệ mức độ tư duy (%)</th>
+              </tr>
+              <tr className="bg-slate-50 font-bold text-center">
+                <th className="border border-black p-1" colSpan={3}>Năng lực Giải quyết vấn đề</th>
+                <th className="border border-black p-1" colSpan={3}>Năng lực Tư duy và lập luận</th>
+                <th className="border border-black p-1" colSpan={3}>Năng lực Mô hình hoá</th>
+                <th className="border border-black p-1 w-12" rowSpan={2}>Biết<br/>(40%)</th>
+                <th className="border border-black p-1 w-12" rowSpan={2}>Hiểu<br/>(30%)</th>
+                <th className="border border-black p-1 w-12" rowSpan={2}>Vận dụng<br/>(30%)</th>
+              </tr>
+              <tr className="bg-slate-100 font-bold text-center text-[11px]">
+                <th className="border border-black p-1 w-10">Biết</th>
+                <th className="border border-black p-1 w-10">Hiểu</th>
+                <th className="border border-black p-1 w-10">Vận dụng</th>
+                <th className="border border-black p-1 w-10">Biết</th>
+                <th className="border border-black p-1 w-10">Hiểu</th>
+                <th className="border border-black p-1 w-10">Vận dụng</th>
+                <th className="border border-black p-1 w-10">Biết</th>
+                <th className="border border-black p-1 w-10">Hiểu</th>
+                <th className="border border-black p-1 w-10">Vận dụng</th>
+                <th className="border border-black p-1 w-10">Biết</th>
+                <th className="border border-black p-1 w-10">Hiểu</th>
+                <th className="border border-black p-1 w-10">Vận dụng</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groupedTopics.map((group, gIdx) => {
+                return group.rows.map((row, rIdx) => {
+                  return (
+                    <tr key={row.id}>
+                      {rIdx === 0 && (
+                        <>
+                          <td className="border border-black p-1 text-center font-bold" rowSpan={group.rows.length}>{gIdx + 1}</td>
+                          <td className="border border-black p-1 font-bold" rowSpan={group.rows.length}>{row.topic}</td>
+                        </>
+                      )}
+                      <td className="border border-black p-1">{row.unit}</td>
+                      <td className="border border-black p-1 text-center font-bold">{row.gqvd?.biet || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold">{row.gqvd?.hieu || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold">{row.gqvd?.vd || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold">{row.tuduy?.biet || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold">{row.tuduy?.hieu || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold">{row.tuduy?.vd || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold">{row.mohinh?.biet || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold">{row.mohinh?.hieu || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold">{row.mohinh?.vd || '-'}</td>
+                      <td className="border border-black p-1 text-center font-bold">-</td>
+                      <td className="border border-black p-1 text-center font-bold">-</td>
+                      <td className="border border-black p-1 text-center font-bold">-</td>
+                      <td className="border border-black p-1 text-center font-bold">-</td>
+                      <td className="border border-black p-1 text-center font-bold">-</td>
+                      <td className="border border-black p-1 text-center font-bold">-</td>
+                      <td className="border border-black p-1 text-center">-</td>
+                      <td className="border border-black p-1 text-center">-</td>
+                      <td className="border border-black p-1 text-center">-</td>
+                    </tr>
+                  );
+                });
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {/* II. BẢNG ĐẶC TẢ KĨ THUẬT */}
@@ -2352,16 +3158,25 @@ export function CompetencyMatrixInlineView({
               ))}
               <tr className="bg-slate-100 font-bold text-center">
                 <td className="border border-black p-2" colSpan={4}>TỔNG CỘNG ĐỀ KIỂM TRA</td>
-                <td className="border border-black p-2 text-blue-700">16 câu (4.0đ)</td>
+                <td className="border border-black p-2 text-blue-700">{isVinhLoc ? '12 câu (3.0đ)' : '16 câu (4.0đ)'}</td>
                 <td className="border border-black p-2 text-indigo-700">2 câu (2.0đ)</td>
-                <td className="border border-black p-2 text-purple-700">2 câu (1.0đ)</td>
-                <td className="border border-black p-2 text-rose-700">3 câu (3.0đ)</td>
+                <td className="border border-black p-2 text-purple-700">{isVinhLoc ? '4 câu (2.0đ)' : '2 câu (1.0đ)'}</td>
+                <td className="border border-black p-2 text-rose-700">{isVinhLoc ? '4 câu (3.0đ)' : '3 câu (3.0đ)'}</td>
                 <td className="border border-black p-2 text-emerald-800 text-sm">10.0đ (100%)</td>
               </tr>
             </tbody>
           </table>
         </div>
       )}
+
+      {/* Container chuẩn hóa xuất tài liệu Word & In ấn sư phạm Bộ GD&ĐT */}
+      <PedagogicalMatrixExportView
+        tpl={inlineTemplate}
+        docTitle={examTitle || 'ĐỀ KIỂM TRA ĐỊNH KỲ'}
+        matrixRows={activeMatrix}
+        specUnits={activeSpec}
+        idPrefix="pedagogical-inline"
+      />
     </div>
   );
 }

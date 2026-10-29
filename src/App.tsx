@@ -76,9 +76,8 @@ const EduPlanInkPage = safeLazy(() => import('./pages/EduPlanInkPage'), "EduPlan
 const MathOCRPage = safeLazy(() => import('./pages/MathOCRPage'), "MathOCRPage");
 const HsaTsaHub = safeLazy(() => import('./pages/HsaTsaHub'), "HsaTsaHub");
 const ExamStatsDashboard = safeLazy(() => import('./pages/ExamStatsDashboard'), "ExamStatsDashboard");
-
-
-
+const OverallAnalyticsDashboard = safeLazy(() => import('./pages/OverallAnalyticsDashboard'), "OverallAnalyticsDashboard");
+const ExamShufflerView = safeLazy(() => import('./components/ExamShuffler/ExamShufflerView'), "ExamShufflerView");
 
 import { parseExamIdFromLocation, registerExamUrlMapping } from "./lib/smartRouter";
 
@@ -173,12 +172,6 @@ export default function App() {
     window.addEventListener('focus-mode', handleFocusMode);
     window.addEventListener('hsa-focus-mode', handleFocusMode);
     window.addEventListener('open-exam-stats', handleOpenStats);
-
-    const storedKey = localStorage.getItem("eduplan_gemini_api_key_v2");
-    if (!storedKey) {
-      setSettingsDefaultTab("apikey");
-      setIsSettingsOpen(true);
-    }
 
     return () => {
       window.removeEventListener('show-api-key-modal', handleShowModal);
@@ -366,8 +359,10 @@ export default function App() {
               {activeTab === "classmap" && <ClassMap />}
               {activeTab === "homeroom" && <HomeroomManagement />}
               {activeTab === "timetable" && <WeeklyTimetable />}
+              {activeTab === "exam_shuffler" && <ExamShufflerView />}
               {activeTab === "exam" && <ExamGenerator />}
               {activeTab === "exam_stats" && <ExamStatsDashboard initialExamId={statsExamId} onBackToExam={() => setActiveTab("exam")} />}
+              {activeTab === "overall_dashboard" && <OverallAnalyticsDashboard />}
               {activeTab === "pdf2word" && <PdfToWord />}
               {activeTab === "de_online_pdf" && <DeOnlinePdf />}
               {activeTab === "circulars" && <Circulars />}

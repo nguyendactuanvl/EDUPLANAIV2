@@ -10,7 +10,7 @@ const STORAGE_KEY = 'edu_header_config_v2026';
 
 export const DEFAULT_HEADER_CONFIG: HeaderConfig = {
   department: 'SỞ GIÁO DỤC VÀ ĐÀO TẠO',
-  schoolName: '',
+  schoolName: 'TRƯỜNG THPT EDUPLAN AI',
   teacherName: '',
   subjectGroup: 'TỔ TOÁN - TIN HỌC',
   schoolYear: '2026 - 2027',
@@ -22,9 +22,16 @@ export function getHeaderConfig(): HeaderConfig {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
+      const rawSchool = (parsed.schoolName ?? '').trim();
+      // Tự động chuyển đổi hoặc dùng mặc định TRƯỜNG THPT EDUPLAN AI nếu trống hoặc còn giữ tên mẫu cũ
+      let resolvedSchool = rawSchool;
+      if (!resolvedSchool || /vinh\s*lộc/i.test(resolvedSchool)) {
+        resolvedSchool = DEFAULT_HEADER_CONFIG.schoolName;
+      }
+
       return {
         department: parsed.department ?? DEFAULT_HEADER_CONFIG.department,
-        schoolName: parsed.schoolName ?? DEFAULT_HEADER_CONFIG.schoolName,
+        schoolName: resolvedSchool,
         teacherName: parsed.teacherName ?? DEFAULT_HEADER_CONFIG.teacherName,
         subjectGroup: parsed.subjectGroup ?? DEFAULT_HEADER_CONFIG.subjectGroup,
         schoolYear: parsed.schoolYear || '2026 - 2027',
