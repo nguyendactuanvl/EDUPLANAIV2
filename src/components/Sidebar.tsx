@@ -2,7 +2,7 @@ import {
   Trophy, BookOpen, Calendar, FileText, Settings, Sparkles, Clock, 
   ClipboardList, FileEdit, FileCheck, Users, ShieldCheck, 
   Key, Calculator, HelpCircle, PlayCircle, PenTool, ScanLine, Sun, Moon, GraduationCap, BarChart3,
-  Lock, Shuffle, PieChart
+  Dna, Lock, Shuffle, PieChart
 } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -35,6 +35,7 @@ export function Sidebar({
         { id: "khgd", label: "6. Kế hoạch giáo dục", icon: Calendar },
         { id: "khdh", label: "7. Kế hoạch dạy học", icon: BookOpen },
         { id: "math_tools", label: "Công cụ Toán học", icon: Calculator },
+        { id: "biology", label: "Biology Toolkit (Sinh học)", icon: Dna },
         { id: "de_online_pdf", label: "Đề online từ file PDF của GV", icon: FileText },
         { id: "hsa_tsa", label: "Ôn thi HSA & TSA (ĐGNL)", icon: GraduationCap },
         { id: "ai_studio", label: "AI Studio & Sáng tạo", icon: Sparkles },

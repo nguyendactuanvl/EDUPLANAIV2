@@ -78,6 +78,7 @@ const HsaTsaHub = safeLazy(() => import('./pages/HsaTsaHub'), "HsaTsaHub");
 const ExamStatsDashboard = safeLazy(() => import('./pages/ExamStatsDashboard'), "ExamStatsDashboard");
 const OverallAnalyticsDashboard = safeLazy(() => import('./pages/OverallAnalyticsDashboard'), "OverallAnalyticsDashboard");
 const ExamShufflerView = safeLazy(() => import('./components/ExamShuffler/ExamShufflerView'), "ExamShufflerView");
+const BiologyWorkspace = safeLazy(() => import('./features/biology/BiologyWorkspace'), "BiologyWorkspace");
 
 import { parseExamIdFromLocation, registerExamUrlMapping } from "./lib/smartRouter";
 
@@ -86,6 +87,7 @@ export default function App() {
     const urlParams = new URLSearchParams(window.location.search);
     const tabParam = urlParams.get('tab') || urlParams.get('view');
     if (tabParam === 'exam_stats' || tabParam === 'stats') return 'exam_stats';
+    if (tabParam === 'biology' || tabParam === 'bio') return 'biology';
     return "math_tools";
   });
   const [statsExamId, setStatsExamId] = useState<string | undefined>(() => {
@@ -376,6 +378,7 @@ export default function App() {
               {activeTab === "worksheets" && <Worksheets />}
               {activeTab === "exercise" && <ExerciseSolver />}
               {activeTab === "math_tools" && <MathTools />}
+              {activeTab === "biology" && <BiologyWorkspace />}
               {activeTab === "gamification" && <Gamification />}
               {activeTab === "classmap" && <ClassMap />}
               {activeTab === "homeroom" && <HomeroomManagement />}
