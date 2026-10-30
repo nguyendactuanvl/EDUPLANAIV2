@@ -210,7 +210,10 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
               return safeJsonParse(match[1] || match[0]);
             } catch (e2) {}
           }
-          throw new Error("Lỗi định dạng dữ liệu máy chủ: " + (e?.message || "Dữ liệu trả về không phải JSON hợp lệ."));
+          if (clean && clean.length > 0) {
+            return { result: clean };
+          }
+          throw new Error("Máy chủ AI phản hồi dữ liệu chưa hoàn chỉnh. Thầy cô vui lòng bấm thử lại.");
         }
       };
       return response;

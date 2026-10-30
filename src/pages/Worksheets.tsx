@@ -1054,7 +1054,7 @@ export function Worksheets() {
         try {
           examData = parseApiResponse(rawText);
         } catch (e2) {
-          throw new Error("Phản hồi từ máy chủ không đúng định dạng dữ liệu.");
+          throw new Error("Máy chủ AI hiện đang tạm thời quá tải (Lỗi 503 Service Unavailable). Thầy cô vui lòng nhấn nút 'Tự động tạo Phiếu học tập' để thử lại sau ít phút.");
         }
       }
       
@@ -1317,6 +1317,21 @@ export function Worksheets() {
       }
 
       if (!response.ok || !response.body) {
+        let errMessage = "";
+        try {
+          const errData = await response.json();
+          errMessage = errData.error || errData.message || "";
+        } catch (e) {
+          try { errMessage = await response.text(); } catch (e2) {}
+        }
+
+        if (errMessage) {
+          setError(errMessage);
+          setIsLoading(false);
+          setStreamProgress(null);
+          return;
+        }
+
         // Fallback to non-stream if streaming unavailable
         try {
           const resNonStream = await apiFetch('/api/generate-worksheet', {
@@ -1343,6 +1358,12 @@ export function Worksheets() {
           }
         } catch (nonStreamErr: any) {
           console.warn("Non-stream fallback also failed:", nonStreamErr);
+          if (nonStreamErr?.message) {
+            setError(nonStreamErr.message);
+            setIsLoading(false);
+            setStreamProgress(null);
+            return;
+          }
         }
 
         setError("Máy chủ AI hiện đang tạm thời quá tải (Lỗi 503 Service Unavailable). Thầy cô vui lòng nhấn nút 'Tự động tạo Phiếu học tập' để thử lại sau ít phút.");
@@ -1494,7 +1515,11 @@ export function Worksheets() {
 
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "Không thể tạo phiếu học tập lúc này. Vui lòng thử lại sau.");
+      let errMsg = err?.message || "";
+      if (!errMsg || errMsg.includes("503") || errMsg.includes("quá tải") || errMsg.includes("overload") || errMsg.includes("định dạng") || errMsg.includes("Service Unavailable")) {
+        errMsg = "Máy chủ AI hiện đang tạm thời quá tải (Lỗi 503 Service Unavailable). Thầy cô vui lòng nhấn nút 'Tự động tạo Phiếu học tập' để thử lại sau ít phút.";
+      }
+      setError(errMsg);
       setStreamProgress(null);
     } finally {
       setIsLoading(false);
