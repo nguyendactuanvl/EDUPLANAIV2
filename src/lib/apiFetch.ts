@@ -68,7 +68,16 @@ export async function uploadFileChunked(fileData: string, type: string, extraHea
 export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
   let skipCustomKey = false;
 
-  // Only chunk very large payloads (> 12MB) since backend accepts 50MB directly
+  // Enforce mandatory API key check by default for AI endpoints
+  const isAiEndpoint = url.startsWith('/api/') && !url.includes('/api/health');
+  const storedCustomKey = (localStorage.getItem(API_KEY_STORAGE) || '').trim();
+
+  if (isAiEndpoint && !storedCustomKey) {
+    window.dispatchEvent(new CustomEvent('show-api-key-modal'));
+    throw new Error("Mặc định ứng dụng yêu cầu người dùng phải nhập Gemini API Key cá nhân để sử dụng các tính năng AI. Vui lòng dán mã API Key miễn phí từ Google AI Studio vào bảng Cài đặt vừa mở để tiếp tục.");
+  }
+
+  // Chunk payloads only if extremely large (> 12MB) to avoid stateless instance mismatch on Cloud Run
   if (options.body && typeof options.body === 'string' && options.body.length > 12 * 1024 * 1024) {
     try {
       const parsedBody = JSON.parse(options.body);
@@ -79,21 +88,27 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
         parsedBody.fileIds = parsedBody.fileIds || [];
         for (let i = 0; i < parsedBody.files.length; i++) {
           const f = parsedBody.files[i];
-          if (f.data && f.data.length > 10 * 1024 * 1024) {
+          if (f.data && f.data.length > 8 * 1024 * 1024) {
             const fileId = await uploadFileChunked(f.data, f.type || 'application/octet-stream', headersForChunk, f.name);
             parsedBody.fileIds.push(fileId);
             f.data = ""; // Clear large data
             modified = true;
           }
         }
-        // Keep files array intact if fileIds present, but filter out cleared data
         parsedBody.files = parsedBody.files.filter((f: any) => f.data && f.data.length > 0);
       }
       
-      if (parsedBody.file && typeof parsedBody.file === 'string' && parsedBody.file.length > 10 * 1024 * 1024) {
+      if (parsedBody.file && typeof parsedBody.file === 'string' && parsedBody.file.length > 8 * 1024 * 1024) {
         const fileId = await uploadFileChunked(parsedBody.file, parsedBody.type || 'text/plain', headersForChunk, parsedBody.name);
         parsedBody.fileId = fileId;
         parsedBody.file = ""; // Clear
+        modified = true;
+      }
+
+      if (parsedBody.croppedImage && typeof parsedBody.croppedImage === 'string' && parsedBody.croppedImage.length > 8 * 1024 * 1024) {
+        const croppedFileId = await uploadFileChunked(parsedBody.croppedImage, 'image/png', headersForChunk, 'cropped_figure.png');
+        parsedBody.croppedImageFileId = croppedFileId;
+        parsedBody.croppedImage = ""; // Clear
         modified = true;
       }
       

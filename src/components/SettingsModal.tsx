@@ -103,13 +103,23 @@ export function SettingsModal({ isOpen, onClose, defaultTab }: SettingsModalProp
           {/* TAB 1: API KEY */}
           {activeTab === "apikey" && (
             <div className="space-y-4">
+              {!apiKey.trim() && (
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2.5">
+                  <span className="text-base leading-none">⚠️</span>
+                  <div>
+                    <strong className="font-semibold block mb-0.5">Yêu cầu cài đặt API Key:</strong>
+                    Mặc định ứng dụng yêu cầu người dùng nhập Gemini API Key cá nhân để mở khóa các tính năng tạo bài tập, đề thi, kế hoạch dạy học và giải toán tự động.
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1">
-                  Gemini API Key cá nhân
+                  Gemini API Key cá nhân <span className="text-rose-500 font-bold">* (Bắt buộc)</span>
                 </label>
                 <input
                   type="password"
-                  placeholder="Nhập API Key cá nhân từ AI Studio..."
+                  placeholder="Dán mã API Key dạng AIzaSy... vào đây"
                   value={apiKey}
                   onChange={(e) => {
                     setApiKey(e.target.value);
@@ -118,7 +128,7 @@ export function SettingsModal({ isOpen, onClose, defaultTab }: SettingsModalProp
                   className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-slate-800 font-mono text-sm"
                 />
                 <p className="mt-2 text-xs text-slate-500 leading-relaxed">
-                  🔒 <strong>An toàn:</strong> Key này được lưu trữ cục bộ riêng trên trình duyệt máy của Thầy/Cô. Khi học sinh làm bài thi qua link, mã key này <strong>hoàn toàn không được gửi đi</strong> và không thể bị học sinh hay người ngoài trích xuất.
+                  🔒 <strong>An toàn:</strong> Key này được lưu trữ cục bộ riêng trên trình duyệt máy của Thầy/Cô. Khi học sinh làm bài thi qua link, mã key này <strong>hoàn toàn không được gửi đi</strong> và không thể bị trích xuất.
                 </p>
                 
                 <div className="mt-4 p-4 bg-emerald-50/70 border border-emerald-100 rounded-xl text-xs text-emerald-900 space-y-1.5">
@@ -130,7 +140,7 @@ export function SettingsModal({ isOpen, onClose, defaultTab }: SettingsModalProp
                     <li>Truy cập <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-emerald-700 hover:underline font-semibold">aistudio.google.com/app/apikey</a></li>
                     <li>Đăng nhập bằng tài khoản Google cá nhân</li>
                     <li>Nhấn nút <strong>Create API Key</strong></li>
-                    <li>Sao chép mã Key và dán vào ô bên trên rồi bấm "Lưu API Key"</li>
+                    <li>Sao chép mã Key và dán vào ô bên trên rồi bấm <strong>Lưu API Key</strong></li>
                   </ol>
                 </div>
               </div>

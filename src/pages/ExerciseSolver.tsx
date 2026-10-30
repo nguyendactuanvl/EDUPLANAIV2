@@ -1,4 +1,4 @@
-import { apiFetch } from '../lib/apiFetch';
+import { apiFetch, API_KEY_STORAGE } from '../lib/apiFetch';
 import { exportHtmlToWord } from '../lib/exportUtils';
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { 
@@ -28,12 +28,69 @@ import { parseApiResponse } from '../lib/utils';
 import { HistoryItem } from '../types';
 import { FeatureQuickGuideBanner } from '../components/FeatureQuickGuideBanner';
 
-// Utility to convert file to base64
+const cleanBase64String = (str: string): string => {
+  if (!str) return '';
+  if (str.includes(',')) {
+    return str.split(',')[1] || str;
+  }
+  return str.trim();
+};
+
+// Utility to convert file to base64, with client-side optimization for large images
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
+    // If it's an image and larger than 700KB, optimize it before uploading
+    if (file.type.startsWith('image/') && file.size > 700 * 1024) {
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        img.src = (e.target?.result as string) || '';
+      };
+      reader.onerror = reject;
+      img.onload = () => {
+        try {
+          const maxDim = 1800;
+          let width = img.width;
+          let height = img.height;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const mime = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+            const dataUrl = canvas.toDataURL(mime, 0.92);
+            resolve(cleanBase64String(dataUrl));
+            return;
+          }
+        } catch (canvasErr) {
+          console.warn('Canvas optimization fallback:', canvasErr);
+        }
+        const raw = (reader.result as string) || '';
+        resolve(cleanBase64String(raw));
+      };
+      img.onerror = () => {
+        const fallbackReader = new FileReader();
+        fallbackReader.onload = () => resolve(cleanBase64String((fallbackReader.result as string) || ''));
+        fallbackReader.onerror = reject;
+        fallbackReader.readAsDataURL(file);
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+
     const reader = new FileReader();
     reader.readAsDataURL(file);
-    reader.onload = () => resolve((reader.result as string).split(',')[1]);
+    reader.onload = () => resolve(cleanBase64String((reader.result as string) || ''));
     reader.onerror = error => reject(error);
   });
 };
@@ -319,16 +376,27 @@ export function ExerciseSolver() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          files: fileData ? [{ data: fileData, type: mimeType }] : [],
+          files: fileData ? [{ data: fileData, type: mimeType, name: selectedFile?.name }] : [],
           croppedImage: croppedImage || undefined
         })
       });
 
       const text = await response.text();
+      if (!text || !text.trim()) {
+        throw new Error("Không nhận được dữ liệu từ máy chủ AI. Thầy cô vui lòng thử lại.");
+      }
       const data = parseApiResponse<any>(text);
-      if (!response.ok) throw new Error(data.error || 'Failed to generate similar exercise');
+      if (data?.customKeyFailed) {
+        localStorage.removeItem(API_KEY_STORAGE);
+      }
+      if (!response.ok) throw new Error(data.error || 'Đã xảy ra lỗi khi tạo bài tập tương tự');
       
       let newSimilar = typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(data.result));
+      newSimilar = (newSimilar || '').replace(/\s*(?:undefined|null)\s*$/gi, '').trim();
+      if (!newSimilar) {
+        throw new Error("Không tạo được đề bài tương tự. Vui lòng bấm thử lại.");
+      }
+
       if (croppedImage) {
         newSimilar = injectCroppedImageIntoSolution(newSimilar, croppedImage, showInBothQuestionAndAnswer);
       }
@@ -342,8 +410,8 @@ export function ExerciseSolver() {
   };
   
   const handleSolve = async () => {
-    if (!selectedFile) {
-      setError('Vui lòng chọn file bài tập trước.');
+    if (!selectedFile && !croppedImage) {
+      setError('Vui lòng chọn file bài tập hoặc cắt vùng ảnh đề bài trước.');
       return;
     }
 
@@ -353,37 +421,50 @@ export function ExerciseSolver() {
 
     try {
       let fileData = '';
-      let mimeType = selectedFile.type;
+      let mimeType = selectedFile ? selectedFile.type : 'image/png';
 
-      if (selectedFile.name.endsWith('.docx')) {
-        const text = await processDocx(selectedFile);
-        fileData = btoa(unescape(encodeURIComponent(text)));
-        mimeType = 'text/plain';
-      } else {
-        fileData = await fileToBase64(selectedFile);
+      if (selectedFile) {
+        if (selectedFile.name.endsWith('.docx')) {
+          const text = await processDocx(selectedFile);
+          fileData = btoa(unescape(encodeURIComponent(text)));
+          mimeType = 'text/plain';
+        } else {
+          fileData = await fileToBase64(selectedFile);
+        }
       }
+
+      const filesPayload = fileData ? [{ data: fileData, type: mimeType, name: selectedFile?.name || 'de_bai.png' }] : [];
 
       const response = await apiFetch('/api/solve-exercise', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          files: [{ data: fileData, type: mimeType }],
+          files: filesPayload,
           croppedImage: croppedImage || undefined
         })
       });
 
+      const text = await response.text();
+      if (!text || !text.trim()) {
+        throw new Error("Không nhận được dữ liệu từ máy chủ AI. Thầy cô vui lòng bấm 'Giải Bài Tập Ngay' để thử lại hoặc cắt gọn vùng câu hỏi.");
+      }
+
+      const data = parseApiResponse<any>(text);
+      if (data?.customKeyFailed) {
+        localStorage.removeItem(API_KEY_STORAGE);
+      }
       if (!response.ok) {
-        const text = await response.text();
-        const data = parseApiResponse<any>(text);
         throw new Error(data.error || 'Có lỗi xảy ra khi xử lý file');
       }
 
-      const text = await response.text();
-      const data = parseApiResponse<any>(text);
       let newSolution = typeof data.result === 'string' 
         ? data.result 
         : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || (data.result ? JSON.stringify(data.result) : ''));
       newSolution = (newSolution || '').replace(/\s*(?:undefined|null)\s*$/gi, '').trim();
+
+      if (!newSolution) {
+        throw new Error("Hệ thống chưa trích xuất được đề bài từ ảnh này. Thầy cô vui lòng nhấn nút 'Cắt ảnh ngay' để chọn vùng câu hỏi hoặc kiểm tra lại ảnh.");
+      }
 
       // Ensure cropped image is injected into both Đề bài and Lời giải chi tiết
       if (croppedImage) {

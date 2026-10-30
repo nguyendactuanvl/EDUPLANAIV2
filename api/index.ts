@@ -461,12 +461,16 @@ const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 async function keepAliveExecute(req: any, res: any, fn: () => Promise<any>) {
   let headersSent = false;
   const keepAlive = setInterval(() => {
-    if (!headersSent) {
-      res.setHeader('Content-Type', 'application/json');
-      res.status(200);
-      headersSent = true;
+    if (!headersSent && !res.headersSent) {
+      try {
+        res.setHeader('Content-Type', 'application/json');
+        res.status(200);
+        headersSent = true;
+      } catch (e) {}
     }
-    res.write(' ');
+    if (!res.writableEnded && !res.closed) {
+      try { res.write(' '); } catch (e) {}
+    }
   }, 2500);
 
   try {
@@ -484,18 +488,24 @@ async function keepAliveExecute(req: any, res: any, fn: () => Promise<any>) {
       });
     }
 
-    if (!headersSent) {
+    if (!jsonOutput || !jsonOutput.trim() || jsonOutput === "undefined") {
+      jsonOutput = JSON.stringify({
+        result: typeof result === 'string' ? result : (result?.result || "")
+      });
+    }
+
+    if (!headersSent && !res.headersSent) {
       res.setHeader('Content-Type', 'application/json');
       res.status(200).send(jsonOutput);
-    } else {
+    } else if (!res.writableEnded && !res.closed) {
       res.write(jsonOutput);
       res.end();
     }
   } catch (error: any) {
     clearInterval(keepAlive);
-    if (!headersSent) {
+    if (!headersSent && !res.headersSent) {
       return handleAiError(error, req, res);
-    } else {
+    } else if (!res.writableEnded && !res.closed) {
       let rawMsg = error?.message || String(error);
       try {
         const parsed = JSON.parse(rawMsg);
@@ -503,7 +513,7 @@ async function keepAliveExecute(req: any, res: any, fn: () => Promise<any>) {
         else if (parsed?.message) rawMsg = parsed.message;
       } catch (e) {}
       const cleanMsg = rawMsg.replace(/[\r\n]+/g, ' ').replace(/"/g, "'").trim();
-      res.write(`\n\nSERVER_ERROR: ${cleanMsg}\n`);
+      res.write(`\n\nSERVER_ERROR: ${cleanMsg || 'Máy chủ xử lý quá thời gian chờ hoặc bị gián đoạn.'}\n`);
       res.end();
     }
   }
@@ -747,35 +757,62 @@ function getValidGeminiModels(requestedModel?: string): string[] {
 async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
   let client = getAiClient(req);
   let isCustom = isValidGeminiApiKey((req.headers['authorization'] || req.headers['x-gemini-api-key']) as string);
+  let customKeyFailed = false;
   const models = getValidGeminiModels(payloadOptions?.model);
 
   let primaryError: any = null;
   const maxRetries = 3;
-  
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    for (const model of models) {
-      try {
-        const config = payloadOptions.config || {};
-        const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán:
+
+  const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán:
 - TẤT CẢ các biến số, tham số đơn lẻ (như x, y, m, a, b, c, d, S...) BẮT BUỘC phải đặt trong cặp dấu đô la: $x$, $y$, $m$, $a$, $b$, $c$, $d$, $S$.
 - LUÔN LUÔN sử dụng \\frac thay thế cho \\dfrac.
 - Số mũ BẮT BUỘC dùng dấu mũ: $x^2$, $a^3$.
 - Phân số BẮT BUỘC dùng \\frac{tử}{mẫu}.`;
 
+  const extractTextFromResponse = (response: any): string => {
+    let text = response?.text ? response.text.normalize("NFC").trim() : "";
+    if (!text && response?.candidates?.[0]?.content?.parts) {
+      text = response.candidates[0].content.parts
+        .filter((p: any) => !p.thought && p.text)
+        .map((p: any) => p.text)
+        .join("\n")
+        .normalize("NFC")
+        .trim();
+    }
+    return text;
+  };
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    for (const model of models) {
+      try {
+        const rawConfig = { ...(payloadOptions.config || {}) };
+        // For Gemini 3.8 / 4 series, do not pass deprecated sampling params like temperature, topP, topK
+        if (model.includes("3.8") || model.includes("4-") || model.includes("latest")) {
+          delete rawConfig.temperature;
+          delete rawConfig.topP;
+          delete rawConfig.topK;
+          delete rawConfig.candidateCount;
+        }
+
         const updatedPayload = { 
           ...payloadOptions, 
           model,
           config: {
-            maxOutputTokens: 8192,
-            ...config,
-            systemInstruction: config.systemInstruction || defaultSystemInstruction
+            maxOutputTokens: 32768,
+            ...rawConfig,
+            systemInstruction: rawConfig.systemInstruction || defaultSystemInstruction
           } 
         };
         const response = await client.models.generateContent(updatedPayload);
-        const normText = response.text ? response.text.normalize("NFC") : "";
+        const normText = extractTextFromResponse(response);
+        if (!normText) {
+          console.warn(`[generateWithFallback] Model ${model} returned empty text, continuing fallback...`);
+          continue;
+        }
         return {
           text: normText,
-          candidates: response.candidates ? response.candidates.map((c: any) => ({ finishReason: c.finishReason, index: c.index })) : undefined
+          candidates: response.candidates ? response.candidates.map((c: any) => ({ finishReason: c.finishReason, index: c.index })) : undefined,
+          customKeyFailed
         } as any;
   
       } catch (e: any) {
@@ -784,33 +821,40 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
         
         // If custom key failed for ANY reason (invalid, quota, network), immediately switch to system client and retry this model
         if (isCustom) {
-          if (res && typeof res.setHeader === 'function') {
+          customKeyFailed = true;
+          if (res && typeof res.setHeader === 'function' && !res.headersSent) {
             try { res.setHeader('X-Custom-Key-Failed', 'true'); } catch (err) {}
           }
           client = getSystemAiClient();
           isCustom = false;
           try {
-            const config = payloadOptions.config || {};
-            const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán:
-- TẤT CẢ các biến số, tham số đơn lẻ (như x, y, m, a, b, c, d, S...) BẮT BUỘC phải đặt trong cặp dấu đô la: $x$, $y$, $m$, $a$, $b$, $c$, $d$, $S$.
-- LUÔN LUÔN sử dụng \\frac thay thế cho \\dfrac.
-- Số mũ BẮT BUỘC dùng dấu mũ: $x^2$, $a^3$.
-- Phân số BẮT BUỘC dùng \\frac{tử}{mẫu}.`;
+            const rawConfig = { ...(payloadOptions.config || {}) };
+            if (model.includes("3.8") || model.includes("4-") || model.includes("latest")) {
+              delete rawConfig.temperature;
+              delete rawConfig.topP;
+              delete rawConfig.topK;
+              delete rawConfig.candidateCount;
+            }
 
             const updatedPayload = { 
               ...payloadOptions, 
               model,
               config: {
-                maxOutputTokens: 8192,
-                ...config,
-                systemInstruction: config.systemInstruction || defaultSystemInstruction
+                maxOutputTokens: 32768,
+                ...rawConfig,
+                systemInstruction: rawConfig.systemInstruction || defaultSystemInstruction
               } 
             };
             const response = await client.models.generateContent(updatedPayload);
-            const normText = response.text ? response.text.normalize("NFC") : "";
+            const normText = extractTextFromResponse(response);
+            if (!normText) {
+              console.warn(`[generateWithFallback] System client with ${model} returned empty text, continuing fallback...`);
+              continue;
+            }
             return {
               text: normText,
-              candidates: response.candidates ? response.candidates.map((c: any) => ({ finishReason: c.finishReason, index: c.index })) : undefined
+              candidates: response.candidates ? response.candidates.map((c: any) => ({ finishReason: c.finishReason, index: c.index })) : undefined,
+              customKeyFailed: true
             } as any;
           } catch (systemErr: any) {
             primaryError = systemErr;
@@ -2193,7 +2237,6 @@ app.all("/api/generate-similar", async (req, res) => {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-
   if (req.method !== 'POST') {
     return res.status(405).json({ message: 'Method not allowed' });
   }
@@ -2201,9 +2244,15 @@ app.all("/api/generate-similar", async (req, res) => {
     return keepAliveExecute(req, res, async () => {
 
       const files = resolveFiles(req.body);
-      const { croppedImage } = req.body || {};
+      let { croppedImage, croppedImageFileId } = req.body || {};
+      if (croppedImageFileId && chunkStore.has(croppedImageFileId)) {
+        const entry = chunkStore.get(croppedImageFileId)!;
+        croppedImage = entry.chunks.join('');
+        chunkStore.delete(croppedImageFileId);
+      }
+
       if ((!files || files.length === 0) && !croppedImage) {
-        return res.status(400).json({ error: "No files provided" });
+        throw new Error("Vui lòng cung cấp bài tập hoặc ảnh để tạo đề tương tự.");
       }
 
       const fileList = [...(files || [])];
@@ -2246,13 +2295,14 @@ BẮT BUỘC kiểm tra và SỬA LỖI CHÍNH TẢ tiếng Việt thật cẩn 
               }
             ]
           }
-        ],
-        config: {
-          temperature: 0.7,
-        }
-      });
+        ]
+      }, res);
       
-      return { result: response.text };
+      const resultText = response.text || "";
+      if (!resultText || !resultText.trim()) {
+        throw new Error("Không thể tạo bài tập tương tự từ nội dung này. Vui lòng thử lại.");
+      }
+      return { result: resultText, customKeyFailed: response.customKeyFailed };
     
     });
 });
@@ -2790,21 +2840,27 @@ app.all("/api/solve-exercise", async (req, res) => {
     return keepAliveExecute(req, res, async () => {
 
       const files = resolveFiles(req.body);
-      const { croppedImage } = req.body || {};
-
-      if ((!files || files.length === 0) && !croppedImage) {
-        return res.status(400).json({ error: "No files provided" });
+      let { croppedImage, croppedImageFileId } = req.body || {};
+      if (croppedImageFileId && chunkStore.has(croppedImageFileId)) {
+        const entry = chunkStore.get(croppedImageFileId)!;
+        croppedImage = entry.chunks.join('');
+        chunkStore.delete(croppedImageFileId);
       }
 
-      // If a cropped image of the graph/diagram is provided, include it in the parts for Gemini
-      const fileList = [...(files || [])];
+      const fileList = [...(files || []).filter(f => f && f.data && f.data.length > 0)];
       if (croppedImage && typeof croppedImage === 'string') {
-        const cleanBase64 = croppedImage.replace(/^data:[^;]+;base64,/, '');
-        fileList.unshift({
-          data: cleanBase64,
-          type: 'image/png',
-          name: 'cropped_figure.png'
-        });
+        const cleanBase64 = croppedImage.replace(/^data:[^;]+;base64,/, '').trim();
+        if (cleanBase64) {
+          fileList.unshift({
+            data: cleanBase64,
+            type: 'image/png',
+            name: 'cropped_figure.png'
+          });
+        }
+      }
+
+      if (!fileList || fileList.length === 0) {
+        throw new Error("Vui lòng tải lên tệp bài tập hoặc ảnh đề bài.");
       }
 
       const prompt = `Bạn là một giáo viên xuất sắc. Dưới đây là bài tập hoặc tài liệu học sinh đưa ra. 
@@ -2839,13 +2895,14 @@ ${MATH_FORMATTING_RULES}
               }
             ]
           }
-        ],
-        config: {
-          temperature: 0.2,
-        }
-      });
+        ]
+      }, res);
 
       let resultText = response.text || "";
+      if (!resultText || !resultText.trim()) {
+        throw new Error("Không thể trích xuất hoặc giải bài tập từ ảnh này. Thầy cô vui lòng kiểm tra lại chất lượng ảnh, cắt gọn đề bài hoặc thử lại.");
+      }
+
       if (croppedImage) {
         const imgTag = `\n\n<img src="${croppedImage}" alt="Hình vẽ / Đồ thị bài toán" class="max-w-[480px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm" />\n\n`;
         // 1. Chèn vào Đề bài
@@ -2869,7 +2926,7 @@ ${MATH_FORMATTING_RULES}
         }
       }
 
-      return { result: resultText };
+      return { result: resultText, customKeyFailed: response.customKeyFailed };
     });
 });
 

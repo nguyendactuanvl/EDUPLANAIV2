@@ -102,6 +102,13 @@ export default function App() {
   // Theme State
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [isFocusMode, setIsFocusMode] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState<boolean>(() => {
+    return !!(localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim();
+  });
+
+  const checkApiKeyStatus = () => {
+    setHasApiKey(!!(localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim());
+  };
 
   useEffect(() => {
     applyTheme(theme);
@@ -137,6 +144,7 @@ export default function App() {
     const handleShowModal = () => {
       setSettingsDefaultTab("apikey");
       setIsSettingsOpen(true);
+      checkApiKeyStatus();
     };
     const handleShowGuide = (e: any) => {
       if (e?.detail?.sectionId) {
@@ -172,6 +180,7 @@ export default function App() {
     window.addEventListener('focus-mode', handleFocusMode);
     window.addEventListener('hsa-focus-mode', handleFocusMode);
     window.addEventListener('open-exam-stats', handleOpenStats);
+    window.addEventListener('storage', checkApiKeyStatus);
 
     return () => {
       window.removeEventListener('show-api-key-modal', handleShowModal);
@@ -181,6 +190,7 @@ export default function App() {
       window.removeEventListener('focus-mode', handleFocusMode);
       window.removeEventListener('hsa-focus-mode', handleFocusMode);
       window.removeEventListener('open-exam-stats', handleOpenStats);
+      window.removeEventListener('storage', checkApiKeyStatus);
     };
   }, []);
 
@@ -334,14 +344,34 @@ export default function App() {
                 setSettingsDefaultTab("apikey");
                 setIsSettingsOpen(true);
               }} 
-              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 rounded-lg text-xs font-medium hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors cursor-pointer"
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer border ${
+                hasApiKey 
+                  ? "bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100" 
+                  : "bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700 hover:bg-amber-200 animate-pulse font-bold"
+              }`}
               title="Cài đặt API Key"
             >
               <Key className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">API Key</span>
+              <span className="hidden sm:inline">{hasApiKey ? "API Key (Đã cài)" : "API Key (Chưa cài)"}</span>
             </button>
           </div>
         </header>
+
+        {!hasApiKey && (
+          <div 
+            onClick={() => {
+              setSettingsDefaultTab("apikey");
+              setIsSettingsOpen(true);
+            }}
+            className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 text-xs sm:text-sm font-medium flex items-center justify-between cursor-pointer transition-colors shadow-xs shrink-0 z-10"
+          >
+            <div className="flex items-center gap-2">
+              <Key className="w-4 h-4 shrink-0 animate-bounce" />
+              <span><strong>Mặc định yêu cầu API Key:</strong> Thầy/Cô vui lòng nhập Gemini API Key cá nhân để bắt đầu tạo bài tập, đề thi và giải toán. Bấm vào đây để dán key miễn phí từ Google AI Studio.</span>
+            </div>
+            <span className="underline font-bold shrink-0 ml-2 whitespace-nowrap">Nhập API Key ngay →</span>
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto relative w-full h-full">
           <ErrorBoundary key={activeTab}>
