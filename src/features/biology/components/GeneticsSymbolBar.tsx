@@ -159,7 +159,7 @@ export const GeneticsSymbolBar: React.FC<GeneticsSymbolBarProps> = ({ onInsert, 
               : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
           }`}
         >
-          {"$\\frac{AB}{ab}$ Kiểu gen phân số"}
+          $\frac{AB}{ab}$ Kiểu gen phân số
         </button>
 
         <button
@@ -210,7 +210,7 @@ export const GeneticsSymbolBar: React.FC<GeneticsSymbolBarProps> = ({ onInsert, 
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5 uppercase">
             <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-            {"Tạo Kiểu Gen Hoán Vị ($\\frac{AB}{ab}$, $f\\%$)"}
+            Tạo Kiểu Gen Hoán Vị {"($\\frac{AB}{ab}$, $f\\%$)"}
           </span>
           <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-mono">
             Tự động bọc KaTeX $...$

@@ -208,6 +208,10 @@ export function calculateHardyWeinberg(input: HardyWeinbergInput): HardyWeinberg
   const freqH = Number((countAa / total).toFixed(4));
   const freqR = Number((countaa / total).toFixed(4));
 
+  const d = freqD;
+  const h = freqH;
+  const r = freqR;
+
   const p_alleleA = Number((freqD + freqH / 2).toFixed(4));
   const q_allelea = Number((1 - p_alleleA).toFixed(4));
 
