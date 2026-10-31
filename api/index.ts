@@ -2804,7 +2804,7 @@ ${!isSinglePageMode ? '- Ở ranh giới chuyển tiếp giữa các trang, bắ
         ],
         config: {
           temperature: 0.1,
-          maxOutputTokens: 16384,
+          maxOutputTokens: 8192,
         }
       });
       
@@ -2821,6 +2821,11 @@ ${!isSinglePageMode ? '- Ở ranh giới chuyển tiếp giữa các trang, bắ
           resultText = resultText.replace(/\[Hình (?:vẽ|ảnh)[^\]]*\]/i, imgTag);
         }
       }
+
+      if (!resultText || !resultText.trim()) {
+        resultText = "Không nhận diện được nội dung chữ hoặc công thức trong hình ảnh/tài liệu này. Thầy cô vui lòng kiểm tra lại độ nét của hình ảnh và thử lại.";
+      }
+
       return { result: resultText };
     
     });

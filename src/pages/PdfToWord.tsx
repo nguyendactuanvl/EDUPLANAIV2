@@ -25,6 +25,55 @@ const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
+const optimizeImageForOcr = async (file: File): Promise<{ data: string; type: string; name: string }> => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX_DIM = 1800; // Optimal resolution for Gemini math & OCR
+        let { width, height } = img;
+        if (width > MAX_DIM || height > MAX_DIM) {
+          if (width > height) {
+            height = Math.round((height * MAX_DIM) / width);
+            width = MAX_DIM;
+          } else {
+            width = Math.round((width * MAX_DIM) / height);
+            height = MAX_DIM;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const mimeType = file.type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+          const quality = mimeType === 'image/jpeg' ? 0.92 : undefined;
+          const dataUrl = canvas.toDataURL(mimeType, quality);
+          resolve({
+            data: dataUrl.split(',')[1],
+            type: mimeType,
+            name: file.name
+          });
+          return;
+        }
+        const raw = (e.target?.result as string).split(',')[1];
+        resolve({ data: raw, type: file.type || 'image/png', name: file.name });
+      };
+      img.onerror = () => {
+        const raw = (e.target?.result as string).split(',')[1];
+        resolve({ data: raw, type: file.type || 'image/png', name: file.name });
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => {
+      resolve({ data: '', type: file.type || 'image/png', name: file.name });
+    };
+    reader.readAsDataURL(file);
+  });
+};
+
 type PageMode = 'recommended' | 'range' | 'all';
 type VisualMode = 'auto_redraw' | 'crop_original' | 'manual_visualizer';
 
@@ -269,60 +318,50 @@ export function PdfToWord() {
 
         try {
           const freshBuffer = await selectedFile.arrayBuffer();
-          const pageResults: string[] = [];
+
+
+          const pageResults: string[] = new Array(pagesToProcess);
           const pageImagesMap: { [pageNum: number]: string } = {};
 
-          for (let p = startP; p <= endP; p++) {
-            const currentPageIndex = p - startP + 1;
-            const pct = Math.min(95, Math.round(((currentPageIndex - 1) / pagesToProcess) * 90) + 8);
-            setProgressPercent(pct);
-            setProgressStatus(`📄 Đang bóc tách & số hóa Trang ${p}/${endP} (Tiến độ ${currentPageIndex}/${pagesToProcess} trang)...`);
+          const batchSize = 3;
+          for (let i = 0; i < pagesToProcess; i += batchSize) {
+            const batch = [];
+            for (let j = i; j < i + batchSize && j < pagesToProcess; j++) {
+              batch.push(j);
+            }
 
-            // Render only this 1 page to high-res PNG (scale 2.0 for sharp OCR & figures)
-            const { dataUrl } = await renderPdfPageToDataUrl(freshBuffer.slice(0), p, 2.0);
-            pageImagesMap[p] = dataUrl;
+            await Promise.all(batch.map(async (batchIdx) => {
+              const p = startP + batchIdx;
+              const { dataUrl } = await renderPdfPageToDataUrl(freshBuffer.slice(0), p, 2.0);
+              pageImagesMap[p] = dataUrl;
 
-            const singleFile = [{
-              data: dataUrl.split(',')[1],
-              type: 'image/png',
-              name: `Trang_${p}.png`
-            }];
+              const response = await apiFetch('/api/pdf-to-word', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  files: [{
+                    data: dataUrl.split(',')[1],
+                    type: 'image/png',
+                    name: `Trang_${p}.png`
+                  }],
+                  pageNum: p,
+                  totalPages: pdfTotalPages
+                })
+              });
 
-            const response = await apiFetch('/api/pdf-to-word', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                files: singleFile,
-                pageNum: p,
-                totalPages: pdfTotalPages
-              })
-            });
-
-            if (!response.ok) {
-              let errorData;
-              let errText = await response.text();
-              try {
-                 errorData = JSON.parse(errText);
-              } catch {
-                 errorData = { error: errText };
+              if (!response.ok) throw new Error(`Lỗi xử lý trang ${p}`);
+              const text = await response.text();
+              const data = parseApiResponse<any>(text);
+              let pageText = typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || '');
+              
+              if (pageText) {
+                pageText = pageText.replace(/```(?:tikz|latex)?\s*\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}\s*```/gi, '\n[Hình vẽ minh họa]\n');
+                pageText = pageText.replace(/```tikz[\s\S]*?```/gi, '\n[Hình vẽ minh họa]\n');
+                pageText = pageText.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/gi, '\n[Hình vẽ minh họa]\n');
+                pageText = normalizeMathText(normalizeOcrChoicesAndFormatting(pageText));
               }
-              let errorMsg = errorData.error || `Có lỗi xảy ra khi xử lý Trang ${p}`;
-              if (typeof errorMsg === 'object') errorMsg = JSON.stringify(errorMsg);
-              throw new Error(errorMsg);
-            }
-
-            const text = await response.text();
-            const data = parseApiResponse<any>(text);
-            let pageText = typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || '');
-            
-            if (pageText) {
-              pageText = pageText.replace(/```(?:tikz|latex)?\s*\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}\s*```/gi, '\n[Hình vẽ minh họa]\n');
-              pageText = pageText.replace(/```tikz[\s\S]*?```/gi, '\n[Hình vẽ minh họa]\n');
-              pageText = pageText.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/gi, '\n[Hình vẽ minh họa]\n');
-              pageText = normalizeMathText(normalizeOcrChoicesAndFormatting(pageText));
-            }
-
-            pageResults.push(pageText.trim());
+              pageResults[batchIdx] = pageText.trim();
+            }));
           }
 
           setPdfPageImages(pageImagesMap);
@@ -391,12 +430,12 @@ export function PdfToWord() {
           const fileData = btoa(unescape(encodeURIComponent(text)));
           fileListForApi = [{ data: fileData, type: 'text/plain', name: selectedFile.name }];
         } else {
-          // Image
-          const fileData = await fileToBase64(selectedFile);
-          fileListForApi = [{ data: fileData, type: selectedFile.type || 'image/png', name: selectedFile.name }];
+          // Optimize image (downscale to max 1800px if large, keeping math/text razor sharp)
+          const optimized = await optimizeImageForOcr(selectedFile);
+          fileListForApi = [optimized];
         }
 
-        const response = await apiFetch('/api/pdf-to-word', {
+        let response = await apiFetch('/api/pdf-to-word', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -417,7 +456,19 @@ export function PdfToWord() {
           throw new Error(errorMsg);
         }
 
-        const text = await response.text();
+        let text = await response.text();
+        // If response is empty or whitespace, retry once seamlessly
+        if (!text || !text.trim()) {
+          setProgressStatus('⏳ Đang kết nối lại máy chủ để hoàn tất bóc tách...');
+          await new Promise(r => setTimeout(r, 1200));
+          response = await apiFetch('/api/pdf-to-word', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ files: fileListForApi })
+          });
+          text = await response.text();
+        }
+
         const data = parseApiResponse<any>(text);
         let rawRes = typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(data.result));
         if (rawRes) {

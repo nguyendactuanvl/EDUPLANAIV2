@@ -80,6 +80,7 @@ const OverallAnalyticsDashboard = safeLazy(() => import('./pages/OverallAnalytic
 const ExamShufflerView = safeLazy(() => import('./components/ExamShuffler/ExamShufflerView'), "ExamShufflerView");
 const BiologyWorkspace = safeLazy(() => import('./features/biology/BiologyWorkspace'), "BiologyWorkspace");
 const PhysicsWorkspace = safeLazy(() => import('./features/physics/PhysicsWorkspace'), "PhysicsWorkspace");
+const SubjectHubWorkspace = safeLazy(() => import('./features/subjects/SubjectHubWorkspace'), "SubjectHubWorkspace");
 
 import { parseExamIdFromLocation, registerExamUrlMapping } from "./lib/smartRouter";
 
@@ -90,6 +91,9 @@ export default function App() {
     if (tabParam === 'exam_stats' || tabParam === 'stats') return 'exam_stats';
     if (tabParam === 'biology' || tabParam === 'bio') return 'biology';
     if (tabParam === 'physics' || tabParam === 'phy') return 'physics';
+    if (tabParam === 'chemistry' || tabParam === 'chem' || tabParam === 'hoa') return 'chemistry';
+    if (tabParam === 'english' || tabParam === 'eng' || tabParam === 'anh') return 'english';
+    if (tabParam === 'subjects_hub' || tabParam === 'hub') return 'subjects_hub';
     return "math_tools";
   });
   const [statsExamId, setStatsExamId] = useState<string | undefined>(() => {
@@ -177,6 +181,13 @@ export default function App() {
       setActiveTab("exam_stats");
     };
 
+    const handleSwitchTab = (e: any) => {
+      const target = typeof e?.detail === 'string' ? e.detail : e?.detail?.tab;
+      if (target) {
+        setActiveTab(target);
+      }
+    };
+
     window.addEventListener('show-api-key-modal', handleShowModal);
     window.addEventListener('show-user-guide-modal', handleShowGuide);
     window.addEventListener('api-retry-status', handleRetryStatus);
@@ -184,6 +195,7 @@ export default function App() {
     window.addEventListener('focus-mode', handleFocusMode);
     window.addEventListener('hsa-focus-mode', handleFocusMode);
     window.addEventListener('open-exam-stats', handleOpenStats);
+    window.addEventListener('switch-tab', handleSwitchTab);
     window.addEventListener('storage', checkApiKeyStatus);
 
     // Auto-prompt API Key modal on first visit if no key is set
@@ -205,6 +217,7 @@ export default function App() {
       window.removeEventListener('focus-mode', handleFocusMode);
       window.removeEventListener('hsa-focus-mode', handleFocusMode);
       window.removeEventListener('open-exam-stats', handleOpenStats);
+      window.removeEventListener('switch-tab', handleSwitchTab);
       window.removeEventListener('storage', checkApiKeyStatus);
     };
   }, []);
@@ -380,8 +393,11 @@ export default function App() {
               {activeTab === "worksheets" && <Worksheets />}
               {activeTab === "exercise" && <ExerciseSolver />}
               {activeTab === "math_tools" && <MathTools />}
-              {activeTab === "physics" && <PhysicsWorkspace />}
+              {(activeTab === "physics" || activeTab === "physics_toolkit") && <SubjectHubWorkspace initialSubject="physics" />}
+              {(activeTab === "chemistry" || activeTab === "chemistry_toolkit") && <SubjectHubWorkspace initialSubject="chemistry" />}
               {activeTab === "biology" && <BiologyWorkspace />}
+              {(activeTab === "english" || activeTab === "english_toolkit") && <SubjectHubWorkspace initialSubject="english" />}
+              {activeTab === "subjects_hub" && <SubjectHubWorkspace initialSubject="physics" />}
               {activeTab === "gamification" && <Gamification />}
               {activeTab === "classmap" && <ClassMap />}
               {activeTab === "homeroom" && <HomeroomManagement />}

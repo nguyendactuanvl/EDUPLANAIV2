@@ -960,6 +960,44 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
             >
               <Calculator className="w-3.5 h-3.5 text-white shrink-0" /> Casio fx-580
             </button>
+
+            <div className="h-4 w-px bg-slate-700 mx-1 shrink-0" />
+
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('switch-tab', { detail: 'subjects_hub' }))}
+              className="px-2.5 py-1.5 bg-gradient-to-r from-amber-600 to-indigo-600 hover:from-amber-500 hover:to-indigo-500 active:scale-98 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 shadow-xs transition-all cursor-pointer border border-amber-400/40 shrink-0 whitespace-nowrap"
+              title="Mở Bộ 3 Môn THPT GDPT 2018 (Vật lý - Hóa học - Tiếng Anh)"
+            >
+              <span>🎓</span> Bộ 3 Môn THPT
+            </button>
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('switch-tab', { detail: 'physics' }))}
+              className="px-2.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg text-xs font-bold flex items-center gap-1 border border-amber-500/40 transition-all cursor-pointer shrink-0 whitespace-nowrap"
+              title="Vật lý THPT GDPT 2018"
+            >
+              <span>⚡</span> Vật lý
+            </button>
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('switch-tab', { detail: 'chemistry' }))}
+              className="px-2.5 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1 border border-emerald-500/40 transition-all cursor-pointer shrink-0 whitespace-nowrap"
+              title="Hóa học THPT GDPT 2018"
+            >
+              <span>🧪</span> Hóa học
+            </button>
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('switch-tab', { detail: 'english' }))}
+              className="px-2.5 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 rounded-lg text-xs font-bold flex items-center gap-1 border border-indigo-500/40 transition-all cursor-pointer shrink-0 whitespace-nowrap"
+              title="Tiếng Anh THPT GDPT 2018"
+            >
+              <span>🇬🇧</span> Tiếng Anh
+            </button>
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('switch-tab', { detail: 'biology' }))}
+              className="px-2.5 py-1.5 bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 rounded-lg text-xs font-bold flex items-center gap-1 border border-teal-500/40 transition-all cursor-pointer shrink-0 whitespace-nowrap"
+              title="Sinh học THPT GDPT 2018"
+            >
+              <span>🧬</span> Sinh học
+            </button>
           </div>
         </div>
       </div>

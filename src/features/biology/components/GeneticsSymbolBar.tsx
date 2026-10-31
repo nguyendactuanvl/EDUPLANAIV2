@@ -159,7 +159,7 @@ export const GeneticsSymbolBar: React.FC<GeneticsSymbolBarProps> = ({ onInsert, 
               : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
           }`}
         >
-          $\frac{AB}{ab}$ Kiểu gen phân số
+          {"$\\frac{AB}{ab}$ Kiểu gen phân số"}
         </button>
 
         <button
