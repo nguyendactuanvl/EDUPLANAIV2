@@ -70,10 +70,12 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
   const [copiedPin, setCopiedPin] = useState(false);
   const [copiedZalo, setCopiedZalo] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
 
   // Sync initial props whenever modal opens
   useEffect(() => {
     if (isOpen) {
+      setIsSharing(false);
       const normType = normalizeExamType(initialExamType);
       setModalExamType(normType);
       
