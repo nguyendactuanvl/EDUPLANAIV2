@@ -15,6 +15,7 @@ import { QuestionVisualizerPanel } from '../components/math-tools/QuestionVisual
 import { autoEnrichTextWithVisuals } from '../lib/bbtRenderer';
 import mammoth from 'mammoth';
 import { FeatureQuickGuideBanner } from '../components/FeatureQuickGuideBanner';
+import { ApiErrorBanner } from '../components/ApiErrorBanner';
 
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -871,8 +872,12 @@ export function PdfToWord() {
         </div>
 
         {error && (
-          <div className="max-w-3xl mx-auto mt-4 p-4 bg-rose-50 text-rose-700 rounded-xl text-center font-medium border border-rose-200 text-sm">
-            {error}
+          <div className="max-w-3xl mx-auto mt-4">
+            <ApiErrorBanner 
+              error={error} 
+              onDismiss={() => setError(null)} 
+              onRetry={handleConvert} 
+            />
           </div>
         )}
       </div>

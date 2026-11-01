@@ -7,7 +7,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { apiFetch } from '../lib/apiFetch';
 import LZString from 'lz-string';
-import * as XLSX from 'xlsx';
+import { XLSX } from '../lib/xlsxUtils';
 import { fixMath, cleanMath, cleanQuestionStem, cleanOptionText, formatMathContent, sanitizeShortAnswerInput, validateShortAnswer, compareShortAnswers, sanitizeAndPolishMath, sanitizeExamQuestion } from "../lib/utils";
 import { fetchExamFromCloud, saveExamToCloud, SYSTEM_EXAM_WEBHOOK } from "../lib/cloudExamStore";
 import { LanguageSpeechControls } from "../components/LanguageSpeechControls";

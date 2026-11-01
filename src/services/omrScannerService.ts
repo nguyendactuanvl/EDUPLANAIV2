@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import { XLSX } from '../lib/xlsxUtils';
 
 // =====================================================================
 // DATA TYPES FOR OMR & EXAM GRADING (CHUẨN BỘ GD&ĐT 2018)

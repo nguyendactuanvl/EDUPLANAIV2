@@ -10,7 +10,7 @@ import {
   TrendingUp, BarChart2, Plus, Box, BarChart3, School, User, Wand2, Users, BarChart, Loader2, FileSpreadsheet, Trash2, RefreshCw, X, ShieldCheck, Key
 } from "lucide-react";
 import { StudentExamView } from "./StudentExamView";
-import * as XLSX from "xlsx";
+import { XLSX } from "../lib/xlsxUtils";
 import { 
   googleSignIn, 
   googleSignOut, 

@@ -15,7 +15,7 @@ import {
   ArrowRight,
   AlertCircle,
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { XLSX } from '../../lib/xlsxUtils';
 import {
   OMRExamKey,
   parseFastTextAnswerKey,

@@ -75,7 +75,7 @@ import {
   MixerQuestion
 } from '../lib/examMixer';
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import * as XLSX from 'xlsx';
+import { XLSX } from '../lib/xlsxUtils';
 import { School, FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera, TrendingUp, BarChart2, Box, BarChart3, Calculator, Wand2, FileDiff, ShieldCheck, BookOpen, Image as ImageIcon } from "lucide-react";
 import { run1ClickMathFix } from "../components/math-tools/MathFormulaFixer";
 

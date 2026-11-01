@@ -5,7 +5,7 @@ import {
   Filter, Eye, X, ChevronDown, ChevronUp, FileSpreadsheet,
   TrendingUp, Sparkles, Check, Printer, PieChart, Info, HelpCircle
 } from "lucide-react";
-import * as XLSX from "xlsx";
+import { XLSX } from "../lib/xlsxUtils";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { fetchExamFromCloud, saveExamToCloud } from "../lib/cloudExamStore";

@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import { XLSX } from './xlsxUtils';
 import { cleanOptionText } from './utils';
 
 export interface MixerQuestion {

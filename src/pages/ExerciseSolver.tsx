@@ -11,6 +11,7 @@ import {
 import { MarkdownRenderer, fixMath } from "../components/MarkdownRenderer";
 import { MathView } from "../components/MathView";
 import { ErrorBoundary } from "../components/ErrorBoundary";
+import { ApiErrorBanner } from "../components/ApiErrorBanner";
 import { ImageCropperModal } from "../components/ImageCropperModal";
 import { GeoGebraDrawer } from "../components/math-tools/GeoGebraDrawer";
 import { ScientificCalculatorModal } from "../components/math-tools/ScientificCalculatorModal";
@@ -862,9 +863,11 @@ export function ExerciseSolver() {
             </div>
 
             {error && (
-              <div className="p-4 bg-rose-50 text-rose-700 rounded-lg text-sm text-center border border-rose-200">
-                {error}
-              </div>
+              <ApiErrorBanner 
+                error={error} 
+                onDismiss={() => setError(null)} 
+                onRetry={handleSolve} 
+              />
             )}
           </div>
         )}

@@ -7,7 +7,7 @@ import {
   PieChart as PieIcon, FolderHeart, Cloud, School
 } from 'lucide-react';
 import { exportHtmlToWord } from '../lib/exportUtils';
-import * as XLSX from 'xlsx';
+import { XLSX } from '../lib/xlsxUtils';
 import { 
   ALL_MATRIX_TEMPLATES, 
   ExamMatrixTemplate, 
@@ -368,27 +368,40 @@ export function CompetencyMatrixModal({
     let c3HieuCount = 0; let c3HieuScore = 0;
     let c3VdCount = 0;   let c3VdScore = 0;
 
-    matrixData.forEach(row => {
-      c1BietCount += countMatrixCommands(row.gqvd.biet);
-      c1BietScore += countMatrixScore(row.gqvd.biet);
-      c1HieuCount += countMatrixCommands(row.gqvd.hieu);
-      c1HieuScore += countMatrixScore(row.gqvd.hieu);
-      c1VdCount += countMatrixCommands(row.gqvd.vd);
-      c1VdScore += countMatrixScore(row.gqvd.vd);
+    (matrixData || []).forEach(row => {
+      if (!row) return;
+      const gqvdBiet = row.gqvd?.biet || '';
+      const gqvdHieu = row.gqvd?.hieu || '';
+      const gqvdVd = row.gqvd?.vd || '';
 
-      c2BietCount += countMatrixCommands(row.tuduy.biet);
-      c2BietScore += countMatrixScore(row.tuduy.biet);
-      c2HieuCount += countMatrixCommands(row.tuduy.hieu);
-      c2HieuScore += countMatrixScore(row.tuduy.hieu);
-      c2VdCount += countMatrixCommands(row.tuduy.vd);
-      c2VdScore += countMatrixScore(row.tuduy.vd);
+      const tuduyBiet = row.tuduy?.biet || '';
+      const tuduyHieu = row.tuduy?.hieu || '';
+      const tuduyVd = row.tuduy?.vd || '';
 
-      c3BietCount += countMatrixCommands(row.mohinh.biet);
-      c3BietScore += countMatrixScore(row.mohinh.biet);
-      c3HieuCount += countMatrixCommands(row.mohinh.hieu);
-      c3HieuScore += countMatrixScore(row.mohinh.hieu);
-      c3VdCount += countMatrixCommands(row.mohinh.vd);
-      c3VdScore += countMatrixScore(row.mohinh.vd);
+      const mohinhBiet = row.mohinh?.biet || '';
+      const mohinhHieu = row.mohinh?.hieu || '';
+      const mohinhVd = row.mohinh?.vd || '';
+
+      c1BietCount += countMatrixCommands(gqvdBiet);
+      c1BietScore += countMatrixScore(gqvdBiet);
+      c1HieuCount += countMatrixCommands(gqvdHieu);
+      c1HieuScore += countMatrixScore(gqvdHieu);
+      c1VdCount += countMatrixCommands(gqvdVd);
+      c1VdScore += countMatrixScore(gqvdVd);
+
+      c2BietCount += countMatrixCommands(tuduyBiet);
+      c2BietScore += countMatrixScore(tuduyBiet);
+      c2HieuCount += countMatrixCommands(tuduyHieu);
+      c2HieuScore += countMatrixScore(tuduyHieu);
+      c2VdCount += countMatrixCommands(tuduyVd);
+      c2VdScore += countMatrixScore(tuduyVd);
+
+      c3BietCount += countMatrixCommands(mohinhBiet);
+      c3BietScore += countMatrixScore(mohinhBiet);
+      c3HieuCount += countMatrixCommands(mohinhHieu);
+      c3HieuScore += countMatrixScore(mohinhHieu);
+      c3VdCount += countMatrixCommands(mohinhVd);
+      c3VdScore += countMatrixScore(mohinhVd);
     });
 
     const totalQuestions = c1BietCount + c1HieuCount + c1VdCount +
@@ -2555,26 +2568,27 @@ export function CompetencyMatrixInlineView({
     let tlnBiet = 0, tlnHieu = 0, tlnVd = 0;
     let tlBiet = 0, tlHieu = 0, tlVd = 0;
 
-    activeMatrix.forEach(r => {
+    (activeMatrix || []).forEach(r => {
+      if (!r) return;
       if (r.nlc) {
-        nlcBiet += countMatrixCommands(r.nlc.biet);
-        nlcHieu += countMatrixCommands(r.nlc.hieu);
-        nlcVd += countMatrixCommands(r.nlc.vd);
+        nlcBiet += countMatrixCommands(r.nlc?.biet || '');
+        nlcHieu += countMatrixCommands(r.nlc?.hieu || '');
+        nlcVd += countMatrixCommands(r.nlc?.vd || '');
       }
       if (r.ds) {
-        dsBiet += countMatrixCommands(r.ds.biet);
-        dsHieu += countMatrixCommands(r.ds.hieu);
-        dsVd += countMatrixCommands(r.ds.vd);
+        dsBiet += countMatrixCommands(r.ds?.biet || '');
+        dsHieu += countMatrixCommands(r.ds?.hieu || '');
+        dsVd += countMatrixCommands(r.ds?.vd || '');
       }
       if (r.tln) {
-        tlnBiet += countMatrixCommands(r.tln.biet);
-        tlnHieu += countMatrixCommands(r.tln.hieu);
-        tlnVd += countMatrixCommands(r.tln.vd);
+        tlnBiet += countMatrixCommands(r.tln?.biet || '');
+        tlnHieu += countMatrixCommands(r.tln?.hieu || '');
+        tlnVd += countMatrixCommands(r.tln?.vd || '');
       }
       if (r.tl) {
-        tlBiet += countMatrixCommands(r.tl.biet);
-        tlHieu += countMatrixCommands(r.tl.hieu);
-        tlVd += countMatrixCommands(r.tl.vd);
+        tlBiet += countMatrixCommands(r.tl?.biet || '');
+        tlHieu += countMatrixCommands(r.tl?.hieu || '');
+        tlVd += countMatrixCommands(r.tl?.vd || '');
       }
     });
 

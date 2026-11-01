@@ -236,32 +236,28 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
     const isQuotaError = response.status === 429 || errorMsg.includes("vượt quá giới hạn") || errorMsg.includes("quota") || errorMsg.includes("429");
     const isInvalidKeyError = response.status === 400 && (errorMsg.includes("API_KEY_INVALID") || errorMsg.includes("API Key không hợp lệ") || errorMsg.includes("API key not valid"));
 
-    // If Custom key is used and it's invalid or auth error, auto-remove and seamlessly retry with system key
     if ((isAuthError || isInvalidKeyError) && customKeyUsed) {
-      localStorage.removeItem(API_KEY_STORAGE);
-      console.warn("[apiFetch] Custom API key invalid/expired. Removed from localStorage, automatically retrying with system key...");
-      skipCustomKey = true;
-      continue;
+      throw new Error("API Key cá nhân bạn đã nhập không hợp lệ hoặc bị vô hiệu hóa (Lỗi API_KEY_INVALID). Thầy cô vui lòng bấm nút Cài đặt để cập nhật lại API Key mới.");
     }
     
     if (isQuotaError || response.status === 503 || errorMsg.toLowerCase().includes("overloaded")) {
       if (customKeyUsed) {
         if (attempt < maxRetries) {
           console.warn(`[apiFetch] Custom API key rate limited (429/503). Retrying... (Attempt ${attempt + 1} of ${maxRetries})`);
-          window.dispatchEvent(new CustomEvent('api-retry-status', { detail: { attempt: attempt + 1, maxRetries, message: "API Key cá nhân đang quá tải (429). Đang thử lại..." } }));
-          await delay(15000);
+          window.dispatchEvent(new CustomEvent('api-retry-status', { detail: { attempt: attempt + 1, maxRetries, message: "API Key cá nhân đang quá tải (429). Đang thử kết nối lại..." } }));
+          await delay(3000 + attempt * 2000);
           continue;
         } else {
-          throw new Error("API Key cá nhân của bạn hiện đang quá tải do nhận quá nhiều yêu cầu (Lỗi 429/503). Vui lòng đợi 1-2 phút rồi thử lại.");
+          throw new Error("API Key cá nhân của thầy/cô đã chạm ngưỡng hạn mức lượt gọi AI trong ngày của Google (Lỗi 429 / Quota Exceeded). Vui lòng thử lại sau ít phút hoặc dán API Key cá nhân khác.");
         }
       }
       if (attempt < maxRetries) {
-        console.warn(`[apiFetch] Rate limited (429/503). Retrying in 15 seconds... (Attempt ${attempt + 1} of ${maxRetries})`);
-        window.dispatchEvent(new CustomEvent('api-retry-status', { detail: { attempt: attempt + 1, maxRetries } }));
-        await delay(15000);
+        console.warn(`[apiFetch] System key rate limited (429/503). Retrying... (Attempt ${attempt + 1} of ${maxRetries})`);
+        window.dispatchEvent(new CustomEvent('api-retry-status', { detail: { attempt: attempt + 1, maxRetries, message: "Hệ thống đang quá tải. Đang tự động thử lại..." } }));
+        await delay(3000 + attempt * 2000);
         continue;
       } else {
-        throw new Error("Hệ thống (API Key mặc định) hiện đang nhận quá nhiều yêu cầu hoặc đã hết hạn mức. Vui lòng thử lại sau, hoặc thiết lập API Key cá nhân của riêng bạn trong Cài đặt để sử dụng ổn định hơn.");
+        throw new Error("Ứng dụng quy định 100% người dùng tự dán Gemini API Key cá nhân trong phần Cài đặt để sử dụng. Vui lòng mở Cài đặt và dán API Key cá nhân của bạn.");
       }
     }
 

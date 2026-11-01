@@ -4,7 +4,7 @@ import {
   HelpCircle, Settings, Send, Code, Play, RefreshCw, Upload, Copy, Info, Check, AlertCircle, AlertTriangle, Loader2, Sparkles,
   User, Users, BarChart, Search, Trash2, FileSpreadsheet, ShieldCheck, KeyRound, Zap, CheckCircle, ShieldAlert, Maximize2, Minimize2, Lock, Key, Share2
 } from "lucide-react";
-import * as XLSX from "xlsx";
+import { XLSX } from "../lib/xlsxUtils";
 import mammoth from "mammoth";
 import { 
   googleSignIn, 

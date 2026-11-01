@@ -363,24 +363,7 @@ function isValidGeminiApiKey(key?: string): boolean {
 }
 
 function getSystemAiClient() {
-  const sysKey = process.env.CUSTOM_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-  if (sysKey && sysKey !== "missing") {
-    return new GoogleGenAI({ 
-      apiKey: sysKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build'
-        }
-      }
-    });
-  }
-  return new GoogleGenAI({
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build'
-      }
-    }
-  });
+  throw new Error("Ứng dụng quy định 100% người dùng tự nhập Gemini API Key cá nhân. Không sử dụng API Key mặc định của hệ thống.");
 }
 
 function getAiClient(req: any) {
@@ -405,7 +388,7 @@ function getAiClient(req: any) {
     });
   }
   
-  return getSystemAiClient();
+  throw new Error("YÊU CẦU NHẬP API KEY CÁ NHÂN: Ứng dụng quy định 100% người dùng tự dán Gemini API Key cá nhân của mình để sử dụng. Vui lòng dán mã API Key cá nhân vào Cài đặt.");
 }
 
 function handleAiError(error: any, req: any, res: any) {
@@ -816,73 +799,29 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
         } as any;
   
       } catch (e: any) {
-        const status = e?.status;
-        const lowerMsg = (e?.message || "").toLowerCase();
-        
-        // If custom key failed for ANY reason (invalid, quota, network), immediately switch to system client and retry this model
-        if (isCustom) {
-          customKeyFailed = true;
-          if (res && typeof res.setHeader === 'function' && !res.headersSent) {
-            try { res.setHeader('X-Custom-Key-Failed', 'true'); } catch (err) {}
-          }
-          client = getSystemAiClient();
-          isCustom = false;
-          try {
-            const rawConfig = { ...(payloadOptions.config || {}) };
-            if (model.includes("3.8") || model.includes("4-") || model.includes("latest")) {
-              delete rawConfig.temperature;
-              delete rawConfig.topP;
-              delete rawConfig.topK;
-              delete rawConfig.candidateCount;
-            }
-
-            const updatedPayload = { 
-              ...payloadOptions, 
-              model,
-              config: {
-                maxOutputTokens: 32768,
-                ...rawConfig,
-                systemInstruction: rawConfig.systemInstruction || defaultSystemInstruction
-              } 
-            };
-            const response = await client.models.generateContent(updatedPayload);
-            const normText = extractTextFromResponse(response);
-            if (!normText) {
-              console.warn(`[generateWithFallback] System client with ${model} returned empty text, continuing fallback...`);
-              continue;
-            }
-            return {
-              text: normText,
-              candidates: response.candidates ? response.candidates.map((c: any) => ({ finishReason: c.finishReason, index: c.index })) : undefined,
-              customKeyFailed: true
-            } as any;
-          } catch (systemErr: any) {
-            primaryError = systemErr;
-            continue;
-          }
-        }
-
-        const is429 = lowerMsg.includes("429") || status === 429 || lowerMsg.includes("resource_exhausted") || lowerMsg.includes("quota") || lowerMsg.includes("503") || status === 503 || lowerMsg.includes("unavailable") || lowerMsg.includes("overloaded");
-        const is404 = lowerMsg.includes("not found") || status === 404 || lowerMsg.includes("is not found");
-        const isFetchError = lowerMsg.includes("fetch failed") || lowerMsg.includes("failed to fetch") || lowerMsg.includes("networkerror") || lowerMsg.includes("econnreset") || lowerMsg.includes("etimedout");
-
         primaryError = e;
-        if (is429 || isFetchError || is404) {
-          await delay(500);
-          continue;
-        }
-        await delay(500);
+        console.warn(`[generateWithFallback] Model ${model} error (isCustomKey: ${isCustom}):`, e?.message);
+        await delay(300);
         continue;
       }
     }
     
     if (primaryError && attempt < maxRetries - 1) {
-      await delay(1000 * (attempt + 1) + Math.random() * 300);
+      await delay(1000 * (attempt + 1));
     }
   }
   
-  if (primaryError) throw primaryError;
-  throw new Error("429 RESOURCE_EXHAUSTED: Hệ thống đang quá tải hoặc tạm thời không khả dụng do nhu cầu cao (503/429). Vui lòng thử lại sau ít phút hoặc sử dụng API Key cá nhân.");
+  if (primaryError) {
+    if (isCustom) {
+      const errMsg = primaryError?.message || "";
+      if (errMsg.includes("429") || errMsg.includes("quota") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("Free Tier")) {
+        throw new Error("API Key cá nhân của bạn đã chạm ngưỡng hạn mức gọi AI của Google (Lỗi 429 Quota Exceeded). Vui lòng thử đổi API Key khác hoặc đợi Google làm mới hạn mức.");
+      }
+      throw new Error(`Lỗi từ API Key cá nhân của bạn: ${errMsg}`);
+    }
+    throw primaryError;
+  }
+  throw new Error("429 RESOURCE_EXHAUSTED: Hệ thống đang quá tải hoặc tạm thời không khả dụng. Vui lòng sử dụng API Key cá nhân trong Cài đặt.");
 }
 
 async function generateWithFallbackStream(req: any, res: any, payloadOptions: any) {
@@ -932,51 +871,17 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
         }
       } catch (e: any) {
         primaryError = e;
-        if (isCustom) {
-          client = getSystemAiClient();
-          isCustom = false;
-          try {
-            const updatedPayload = {
-              ...payloadOptions,
-              model,
-              config: {
-                maxOutputTokens: 8192,
-                ...config,
-                systemInstruction: config.systemInstruction || defaultSystemInstruction
-              }
-            };
-            const responseStream = await client.models.generateContentStream(updatedPayload);
-            for await (const chunk of responseStream) {
-              if (chunk.text) {
-                if (!streamStarted) {
-                  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-                  res.setHeader('Transfer-Encoding', 'chunked');
-                  res.setHeader('X-Content-Type-Options', 'nosniff');
-                  res.setHeader('Cache-Control', 'no-cache, no-transform');
-                  res.setHeader('Access-Control-Allow-Origin', '*');
-                  res.setHeader('X-Custom-Key-Failed', 'true');
-                  streamStarted = true;
-                }
-                res.write(chunk.text);
-              }
-            }
-            if (streamStarted) {
-              res.end();
-              return;
-            }
-          } catch (systemErr: any) {
-            primaryError = systemErr;
-            continue;
-          }
-        }
+        console.warn(`[generateWithFallbackStream] Error with model ${model} (isCustomKey: ${isCustom}):`, e?.message);
         if (streamStarted) {
-          res.write('\n\n⚠️ GIÁN ĐOẠN DỮ LIỆU: Máy chủ AI quá tải. Vui lòng bấm "Thử tạo lại" để tạo lại phiếu học tập.');
+          res.write('\n\n⚠️ GIÁN ĐOẠN DỮ LIỆU: Quá trình truyền dữ liệu từ AI bị gián đoạn. Vui lòng bấm "Thử tạo lại".');
           res.end();
           return;
         }
+        await delay(300);
+        continue;
       }
     }
-    await delay(1000 * (attempt + 1));
+    await delay(500 * (attempt + 1));
   }
 
   if (!streamStarted) {
