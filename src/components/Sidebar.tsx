@@ -2,7 +2,7 @@ import {
   Trophy, BookOpen, Calendar, FileText, Settings, Sparkles, Clock, 
   ClipboardList, FileEdit, FileCheck, Users, ShieldCheck, 
   Key, Calculator, HelpCircle, PlayCircle, PenTool, ScanLine, Sun, Moon, GraduationCap, BarChart3,
-  Dna, Zap, Lock, Shuffle, PieChart, FlaskConical, Languages
+  Dna, Zap, Lock, Shuffle, PieChart, FlaskConical, Languages, Box
 } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -35,7 +35,9 @@ export function Sidebar({
         { id: "de_online_pdf", label: "6. Đề online từ PDF của GV", icon: FileText },
         { id: "khgd", label: "7. Kế hoạch giáo dục", icon: Calendar },
         { id: "khdh", label: "8. Kế hoạch dạy học", icon: BookOpen },
+        { id: "graduation_review", label: "8b. Ôn TN THPT 12 (CV 5512)", icon: GraduationCap },
         { id: "math_tools", label: "9. Công cụ Toán học", icon: Calculator },
+        { id: "spatial_geometry", label: "10. Hình học Không gian (3D)", icon: Box },
       ]
     },
     {

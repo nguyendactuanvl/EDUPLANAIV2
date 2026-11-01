@@ -533,12 +533,23 @@ export function wrapNakedMathInDocument(text: string): string {
     if (trimmed.includes('$') || trimmed.startsWith('|') || trimmed.startsWith('```')) {
       return fullLine;
     }
-    // Nếu là câu chữ tiếng Việt thuần túy không có ký hiệu toán
-    const hasMathSymbol = /[\\^_=><\+\-\*\/]|\b(?:le|ge|leq|geq|neq|sin|cos|tan|cot|sqrt|frac)\b|[0-9a-zA-Z]\s*(?:<=|>=|<|>|=)/.test(trimmed);
-    const hasVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(trimmed);
+    // Bỏ qua các dấu sao markdown bold/italic khi kiểm tra ký hiệu toán
+    const strippedOfMarkdown = trimmed.replace(/\*+/g, '').trim();
+    if (!strippedOfMarkdown) return fullLine;
 
-    if (hasMathSymbol && (!hasVietnamese || trimmed.length < 50)) {
-      let cleanMath = trimmed
+    // Không bao giờ bọc dấu $ cho các tiêu đề mục sư phạm hoặc câu văn tiếng Việt
+    if (/^(?:Mục\s*tiêu|Nội\s*dung|Sản\s*phẩm|Tổ\s*chức|Khẳng\s*định|Đạo\s*hàm|Hàm\s*số|Giá\s*trị|Phương\s*trình|Bất\s*phương\s*trình|Lời\s*giải|Đáp\s*án|Đúng|Sai|Do\s*đó|Vì|Vậy|Ta\s*có|Khi|Nếu|Gọi)/i.test(strippedOfMarkdown)) {
+      return fullLine;
+    }
+
+    const hasVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(strippedOfMarkdown);
+    if (hasVietnamese) {
+      return fullLine;
+    }
+
+    const hasMathSymbol = /[\\^_=><\+\-\/]|\b(?:le|ge|leq|geq|neq|sin|cos|tan|cot|sqrt|frac)\b|[0-9a-zA-Z]\s*(?:<=|>=|<|>|=)/.test(strippedOfMarkdown);
+    if (hasMathSymbol) {
+      let cleanMath = strippedOfMarkdown
         .replace(/\\geq\b/g, '\\ge ')
         .replace(/\\leq\b/g, '\\le ')
         .replace(/\\ge([0-9a-zA-Z])/g, '\\ge $1')

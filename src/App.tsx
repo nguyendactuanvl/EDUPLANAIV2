@@ -81,6 +81,8 @@ const ExamShufflerView = safeLazy(() => import('./components/ExamShuffler/ExamSh
 const BiologyWorkspace = safeLazy(() => import('./features/biology/BiologyWorkspace'), "BiologyWorkspace");
 const PhysicsWorkspace = safeLazy(() => import('./features/physics/PhysicsWorkspace'), "PhysicsWorkspace");
 const SubjectHubWorkspace = safeLazy(() => import('./features/subjects/SubjectHubWorkspace'), "SubjectHubWorkspace");
+const SpatialGeometryWorkspace = safeLazy(() => import('./features/spatialGeometry').then(m => ({ default: m.SpatialGeometryWorkspace })), "SpatialGeometryWorkspace");
+const GraduationReviewPlanner = safeLazy(() => import('./features/graduationReview/GraduationReviewPlanner'), "GraduationReviewPlannerModule");
 
 import { parseExamIdFromLocation, registerExamUrlMapping } from "./lib/smartRouter";
 
@@ -390,9 +392,11 @@ export default function App() {
               {activeTab === "ai_studio" && <AiStudioSuite />}
               {activeTab === "khgd" && <EducationalPlan />}
               {activeTab === "khdh" && <LessonPlan />}
+              {activeTab === "graduation_review" && <GraduationReviewPlanner />}
               {activeTab === "worksheets" && <Worksheets />}
               {activeTab === "exercise" && <ExerciseSolver />}
               {activeTab === "math_tools" && <MathTools />}
+              {activeTab === "spatial_geometry" && <SpatialGeometryWorkspace />}
               {(activeTab === "physics" || activeTab === "physics_toolkit") && <SubjectHubWorkspace initialSubject="physics" />}
               {(activeTab === "chemistry" || activeTab === "chemistry_toolkit") && <SubjectHubWorkspace initialSubject="chemistry" />}
               {activeTab === "biology" && <BiologyWorkspace />}

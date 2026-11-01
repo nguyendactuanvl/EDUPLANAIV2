@@ -56,18 +56,43 @@ export {
  * Triggers MathJax 3 typesetPromise on a given container or globally across the document.
  */
 export const typesetMathJax = (element?: HTMLElement | null) => {
-  if (typeof window !== 'undefined' && (window as any).MathJax) {
+  if (typeof window === 'undefined') return;
+  const target = element || (typeof document !== 'undefined' ? document.body : null);
+  if (!target) return;
+
+  const runTypeset = () => {
     const mj = (window as any).MathJax;
-    if (mj.typesetPromise) {
-      if (element) {
-        if (mj.typesetClear) {
-          try { mj.typesetClear([element]); } catch (e) {}
+    if (mj && typeof mj.typesetPromise === 'function') {
+      try {
+        if (typeof mj.typesetClear === 'function') {
+          try { mj.typesetClear([target]); } catch (e) {}
         }
-        mj.typesetPromise([element]).catch((err: any) => console.warn('MathJax typeset error:', err));
-      } else {
-        mj.typesetPromise().catch((err: any) => console.warn('MathJax typeset error:', err));
-      }
+        mj.typesetPromise([target])
+          .then(() => {
+            const containers = target.querySelectorAll('mjx-container');
+            containers.forEach((mjx: Element) => {
+              if (!mjx.hasAttribute('data-latex')) {
+                const text = mjx.getAttribute('aria-label') || mjx.querySelector('mjx-assistive-mml')?.textContent || '';
+                if (text) {
+                  mjx.setAttribute('data-latex', text.replace(/^\$+|\$+$/g, '').trim());
+                }
+              }
+            });
+          })
+          .catch((err: any) => console.warn('MathJax typeset error:', err));
+      } catch (e) {}
     }
+  };
+
+  const mj = (window as any).MathJax;
+  if (mj && typeof mj.typesetPromise === 'function') {
+    runTypeset();
+  } else if (mj && mj.startup && mj.startup.promise) {
+    mj.startup.promise.then(runTypeset).catch(runTypeset);
+  } else {
+    // Retry shortly if MathJax script is still in flight
+    setTimeout(runTypeset, 120);
+    setTimeout(runTypeset, 350);
   }
 };
 
@@ -538,9 +563,39 @@ export const MarkdownRenderer = ({
                 {children}
               </span>
             ),
+            span: ({ node, children, className, ...props }: any) => {
+              if (className && className.includes('math-inline')) {
+                const text = String(children || '').trim();
+                const cleanMath = text.replace(/^\$+|\$+$/g, '').trim();
+                return (
+                  <span className="math-inline font-serif" data-latex={cleanMath} {...cleanProps(props)}>
+                    {`$${cleanMath}$`}
+                  </span>
+                );
+              }
+              return <span className={className} {...cleanProps(props)}>{children}</span>;
+            },
             code: ({ children, className, ...props }: any) => {
               const codeStr = String(children || '').replace(/\n$/, '');
-              if (/\b(?:if|for|while|def|class|return|import|print|input|const|let|var|function)\b/.test(codeStr)) {
+              const isMath = className && (className.includes('math') || className.includes('language-math'));
+              if (isMath) {
+                const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
+                const isDisplay = className.includes('math-display');
+                return isDisplay ? (
+                  <div className="math-display my-2.5 text-center font-serif overflow-x-auto" data-latex={cleanMath}>
+                    {`$$${cleanMath}$$`}
+                  </div>
+                ) : (
+                  <span className="math-inline font-serif" data-latex={cleanMath}>
+                    {`$${cleanMath}$`}
+                  </span>
+                );
+              }
+              // Only treat as programming code if explicitly typed as code or non-math
+              if (className && className.includes('language-') && !className.includes('math')) {
+                return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...cleanProps(props)}>{children}</code>;
+              }
+              if (/(?:^|\n)\s*(?:function|const|let|var|import|export|class|def|return)\b/.test(codeStr) && !codeStr.includes('\\')) {
                 return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...cleanProps(props)}>{children}</code>;
               }
               const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
@@ -572,9 +627,38 @@ export const MarkdownRenderer = ({
               </div>
             );
           },
+          span: ({ node, children, className, ...props }: any) => {
+            if (className && className.includes('math-inline')) {
+              const text = String(children || '').trim();
+              const cleanMath = text.replace(/^\$+|\$+$/g, '').trim();
+              return (
+                <span className="math-inline font-serif" data-latex={cleanMath} {...cleanProps(props)}>
+                  {`$${cleanMath}$`}
+                </span>
+              );
+            }
+            return <span className={className} {...cleanProps(props)}>{children}</span>;
+          },
           code: ({ children, className, ...props }: any) => {
             const codeStr = String(children || '').replace(/\n$/, '');
-            if (/\b(?:if|for|while|def|class|return|import|print|input|const|let|var|function)\b/.test(codeStr)) {
+            const isMath = className && (className.includes('math') || className.includes('language-math'));
+            if (isMath) {
+              const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
+              const isDisplay = className.includes('math-display');
+              return isDisplay ? (
+                <div className="math-display my-2.5 text-center font-serif overflow-x-auto" data-latex={cleanMath}>
+                  {`$$${cleanMath}$$`}
+                </div>
+              ) : (
+                <span className="math-inline font-serif" data-latex={cleanMath}>
+                  {`$${cleanMath}$`}
+                </span>
+              );
+            }
+            if (className && className.includes('language-') && !className.includes('math')) {
+              return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...cleanProps(props)}>{children}</code>;
+            }
+            if (/(?:^|\n)\s*(?:function|const|let|var|import|export|class|def|return)\b/.test(codeStr) && !codeStr.includes('\\')) {
               return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...cleanProps(props)}>{children}</code>;
             }
             const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();

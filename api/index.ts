@@ -1796,6 +1796,69 @@ app.all("/api/generate-plan", async (req, res) => {
   });
 });
 
+// Route for Kế hoạch bài dạy Ôn thi Tốt nghiệp THPT (Module 8b)
+app.all(["/api/generate-graduation-review-plan"], async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  return keepAliveExecute(req, res, async () => {
+    const prompt = req.body.prompt || "";
+    const requestedModel = req.body.model || "gemini-2.5-flash";
+    if (!prompt) {
+      throw new Error("Không có nội dung yêu cầu tạo kế hoạch bài dạy ôn tập.");
+    }
+    const response = await generateWithFallback(req, {
+      contents: prompt,
+      model: requestedModel,
+      config: {
+        maxOutputTokens: 16384,
+      }
+    });
+    return {
+      result: response.text || ""
+    };
+  });
+});
+
+// Route for fetching available Gemini models via server proxy
+app.all(["/api/list-gemini-models"], async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  try {
+    const authHeader = req.headers['authorization'] as string;
+    let customKey = '';
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      customKey = authHeader.substring(7);
+    } else {
+      customKey = req.headers['x-gemini-api-key'] as string;
+    }
+    if (customKey) {
+      try { customKey = decodeURIComponent(customKey); } catch (e) {}
+      customKey = customKey.replace(/[^\x20-\x7E]/g, '').trim();
+    }
+    const activeKey = customKey || process.env.GEMINI_API_KEY || "";
+    if (!activeKey) {
+      return res.status(400).json({ error: "Chưa cấu hình API Key" });
+    }
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(activeKey)}`);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: Không thể truy vấn danh sách mô hình.`);
+    }
+    const data = await response.json();
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || "Lỗi nạp danh sách mô hình từ Google." });
+  }
+});
+
 // Route for Kế hoạch bài dạy (Giáo án CV 5512)
 app.all(["/api/generate-lesson-plan", "/api/generate-lesson-plan-file"], async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -4996,6 +5059,49 @@ Nhiệm vụ: Hãy phân tích chi tiết lỗ hổng kiến thức dẫn đến
     return res.json({ success: true, explanation });
   } catch (error: any) {
     console.error("Lỗi AI giải thích lỗi sai:", error);
+    return handleAiError(error, req, res);
+  }
+});
+
+// Endpoint sinh Kế hoạch bài dạy (Giáo án) Ôn thi Tốt nghiệp THPT chuẩn CV 5512 cho tất cả các môn
+app.post("/api/generate-graduation-review-plan", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  try {
+    const { prompt, model, subject, topic, periods } = req.body || {};
+    if (!prompt) {
+      return res.status(400).json({ error: "Thiếu nội dung yêu cầu soạn kế hoạch bài dạy ôn thi tốt nghiệp." });
+    }
+
+    const payload = {
+      model: model || "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        maxOutputTokens: 8192,
+        temperature: 0.3,
+        systemInstruction: `Bạn là chuyên gia thẩm định chương trình giáo dục phổ thông kiêm giáo viên dạy giỏi cốt cán cấp Tỉnh/Thành phố.
+Nhiệm vụ của bạn là soạn KẾ HOẠCH BÀI DẠY (GIÁO ÁN) ÔN TẬP TĂNG CƯỜNG BUỔI CHIỀU hoàn chỉnh, sâu sắc, chuẩn mực theo Công văn 5512/BGDĐT, bám sát Chương trình GDPT 2018 và đúng cấu trúc định dạng đề thi Tốt nghiệp THPT mới nhất của Bộ GD&ĐT.
+BẮT BUỘC TUÂN THỦ:
+1. Tất cả công thức toán học, biến số đơn lẻ (x, y, m, a...) BẮT BUỘC đặt trong cặp dấu đô la: $công_thức$ (nội dòng) hoặc $$công_thức$$ (khối riêng).
+2. Dùng cú pháp LaTeX chuẩn: \\frac{a}{b}, \\sqrt{...}, \\pi, \\Leftrightarrow, \\ge, \\le, \\in. Luôn dùng \\frac thay vì \\dfrac.
+3. Giữ nguyên vẹn font tiếng Việt UTF-8 chuẩn.
+4. TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG ĐƯỢC GHI '...tương tự giáo viên hướng dẫn'. Bắt buộc viết chi tiết từng lời giải ví dụ mẫu và giải thích toàn bộ các ý a, b, c, d của câu hỏi trắc nghiệm Đúng/Sai.`
+      }
+    };
+
+    const response = await generateWithFallback(req, payload, res);
+    const resultText = response?.text ? response.text.normalize("NFC").trim() : "";
+    if (!resultText) {
+      throw new Error("Không nhận được nội dung giáo án hợp lệ từ mô hình AI.");
+    }
+
+    return res.json({ success: true, result: resultText });
+  } catch (error: any) {
+    console.error("Lỗi AI generate-graduation-review-plan:", error);
     return handleAiError(error, req, res);
   }
 });

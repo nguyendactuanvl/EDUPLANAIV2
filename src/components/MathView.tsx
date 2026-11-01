@@ -59,7 +59,24 @@ const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
 
   const customCodeRenderer = ({ children, className, ...props }: any) => {
     const codeStr = String(children || '').replace(/\n$/, '');
-    if (/\b(?:if|for|while|def|class|return|import|print|input|const|let|var|function)\b/.test(codeStr)) {
+    const isMath = className && (className.includes('math') || className.includes('language-math'));
+    if (isMath) {
+      const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
+      const isDisplay = className.includes('math-display');
+      return isDisplay ? (
+        <div className="math-display my-2.5 text-center font-serif overflow-x-auto" data-latex={cleanMath}>
+          {`$$${cleanMath}$$`}
+        </div>
+      ) : (
+        <span className="math-inline font-serif" data-latex={cleanMath}>
+          {`$${cleanMath}$`}
+        </span>
+      );
+    }
+    if (className && className.includes('language-') && !className.includes('math')) {
+      return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...cleanProps(props)}>{children}</code>;
+    }
+    if (/(?:^|\n)\s*(?:function|const|let|var|import|export|class|def|return)\b/.test(codeStr) && !codeStr.includes('\\')) {
       return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...cleanProps(props)}>{children}</code>;
     }
     const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
@@ -95,6 +112,18 @@ const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
         {children}
       </div>
     ),
+    span: ({ node, children, className, ...props }: any) => {
+      if (className && className.includes('math-inline')) {
+        const text = String(children || '').trim();
+        const cleanMath = text.replace(/^\$+|\$+$/g, '').trim();
+        return (
+          <span className="math-inline font-serif" data-latex={cleanMath} {...cleanProps(props)}>
+            {`$${cleanMath}$`}
+          </span>
+        );
+      }
+      return <span className={className} {...cleanProps(props)}>{children}</span>;
+    },
     code: customCodeRenderer,
     // @ts-ignore
     'svg-wrapper': ({ node }: any) => {

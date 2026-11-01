@@ -85,8 +85,13 @@
         s = s.replace(/(?<!\\)\bne\b(?=\s*0|\s*\d|\s*\$|\s*[a-zA-Z]|\s*-|\s*\\)/g, '\\neq');
         // Fix missing spaces after comparison operators: \geq0 -> \ge 0, \leq0 -> \le 0, \geqy -> \ge y
         s = s.replace(/\\(geq|leq|neq|ge|le|ne)([0-9a-zA-Z])/g, '\\$1 $2');
+        // Fix formfeed and tab characters before LaTeX commands
+        s = s.replace(/\x0crac\b/g, '\\frac');
+        s = s.replace(/\x0c/g, '');
+        s = s.replace(/\text\b/g, '\\text');
         // Fix missing backslashes for standard TeX commands
-        s = s.replace(/(?<!\\)\b(frac|sqrt|lim|sin|cos|tan|cot|ln|log|in|notin|forall|exists|le|ge|leq|geq|infty|mathbb|Rightarrow|Leftrightarrow)\b/g, '\\$1');
+        s = s.replace(/(?<!\\)\b(frac|sqrt|lim|sin|cos|tan|cot|ln|log|in|notin|forall|exists|le|ge|leq|geq|infty|mathbb|Rightarrow|Leftrightarrow|quad|qquad|dots|ldots|cdots|vdots|ddots|approx|pi|times|cdot|max|min|text)\b/g, '\\$1');
+        s = s.replace(/(?<=[0-9a-zA-Z\)\}\]\s])\bin\b(?=\s*[0-9a-zA-Z\(\{\[\\])/g, '\\in');
         s = s.replace(/\\dfrac\b/g, '\\frac');
         s = s.replace(/\\geq\b/g, '\\ge');
         s = s.replace(/\\leq\b/g, '\\le');
