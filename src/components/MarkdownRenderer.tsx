@@ -275,13 +275,23 @@ const CustomImageRenderer: React.FC<{ cleanSrc: string; alt?: string; [key: stri
   const [copied, setCopied] = useState(false);
   const [hasError, setHasError] = useState(false);
 
-  const altText = alt || 'Đồ thị hàm số';
+  const altText = alt || 'Hình vẽ / Đồ thị bài toán';
   const isGraph = /đồ\s*thị|do_thi|graph|plot|hàm\s*số/i.test(altText) || cleanSrc?.includes('Do_Thi') || cleanSrc?.includes('graph');
   const isBbt = /bảng\s*biến\s*thiên|bang_bien_thien|bbt/i.test(altText) || cleanSrc?.includes('Bang_Bien_Thien');
-  const badgeLabel = isBbt ? 'BBT Chuẩn SGK' : isGraph ? 'Đồ thị Chuẩn SGK' : 'Hình vẽ SGK';
+  const badgeLabel = isBbt ? 'BBT Chuẩn SGK' : isGraph ? 'Đồ thị Chuẩn SGK' : 'Hình vẽ / Đồ thị bài toán';
 
-  // Nếu cleanSrc rỗng, không hợp lệ hoặc bị lỗi tải ảnh, tự động sinh đồ thị/BBT vector SVG chất lượng cao
-  if (!cleanSrc || cleanSrc === 'undefined' || cleanSrc === 'null' || cleanSrc.trim() === '' || hasError) {
+  // Normalize cleanSrc: remove linebreaks/whitespace, add data:image/png;base64, if raw base64
+  let imgSrc = (cleanSrc || '').trim().replace(/[\r\n]+/g, '');
+  if (imgSrc && !imgSrc.startsWith('http://') && !imgSrc.startsWith('https://') && !imgSrc.startsWith('data:') && !imgSrc.startsWith('/') && !imgSrc.startsWith('./')) {
+    if (/^(iVBORw0|\|9j\/|R0lGOD|UklGR|[A-Za-z0-9+/=]{30,})/.test(imgSrc)) {
+      imgSrc = `data:image/png;base64,${imgSrc}`;
+    }
+  }
+
+  const isBase64 = imgSrc.startsWith('data:image/');
+
+  // Nếu cleanSrc rỗng hoặc không hợp lệ, tự động sinh đồ thị/BBT vector SVG
+  if (!imgSrc || imgSrc === 'undefined' || imgSrc === 'null' || imgSrc.trim() === '' || (hasError && !isBase64)) {
     let fallbackSvg = '';
     try {
       const { generateFunctionGraphSvg, generateSyntheticGraphSvg, generateBbtSvg, analyzeFunctionToBbt } = require('../lib/bbtRenderer');
@@ -325,7 +335,7 @@ const CustomImageRenderer: React.FC<{ cleanSrc: string; alt?: string; [key: stri
           }
         }, 'image/png');
       };
-      img.src = cleanSrc;
+      img.src = imgSrc;
     } catch (e) {
       console.error(e);
     }
@@ -334,7 +344,7 @@ const CustomImageRenderer: React.FC<{ cleanSrc: string; alt?: string; [key: stri
   const handleDownload = () => {
     const link = document.createElement('a');
     link.download = `${isBbt ? 'Bang_Bien_Thien' : isGraph ? 'Do_Thi_Ham_So' : 'Hinh_Minh_Hoa'}_${Date.now()}.png`;
-    link.href = cleanSrc;
+    link.href = imgSrc;
     link.click();
   };
 
@@ -360,12 +370,12 @@ const CustomImageRenderer: React.FC<{ cleanSrc: string; alt?: string; [key: stri
         </div>
         <img
           {...cleanProps(props)}
-          src={cleanSrc}
+          src={imgSrc}
           alt={altText}
           loading="eager"
-          className="w-full max-w-[600px] min-w-[360px] h-auto rounded-lg mx-auto pt-1 sm:pt-2 cursor-zoom-in hover:ring-2 hover:ring-indigo-400 transition-all object-contain block"
-          style={{ minWidth: '360px' }}
-          onClick={() => window.dispatchEvent(new CustomEvent('open-fullscreen-image', { detail: cleanSrc }))}
+          className="w-full max-w-[600px] min-w-[280px] h-auto rounded-lg mx-auto pt-1 sm:pt-2 cursor-zoom-in hover:ring-2 hover:ring-indigo-400 transition-all object-contain block"
+          style={{ minWidth: '280px' }}
+          onClick={() => window.dispatchEvent(new CustomEvent('open-fullscreen-image', { detail: imgSrc }))}
           onError={() => {
             setHasError(true);
           }}

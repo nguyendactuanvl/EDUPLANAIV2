@@ -2909,7 +2909,12 @@ ${MATH_FORMATTING_RULES}
       }
 
       if (croppedImage) {
-        const imgTag = `\n\n<img src="${croppedImage}" alt="Hình vẽ / Đồ thị bài toán" class="max-w-[480px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm" />\n\n`;
+        let cleanCroppedUrl = (croppedImage || '').trim().replace(/[\r\n]+/g, '');
+        if (cleanCroppedUrl && !cleanCroppedUrl.startsWith('http://') && !cleanCroppedUrl.startsWith('https://') && !cleanCroppedUrl.startsWith('data:') && !cleanCroppedUrl.startsWith('/')) {
+          cleanCroppedUrl = `data:image/png;base64,${cleanCroppedUrl}`;
+        }
+
+        const imgTag = `\n\n<img src="${cleanCroppedUrl}" alt="Hình vẽ / Đồ thị bài toán" class="max-w-[480px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm" />\n\n`;
         // 1. Chèn vào Đề bài
         if (resultText.includes('[HÌNH_ẢNH_ĐỀ_BÀI]')) {
           resultText = resultText.replace(/\[HÌNH_ẢNH_ĐỀ_BÀI\]/g, imgTag);
@@ -2925,7 +2930,7 @@ ${MATH_FORMATTING_RULES}
         } else if (/##\s*(?:Lời giải|Đáp án|Hướng dẫn giải)/i.test(resultText)) {
           const solIdx = resultText.search(/##\s*(?:Lời giải|Đáp án|Hướng dẫn giải)/i);
           const solPart = resultText.slice(solIdx);
-          if (!solPart.includes(croppedImage)) {
+          if (!solPart.includes(cleanCroppedUrl)) {
             resultText = resultText.replace(/(##\s*(?:Lời giải|Đáp án|Hướng dẫn giải)[^\n]*\n)/i, `$1${imgTag}`);
           }
         }

@@ -2538,7 +2538,7 @@ export function autoEnrichTextWithVisuals(text: string, isSolution: boolean = fa
     let b = block;
 
     const hasBbtText = /(?:bảng\s*biến\s*thiên|bảng\s*xét\s*dấu|chiều\s*biến\s*thiên|\bBBT\b)/i.test(b);
-    const hasVisualAlready = b.includes('svg-wrapper') || b.includes('<img') || b.includes('<svg') || b.includes('\\begin{tikzpicture}');
+    const hasVisualAlready = b.includes('svg-wrapper') || b.includes('<img') || b.includes('data:image/') || b.includes('<svg') || b.includes('\\begin{tikzpicture}');
 
     if (hasBbtText && !hasVisualAlready) {
       let bbt: BBTData | null = null;
@@ -2580,7 +2580,7 @@ export function autoEnrichTextWithVisuals(text: string, isSolution: boolean = fa
             : Buffer.from(svg, 'utf8').toString('base64');
           if (b64) {
             const svgTag = `<svg-wrapper data-svg="${b64}"></svg-wrapper>`;
-            const placeholderRegex = /!\[([^\]]*)\]\([^)]*\)|<img[^>]*>|\[(?:HINH_ANH|BBT|Hình\s*vẽ|Bảng\s*biến\s*thiên|Đồ\s*thị(?:\s*hàm\s*số)?)[^\]]*\]/gi;
+            const placeholderRegex = /!\[([^\]]*)\]\([^)]*\)|<img[^>]*src=["'](?!data:|http|\/)[^"']*["'][^>]*>|\[(?:HINH_ANH|BBT|Hình\s*vẽ|Bảng\s*biến\s*thiên|Đồ\s*thị(?:\s*hàm\s*số)?)[^\]]*\]/gi;
             if (placeholderRegex.test(b)) {
               b = b.replace(placeholderRegex, svgTag);
             }
@@ -2599,7 +2599,7 @@ export function autoEnrichTextWithVisuals(text: string, isSolution: boolean = fa
     }
 
     const hasGraphText = /(?:đồ\s*thị|hình\s*bên|hình\s*vẽ|cho\s*đồ\s*thị)/i.test(b);
-    const hasGraphAlready = b.includes('svg-wrapper') || b.includes('\\begin{tikzpicture}');
+    const hasGraphAlready = b.includes('svg-wrapper') || b.includes('<img') || b.includes('data:image/') || b.includes('<svg') || b.includes('\\begin{tikzpicture}');
 
     if (hasGraphText && !hasGraphAlready) {
       let graphSvg: string | null = null;
@@ -2639,7 +2639,7 @@ export function autoEnrichTextWithVisuals(text: string, isSolution: boolean = fa
           : Buffer.from(graphSvg, 'utf8').toString('base64');
         if (b64) {
           const svgTag = `<svg-wrapper data-svg="${b64}"></svg-wrapper>`;
-          const placeholderRegex = /!\[([^\]]*)\]\([^)]*\)|<img[^>]*>|\[(?:HINH_ANH|BBT|Hình\s*vẽ|Bảng\s*biến\s*thiên|Đồ\s*thị(?:\s*hàm\s*số)?)[^\]]*\]/gi;
+          const placeholderRegex = /!\[([^\]]*)\]\([^)]*\)|<img[^>]*src=["'](?!data:|http|\/)[^"']*["'][^>]*>|\[(?:HINH_ANH|BBT|Hình\s*vẽ|Bảng\s*biến\s*thiên|Đồ\s*thị(?:\s*hàm\s*số)?)[^\]]*\]/gi;
           if (placeholderRegex.test(b)) {
             b = b.replace(placeholderRegex, svgTag);
           } else if (/(\n\s*(?:\*{0,2}|[-*]\s*)?(?:[Aa][\.\:\)]|[Aa]\)))/i.test(b)) {

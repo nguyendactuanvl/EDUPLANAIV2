@@ -98,10 +98,16 @@ const fileToBase64 = (file: File): Promise<string> => {
 // Helper to inject cropped image into problem stem and solution cleanly
 export const injectCroppedImageIntoSolution = (rawSolution: string, imgDataUrl: string, inSolution: boolean = true): string => {
   if (!rawSolution || !imgDataUrl) return rawSolution;
-  let text = rawSolution;
-  const imgTag = `\n\n<img src="${imgDataUrl}" alt="Hình vẽ / Đồ thị bài toán" class="max-w-[480px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm" />\n\n`;
+  let cleanUrl = imgDataUrl.trim().replace(/[\r\n]+/g, '');
+  if (cleanUrl && !cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://') && !cleanUrl.startsWith('data:') && !cleanUrl.startsWith('/')) {
+    cleanUrl = `data:image/png;base64,${cleanUrl}`;
+  }
 
-  // Remove existing auto-injected images to avoid duplicates when re-cropping
+  let text = rawSolution;
+  const imgTag = `\n\n<img src="${cleanUrl}" alt="Hình vẽ / Đồ thị bài toán" class="max-w-[480px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm" />\n\n`;
+
+  // Remove existing auto-injected images and broken markdown image tags to avoid duplicates
+  text = text.replace(/!\[(?:Hình vẽ \/ Đồ thị bài toán|Đồ thị \/ Hình vẽ minh họa lời giải|Hình minh họa đề bài|cropped_figure|Hình vẽ minh họa)[^\]]*\]\([^\)]*\)/gi, '');
   text = text.replace(/<img[^>]*alt=["'](?:Hình vẽ \/ Đồ thị bài toán|Đồ thị \/ Hình vẽ minh họa lời giải|Hình minh họa đề bài|cropped_figure)[^>]*\/?>\s*/gi, '');
 
   // 1. Inject into Đề bài (Problem statement)
@@ -124,7 +130,7 @@ export const injectCroppedImageIntoSolution = (rawSolution: string, imgDataUrl: 
     } else if (/##\s*(?:Lời giải|Đáp án|Hướng dẫn giải)/i.test(text)) {
       const solIdx = text.search(/##\s*(?:Lời giải|Đáp án|Hướng dẫn giải)/i);
       const solPart = text.slice(solIdx);
-      if (!solPart.includes(imgDataUrl)) {
+      if (!solPart.includes(cleanUrl)) {
         text = text.replace(/(##\s*(?:Lời giải|Đáp án|Hướng dẫn giải)[^\n]*\n)/i, `$1${imgTag}`);
       }
     }
