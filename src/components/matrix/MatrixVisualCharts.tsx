@@ -149,17 +149,17 @@ export function MatrixVisualCharts({
         });
       };
 
-      countAndClassify(row.gqvd.biet, 'c1', 'biet');
-      countAndClassify(row.gqvd.hieu, 'c1', 'hieu');
-      countAndClassify(row.gqvd.vd, 'c1', 'vd');
+      countAndClassify(row.gqvd?.biet || '', 'c1', 'biet');
+      countAndClassify(row.gqvd?.hieu || '', 'c1', 'hieu');
+      countAndClassify(row.gqvd?.vd || '', 'c1', 'vd');
 
-      countAndClassify(row.tuduy.biet, 'c2', 'biet');
-      countAndClassify(row.tuduy.hieu, 'c2', 'hieu');
-      countAndClassify(row.tuduy.vd, 'c2', 'vd');
+      countAndClassify(row.tuduy?.biet || '', 'c2', 'biet');
+      countAndClassify(row.tuduy?.hieu || '', 'c2', 'hieu');
+      countAndClassify(row.tuduy?.vd || '', 'c2', 'vd');
 
-      countAndClassify(row.mohinh.biet, 'c3', 'biet');
-      countAndClassify(row.mohinh.hieu, 'c3', 'hieu');
-      countAndClassify(row.mohinh.vd, 'c3', 'vd');
+      countAndClassify(row.mohinh?.biet || '', 'c3', 'biet');
+      countAndClassify(row.mohinh?.hieu || '', 'c3', 'hieu');
+      countAndClassify(row.mohinh?.vd || '', 'c3', 'vd');
     });
 
     const bietScoreTotal = c1BietScore + c2BietScore + c3BietScore;

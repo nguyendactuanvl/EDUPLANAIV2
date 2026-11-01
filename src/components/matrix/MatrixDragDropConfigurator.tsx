@@ -299,7 +299,8 @@ export function MatrixDragDropConfigurator({
   ) => {
     const updated = matrixData.map(row => {
       if (row.id === rowId) {
-        const oldVal = (row as any)[competency][level] || '';
+        const compObj = (row as any)[competency] || {};
+        const oldVal = compObj[level] || '';
         const filtered = oldVal
           .split(',')
           .map((s: string) => s.trim())
@@ -308,7 +309,7 @@ export function MatrixDragDropConfigurator({
         return {
           ...row,
           [competency]: {
-            ...row[competency],
+            ...compObj,
             [level]: filtered
           }
         };
@@ -332,7 +333,8 @@ export function MatrixDragDropConfigurator({
 
     const updated = matrixData.map(row => {
       if (row.id === rowId) {
-        const oldVal = (row as any)[competency][level] || '';
+        const compObj = (row as any)[competency] || {};
+        const oldVal = compObj[level] || '';
         const parts = oldVal ? oldVal.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
         tokensToAdd.forEach(t => {
           if (!parts.includes(t)) parts.push(t);
@@ -340,7 +342,7 @@ export function MatrixDragDropConfigurator({
         return {
           ...row,
           [competency]: {
-            ...row[competency],
+            ...compObj,
             [level]: parts.join(', ')
           }
         };
@@ -375,7 +377,7 @@ export function MatrixDragDropConfigurator({
     bgColorClass: string
   ) => {
     const cellKey = `${row.id}_${competency}_${level}`;
-    const rawVal = (row as any)[competency][level] || '';
+    const rawVal = (row as any)[competency]?.[level] || '';
     const tokens = rawVal
       .split(',')
       .map((s: string) => s.trim())
@@ -596,14 +598,14 @@ export function MatrixDragDropConfigurator({
           <tbody>
             {matrixData.map((row, idx) => {
               const rowCmdCount = 
-                countMatrixCommands(row.gqvd.biet) + countMatrixCommands(row.gqvd.hieu) + countMatrixCommands(row.gqvd.vd) +
-                countMatrixCommands(row.tuduy.biet) + countMatrixCommands(row.tuduy.hieu) + countMatrixCommands(row.tuduy.vd) +
-                countMatrixCommands(row.mohinh.biet) + countMatrixCommands(row.mohinh.hieu) + countMatrixCommands(row.mohinh.vd);
+                countMatrixCommands(row.gqvd?.biet || '') + countMatrixCommands(row.gqvd?.hieu || '') + countMatrixCommands(row.gqvd?.vd || '') +
+                countMatrixCommands(row.tuduy?.biet || '') + countMatrixCommands(row.tuduy?.hieu || '') + countMatrixCommands(row.tuduy?.vd || '') +
+                countMatrixCommands(row.mohinh?.biet || '') + countMatrixCommands(row.mohinh?.hieu || '') + countMatrixCommands(row.mohinh?.vd || '');
 
               const rowScore = 
-                countMatrixScore(row.gqvd.biet) + countMatrixScore(row.gqvd.hieu) + countMatrixScore(row.gqvd.vd) +
-                countMatrixScore(row.tuduy.biet) + countMatrixScore(row.tuduy.hieu) + countMatrixScore(row.tuduy.vd) +
-                countMatrixScore(row.mohinh.biet) + countMatrixScore(row.mohinh.hieu) + countMatrixScore(row.mohinh.vd);
+                countMatrixScore(row.gqvd?.biet || '') + countMatrixScore(row.gqvd?.hieu || '') + countMatrixScore(row.gqvd?.vd || '') +
+                countMatrixScore(row.tuduy?.biet || '') + countMatrixScore(row.tuduy?.hieu || '') + countMatrixScore(row.tuduy?.vd || '') +
+                countMatrixScore(row.mohinh?.biet || '') + countMatrixScore(row.mohinh?.hieu || '') + countMatrixScore(row.mohinh?.vd || '');
 
               const isDraggingThisRow = draggedRowIndex === idx;
 
