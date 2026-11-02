@@ -718,7 +718,7 @@ function safeJsonParse<T = any>(text: string, fallback?: T): T {
 }
 
 function getValidGeminiModels(requestedModel?: string): string[] {
-  let primary = requestedModel || "gemini-3.8-flash";
+  let primary = requestedModel || "gemini-2.5-flash";
   if (
     !primary ||
     primary.includes("1.5") || 
@@ -726,13 +726,12 @@ function getValidGeminiModels(requestedModel?: string): string[] {
     primary.includes("3.5") || 
     primary === "gemini-pro"
   ) {
-    primary = "gemini-3.8-flash";
+    primary = "gemini-2.5-flash";
   }
   const list = [
     primary,
-    "gemini-3.8-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-flash-latest"
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite"
   ];
   return Array.from(new Set(list));
 }
@@ -742,9 +741,10 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
   let isCustom = isValidGeminiApiKey((req.headers['authorization'] || req.headers['x-gemini-api-key']) as string);
   let customKeyFailed = false;
   const models = getValidGeminiModels(payloadOptions?.model);
+  const startTime = Date.now();
 
   let primaryError: any = null;
-  const maxRetries = 3;
+  const maxRetries = 2;
 
   const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán:
 - TẤT CẢ các biến số, tham số đơn lẻ (như x, y, m, a, b, c, d, S...) BẮT BUỘC phải đặt trong cặp dấu đô la: $x$, $y$, $m$, $a$, $b$, $c$, $d$, $S$.
@@ -767,9 +767,12 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
   
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     for (const model of models) {
+      if (Date.now() - startTime > 42000) {
+        console.warn("[generateWithFallback] Time budget (42s) reached, breaking loop.");
+        break;
+      }
       try {
         const rawConfig = { ...(payloadOptions.config || {}) };
-        // For Gemini 3.8 / 4 series, do not pass deprecated sampling params like temperature, topP, topK
         if (model.includes("3.8") || model.includes("4-") || model.includes("latest")) {
           delete rawConfig.temperature;
           delete rawConfig.topP;
@@ -781,7 +784,7 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
           ...payloadOptions, 
           model,
           config: {
-            maxOutputTokens: 32768,
+            maxOutputTokens: 8192,
             ...rawConfig,
             systemInstruction: rawConfig.systemInstruction || defaultSystemInstruction
           } 
@@ -801,16 +804,21 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
       } catch (e: any) {
         primaryError = e;
         console.warn(`[generateWithFallback] Model ${model} error (isCustomKey: ${isCustom}):`, e?.message);
-        await delay(300);
+        await delay(200);
         continue;
       }
     }
     
+    if (Date.now() - startTime > 40000) break;
     if (primaryError && attempt < maxRetries - 1) {
-      await delay(1000 * (attempt + 1));
+      await delay(400 * (attempt + 1));
     }
   }
   
+  if (Date.now() - startTime > 40000) {
+    throw new Error("MÁY CHỦ AI BẮT ĐẦU CHẬM: Thời gian xử lý từ dịch vụ AI vượt quá 42 giây (giới hạn Vercel 60s). Thầy/cô vui lòng bấm 'Thử tạo lại' hoặc giảm bớt số lượng câu hỏi.");
+  }
+
   if (primaryError) {
     if (isCustom) {
       const errMsg = primaryError?.message || "";
@@ -828,6 +836,7 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
   let client = getAiClient(req);
   let isCustom = isValidGeminiApiKey((req.headers['authorization'] || req.headers['x-gemini-api-key']) as string);
   const models = getValidGeminiModels(payloadOptions?.model);
+  const startTime = Date.now();
 
   const config = payloadOptions.config || {};
   const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán.
@@ -838,8 +847,12 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
   let primaryError: any = null;
   let streamStarted = false;
 
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     for (const model of models) {
+      if (Date.now() - startTime > 42000) {
+        console.warn("[generateWithFallbackStream] Time budget (42s) reached, breaking loop.");
+        break;
+      }
       try {
         const updatedPayload = {
           ...payloadOptions,
@@ -877,14 +890,20 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
           res.end();
           return;
         }
-        await delay(300);
+        await delay(200);
         continue;
       }
     }
-    await delay(500 * (attempt + 1));
+    if (Date.now() - startTime > 40000) break;
+    await delay(300 * (attempt + 1));
   }
 
   if (!streamStarted) {
+    if (Date.now() - startTime > 40000) {
+      return res.status(504).json({
+        error: "Thời gian xử lý của AI vượt quá 45 giây (Hạn mức Vercel Serverless Timeout 60s). Thầy/cô vui lòng bấm 'Thử tạo lại' hoặc chọn số câu ngắn hơn."
+      });
+    }
     if (primaryError) {
       return handleAiError(primaryError, req, res);
     }
