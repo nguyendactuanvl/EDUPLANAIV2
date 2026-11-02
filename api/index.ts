@@ -722,8 +722,9 @@ function getValidGeminiModels(requestedModel?: string): string[] {
   if (
     !primary ||
     primary.includes("1.5") || 
+    primary.includes("1.0") || 
     primary.includes("2.0") || 
-    primary.includes("3.5") || 
+    primary.includes("2.5-flash-lite") ||
     primary === "gemini-pro"
   ) {
     primary = "gemini-2.5-flash";
@@ -731,7 +732,7 @@ function getValidGeminiModels(requestedModel?: string): string[] {
   const list = [
     primary,
     "gemini-2.5-flash",
-    "gemini-2.5-flash-lite"
+    "gemini-3.5-flash-lite"
   ];
   return Array.from(new Set(list));
 }
