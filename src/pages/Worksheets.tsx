@@ -1146,7 +1146,7 @@ export function Worksheets() {
         ? `${window.location.origin}/?pin=${examId}&d=${compressed}`
         : shortLink;
        
-      setShareLink(fullBackupLink);
+      setShareLink(shortLink);
 
       // Save room to history
       const roomCode = examId;
@@ -1157,7 +1157,7 @@ export function Worksheets() {
         grade: selectedGrade,
         duration: 45,
         createdAt: new Date().toISOString(),
-        shareLink: fullBackupLink,
+        shareLink: shortLink,
         backupLink: fullBackupLink,
         linkedSheetId: null,
         linkedSheetUrl: null
