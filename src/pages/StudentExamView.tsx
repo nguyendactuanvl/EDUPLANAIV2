@@ -783,7 +783,7 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
       }
 
       if (!data) {
-        throw new Error(`Không tìm thấy bài thi với mã "${cleanId}". Vui lòng kiểm tra lại mã PIN hoặc yêu cầu thầy/cô bấm "Làm mới URL" để gửi lại link.`);
+        throw new Error(`Không tìm thấy bài thi với mã "${cleanId}". Vui lòng kiểm tra lại mã PIN hoặc yêu cầu thầy/cô gửi lại Link bài làm trực tiếp.`);
       }
 
       if (data.codeVersions || data.pdfBase64) {

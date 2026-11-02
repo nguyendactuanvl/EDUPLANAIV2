@@ -159,21 +159,25 @@ export async function saveExamToCloud(examId: string, data: any): Promise<boolea
 
   // 2. Sync to Backend API
   try {
-    apiFetch('/api/exams/share', {
+    await apiFetch('/api/exams/share', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...data, customId: cleanId })
-    }).catch(err => console.warn('API share async failed:', err));
-  } catch (e) {}
+    });
+  } catch (e) {
+    console.warn('API share async failed:', e);
+  }
 
   // 3. Sync to Google Apps Script Webhook (High-reliability distributed cloud backup)
   try {
-    saveExamToWebhook({
+    await saveExamToWebhook({
       action: "saveExam",
       examId: cleanId,
       ...data
-    }).catch(err => console.warn('Webhook exam backup async notice:', err));
-  } catch (e) {}
+    });
+  } catch (e) {
+    console.warn('Webhook exam backup async notice:', e);
+  }
 
   // 4. Sync to Cloud KV with safe URL-encoded chunking
   try {
