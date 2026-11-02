@@ -3230,8 +3230,9 @@ Tuyệt đối chỉ trả về JSON hợp lệ, không kèm bất kỳ lời d�
   });
 });
 
+const SYSTEM_EXAM_WEBHOOK = "https://script.google.com/macros/s/AKfycbwYHVplKQAUoUVBo6QbjSBnO_TB71eUXeeP2MmQ42nQIVJiUjvmLrrJwvCC-lsCXc7k/exec";
 const KV_STORE_ID = 'jaku8xjm';
-const CHUNK_SIZE = 800; // immanuel.co limit is 1024, so 800 is extremely safe and fast
+const CHUNK_SIZE = 120; // 120 hex chars per chunk is well within URL path limits (~180 chars total) to prevent 414 URI Too Long errors
 
 function strToHex(str: string): string {
   let hex = '';
@@ -3276,7 +3277,7 @@ async function saveToCloudKV(cleanId: string, data: any): Promise<boolean> {
     // Save count
     await fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${cleanId}_C/${count}`, {
       method: 'POST'
-    });
+    }).catch(() => {});
 
     // Save all chunks in parallel
     const chunkPromises: Promise<any>[] = [];
@@ -3285,10 +3286,24 @@ async function saveToCloudKV(cleanId: string, data: any): Promise<boolean> {
       chunkPromises.push(
         fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${cleanId}__${i}/${chunk}`, {
           method: 'POST'
-        })
+        }).catch(() => {})
       );
     }
     await Promise.all(chunkPromises);
+
+    // Parallel backup to Google Apps Script Webhook
+    try {
+      fetch(SYSTEM_EXAM_WEBHOOK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: "saveExam",
+          examId: cleanId,
+          ...data
+        })
+      }).catch(() => {});
+    } catch (e) {}
+
     return true;
   } catch (err) {
     return false;
@@ -3385,6 +3400,20 @@ async function loadFromCloudKV(cleanId: string): Promise<any> {
             return parsed;
           }
         } catch (e) {}
+      }
+    }
+  } catch (e) {}
+
+  // 3. Try Google Apps Script Webhook Store
+  try {
+    const webhookRes = await fetch(`${SYSTEM_EXAM_WEBHOOK}?action=getExam&examId=${encodeURIComponent(cleanId)}`);
+    if (webhookRes.ok) {
+      const webhookText = await webhookRes.text();
+      if (webhookText && !webhookText.trim().startsWith('<') && !webhookText.includes('<!DOCTYPE html>')) {
+        const parsed = JSON.parse(webhookText);
+        if (isServerValidExamPayload(parsed)) {
+          return parsed;
+        }
       }
     }
   } catch (e) {}

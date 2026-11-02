@@ -254,13 +254,27 @@ export async function fetchExamFromCloud(examId: string): Promise<any> {
   const cleanId = examId.trim().toUpperCase();
   if (!cleanId) return null;
 
-  // 1. Check localStorage first (instant response)
+  // 1. Check localStorage examCache first (instant response)
   try {
     const cached = localStorage.getItem(`examCache_${cleanId}`);
     if (cached) {
       const parsed = safeJsonParse(cached);
       if (isValidExamPayload(parsed)) {
         return parsed;
+      }
+    }
+  } catch (e) {}
+
+  // 1.5. Check teacher exam histories in localStorage
+  try {
+    const teacherHist = JSON.parse(localStorage.getItem("eduplan_teacher_exams_history") || "[]");
+    const worksheetHist = JSON.parse(localStorage.getItem("eduplan_worksheet_exams_history") || "[]");
+    const combined = [...(Array.isArray(teacherHist) ? teacherHist : []), ...(Array.isArray(worksheetHist) ? worksheetHist : [])];
+    const match = combined.find((e: any) => (e.code || e.id || e.pin || e.examId || "").trim().toUpperCase() === cleanId);
+    if (match) {
+      if (isValidExamPayload(match)) return match;
+      if (match.examData || match.questions || match.codes) {
+        return match;
       }
     }
   } catch (e) {}

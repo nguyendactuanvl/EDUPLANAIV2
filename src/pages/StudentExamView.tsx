@@ -738,17 +738,52 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
     XLSX.writeFile(workbook, `Ket_Qua_Thi_Online_${activeCode}.xlsx`);
   };
 
-  const fetchExamById = async (id: string) => {
-    const cleanId = id.trim();
+  const fetchExamById = async (rawInput: string) => {
+    let cleanId = rawInput.trim();
     if (!cleanId) return;
+
+    // Sanitize in case student pasted a full link, e.g. https://khgdkhbd2026.vercel.app/?pin=W5S7RN
+    if (cleanId.includes('http') || cleanId.includes('pin=') || cleanId.includes('/p/') || cleanId.includes('/exam/')) {
+      try {
+        const urlObj = new URL(cleanId.startsWith('http') ? cleanId : `https://example.com/${cleanId.replace(/^\/+/, '')}`);
+        const pinParam = urlObj.searchParams.get('pin') || urlObj.searchParams.get('code') || urlObj.searchParams.get('examId');
+        if (pinParam) {
+          cleanId = pinParam.trim().toUpperCase();
+        } else {
+          const pathMatches = urlObj.pathname.match(/\/(?:exam|p|thi|test|room|phong|student|worksheet|pht|s|e)\/([A-Za-z0-9_-]+)/i);
+          if (pathMatches && pathMatches[1]) {
+            cleanId = pathMatches[1].trim().toUpperCase();
+          }
+        }
+      } catch (e) {
+        const pinMatch = cleanId.match(/pin=([A-Za-z0-9_-]+)/i) || cleanId.match(/(?:exam|p|thi)\/([A-Za-z0-9_-]+)/i);
+        if (pinMatch && pinMatch[1]) {
+          cleanId = pinMatch[1].trim().toUpperCase();
+        }
+      }
+    } else {
+      cleanId = cleanId.toUpperCase();
+    }
+
     setLoading(true);
     setError(null);
     
     try {
-      const data = await fetchExamFromCloud(cleanId);
+      let data = await fetchExamFromCloud(cleanId);
+
+      // Retry up to 2 times if serverless cold start or network delay occurs
+      if (!data) {
+        await new Promise(r => setTimeout(r, 600));
+        data = await fetchExamFromCloud(cleanId);
+      }
 
       if (!data) {
-        throw new Error(`Không tìm thấy bài thi với mã "${cleanId}". Vui lòng kiểm tra lại mã PIN hoặc yêu cầu thầy/cô gửi lại link.`);
+        await new Promise(r => setTimeout(r, 1000));
+        data = await fetchExamFromCloud(cleanId);
+      }
+
+      if (!data) {
+        throw new Error(`Không tìm thấy bài thi với mã "${cleanId}". Vui lòng kiểm tra lại mã PIN hoặc yêu cầu thầy/cô bấm "Làm mới URL" để gửi lại link.`);
       }
 
       if (data.codeVersions || data.pdfBase64) {
@@ -1007,9 +1042,18 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
           <p className="text-center text-slate-500 mb-6 text-sm">Nhập mã đề thi do giáo viên cung cấp để bắt đầu làm bài</p>
 
           {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
-              <p className="font-semibold mb-1">Thông báo:</p>
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm space-y-3">
+              <p className="font-semibold">Thông báo:</p>
               <p>{error}</p>
+              {inputPin && (
+                <button
+                  type="button"
+                  onClick={() => fetchExamById(inputPin.trim())}
+                  className="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Thử kết nối lại mã {inputPin}
+                </button>
+              )}
             </div>
           )}
 
