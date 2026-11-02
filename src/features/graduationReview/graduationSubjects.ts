@@ -45,9 +45,7 @@ export interface AiModelItem {
 
 // Danh sách mô hình AI khả dụng hiện tại
 export const DEFAULT_AI_MODELS: AiModelItem[] = [
-  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", desc: "Mặc định • Tốc độ cao & Chuẩn xác", isRecommended: true },
-  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", desc: "Suy luận sâu • Chuyên sâu STEM & Sư phạm" },
-  { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", desc: "Mô hình thế hệ mới nhất" },
+  { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", desc: "Mặc định • Tốc độ cao & Chuẩn xác", isRecommended: true },
   { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash Lite", desc: "Tốc độ phản hồi cực nhanh" },
   { id: "gemini-flash-latest", name: "Gemini Flash Latest", desc: "Bản cập nhật Flash mới nhất" },
   { id: "gemini-4-argon", name: "Gemini 4 Argon", desc: "Mô hình tư duy nâng cao (Tài khoản trả phí)" },

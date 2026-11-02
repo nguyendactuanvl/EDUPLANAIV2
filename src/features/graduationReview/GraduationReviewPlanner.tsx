@@ -434,7 +434,7 @@ export function GraduationReviewPlannerModule() {
       ""
     );
   });
-  const [geminiModel, setGeminiModel] = useState<string>("gemini-2.5-flash");
+  const [geminiModel, setGeminiModel] = useState<string>("gemini-3.8-flash");
   const [availableModels, setAvailableModels] = useState<AiModelItem[]>(DEFAULT_AI_MODELS);
   const [isFetchingModels, setIsFetchingModels] = useState<boolean>(false);
   const [modelsFetchedFromAccount, setModelsFetchedFromAccount] = useState<boolean>(false);
@@ -533,7 +533,7 @@ export function GraduationReviewPlannerModule() {
           const exists = filtered.some((m: any) => m.id === geminiModel);
           if (!exists) {
             const preferred =
-              filtered.find((m: any) => m.id === "gemini-2.5-flash") ||
+              filtered.find((m: any) => m.id === "gemini-3.8-flash") ||
               filtered.find((m: any) => m.id.includes("flash")) ||
               filtered[0];
             setGeminiModel(preferred.id);

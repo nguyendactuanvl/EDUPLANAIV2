@@ -2,7 +2,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import { Analytics } from '@vercel/analytics/react';
 import { Menu, Sparkles, Key, AlertCircle, HelpCircle, Sun, Moon, Maximize2, Minimize2 } from "lucide-react";
 import React, { useState, Suspense, useEffect } from "react";
 import { Sidebar } from "./components/Sidebar";
@@ -83,6 +82,7 @@ const PhysicsWorkspace = safeLazy(() => import('./features/physics/PhysicsWorksp
 const SubjectHubWorkspace = safeLazy(() => import('./features/subjects/SubjectHubWorkspace'), "SubjectHubWorkspace");
 const SpatialGeometryWorkspace = safeLazy(() => import('./features/spatialGeometry').then(m => ({ default: m.SpatialGeometryWorkspace })), "SpatialGeometryWorkspace");
 const GraduationReviewPlanner = safeLazy(() => import('./features/graduationReview/GraduationReviewPlanner'), "GraduationReviewPlannerModule");
+const OMRWorkspace = safeLazy(() => import('./pages/OMRWorkspace'), "OMRWorkspace");
 
 import { parseExamIdFromLocation, registerExamUrlMapping } from "./lib/smartRouter";
 
@@ -414,6 +414,7 @@ export default function App() {
               {activeTab === "de_online_pdf" && <DeOnlinePdf />}
               {activeTab === "circulars" && <Circulars />}
               {activeTab === "history" && <HistoryPage />}
+              {activeTab === "omr_scanner" && <OMRWorkspace />}
             </Suspense>
           </ErrorBoundary>
         </div>
@@ -424,7 +425,6 @@ export default function App() {
         defaultTab={settingsDefaultTab}
       />
       <UserGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} initialSectionId={guideSectionId} />
-      <Analytics />
     </div>
   );
 }

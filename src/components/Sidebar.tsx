@@ -38,6 +38,7 @@ export function Sidebar({
         { id: "graduation_review", label: "8b. Ôn TN THPT 12 (CV 5512)", icon: GraduationCap },
         { id: "math_tools", label: "9. Công cụ Toán học", icon: Calculator },
         { id: "spatial_geometry", label: "10. Hình học Không gian (3D)", icon: Box },
+        { id: "omr_scanner", label: "11. Chấm thi trắc nghiệm (EDUPLANAI MARK) ", icon: ScanLine },
       ]
     },
     {

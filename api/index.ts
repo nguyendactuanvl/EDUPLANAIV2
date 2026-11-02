@@ -718,21 +718,21 @@ function safeJsonParse<T = any>(text: string, fallback?: T): T {
 }
 
 function getValidGeminiModels(requestedModel?: string): string[] {
-  let primary = requestedModel || "gemini-2.5-flash";
+  let primary = requestedModel || "gemini-3.8-flash";
   if (
     !primary ||
     primary.includes("1.5") || 
     primary.includes("1.0") || 
     primary.includes("2.0") || 
-    primary.includes("2.5-flash-lite") ||
+    primary.includes("2.5") || 
     primary === "gemini-pro"
   ) {
-    primary = "gemini-2.5-flash";
+    primary = "gemini-3.8-flash";
   }
   const list = [
     primary,
-    "gemini-2.5-flash",
-    "gemini-3.5-flash-lite"
+    "gemini-3.8-flash",
+    "gemini-3.1-flash-lite"
   ];
   return Array.from(new Set(list));
 }
@@ -1827,7 +1827,7 @@ app.all(["/api/generate-graduation-review-plan"], async (req, res) => {
 
   return keepAliveExecute(req, res, async () => {
     const prompt = req.body.prompt || "";
-    const requestedModel = req.body.model || "gemini-2.5-flash";
+    const requestedModel = req.body.model || "gemini-3.8-flash";
     if (!prompt) {
       throw new Error("Không có nội dung yêu cầu tạo kế hoạch bài dạy ôn tập.");
     }
@@ -5127,7 +5127,7 @@ app.post("/api/generate-graduation-review-plan", async (req, res) => {
     }
 
     const payload = {
-      model: model || "gemini-2.5-flash",
+      model: model || "gemini-3.8-flash",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
         maxOutputTokens: 8192,
