@@ -595,58 +595,16 @@ export const VariationTableGenerator: React.FC = () => {
       // (VD: y = (2x-3)/(x-1), y = (2x+1)/(x-1), y = x^3 - 3x^2 + 2, y = ax^2+bx+c...)
       const directMathBbt = analyzeFunctionToBbt(userPrompt);
 
-      if (effectiveKey) {
-        // Gửi trực tiếp đến Google Gemini endpoint với key cá nhân
-        const bbtPrompt = `${finalPrompt}
-Trả về DUY NHẤT một chuỗi JSON chuẩn có dạng:
-{
-  "functionName": "Tên hàm số dạng LaTeX",
-  "domainNote": "Tập xác định",
-  "points": [
-    { "x": "-\\infty", "yPrime": "0", "yVal": "0", "yPosition": "top" }
-  ],
-  "intervals": [
-    { "sign": "+", "trend": "increasing" }
-  ]
-}`;
-        const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-3.8-flash'];
-        for (const modelName of candidateModels) {
-          try {
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${effectiveKey}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: bbtPrompt }] }],
-                generationConfig: {
-                  responseMimeType: "application/json",
-                  temperature: 0.2
-                }
-              })
-            });
-
-            if (res.ok) {
-              const resData = await res.json();
-              jsonText = resData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-              if (jsonText) break;
-            } else if (res.status === 429) {
-              continue;
-            }
-          } catch (e) {
-            console.warn(`Fetch error with ${modelName}:`, e);
-          }
-        }
-      } else {
-        // Fallback qua proxy nội bộ ứng dụng
+        // Sử dụng apiFetch để tự động xử lý key cá nhân hoặc fallback máy chủ
         const res = await apiFetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            prompt: `${finalPrompt}\n\nTrả về DUY NHẤT một chuỗi JSON hợp lệ theo định dạng BBTData.`
+            prompt: `${finalPrompt}\n\nTrả về DUY NHẤT một chuỗi JSON hợp lệ theo định dạng BBTData (points, intervals, functionName, domainNote).`
           })
         });
         const data = await res.json();
-        jsonText = data.text || "";
-      }
+        jsonText = data.text || data.result || "";
 
       let parsed: BBTData | null = null;
 

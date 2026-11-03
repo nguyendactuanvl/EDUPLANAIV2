@@ -209,33 +209,30 @@ Nhiệm vụ của bạn là đọc đề bài (qua văn bản hoặc hình ản
       }
       if (fileBase64 && fileMimeType) {
         parts.push({
-          inline_data: {
-            mime_type: fileMimeType,
+          inlineData: {
+            mimeType: fileMimeType,
             data: fileBase64
           }
         });
       }
 
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${targetKey}`;
-      const response = await fetch(endpoint, {
+      const res = await apiFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-          contents: [{ role: "user", parts }],
-          generationConfig: {
-            temperature: 0.15
-          }
+        body: JSON.stringify({ 
+          prompt: prompt || "Mô phỏng hình học",
+          system_instruction: SYSTEM_INSTRUCTION,
+          files: fileBase64 ? [{ data: fileBase64, type: fileMimeType }] : []
         })
       });
 
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error?.message || "Lỗi máy chủ phát sinh khi xử lý API.");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Lỗi máy chủ phát sinh khi xử lý API.");
       }
 
-      const data = await response.json();
-      let rawSvg = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const data = await res.json();
+      let rawSvg = data.text || data.result || "";
 
       // Cleanup formatting code wrappers
       rawSvg = rawSvg

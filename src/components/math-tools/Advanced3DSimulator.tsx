@@ -1176,43 +1176,21 @@ Hãy trả về duy nhất một chuỗi JSON thuần (không chứa markdown ba
   "explanation": "Tóm tắt ngắn gọn phân tích đề bài"
 }`;
 
-      let text = "";
-      if (storedKey) {
-        const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-3.8-flash'];
-        for (const modelName of candidateModels) {
-          try {
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${storedKey}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: promptContent }] }],
-                generationConfig: {
-                  responseMimeType: "application/json",
-                  temperature: 0.2
-                }
-              })
-            });
-
-            if (res.ok) {
-              const resData = await res.json();
-              text = resData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-              break;
-            }
-          } catch (err) {
-            console.warn(`Fetch error with ${modelName}:`, err);
+      // Direct client-side calls to Google are disabled. All requests go through server proxy.
+      const res = await apiFetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          prompt: promptContent,
+          config: {
+            max_output_tokens: 2048,
+            response_mime_type: "application/json"
           }
-        }
-      }
+        })
+      });
+      const data = await res.json();
+      text = data.result || data.text || JSON.stringify(data);
 
-      if (!text) {
-        const res = await apiFetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: promptContent })
-        });
-        const data = await res.json();
-        text = data.result || data.text || JSON.stringify(data);
-      }
       const cleanedJson = text.replace(/```json/gi, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(cleanedJson);
 

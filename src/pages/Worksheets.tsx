@@ -1063,52 +1063,11 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
 
       let rawText = "";
 
-      // 1. Gửi trực tiếp đến Google Gemini API nếu người dùng có API Key cá nhân
-      if (userKey) {
-        const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-3.8-flash'];
-        let lastDirectErrStatus = 0;
-
-        for (const modelName of candidateModels) {
-          try {
-            const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${userKey}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: promptText }] }],
-                generationConfig: {
-                  responseMimeType: "application/json",
-                  temperature: 0.25,
-                  maxOutputTokens: 8192
-                }
-              })
-            });
-
-            if (directRes.ok) {
-              const directData = await directRes.json();
-              rawText = directData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-              if (rawText) break;
-            } else {
-              lastDirectErrStatus = directRes.status;
-              console.warn(`Model ${modelName} returned status ${directRes.status}`);
-              if (directRes.status === 400) {
-                const errText = await directRes.text().catch(() => "");
-                if (errText.includes("API_KEY_INVALID") || errText.includes("API key not valid") || errText.includes("INVALID_ARGUMENT")) {
-                  localStorage.removeItem('custom_gemini_api_key');
-                  window.dispatchEvent(new CustomEvent('show-api-key-modal'));
-                  throw new Error("API KEY KHÔNG HỢP LỆ (400): Mã Gemini API Key hiện tại chưa đúng hoặc đã bị vô hiệu hóa trên Google AI Studio. Hệ thống vừa mở cửa sổ Cài đặt, thầy/cô vui lòng dán lại mã API Key mới (tạo miễn phí tại https://aistudio.google.com) để tiếp tục.");
-                }
-              }
-              if (directRes.status === 429) {
-                // Hết hạn mức model này -> Thử ngay model tiếp theo
-                continue;
-              }
-            }
-          } catch (directErr: any) {
-            if (directErr?.message?.includes("API KEY KHÔNG HỢP LỆ")) throw directErr;
-            console.warn(`Direct fetch error with ${modelName}:`, directErr);
-          }
-        }
+      // Direct client-side calls to Google are disabled. All requests go through server proxy.
+      if (!rawText) {
+        // We will proceed to fallback to apiFetch below
       }
+
 
       // 2. Nếu cuộc gọi trực tiếp chưa có dữ liệu, thử fallback qua máy chủ trung gian
       if (!rawText) {

@@ -99,80 +99,9 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
   const isGenericChat = (url === '/api/chat' || url === '/api/explain-mistake' || url === '/api/journal-ai' || url === '/api/translate-academic') && !url.includes('generate-');
 
   // Direct client call to Google endpoint ONLY for simple generic chat/explain requests
-  if (isGenericChat && customKey) {
-    try {
-      let bodyObj: any = {};
-      if (options.body && typeof options.body === 'string') {
-        try {
-          bodyObj = JSON.parse(options.body);
-        } catch (e) {
-          bodyObj = { prompt: options.body };
-        }
-      }
+  // Removed direct client-side Gemini calls to prevent PROXY_GENERATION_DISABLED.
+  // All AI requests must go through the server proxy.
 
-      const parts: any[] = [];
-      if (bodyObj.files && Array.isArray(bodyObj.files)) {
-        bodyObj.files.forEach((f: any) => {
-          if (f.data) {
-            const cleanData = f.data.replace(/^data:[^;]+;base64,/, '');
-            parts.push({
-              inlineData: {
-                mimeType: f.type || 'image/png',
-                data: cleanData
-              }
-            });
-          }
-        });
-      }
-      if (bodyObj.croppedImage) {
-        const cleanImg = bodyObj.croppedImage.replace(/^data:[^;]+;base64,/, '');
-        parts.push({
-          inlineData: {
-            mimeType: 'image/png',
-            data: cleanImg
-          }
-        });
-      }
-
-      const promptText = bodyObj.prompt || bodyObj.message || (parts.length === 0 ? JSON.stringify(bodyObj) : "Hãy xử lý yêu cầu sau:");
-      if (promptText) {
-        parts.push({ text: promptText });
-      }
-
-      const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-3.8-flash'];
-      for (const modelName of candidateModels) {
-        const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${customKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts }] })
-        });
-
-        if (directRes.ok) {
-          const directJson = await directRes.json();
-          const textResult = directJson?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(directJson);
-          const wrappedData = JSON.stringify({ result: textResult });
-          return new Response(wrappedData, {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        } else if (directRes.status === 400) {
-          const errText = await directRes.text().catch(() => "");
-          if (errText.includes("API_KEY_INVALID") || errText.includes("API key not valid")) {
-            localStorage.removeItem('custom_gemini_api_key');
-            window.dispatchEvent(new CustomEvent('show-api-key-modal'));
-            throw new Error("API KEY KHÔNG HỢP LỆ (400): Mã Gemini API Key hiện tại chưa đúng hoặc đã bị vô hiệu hóa trên Google AI Studio. Hệ thống vừa mở cửa sổ Cài đặt, thầy/cô vui lòng dán lại mã API Key mới (tạo miễn phí tại https://aistudio.google.com) để tiếp tục.");
-          }
-        } else if (directRes.status === 429) {
-          continue;
-        }
-      }
-    } catch (directErr: any) {
-      if (directErr?.message?.includes("API KEY KHÔNG HỢP LỆ")) {
-        throw directErr;
-      }
-      console.warn("[apiFetch] Direct client-side Gemini call failed, falling back to proxy/server:", directErr);
-    }
-  }
 
 
   const maxRetries = 3;
