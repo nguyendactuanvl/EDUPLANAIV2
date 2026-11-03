@@ -2407,8 +2407,8 @@ ${exampleJsonQuestions.join(',\n')}
       contents: promptText,
       config: {
         responseMimeType: "application/json",
-        maxOutputTokens: 16384,
-        temperature: 0.3
+        maxOutputTokens: 8192,
+        temperature: 0.25
       }
     });
 

@@ -1,4 +1,4 @@
-import { apiFetch, getApiHeaders } from '../lib/apiFetch';
+import { apiFetch, getApiHeaders, getCustomApiKey } from '../lib/apiFetch';
 import { useSubjects } from '../lib/subjects';
 import LZString from 'lz-string';
 import { exportHtmlToWord, exportElementToImage } from "../lib/exportUtils";
@@ -1012,38 +1012,119 @@ export function Worksheets() {
     setShareLink("");
     
     try {
-      // 1. Generate Interactive Worksheet JSON
-      const response = await apiFetch('/api/generate-interactive-worksheet', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/plain;charset=utf-8', // Dùng text/plain để tránh bị lỗi CORS preflight với Apps Script
-        },
-        body: JSON.stringify({
-          lesson: customLessonName,
-          subject: subject,
-          grade: selectedGrade,
-          type: worksheetType,
-          additionalNotes,
-          numPartI,
-          numPartII,
-          numPartIII,
-          numPartIV,
-          realWorldPercent,
-          hasParametric
-        }),
-        redirect: 'follow', // Bắt buộc để theo dõi chuyển hướng 302 từ Google Script sang Googleusercontent
-      });
-
-      if (!response.ok) {
-        throw new Error("Lỗi khi tạo phiếu bài tập tương tác.");
+      const userKey = getCustomApiKey();
+      if (!userKey) {
+        window.dispatchEvent(new CustomEvent('show-api-key-modal'));
+        throw new Error("Vui lòng nhập API Key cá nhân trong bảng Cài đặt để tạo phiếu bài tập trực tuyến.");
       }
 
-      const rawText = await response.text();
-      
-      // Kiểm tra xem dữ liệu trả về có bị dính HTML không
+      const totalRequired = (numPartI || 0) + (numPartII || 0) + (numPartIII || 0) + (numPartIV || 0);
+      const totalCount = totalRequired > 0 ? totalRequired : 16;
+
+      const parametricRule = hasParametric
+        ? `YÊU CẦU THAM SỐ: Thiết kế các câu hỏi chứa tham số thực ($m, a, b...$) ở mức độ vận dụng để phân hóa tư duy học sinh.`
+        : `QUY TẮC CẤM THAM SỐ: TUYỆT ĐỐI KHÔNG XUẤT HIỆN BẤT KỲ THAM SỐ NÀO (như $m$, $k$, $a$, $b$, $\\alpha$ làm tham số). Tất cả các hệ số trong đề bài, hàm số, phương trình và 4 phương án là các con số thực cụ thể.`;
+
+      const partIVRule = numPartIV > 0
+        ? `4. PHẦN IV (essay): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartIV} CÂU Tự luận (loại "essay") - bài tập tự luận có hướng dẫn chấm ngắn gọn.`
+        : `QUY TẮC CẤU TRÚC: TUYỆT ĐỐI KHÔNG SINH BÀI TẬP TỰ LUẬN! Mảng "questions" chỉ chứa câu hỏi thuộc các phần trắc nghiệm.`;
+
+      const promptText = `Bạn là một giáo viên xuất sắc môn ${subject || "Toán"} (chuẩn GDPT 2018). Hãy tạo Phiếu bài tập (Worksheet) tương tác chất lượng cao cho học sinh Lớp ${selectedGrade}, môn ${subject || "Toán"}, bài học/chủ đề: "${customLessonName}". Hình thức: ${worksheetType}.
+
+RÀNG BUỘC PHẠM VI NỘI DUNG VÀ CHỦ ĐỀ:
+- TẤT CẢ CÁC CÂU HỎI trong phiếu bài tập BẮT BUỘC phải tập trung chính xác và 100% nằm trong phạm vi kiến thức, bài học/chủ đề: "${customLessonName}".
+- Tuân thủ 100% thuật ngữ, ký hiệu SGK Kết nối tri thức.
+
+CẤU TRÚC VÀ SỐ LƯỢNG CÂU HỎI BẮT BUỘC (TỔNG CHÍNH XÁC ĐỦ ${totalCount} CÂU):
+BẮT BUỘC phải sinh đúng các phần sau vào mảng "questions":
+${numPartI > 0 ? `1. PHẦN I (mc): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartI} CÂU Trắc nghiệm 4 lựa chọn (loại "mc") - gồm "content", 4 phương án vào mảng "options", "correctOptionIndex" (0, 1, 2, 3).` : ''}
+${numPartII > 0 ? `2. PHẦN II (tf): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartII} CÂU Đúng/Sai (loại "tf") - mảng "tfStatements" gồm ĐÚNG 4 ý [{ "statement": "...", "correct": true/false }].` : ''}
+${numPartIII > 0 ? `3. PHẦN III (sa): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartIII} CÂU Trả lời ngắn (loại "sa") - "correctAnswer" là 1 số cụ thể tối đa 4 ký tự.` : ''}
+${partIVRule}
+
+- Tỷ lệ thực tế: Khoảng ${realWorldPercent}%.
+- ${parametricRule}
+${additionalNotes ? `- Ghi chú riêng từ giáo viên: ${additionalNotes}` : ''}
+
+QUY TẮC CÔNG THỨC TOÁN HỌC:
+- Tất cả công thức toán, biến số đơn lẻ (x, y, m, u_n, d, S_n...) BẮT BUỘC đặt trong cặp dấu đô la: $công_thức$.
+- LUÔN LUÔN sử dụng \\frac thay thế cho \\dfrac.
+- Kèm trường "solution": Lời giải súc tích, ngắn gọn, các bước biến đổi rõ ràng, trọng tâm.
+
+BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI CẤU TRÚC SAU:
+{
+  "examName": "Phiếu bài tập: ${customLessonName}",
+  "questions": [
+    {
+      "type": "mc",
+      "content": "Nội dung câu hỏi trắc nghiệm...",
+      "options": ["A. $...$", "B. $...$", "C. $...$", "D. $...$"],
+      "correctOptionIndex": 0,
+      "solution": "Lời giải chi tiết ngắn gọn..."
+    }
+  ]
+}`;
+
+      let rawText = "";
+
+      // 1. Gửi trực tiếp đến Google Gemini API bằng API Key cá nhân để tránh lỗi Timeout 524 của Cloudflare
+      try {
+        const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${userKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: promptText }] }],
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: 0.25,
+              maxOutputTokens: 8192
+            }
+          })
+        });
+
+        if (directRes.ok) {
+          const directData = await directRes.json();
+          rawText = directData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        } else {
+          console.warn("Direct Gemini call returned error:", directRes.status);
+        }
+      } catch (directErr) {
+        console.warn("Direct Google API fetch error:", directErr);
+      }
+
+      // 2. Nếu cuộc gọi trực tiếp chưa có dữ liệu, thử fallback qua máy chủ trung gian
+      if (!rawText) {
+        const response = await apiFetch('/api/generate-interactive-worksheet', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json;charset=utf-8',
+          },
+          body: JSON.stringify({
+            lesson: customLessonName,
+            subject: subject,
+            grade: selectedGrade,
+            type: worksheetType,
+            additionalNotes,
+            numPartI,
+            numPartII,
+            numPartIII,
+            numPartIV,
+            realWorldPercent,
+            hasParametric
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error("Lỗi khi kết nối dịch vụ tạo phiếu bài tập.");
+        }
+
+        rawText = await response.text();
+      }
+
+      // Kiểm tra dữ liệu trả về có hợp lệ không
       if (rawText.trim().startsWith('<') || rawText.includes('<!DOCTYPE html>')) {
-        console.error("Server trả về trang HTML thay vì JSON:", rawText);
-        throw new Error("Dịch vụ tạo đề tạm thời gián đoạn hoặc API Key chưa được nạp đúng. Vui lòng kiểm tra lại cấu hình API.");
+        console.error("Server trả về HTML thay vì JSON:", rawText);
+        throw new Error("Dịch vụ tạo đề tạm thời gián đoạn. Thầy cô vui lòng kiểm tra lại cấu hình API Key cá nhân.");
       }
 
       let examData: any;

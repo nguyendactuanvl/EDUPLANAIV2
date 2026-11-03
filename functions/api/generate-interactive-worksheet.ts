@@ -119,8 +119,8 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CẤU TRÚC 
         contents: [{ parts: [{ text: promptText }] }],
         generationConfig: {
           responseMimeType: "application/json",
-          temperature: 0.3,
-          maxOutputTokens: 16384
+          temperature: 0.25,
+          maxOutputTokens: 8192
         }
       })
     });
