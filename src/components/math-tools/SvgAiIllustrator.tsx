@@ -181,25 +181,25 @@ Nhiệm vụ của bạn là đọc đề bài (qua văn bản hoặc hình ản
     }
 
     if (!targetKey) {
-      // Thử apiFetch kể cả khi có file
       try {
-        const res = await apiFetch("/api/generate-math-simulation", {
+        const res = await apiFetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: prompt || "Vẽ mô phỏng hình học", subject: "Toán", targetFormat: "svg" })
+          body: JSON.stringify({ 
+            prompt: `Bạn là chuyên gia vẽ hình học SVG. Hãy tạo mã SVG nguyên bản trích xuất trực tiếp cho đề bài: ${prompt || "Mô phỏng hình học"}. Bắt đầu bằng <svg> và kết thúc bằng </svg>.` 
+          })
         });
         if (res.ok) {
           const data = await res.json();
-          if (data.svg) {
-            setSvgContent(data.svg);
+          const textRes = data.text || data.result || "";
+          const svgMatch = textRes.match(/<svg[\s\S]*?<\/svg>/i);
+          if (svgMatch) {
+            setSvgContent(svgMatch[0]);
             setIsGenerating(false);
             return;
           }
         }
       } catch (err) {}
-      setErrorMessage("Bạn chưa cấu hình Gemini API Key chung cho ứng dụng. Vui lòng nhấn vào biểu tượng bánh răng 'Cài đặt' ở góc dưới bên trái màn hình (dưới cùng của Sidebar) để nhập API Key của bạn.");
-      setIsGenerating(false);
-      return;
     }
 
     try {

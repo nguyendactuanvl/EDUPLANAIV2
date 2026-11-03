@@ -363,23 +363,37 @@ function isValidGeminiApiKey(key?: string): boolean {
 }
 
 function getSystemAiClient() {
-  throw new Error("Ứng dụng quy định 100% người dùng tự nhập Gemini API Key cá nhân. Không sử dụng API Key mặc định của hệ thống.");
+  const serverKey = process.env.GEMINI_API_KEY || "";
+  if (!serverKey) {
+    throw new Error("Server GEMINI_API_KEY is missing. Please configure GEMINI_API_KEY in environment variables.");
+  }
+  return new GoogleGenAI({
+    apiKey: serverKey,
+    httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+  });
 }
 
 function getAiClient(req: any) {
-  const authHeader = req.headers['authorization'] as string;
+  const authHeader = req?.headers?.['authorization'] as string;
   let customKey = '';
   if (authHeader && authHeader.startsWith('Bearer ')) {
     customKey = authHeader.substring(7);
   } else {
-    customKey = req.headers['x-gemini-api-key'] as string;
+    customKey = req?.headers?.['x-gemini-api-key'] as string;
   }
   
+  let keyToUse = '';
   if (isValidGeminiApiKey(customKey)) {
-    try { customKey = decodeURIComponent(customKey); } catch (e) {}
-    customKey = customKey.replace(/[^\x20-\x7E]/g, '').trim();
+    keyToUse = customKey;
+  } else if (process.env.GEMINI_API_KEY) {
+    keyToUse = process.env.GEMINI_API_KEY;
+  }
+  
+  if (keyToUse) {
+    try { keyToUse = decodeURIComponent(keyToUse); } catch (e) {}
+    keyToUse = keyToUse.replace(/[^\x20-\x7E]/g, '').trim();
     return new GoogleGenAI({ 
-      apiKey: customKey,
+      apiKey: keyToUse,
       httpOptions: {
         headers: {
           'User-Agent': 'aistudio-build'
@@ -388,7 +402,7 @@ function getAiClient(req: any) {
     });
   }
   
-  throw new Error("YÊU CẦU NHẬP API KEY CÁ NHÂN: Ứng dụng quy định 100% người dùng tự dán Gemini API Key cá nhân của mình để sử dụng. Vui lòng dán mã API Key cá nhân vào Cài đặt.");
+  throw new Error("Missing Gemini API Key. Please configure process.env.GEMINI_API_KEY on the server or enter a key in Settings.");
 }
 
 function handleAiError(error: any, req: any, res: any) {

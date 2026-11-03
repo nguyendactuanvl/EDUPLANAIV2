@@ -52,6 +52,12 @@ export async function onRequestPost(context: { request: Request; env: any }) {
     }
 
     if (!textResult) {
+      if (lastErr.includes('API_KEY_INVALID') || lastErr.includes('API key not valid') || lastErr.includes('INVALID_ARGUMENT')) {
+        return new Response(JSON.stringify({ error: 'API KEY KHÔNG HỢP LỆ (400): Mã Gemini API Key hiện tại chưa đúng hoặc đã bị vô hiệu hóa. Vui lòng dán lại API Key mới trong Cài đặt.' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
+      }
       return new Response(JSON.stringify({ error: `Lỗi kết nối AI: ${lastErr || 'Vượt quá hạn mức Google'}` }), {
         status: 429,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }

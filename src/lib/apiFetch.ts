@@ -155,19 +155,25 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
             status: 200,
             headers: { 'Content-Type': 'application/json' }
           });
+        } else if (directRes.status === 400) {
+          const errText = await directRes.text().catch(() => "");
+          if (errText.includes("API_KEY_INVALID") || errText.includes("API key not valid")) {
+            localStorage.removeItem('custom_gemini_api_key');
+            window.dispatchEvent(new CustomEvent('show-api-key-modal'));
+            throw new Error("API KEY KHÔNG HỢP LỆ (400): Mã Gemini API Key hiện tại chưa đúng hoặc đã bị vô hiệu hóa trên Google AI Studio. Hệ thống vừa mở cửa sổ Cài đặt, thầy/cô vui lòng dán lại mã API Key mới (tạo miễn phí tại https://aistudio.google.com) để tiếp tục.");
+          }
         } else if (directRes.status === 429) {
           continue;
         }
       }
-    } catch (directErr) {
+    } catch (directErr: any) {
+      if (directErr?.message?.includes("API KEY KHÔNG HỢP LỆ")) {
+        throw directErr;
+      }
       console.warn("[apiFetch] Direct client-side Gemini call failed, falling back to proxy/server:", directErr);
     }
   }
 
-  if (isAiEndpoint && !customKey) {
-    window.dispatchEvent(new CustomEvent('show-api-key-modal'));
-    throw new Error("Mặc định ứng dụng yêu cầu người dùng phải nhập Gemini API Key cá nhân để sử dụng các tính năng AI. Vui lòng dán mã API Key miễn phí từ Google AI Studio vào bảng Cài đặt vừa mở để tiếp tục.");
-  }
 
   const maxRetries = 3;
 

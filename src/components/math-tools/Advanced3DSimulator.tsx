@@ -7,6 +7,7 @@ import {
   TrendingUp, Compass, Award, Upload, Image as ImageIcon, HelpCircle, FileText
 } from 'lucide-react';
 import { MathSpan } from '../MarkdownRenderer';
+import { apiFetch } from '../../lib/apiFetch';
 
 // ============================================================================
 // TYPES & PRESET DEFINITIONS
@@ -1162,13 +1163,6 @@ export const Advanced3DSimulator: React.FC<Advanced3DSimulatorProps> = ({ onInse
 
     try {
       const storedKey = (localStorage.getItem("custom_gemini_api_key") || localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim();
-      if (!storedKey) {
-        window.dispatchEvent(new CustomEvent('show-api-key-modal'));
-        setAiStatusMsg("⚠️ Vui lòng nhập API Key cá nhân trong bảng Cài đặt để sử dụng tính năng AI.");
-        setIsAiAnalyzing(false);
-        return;
-      }
-
       const promptContent = `Bạn là trợ lý Chuyên gia Toán THPT 2018. Hãy phân tích đề bài toán thực tế sau và trích xuất tham số 3D:
 "${aiPrompt}"
 
@@ -1182,39 +1176,43 @@ Hãy trả về duy nhất một chuỗi JSON thuần (không chứa markdown ba
   "explanation": "Tóm tắt ngắn gọn phân tích đề bài"
 }`;
 
-      const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-3.8-flash'];
-      let resData: any = null;
+      let text = "";
+      if (storedKey) {
+        const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-3.8-flash'];
+        for (const modelName of candidateModels) {
+          try {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${storedKey}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: promptContent }] }],
+                generationConfig: {
+                  responseMimeType: "application/json",
+                  temperature: 0.2
+                }
+              })
+            });
 
-      for (const modelName of candidateModels) {
-        try {
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${storedKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: promptContent }] }],
-              generationConfig: {
-                responseMimeType: "application/json",
-                temperature: 0.2
-              }
-            })
-          });
-
-          if (res.ok) {
-            resData = await res.json();
-            break;
-          } else if (res.status === 429) {
-            continue;
+            if (res.ok) {
+              const resData = await res.json();
+              text = resData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+              break;
+            }
+          } catch (err) {
+            console.warn(`Fetch error with ${modelName}:`, err);
           }
-        } catch (err) {
-          console.warn(`Fetch error with ${modelName}:`, err);
         }
       }
 
-      if (!resData) {
-        throw new Error("Tất cả các model AI đều đang bận hoặc hết hạn mức.");
+      if (!text) {
+        const res = await apiFetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: promptContent })
+        });
+        const data = await res.json();
+        text = data.result || data.text || JSON.stringify(data);
       }
-
-      const text = resData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
       const cleanedJson = text.replace(/```json/gi, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(cleanedJson);
 

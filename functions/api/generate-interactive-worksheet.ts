@@ -148,6 +148,14 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CẤU TRÚC 
     }
 
     if (!geminiRes) {
+      if (lastErrText.includes('API_KEY_INVALID') || lastErrText.includes('API key not valid') || lastErrText.includes('INVALID_ARGUMENT')) {
+        return new Response(JSON.stringify({ 
+          error: 'API KEY KHÔNG HỢP LỆ (400): Mã Gemini API Key hiện tại chưa đúng hoặc đã bị vô hiệu hóa trên Google AI Studio. Vui lòng mở Cài đặt để nhập mã API Key mới (tạo miễn phí tại https://aistudio.google.com).' 
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
+      }
       if (lastErrText.includes('RESOURCE_EXHAUSTED') || lastErrText.includes('429')) {
         return new Response(JSON.stringify({ 
           error: 'HẠN MỨC API KEY ĐÃ HẾT: API Key của thầy/cô đã dùng hết số lượt miễn phí trong ngày của Google. Thầy/cô vui lòng mở Cài đặt để đổi sang một API Key mới (tạo miễn phí tại https://aistudio.google.com).' 

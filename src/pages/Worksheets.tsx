@@ -1013,10 +1013,6 @@ export function Worksheets() {
     
     try {
       const userKey = getCustomApiKey();
-      if (!userKey) {
-        window.dispatchEvent(new CustomEvent('show-api-key-modal'));
-        throw new Error("Vui lòng nhập API Key cá nhân trong bảng Cài đặt để tạo phiếu bài tập trực tuyến.");
-      }
 
       const totalRequired = (numPartI || 0) + (numPartII || 0) + (numPartIII || 0) + (numPartIV || 0);
       const totalCount = totalRequired > 0 ? totalRequired : 16;
@@ -1067,39 +1063,50 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
 
       let rawText = "";
 
-      // 1. Gửi trực tiếp đến Google Gemini API với cơ chế tự động chuyển model (gemini-1.5-flash -> gemini-1.5-flash-8b -> gemini-2.0-flash -> gemini-3.8-flash)
-      const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-3.8-flash'];
-      let lastDirectErrStatus = 0;
+      // 1. Gửi trực tiếp đến Google Gemini API nếu người dùng có API Key cá nhân
+      if (userKey) {
+        const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-3.8-flash'];
+        let lastDirectErrStatus = 0;
 
-      for (const modelName of candidateModels) {
-        try {
-          const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${userKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: promptText }] }],
-              generationConfig: {
-                responseMimeType: "application/json",
-                temperature: 0.25,
-                maxOutputTokens: 8192
+        for (const modelName of candidateModels) {
+          try {
+            const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${userKey}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: promptText }] }],
+                generationConfig: {
+                  responseMimeType: "application/json",
+                  temperature: 0.25,
+                  maxOutputTokens: 8192
+                }
+              })
+            });
+
+            if (directRes.ok) {
+              const directData = await directRes.json();
+              rawText = directData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+              if (rawText) break;
+            } else {
+              lastDirectErrStatus = directRes.status;
+              console.warn(`Model ${modelName} returned status ${directRes.status}`);
+              if (directRes.status === 400) {
+                const errText = await directRes.text().catch(() => "");
+                if (errText.includes("API_KEY_INVALID") || errText.includes("API key not valid") || errText.includes("INVALID_ARGUMENT")) {
+                  localStorage.removeItem('custom_gemini_api_key');
+                  window.dispatchEvent(new CustomEvent('show-api-key-modal'));
+                  throw new Error("API KEY KHÔNG HỢP LỆ (400): Mã Gemini API Key hiện tại chưa đúng hoặc đã bị vô hiệu hóa trên Google AI Studio. Hệ thống vừa mở cửa sổ Cài đặt, thầy/cô vui lòng dán lại mã API Key mới (tạo miễn phí tại https://aistudio.google.com) để tiếp tục.");
+                }
               }
-            })
-          });
-
-          if (directRes.ok) {
-            const directData = await directRes.json();
-            rawText = directData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-            if (rawText) break;
-          } else {
-            lastDirectErrStatus = directRes.status;
-            console.warn(`Model ${modelName} returned status ${directRes.status}`);
-            if (directRes.status === 429) {
-              // Hết hạn mức model này -> Thử ngay model tiếp theo
-              continue;
+              if (directRes.status === 429) {
+                // Hết hạn mức model này -> Thử ngay model tiếp theo
+                continue;
+              }
             }
+          } catch (directErr: any) {
+            if (directErr?.message?.includes("API KEY KHÔNG HỢP LỆ")) throw directErr;
+            console.warn(`Direct fetch error with ${modelName}:`, directErr);
           }
-        } catch (directErr) {
-          console.warn(`Direct fetch error with ${modelName}:`, directErr);
         }
       }
 
@@ -1378,7 +1385,11 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
     } catch (err: any) {
       console.error(err);
       let errMsg = err.message || "Không thể tạo phiếu bài tập tương tác lúc này.";
-      if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('Quota exceeded')) {
+      if (errMsg.includes('400') || errMsg.includes('API_KEY_INVALID') || errMsg.includes('API key not valid') || errMsg.includes('INVALID_ARGUMENT')) {
+        errMsg = "API KEY KHÔNG HỢP LỆ (400): Mã Gemini API Key hiện tại chưa đúng hoặc đã bị vô hiệu hóa trên Google AI Studio. Hệ thống vừa mở cửa sổ Cài đặt, thầy/cô vui lòng dán lại mã API Key mới (tạo miễn phí tại https://aistudio.google.com) để tiếp tục.";
+        localStorage.removeItem('custom_gemini_api_key');
+        window.dispatchEvent(new CustomEvent('show-api-key-modal'));
+      } else if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('Quota exceeded')) {
         errMsg = "HẠN MỨC MIỄN PHÍ TẠM THỜI ĐÃ HẾT: API Key của thầy/cô đã vượt quá số lượt gọi miễn phí trong ngày của Google. Thầy/cô vui lòng bấm vào nút 'Cài đặt' để nhập hoặc đổi sang một Gemini API Key mới (tạo hoàn toàn miễn phí tại https://aistudio.google.com).";
         window.dispatchEvent(new CustomEvent('show-api-key-modal'));
       }
