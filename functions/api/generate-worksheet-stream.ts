@@ -23,16 +23,40 @@ export async function onRequestPost(context: { request: Request; env: any }) {
     const body = await request.json().catch(() => ({}));
     const promptText = body.prompt || JSON.stringify(body);
 
-    const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: promptText }] }]
-      })
-    });
+    const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-3.8-flash'];
+    let textResult = '';
+    let lastErr = '';
 
-    const data = await geminiRes.json();
-    const textResult = data?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(data);
+    for (const model of candidateModels) {
+      try {
+        const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: promptText }] }]
+          })
+        });
+
+        if (geminiRes.ok) {
+          const data = await geminiRes.json();
+          textResult = data?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(data);
+          if (textResult) break;
+        } else if (geminiRes.status === 429) {
+          continue;
+        } else {
+          lastErr = await geminiRes.text();
+        }
+      } catch (e: any) {
+        lastErr = e.message;
+      }
+    }
+
+    if (!textResult) {
+      return new Response(JSON.stringify({ error: `Lỗi kết nối AI: ${lastErr || 'Vượt quá hạn mức Google'}` }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
+    }
 
     return new Response(JSON.stringify({ result: textResult }), {
       status: 200,

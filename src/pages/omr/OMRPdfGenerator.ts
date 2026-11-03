@@ -37,6 +37,20 @@ export function generateOMRPdf(templateType: OMRTemplateType, options: PDFExport
   return doc;
 }
 
+/**
+ * Triển khai hàm exportExamSheetPDF sinh file PDF A4 chứa các trường dữ liệu cố định:
+ * - 4 góc định vị (black squares 8x8mm)
+ * - Khung SBD 6 cột (chữ số từ 0 đến 9)
+ * - Khung Mã đề 4 cột (chữ số từ 0 đến 9)
+ * - Ma trận câu hỏi (Phần I: Trắc nghiệm, Phần II: Đúng/Sai, Phần III: Trả lời ngắn)
+ */
+export function exportExamSheetPDF(
+  templateType: OMRTemplateType = 'gdpt_2018',
+  options: PDFExportOptions = {}
+): jsPDF {
+  return generateOMRPdf(templateType, options);
+}
+
 // ============================================================================
 // MẪU 1: CHUẨN BỘ GD&ĐT (GDPT 2018 - 12 CÂU MC, 4 CÂU TF, 6 CÂU SA)
 // ============================================================================

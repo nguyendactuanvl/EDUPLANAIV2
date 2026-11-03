@@ -14,12 +14,14 @@ import {
   OMRTemplateType, Student, ExamAnswerKey, OMRGradingResult 
 } from './omr/OMRTypes';
 import { 
-  generateOMRPdf 
+  generateOMRPdf, exportExamSheetPDF 
 } from './omr/OMRPdfGenerator';
 import { 
   playBeepSound, triggerVibration, detectCornerAnchors, 
   analyzeNormalizedSheet, gradeStudentSubmission, NORM_WIDTH, NORM_HEIGHT 
 } from './omr/OMREngine';
+
+export { exportExamSheetPDF };
 
 // ============================================================================
 // INITIAL SEED DATA GENERATORS
@@ -1507,7 +1509,7 @@ function TemplatesTab({
   const handleDownloadPdf = (tId: OMRTemplateType) => {
     setIsGenerating(true);
     try {
-      const doc = generateOMRPdf(tId, { schoolName, examTitle });
+      const doc = exportExamSheetPDF(tId, { schoolName, examTitle });
       doc.save(`Phieu_Thi_Trac_Nghiem_${tId.toUpperCase()}_A4.pdf`);
     } catch (e: any) {
       alert(`Lỗi tạo PDF: ${e.message}`);
@@ -1518,7 +1520,7 @@ function TemplatesTab({
 
   const handlePrintDirect = (tId: OMRTemplateType) => {
     try {
-      const doc = generateOMRPdf(tId, { schoolName, examTitle });
+      const doc = exportExamSheetPDF(tId, { schoolName, examTitle });
       doc.autoPrint();
       window.open(doc.output('bloburl'), '_blank');
     } catch (e: any) {

@@ -1182,23 +1182,38 @@ Hãy trả về duy nhất một chuỗi JSON thuần (không chứa markdown ba
   "explanation": "Tóm tắt ngắn gọn phân tích đề bài"
 }`;
 
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${storedKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: promptContent }] }],
-          generationConfig: {
-            responseMimeType: "application/json",
-            temperature: 0.2
-          }
-        })
-      });
+      const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-3.8-flash'];
+      let resData: any = null;
 
-      if (!res.ok) {
-        throw new Error(`Google API error (${res.status})`);
+      for (const modelName of candidateModels) {
+        try {
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${storedKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: promptContent }] }],
+              generationConfig: {
+                responseMimeType: "application/json",
+                temperature: 0.2
+              }
+            })
+          });
+
+          if (res.ok) {
+            resData = await res.json();
+            break;
+          } else if (res.status === 429) {
+            continue;
+          }
+        } catch (err) {
+          console.warn(`Fetch error with ${modelName}:`, err);
+        }
       }
 
-      const resData = await res.json();
+      if (!resData) {
+        throw new Error("Tất cả các model AI đều đang bận hoặc hết hạn mức.");
+      }
+
       const text = resData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
       const cleanedJson = text.replace(/```json/gi, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(cleanedJson);

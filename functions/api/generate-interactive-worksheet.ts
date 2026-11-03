@@ -112,23 +112,52 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CẤU TRÚC 
   ]
 }`;
 
-    const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: promptText }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.25,
-          maxOutputTokens: 8192
-        }
-      })
-    });
+    const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-3.8-flash'];
+    let geminiRes: Response | null = null;
+    let lastErrText = '';
 
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      return new Response(JSON.stringify({ error: `Lỗi từ dịch vụ AI Google (${geminiRes.status}): ${errText}` }), {
-        status: geminiRes.status,
+    for (const modelName of candidateModels) {
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: promptText }] }],
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: 0.25,
+              maxOutputTokens: 8192
+            }
+          })
+        });
+
+        if (res.ok) {
+          geminiRes = res;
+          break;
+        } else {
+          lastErrText = await res.text();
+          console.warn(`Model ${modelName} returned status ${res.status}`);
+          // If 429 (quota exceeded), continue immediately to next model
+          if (res.status === 429) {
+            continue;
+          }
+        }
+      } catch (err: any) {
+        lastErrText = err.message || '';
+      }
+    }
+
+    if (!geminiRes) {
+      if (lastErrText.includes('RESOURCE_EXHAUSTED') || lastErrText.includes('429')) {
+        return new Response(JSON.stringify({ 
+          error: 'HẠN MỨC API KEY ĐÃ HẾT: API Key của thầy/cô đã dùng hết số lượt miễn phí trong ngày của Google. Thầy/cô vui lòng mở Cài đặt để đổi sang một API Key mới (tạo miễn phí tại https://aistudio.google.com).' 
+        }), {
+          status: 429,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
+      }
+      return new Response(JSON.stringify({ error: `Lỗi kết nối AI Google: ${lastErrText}` }), {
+        status: 500,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
       });
     }

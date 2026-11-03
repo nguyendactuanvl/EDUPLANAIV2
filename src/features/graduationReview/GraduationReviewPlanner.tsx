@@ -434,7 +434,7 @@ export function GraduationReviewPlannerModule() {
       ""
     );
   });
-  const [geminiModel, setGeminiModel] = useState<string>("gemini-3.8-flash");
+  const [geminiModel, setGeminiModel] = useState<string>("gemini-1.5-flash");
   const [availableModels, setAvailableModels] = useState<AiModelItem[]>(DEFAULT_AI_MODELS);
   const [isFetchingModels, setIsFetchingModels] = useState<boolean>(false);
   const [modelsFetchedFromAccount, setModelsFetchedFromAccount] = useState<boolean>(false);

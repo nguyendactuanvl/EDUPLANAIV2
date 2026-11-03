@@ -609,21 +609,31 @@ Trả về DUY NHẤT một chuỗi JSON chuẩn có dạng:
     { "sign": "+", "trend": "increasing" }
   ]
 }`;
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${effectiveKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: bbtPrompt }] }],
-            generationConfig: {
-              responseMimeType: "application/json",
-              temperature: 0.2
-            }
-          })
-        });
+        const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-3.8-flash'];
+        for (const modelName of candidateModels) {
+          try {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${effectiveKey}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: bbtPrompt }] }],
+                generationConfig: {
+                  responseMimeType: "application/json",
+                  temperature: 0.2
+                }
+              })
+            });
 
-        if (res.ok) {
-          const resData = await res.json();
-          jsonText = resData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            if (res.ok) {
+              const resData = await res.json();
+              jsonText = resData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+              if (jsonText) break;
+            } else if (res.status === 429) {
+              continue;
+            }
+          } catch (e) {
+            console.warn(`Fetch error with ${modelName}:`, e);
+          }
         }
       } else {
         // Fallback qua proxy nội bộ ứng dụng

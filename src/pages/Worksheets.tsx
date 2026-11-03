@@ -1067,29 +1067,40 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
 
       let rawText = "";
 
-      // 1. Gửi trực tiếp đến Google Gemini API bằng API Key cá nhân để tránh lỗi Timeout 524 của Cloudflare
-      try {
-        const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${userKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: promptText }] }],
-            generationConfig: {
-              responseMimeType: "application/json",
-              temperature: 0.25,
-              maxOutputTokens: 8192
-            }
-          })
-        });
+      // 1. Gửi trực tiếp đến Google Gemini API với cơ chế tự động chuyển model (gemini-1.5-flash -> gemini-1.5-flash-8b -> gemini-2.0-flash -> gemini-3.8-flash)
+      const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-3.8-flash'];
+      let lastDirectErrStatus = 0;
 
-        if (directRes.ok) {
-          const directData = await directRes.json();
-          rawText = directData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        } else {
-          console.warn("Direct Gemini call returned error:", directRes.status);
+      for (const modelName of candidateModels) {
+        try {
+          const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${userKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: promptText }] }],
+              generationConfig: {
+                responseMimeType: "application/json",
+                temperature: 0.25,
+                maxOutputTokens: 8192
+              }
+            })
+          });
+
+          if (directRes.ok) {
+            const directData = await directRes.json();
+            rawText = directData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            if (rawText) break;
+          } else {
+            lastDirectErrStatus = directRes.status;
+            console.warn(`Model ${modelName} returned status ${directRes.status}`);
+            if (directRes.status === 429) {
+              // Hết hạn mức model này -> Thử ngay model tiếp theo
+              continue;
+            }
+          }
+        } catch (directErr) {
+          console.warn(`Direct fetch error with ${modelName}:`, directErr);
         }
-      } catch (directErr) {
-        console.warn("Direct Google API fetch error:", directErr);
       }
 
       // 2. Nếu cuộc gọi trực tiếp chưa có dữ liệu, thử fallback qua máy chủ trung gian
@@ -1368,7 +1379,12 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
       
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "Không thể tạo phiếu bài tập tương tác lúc này.");
+      let errMsg = err.message || "Không thể tạo phiếu bài tập tương tác lúc này.";
+      if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('Quota exceeded')) {
+        errMsg = "HẠN MỨC MIỄN PHÍ TẠM THỜI ĐÃ HẾT: API Key của thầy/cô đã vượt quá số lượt gọi miễn phí trong ngày của Google. Thầy/cô vui lòng bấm vào nút 'Cài đặt' để nhập hoặc đổi sang một Gemini API Key mới (tạo hoàn toàn miễn phí tại https://aistudio.google.com).";
+        window.dispatchEvent(new CustomEvent('show-api-key-modal'));
+      }
+      setError(errMsg);
     } finally {
       setIsGeneratingInteractive(false);
     }

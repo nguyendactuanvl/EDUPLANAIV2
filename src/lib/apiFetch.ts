@@ -139,20 +139,25 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
         parts.push({ text: promptText });
       }
 
-      const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${customKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts }] })
-      });
-
-      if (directRes.ok) {
-        const directJson = await directRes.json();
-        const textResult = directJson?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(directJson);
-        const wrappedData = JSON.stringify({ result: textResult });
-        return new Response(wrappedData, {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
+      const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-3.8-flash'];
+      for (const modelName of candidateModels) {
+        const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${customKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts }] })
         });
+
+        if (directRes.ok) {
+          const directJson = await directRes.json();
+          const textResult = directJson?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(directJson);
+          const wrappedData = JSON.stringify({ result: textResult });
+          return new Response(wrappedData, {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        } else if (directRes.status === 429) {
+          continue;
+        }
       }
     } catch (directErr) {
       console.warn("[apiFetch] Direct client-side Gemini call failed, falling back to proxy/server:", directErr);
