@@ -13,24 +13,6 @@ export const onRequestOptions = async () => {
 export const onRequestPost = async (context: { request: Request; env: Record<string, any> }) => {
   const { request, env } = context;
 
-  // 1. Get API Key from Header, Env, or Body
-  const authHeader = request.headers.get("Authorization") || request.headers.get("x-gemini-api-key") || "";
-  let apiKeyFromHeader = "";
-  if (authHeader.startsWith("Bearer ")) {
-    apiKeyFromHeader = decodeURIComponent(authHeader.substring(7));
-  } else if (authHeader) {
-    apiKeyFromHeader = decodeURIComponent(authHeader);
-  }
-
-  let body: any = {};
-  try {
-    body = await request.json();
-  } catch (e) {
-    body = {};
-  }
-
-  const apiKey = (env.GEMINI_API_KEY || apiKeyFromHeader || body.apiKey || "").trim();
-
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -38,17 +20,34 @@ export const onRequestPost = async (context: { request: Request; env: Record<str
     "Content-Type": "application/json; charset=utf-8",
   };
 
-  if (!apiKey) {
-    return new Response(
-      JSON.stringify({
-        error: "API KEY KHÔNG HỢP LỆ (400): Mã Gemini API Key hiện tại chưa đúng hoặc chưa được cài đặt. Thầy/cô vui lòng dán lại mã API Key mới trong Cài đặt."
-      }),
-      { status: 400, headers: corsHeaders }
-    );
-  }
-
   try {
-    // 2. Format contents for Gemini API (keep payload minimal to prevent 400 parameter errors)
+    const authHeader = request.headers.get("Authorization") || request.headers.get("x-gemini-api-key") || "";
+    let apiKeyFromHeader = "";
+    if (authHeader.startsWith("Bearer ")) {
+      apiKeyFromHeader = decodeURIComponent(authHeader.substring(7));
+    } else if (authHeader) {
+      apiKeyFromHeader = decodeURIComponent(authHeader);
+    }
+
+    let body: any = {};
+    try {
+      body = await request.json();
+    } catch (e) {
+      body = {};
+    }
+
+    const apiKey = (body.apiKey || apiKeyFromHeader || env.GEMINI_API_KEY || "").trim();
+
+    if (!apiKey) {
+      return new Response(
+        JSON.stringify({ error: "Thiếu API Key trong yêu cầu. Thầy/cô vui lòng kiểm tra Cài đặt." }),
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    // Cloudflare Edge server calls Google Gemini (gemini-3.8-flash)
+    const targetUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+
     let rawContents = body.contents;
     let contents: any = rawContents;
     if (!contents) {
@@ -78,51 +77,30 @@ export const onRequestPost = async (context: { request: Request; env: Record<str
       }
     }
 
-    const geminiPayload: any = { contents };
+    const googlePayload: any = { contents };
 
-    // System instruction if available
     const sysInst = body.systemInstruction || body.system_instruction;
     if (sysInst) {
-      geminiPayload.systemInstruction = typeof sysInst === 'string'
+      googlePayload.systemInstruction = typeof sysInst === 'string'
         ? { parts: [{ text: sysInst }] }
         : sysInst;
     }
 
-    // 3. Call Google Gemini API (gemini-3.8-flash)
-    const targetUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-    const geminiRes = await fetch(targetUrl, {
+    const response = await fetch(targetUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(geminiPayload),
+      body: JSON.stringify(googlePayload),
     });
 
-    const data: any = await geminiRes.json();
+    const dataText = await response.text();
 
-    if (!geminiRes.ok) {
-      const errMsg = data?.error?.message || "Lỗi từ dịch vụ Google Gemini API";
-      return new Response(
-        JSON.stringify({ error: `Lỗi từ API Key cá nhân của bạn: ${errMsg}` }),
-        { status: geminiRes.status, headers: corsHeaders }
-      );
-    }
-
-    let textResult = "";
-    if (data.candidates && data.candidates[0]?.content?.parts) {
-      textResult = data.candidates[0].content.parts.map((p: any) => p.text || "").join("\n");
-    }
-
-    return new Response(
-      JSON.stringify({
-        text: textResult,
-        result: textResult,
-        ...data
-      }),
-      { status: 200, headers: corsHeaders }
-    );
+    return new Response(dataText, {
+      status: response.status,
+      headers: corsHeaders,
+    });
   } catch (err: any) {
     return new Response(
-      JSON.stringify({ error: err?.message || "Lỗi máy chủ khi xử lý yêu cầu AI" }),
+      JSON.stringify({ error: err.message || "Lỗi máy chủ nội bộ." }),
       { status: 500, headers: corsHeaders }
     );
   }
@@ -130,7 +108,7 @@ export const onRequestPost = async (context: { request: Request; env: Record<str
 
 export const onRequestGet = async () => {
   return new Response(
-    JSON.stringify({ status: "ok", message: "EduPlan AI Cloudflare Function API is active." }),
+    JSON.stringify({ status: "ok", message: "EduPlan AI Cloudflare Pages Function is active." }),
     {
       status: 200,
       headers: {
