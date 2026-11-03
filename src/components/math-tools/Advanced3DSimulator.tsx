@@ -6,7 +6,6 @@ import {
   Scissors, Layers, Sliders, Search, ArrowRight, Zap, RefreshCw, 
   TrendingUp, Compass, Award, Upload, Image as ImageIcon, HelpCircle, FileText
 } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
 import { MathSpan } from '../MarkdownRenderer';
 
 // ============================================================================
@@ -1163,11 +1162,14 @@ export const Advanced3DSimulator: React.FC<Advanced3DSimulatorProps> = ({ onInse
 
     try {
       const storedKey = (localStorage.getItem("custom_gemini_api_key") || localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim();
-      const ai = new GoogleGenAI({ apiKey: storedKey });
-      
-      const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
-        contents: `Bạn là trợ lý Chuyên gia Toán THPT 2018. Hãy phân tích đề bài toán thực tế sau và trích xuất tham số 3D:
+      if (!storedKey) {
+        window.dispatchEvent(new CustomEvent('show-api-key-modal'));
+        setAiStatusMsg("⚠️ Vui lòng nhập API Key cá nhân trong bảng Cài đặt để sử dụng tính năng AI.");
+        setIsAiAnalyzing(false);
+        return;
+      }
+
+      const promptContent = `Bạn là trợ lý Chuyên gia Toán THPT 2018. Hãy phân tích đề bài toán thực tế sau và trích xuất tham số 3D:
 "${aiPrompt}"
 
 Hãy trả về duy nhất một chuỗi JSON thuần (không chứa markdown backticks):
@@ -1178,10 +1180,26 @@ Hãy trả về duy nhất một chuỗi JSON thuần (không chứa markdown ba
   "paramH": số,
   "paramX": số,
   "explanation": "Tóm tắt ngắn gọn phân tích đề bài"
-}`
+}`;
+
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${storedKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: promptContent }] }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.2
+          }
+        })
       });
 
-      const text = response.text || "";
+      if (!res.ok) {
+        throw new Error(`Google API error (${res.status})`);
+      }
+
+      const resData = await res.json();
+      const text = resData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
       const cleanedJson = text.replace(/```json/gi, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(cleanedJson);
 

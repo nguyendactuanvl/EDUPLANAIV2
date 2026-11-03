@@ -1877,6 +1877,24 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
           </div>
         )}
         
+        {displayQuestions.length === 0 && !loading && !error && (
+          <div className="bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-100 rounded-2xl p-8 text-center my-6 shadow-xs animate-in fade-in">
+            <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/60 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-3 text-xl font-bold">
+              ⚠️
+            </div>
+            <h4 className="text-base font-bold mb-1">Phiếu bài tập này chưa có nội dung câu hỏi</h4>
+            <p className="text-sm text-amber-800 dark:text-amber-200 mb-4 max-w-md mx-auto">
+              Nội dung câu hỏi của bài tập chưa được tải về hoặc giáo viên vừa tạo lại. Vui lòng nhấn nút tải lại hoặc liên hệ giáo viên gửi lại liên kết mới.
+            </p>
+            <button
+              onClick={() => fetchExamById(examId || selectedCode)}
+              className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-sm font-semibold inline-flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+            >
+              <RefreshCw className="w-4 h-4 animate-spin-reverse" /> Tải lại nội dung đề
+            </button>
+          </div>
+        )}
+
         {displayQuestions.map((q: any, idx: number) => (
           <StudentQuestionCard
             key={idx}

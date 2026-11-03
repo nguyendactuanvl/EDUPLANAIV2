@@ -1054,8 +1054,33 @@ export function Worksheets() {
         try {
           examData = parseApiResponse(rawText);
         } catch (e2) {
-          throw new Error("Máy chủ AI hiện đang tạm thời quá tải (Lỗi 503 Service Unavailable). Thầy cô vui lòng nhấn nút 'Tự động tạo Phiếu học tập' để thử lại sau ít phút.");
+          throw new Error("Máy chủ AI hiện đang tạm thời quá tải. Thầy cô vui lòng nhấn nút 'Tự động tạo Phiếu học tập' để thử lại sau ít phút.");
         }
+      }
+
+      // Xử lý linh hoạt trường hợp máy chủ trả về dạng bọc { result: ... }
+      if (examData && (!Array.isArray(examData.questions) || examData.questions.length === 0) && examData.result) {
+        if (typeof examData.result === 'string') {
+          try {
+            const innerParsed = parseApiResponse(examData.result);
+            if (innerParsed && (Array.isArray(innerParsed.questions) || innerParsed.examName)) {
+              examData = innerParsed;
+            }
+          } catch (e) {
+            try {
+              const innerJson = JSON.parse(examData.result);
+              if (innerJson && (Array.isArray(innerJson.questions) || innerJson.examName)) {
+                examData = innerJson;
+              }
+            } catch (e2) {}
+          }
+        } else if (typeof examData.result === 'object' && Array.isArray(examData.result.questions)) {
+          examData = examData.result;
+        }
+      }
+
+      if (!examData || !Array.isArray(examData.questions) || examData.questions.length === 0) {
+        throw new Error("Máy chủ AI chưa trả về đủ danh sách câu hỏi cho chủ đề này. Thầy/cô vui lòng bấm 'Tạo lại' để hệ thống tự động sinh lại đầy đủ.");
       }
       
       // Clean and sanitize math formulas for MathJax in interactive online worksheet questions

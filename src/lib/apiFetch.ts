@@ -96,8 +96,10 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
   const customKey = getCustomApiKey();
   const isAiEndpoint = url.startsWith('/api/') && !url.includes('/api/health') && !url.includes('/api/exams') && !url.includes('/api/upload-chunk');
 
-  // PRIORITY #1: If user has set a personal API key and it's an AI endpoint, call Gemini API directly!
-  if (isAiEndpoint && customKey) {
+  const isGenericChat = (url === '/api/chat' || url === '/api/explain-mistake' || url === '/api/journal-ai' || url === '/api/translate-academic') && !url.includes('generate-');
+
+  // Direct client call to Google endpoint ONLY for simple generic chat/explain requests
+  if (isGenericChat && customKey) {
     try {
       let bodyObj: any = {};
       if (options.body && typeof options.body === 'string') {
@@ -132,7 +134,7 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
         });
       }
 
-      const promptText = bodyObj.prompt || bodyObj.message || (parts.length === 0 ? JSON.stringify(bodyObj) : "Hãy xử lý tài liệu/yêu cầu sau:");
+      const promptText = bodyObj.prompt || bodyObj.message || (parts.length === 0 ? JSON.stringify(bodyObj) : "Hãy xử lý yêu cầu sau:");
       if (promptText) {
         parts.push({ text: promptText });
       }

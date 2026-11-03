@@ -3,7 +3,6 @@ import {
   Key, Sparkles, Download, FileText, RefreshCw, Eye, EyeOff, 
   Copy, Check, Image as ImageIcon, Info, ChevronRight, Zap
 } from "lucide-react";
-import { GoogleGenAI, Type } from "@google/genai";
 import { toPng } from "html-to-image";
 import { saveAs } from "file-saver";
 import { Document, Packer, Paragraph, ImageRun, AlignmentType, HeadingLevel } from "docx";
@@ -597,55 +596,35 @@ export const VariationTableGenerator: React.FC = () => {
       const directMathBbt = analyzeFunctionToBbt(userPrompt);
 
       if (effectiveKey) {
-        // Sử dụng GoogleGenAI SDK với key cá nhân
-        const ai = new GoogleGenAI({ apiKey: effectiveKey });
-        const response = await ai.models.generateContent({
-          model: "gemini-3.8-flash",
-          contents: [{ role: "user", parts: [{ text: finalPrompt }] }],
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                functionName: { type: Type.STRING, description: "Tên hàm số dạng LaTeX, ví dụ: y = x^3 - 3x^2 + 4" },
-                domainNote: { type: Type.STRING, description: "Tập xác định, ví dụ: D = R hoặc D = R \\ {-1}" },
-                points: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      x: { type: Type.STRING, description: "Tọa độ x (-\\infty, 0, 1, +\\infty)" },
-                      yPrime: { type: Type.STRING, description: "Giá trị y' tại x ('0', '+', '-', '||')" },
-                      isAsymptote: { type: Type.BOOLEAN, description: "true nếu là tiệm cận đứng (vạch || cả y' và y)" },
-                      isDerivativeUndefinedOnly: { type: Type.BOOLEAN, description: "true nếu chỉ y' không xác định, hàm y vẫn xác định" },
-                      yVal: { type: Type.STRING, description: "Giá trị y tại x nếu liên tục" },
-                      yPosition: { type: Type.STRING, enum: ["top", "bottom", "middle"], description: "Vị trí chiều cao nhãn y" },
-                      yLeftVal: { type: Type.STRING, description: "Giới hạn bên trái tiệm cận đứng x -> x0^-" },
-                      yLeftPosition: { type: Type.STRING, enum: ["top", "bottom", "middle"] },
-                      yRightVal: { type: Type.STRING, description: "Giới hạn bên phải tiệm cận đứng x -> x0^+" },
-                      yRightPosition: { type: Type.STRING, enum: ["top", "bottom", "middle"] }
-                    },
-                    required: ["x"]
-                  }
-                },
-                intervals: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      sign: { type: Type.STRING, enum: ["+", "-", ""], description: "Dấu của y'" },
-                      isExcludedDomain: { type: Type.BOOLEAN, description: "true nếu khoảng ngoài TXĐ (tô //)" },
-                      trend: { type: Type.STRING, enum: ["increasing", "decreasing", "none"], description: "Chiều mũi tên" }
-                    }
-                  }
-                }
-              },
-              required: ["functionName", "points", "intervals"]
+        // Gửi trực tiếp đến Google Gemini endpoint với key cá nhân
+        const bbtPrompt = `${finalPrompt}
+Trả về DUY NHẤT một chuỗi JSON chuẩn có dạng:
+{
+  "functionName": "Tên hàm số dạng LaTeX",
+  "domainNote": "Tập xác định",
+  "points": [
+    { "x": "-\\infty", "yPrime": "0", "yVal": "0", "yPosition": "top" }
+  ],
+  "intervals": [
+    { "sign": "+", "trend": "increasing" }
+  ]
+}`;
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${effectiveKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: bbtPrompt }] }],
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: 0.2
             }
-          }
+          })
         });
 
-        jsonText = response.text || "";
+        if (res.ok) {
+          const resData = await res.json();
+          jsonText = resData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        }
       } else {
         // Fallback qua proxy nội bộ ứng dụng
         const res = await apiFetch("/api/chat", {
