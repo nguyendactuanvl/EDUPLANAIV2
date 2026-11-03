@@ -736,17 +736,18 @@ function safeJsonParse<T = any>(text: string, fallback?: T): T {
 }
 
 function getValidGeminiModels(requestedModel?: string): string[] {
-  let primary = requestedModel || "gemini-2.5-flash";
-  if (primary.includes("2.0")) primary = "gemini-2.5-flash";
+  let primary = requestedModel || "gemini-3.8-flash";
+  if (primary.includes("2.0") || primary.includes("2.5")) primary = "gemini-3.8-flash";
   const list = [
     primary,
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
+    "gemini-3.8-flash",
     "gemini-1.5-flash"
   ];
-  // Remove legacy models that cause 404 errors
+  // Remove legacy models that cause 404/deprecation errors
   const deprecated = [
     "gemini-2.0-flash", "models/gemini-2.0-flash",
+    "gemini-2.5-flash", "models/gemini-2.5-flash",
+    "gemini-2.5-pro", "models/gemini-2.5-pro",
     "gemini-pro", "models/gemini-pro",
     "gemini-2.0-pro"
   ];

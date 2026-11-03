@@ -142,7 +142,7 @@ async function callGoogleGeminiDirectly(options: RequestInit, customKey: string)
       : sysInstruction;
   }
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(customKey)}`;
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(customKey)}`;
 
   const res = await fetch(endpoint, {
     method: 'POST',

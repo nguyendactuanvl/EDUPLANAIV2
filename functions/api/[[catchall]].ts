@@ -88,8 +88,8 @@ export const onRequestPost = async (context: { request: Request; env: Record<str
         : sysInst;
     }
 
-    // 3. Call Google Gemini API (gemini-2.5-flash)
-    const targetUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+    // 3. Call Google Gemini API (gemini-3.8-flash)
+    const targetUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
 
     const geminiRes = await fetch(targetUrl, {
       method: "POST",
