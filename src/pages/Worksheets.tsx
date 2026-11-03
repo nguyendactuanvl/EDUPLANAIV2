@@ -1210,47 +1210,15 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
         ]
       };
       
-      // 3. Generate 6-char fallback PIN and save to server/cloud store
+      // 3. Generate 6-char PIN code immediately for instant room creation
       const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
       let fallbackCode = '';
       for (let i = 0; i < 6; i++) {
         fallbackCode += chars.charAt(Math.floor(Math.random() * chars.length));
       }
+      const examId = fallbackCode;
 
-      let examId = fallbackCode;
-      try {
-        const shareRes = await apiFetch('/api/exams/share', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...payload, customId: fallbackCode }),
-          redirect: 'follow',
-        });
-        if (shareRes.ok) {
-          const shareRaw = await shareRes.text();
-          if (!shareRaw.trim().startsWith('<') && !shareRaw.includes('<!DOCTYPE html>')) {
-            try {
-              const shareJson = JSON.parse(shareRaw);
-              if (shareJson.examId) {
-                examId = shareJson.examId;
-              }
-            } catch (e) {}
-          }
-        }
-      } catch (e) {
-        console.warn("Share to api failed:", e);
-      }
-
-      // Sync to cloud store & Webhook unconditionally
-      try {
-        await saveExamToCloud(examId, payload);
-        registerExamUrlMapping(`/exam/${examId}`, examId);
-        registerExamUrlMapping(`/p/${examId}`, examId);
-        registerExamUrlMapping(`/thi/${examId}`, examId);
-        registerExamUrlMapping(`/?pin=${examId}`, examId);
-        registerExamUrlMapping(`/#/exam/${examId}`, examId);
-      } catch (e) {}
-
-      // Primary link is clean short PIN url (~40 chars)
+      // Primary short PIN link (~30 chars)
       const shortLink = `${window.location.origin}/?pin=${examId}`;
       let compressed = '';
       try {
@@ -1263,9 +1231,9 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
         ? `${window.location.origin}/?pin=${examId}&d=${compressed}`
         : shortLink;
        
+      // Render room link and save to local state IMMEDIATELY without waiting for cloud sync
       setShareLink(shortLink);
 
-      // Save room to history
       const roomCode = examId;
       const newRoom = {
         code: roomCode,
@@ -1279,10 +1247,40 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
         linkedSheetId: null,
         linkedSheetUrl: null
       };
+
       const updatedHistory = [newRoom, ...examsHistory.filter(h => h.code !== newRoom.code)];
       setExamsHistory(updatedHistory);
       localStorage.setItem("eduplan_worksheet_exams_history", JSON.stringify(updatedHistory));
       localStorage.setItem(`examCache_${roomCode}`, JSON.stringify(payload));
+
+      // Asynchronous non-blocking Cloud Sync in background
+      (async () => {
+        try {
+          await apiFetch('/api/exams/share', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...payload, customId: examId }),
+            redirect: 'follow',
+          });
+        } catch (e) {}
+
+        try {
+          await saveExamToCloud(examId, payload);
+          registerExamUrlMapping(`/exam/${examId}`, examId);
+          registerExamUrlMapping(`/p/${examId}`, examId);
+          registerExamUrlMapping(`/thi/${examId}`, examId);
+          registerExamUrlMapping(`/?pin=${examId}`, examId);
+          registerExamUrlMapping(`/#/exam/${examId}`, examId);
+        } catch (e) {}
+      })();
+
+      // Auto-scroll down to the share link box so teacher sees it instantly
+      setTimeout(() => {
+        const box = document.getElementById("online-room-share-box");
+        if (box) {
+          box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
       
       // Cập nhật danh sách câu hỏi để giáo viên kiểm tra lời giải chi tiết trực quan
       const formattedQuestions = (examData.questions || []).map((q: any, idx: number) => {
@@ -2345,7 +2343,7 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
           </div>
           
           {shareLink && (
-            <div className="mt-4 p-4 bg-emerald-50 rounded-xl border border-emerald-200">
+            <div id="online-room-share-box" className="mt-4 p-4 bg-emerald-50 rounded-xl border border-emerald-200 shadow-sm animate-in fade-in slide-in-from-top-2">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-bold text-emerald-900 flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
