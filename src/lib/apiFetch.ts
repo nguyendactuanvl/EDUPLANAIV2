@@ -92,23 +92,97 @@ export async function uploadFileChunked(fileData: string, type: string, extraHea
   return fileId;
 }
 
+async function callGoogleGeminiDirectly(options: RequestInit, customKey: string): Promise<Response> {
+  let bodyObj: any = {};
+  if (typeof options.body === 'string') {
+    try {
+      bodyObj = JSON.parse(options.body);
+    } catch (e) {
+      bodyObj = { text: options.body };
+    }
+  } else if (options.body && typeof options.body === 'object') {
+    bodyObj = options.body;
+  }
+
+  let rawContents = bodyObj.contents;
+  let contents: any = rawContents;
+  if (!contents) {
+    if (bodyObj.prompt) {
+      contents = [{ role: "user", parts: [{ text: bodyObj.prompt }] }];
+    } else if (bodyObj.text) {
+      contents = [{ role: "user", parts: [{ text: bodyObj.text }] }];
+    } else if (bodyObj.messages && Array.isArray(bodyObj.messages)) {
+      contents = bodyObj.messages.map((m: any) => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }]
+      }));
+    } else {
+      contents = [{ role: "user", parts: [{ text: JSON.stringify(bodyObj) }] }];
+    }
+  } else if (Array.isArray(contents)) {
+    if (contents.length > 0 && !contents[0].role) {
+      contents = [{ role: "user", parts: contents }];
+    }
+  } else if (typeof contents === 'object' && contents !== null) {
+    if (contents.role && contents.parts) {
+      contents = [contents];
+    } else if (contents.parts) {
+      contents = [{ role: "user", parts: contents.parts }];
+    } else {
+      contents = [{ role: "user", parts: [contents] }];
+    }
+  }
+
+  const payload: any = { contents };
+
+  const sysInstruction = bodyObj.systemInstruction || bodyObj.system_instruction;
+  if (sysInstruction) {
+    payload.systemInstruction = typeof sysInstruction === 'string'
+      ? { parts: [{ text: sysInstruction }] }
+      : sysInstruction;
+  }
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(customKey)}`;
+
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    const msg = errData?.error?.message || `Google API Error (${res.status})`;
+    throw new Error(`Lỗi từ API Key cá nhân của bạn: ${msg}`);
+  }
+
+  const data = await res.json();
+  let text = "";
+  if (data.candidates && data.candidates[0]?.content?.parts) {
+    text = data.candidates[0].content.parts.map((p: any) => p.text || "").join("\n");
+  }
+
+  const responseObj = {
+    text,
+    result: text,
+    ...data
+  };
+
+  return new Response(JSON.stringify(responseObj), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json; charset=utf-8' }
+  });
+}
+
 export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const customKey = getCustomApiKey();
   const isAiEndpoint = url.startsWith('/api/') && !url.includes('/api/health') && !url.includes('/api/exams') && !url.includes('/api/upload-chunk');
-
-  const isGenericChat = (url === '/api/chat' || url === '/api/explain-mistake' || url === '/api/journal-ai' || url === '/api/translate-academic') && !url.includes('generate-');
-
-  // Direct client call to Google endpoint ONLY for simple generic chat/explain requests
-  // Removed direct client-side Gemini calls to prevent PROXY_GENERATION_DISABLED.
-  // All AI requests must go through the server proxy.
-
-
 
   const maxRetries = 3;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const baseUrl = (import.meta as any).env.VITE_API_BASE_URL || "";
-    let response: Response;
+    let response: Response | null = null;
     try {
       response = await fetch(baseUrl + url, {
         credentials: 'include',
@@ -117,6 +191,13 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
       });
     } catch (netErr: any) {
       console.warn(`[apiFetch] Network/fetch error on ${url}:`, netErr);
+      if (customKey && isAiEndpoint) {
+        try {
+          return await callGoogleGeminiDirectly(options, customKey);
+        } catch (fErr: any) {
+          console.error(`[apiFetch] Fallback call failed:`, fErr);
+        }
+      }
       if (attempt < maxRetries) {
         window.dispatchEvent(new CustomEvent('api-retry-status', { 
           detail: { 
@@ -136,13 +217,21 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
       const text = await response.text();
       const lowerText = text.toLowerCase();
 
+      if (customKey && isAiEndpoint) {
+        try {
+          return await callGoogleGeminiDirectly(options, customKey);
+        } catch (fErr: any) {
+          console.error(`[apiFetch] Fallback direct Gemini call failed:`, fErr);
+        }
+      }
+
       const isWarmupOrTemporary = lowerText.includes("warmup") || lowerText.includes("nginx") || response.status === 502 || response.status === 503 || response.status === 504 || response.status === 404 || response.status === 405;
       if (isWarmupOrTemporary && attempt < maxRetries) {
         await delay(2000 + attempt * 1500);
         continue;
       }
 
-      throw new Error("Máy chủ đang tạm thời bảo trì hoặc yêu cầu Cloudflare Functions. Thầy cô vui lòng kiểm tra cài đặt API Key cá nhân để gọi trực tiếp.");
+      throw new Error("Máy chủ đang tạm thời bảo trì. Thầy cô vui lòng kiểm tra cài đặt API Key cá nhân để tiếp tục.");
     }
 
     if (response.ok) {
@@ -165,6 +254,16 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
         }
       };
       return response;
+    }
+
+    // Response not OK (e.g., 405, 500, 503)
+    if (customKey && isAiEndpoint) {
+      try {
+        console.warn(`[apiFetch] API call ${url} returned ${response.status}. Attempting direct client fallback...`);
+        return await callGoogleGeminiDirectly(options, customKey);
+      } catch (fErr: any) {
+        console.error(`[apiFetch] Client fallback error:`, fErr);
+      }
     }
 
     const errText = await response.text();

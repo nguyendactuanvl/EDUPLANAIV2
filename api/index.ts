@@ -769,21 +769,6 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
 - Số mũ BẮT BUỘC dùng dấu mũ: $x^2$, $a^3$.
 - Phân số BẮT BUỘC dùng \\frac{tử}{mẫu}.`;
 
-  const extractTextFromInteraction = (interaction: any): string => {
-    let fullOutput = "";
-    if (interaction.steps) {
-      for (const step of interaction.steps) {
-        if (step.type === 'model_output') {
-          const textContent = step.content?.find((c: any) => c.type === 'text');
-          if (textContent && textContent.text) {
-            fullOutput += textContent.text;
-          }
-        }
-      }
-    }
-    return fullOutput.normalize("NFC").trim();
-  };
-  
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     for (const model of models) {
       if (Date.now() - startTime > 42000) {
@@ -793,68 +778,68 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
       try {
         const c = payloadOptions.config || {};
         const maxTokens = Number(c.max_output_tokens || c.maxOutputTokens || 8192);
-        const generation_config: any = {
-          max_output_tokens: maxTokens,
+        
+        const configObj: any = {
+          systemInstruction: c.system_instruction || c.systemInstruction || defaultSystemInstruction,
+          maxOutputTokens: maxTokens,
         };
 
-        if (c.temperature !== undefined) generation_config.temperature = Number(c.temperature);
-        if (c.top_p !== undefined || c.topP !== undefined) generation_config.top_p = Number(c.top_p ?? c.topP);
-        if (c.top_k !== undefined || c.topK !== undefined) generation_config.top_k = Number(c.top_k ?? c.topK);
+        if (c.temperature !== undefined) configObj.temperature = Number(c.temperature);
+        if (c.top_p !== undefined || c.topP !== undefined) configObj.topP = Number(c.top_p ?? c.topP);
+        if (c.top_k !== undefined || c.topK !== undefined) configObj.topK = Number(c.top_k ?? c.topK);
 
         if (c.response_mime_type || c.responseMimeType) {
-          generation_config.response_mime_type = c.response_mime_type || c.responseMimeType;
+          configObj.responseMimeType = c.response_mime_type || c.responseMimeType;
         }
         if (c.response_schema || c.responseSchema) {
-          generation_config.response_schema = c.response_schema || c.responseSchema;
-        }
-        if (c.thinking_level || c.thinkingLevel) {
-          generation_config.thinking_level = c.thinking_level || c.thinkingLevel;
-        }
-        
-        // Map payload contents to interaction input
-        let input: any = payloadOptions.contents;
-        let role = "user";
-        
-        let turns: any[] = [];
-        if (typeof input === 'string') {
-          turns = [{ role: "user", parts: [{ text: input }] }];
-        } else if (Array.isArray(input)) {
-          // If it's already an array of turns, use it. Otherwise wrap it.
-          if (input.length > 0 && input[0].role) {
-            turns = input;
-          } else {
-            // It might be an array of parts
-            turns = [{ role: "user", parts: input }];
-          }
-        } else if (typeof input === 'object' && input !== null) {
-          // It might be a single part object
-          turns = [{ role: "user", parts: [input] }];
+          configObj.responseSchema = c.response_schema || c.responseSchema;
         }
 
-        const interaction = await client.interactions.create({
+        let rawInput: any = payloadOptions.contents;
+        let formattedContents: any = rawInput;
+
+        if (typeof rawInput === 'string') {
+          formattedContents = rawInput;
+        } else if (Array.isArray(rawInput)) {
+          if (rawInput.length > 0 && rawInput[0].role) {
+            formattedContents = rawInput;
+          } else {
+            formattedContents = [{ role: 'user', parts: rawInput }];
+          }
+        } else if (typeof rawInput === 'object' && rawInput !== null) {
+          if (rawInput.role && rawInput.parts) {
+            formattedContents = [rawInput];
+          } else if (rawInput.parts) {
+            formattedContents = [{ role: 'user', parts: rawInput.parts }];
+          } else if (rawInput.text || rawInput.inlineData) {
+            formattedContents = [{ role: 'user', parts: [rawInput] }];
+          } else {
+            formattedContents = [rawInput];
+          }
+        }
+
+        const response = await client.models.generateContent({
           model,
-          input: turns,
-          system_instruction: c.system_instruction || c.systemInstruction || defaultSystemInstruction,
-          generation_config
+          contents: formattedContents,
+          config: configObj
         });
 
-        const normText = extractTextFromInteraction(interaction);
+        const normText = (response.text || "").normalize("NFC").trim();
         if (!normText) {
-          console.warn(`[generateWithFallback] Interaction ${model} returned empty text, continuing fallback...`);
+          console.warn(`[generateWithFallback] Model ${model} returned empty text, continuing fallback...`);
           continue;
         }
 
         return {
           text: normText,
-          interactionId: interaction.id,
+          result: normText,
           customKeyFailed
         } as any;
-  
+
       } catch (e: any) {
         primaryError = e;
         console.warn(`[generateWithFallback] Model ${model} error (isCustomKey: ${isCustom}):`, e?.message);
         
-        // Handle specific Proxy or Location errors by falling back immediately
         if (e?.message?.includes("PROXY_GENERATION_DISABLED") || e?.message?.includes("User location is not supported")) {
           console.warn(`[generateWithFallback] Critical environment error with ${model}, trying next model or falling back...`);
         }
@@ -893,7 +878,6 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
   const models = getValidGeminiModels(payloadOptions?.model);
   const startTime = Date.now();
 
-  const config = payloadOptions.config || {};
   const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán.
 - LUÔN LUÔN sử dụng \\frac thay thế cho \\dfrac.
 - TẤT CẢ các biến số, tham số đơn lẻ (như x, y, m, a, b, c...) BẮT BUỘC bọc trong cặp dấu $...$.
@@ -909,50 +893,57 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
         break;
       }
       try {
-        let input: any = payloadOptions.contents;
-        let turns: any[] = [];
-        if (typeof input === 'string') {
-          turns = [{ role: "user", parts: [{ text: input }] }];
-        } else if (Array.isArray(input)) {
-          if (input.length > 0 && input[0].role) {
-            turns = input;
+        let rawInput: any = payloadOptions.contents;
+        let formattedContents: any = rawInput;
+
+        if (typeof rawInput === 'string') {
+          formattedContents = rawInput;
+        } else if (Array.isArray(rawInput)) {
+          if (rawInput.length > 0 && rawInput[0].role) {
+            formattedContents = rawInput;
           } else {
-            turns = [{ role: "user", parts: input }];
+            formattedContents = [{ role: 'user', parts: rawInput }];
           }
-        } else if (typeof input === 'object' && input !== null) {
-          turns = [{ role: "user", parts: [input] }];
+        } else if (typeof rawInput === 'object' && rawInput !== null) {
+          if (rawInput.role && rawInput.parts) {
+            formattedContents = [rawInput];
+          } else if (rawInput.parts) {
+            formattedContents = [{ role: 'user', parts: rawInput.parts }];
+          } else if (rawInput.text || rawInput.inlineData) {
+            formattedContents = [{ role: 'user', parts: [rawInput] }];
+          } else {
+            formattedContents = [rawInput];
+          }
         }
 
         const c = payloadOptions.config || {};
         const maxTokens = Number(c.max_output_tokens || c.maxOutputTokens || 8192);
-        const generation_config: any = {
-          max_output_tokens: maxTokens,
+        
+        const configObj: any = {
+          systemInstruction: c.system_instruction || c.systemInstruction || defaultSystemInstruction,
+          maxOutputTokens: maxTokens,
         };
 
-        if (c.temperature !== undefined) generation_config.temperature = Number(c.temperature);
-        if (c.top_p !== undefined || c.topP !== undefined) generation_config.top_p = Number(c.top_p ?? c.topP);
-        if (c.top_k !== undefined || c.topK !== undefined) generation_config.top_k = Number(c.top_k ?? c.topK);
+        if (c.temperature !== undefined) configObj.temperature = Number(c.temperature);
+        if (c.top_p !== undefined || c.topP !== undefined) configObj.topP = Number(c.top_p ?? c.topP);
+        if (c.top_k !== undefined || c.topK !== undefined) configObj.topK = Number(c.top_k ?? c.topK);
 
         if (c.response_mime_type || c.responseMimeType) {
-          generation_config.response_mime_type = c.response_mime_type || c.responseMimeType;
+          configObj.responseMimeType = c.response_mime_type || c.responseMimeType;
         }
         if (c.response_schema || c.responseSchema) {
-          generation_config.response_schema = c.response_schema || c.responseSchema;
-        }
-        if (c.thinking_level || c.thinkingLevel) {
-          generation_config.thinking_level = c.thinking_level || c.thinkingLevel;
+          configObj.responseSchema = c.response_schema || c.responseSchema;
         }
 
-        const stream = await client.interactions.create({
+        const streamResult = await client.models.generateContentStream({
           model,
-          input: turns,
-          system_instruction: c.system_instruction || c.systemInstruction || defaultSystemInstruction,
-          generation_config,
-          stream: true
+          contents: formattedContents,
+          config: configObj
         });
 
-        for await (const event of stream) {
-          if (event.event_type === "step.delta" && event.delta.type === "text") {
+        for await (const chunk of streamResult) {
+          const text = chunk.text || "";
+          if (text) {
             if (!streamStarted) {
               res.setHeader('Content-Type', 'text/plain; charset=utf-8');
               res.setHeader('Transfer-Encoding', 'chunked');
@@ -961,7 +952,7 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
               res.setHeader('Access-Control-Allow-Origin', '*');
               streamStarted = true;
             }
-            res.write(event.delta.text);
+            res.write(text);
           }
         }
 
