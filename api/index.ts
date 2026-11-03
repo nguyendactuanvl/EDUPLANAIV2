@@ -410,6 +410,10 @@ function handleAiError(error: any, req: any, res: any) {
   const lowerMsg = errorMsg.toLowerCase();
   const isCustomKey = !!req.headers['x-gemini-api-key'] || (!!req.headers['authorization'] && (req.headers['authorization'] as string).startsWith('Bearer '));
 
+  if (error?.status === 400 || (error?.code === 400)) {
+     return res.status(400).json({ error: `Lỗi yêu cầu (400): ${errorMsg || 'Không xác định'}` });
+  }
+
   if (lowerMsg.includes("api_key_invalid") || lowerMsg.includes("api key not valid")) {
     return res.status(400).json({ error: "API Key không hợp lệ. Vui lòng kiểm tra lại Cài đặt hệ thống và đảm bảo API Key chính xác." });
   }
@@ -732,19 +736,17 @@ function safeJsonParse<T = any>(text: string, fallback?: T): T {
 }
 
 function getValidGeminiModels(requestedModel?: string): string[] {
-  let primary = requestedModel || "gemini-3.8-flash";
+  let primary = requestedModel || "gemini-2.5-flash";
+  if (primary.includes("2.0")) primary = "gemini-2.5-flash";
   const list = [
     primary,
-    "gemini-3.8-flash",
-    "gemini-flash-latest",
-    "gemini-3.1-flash-lite",
-    "gemini-4-argon"
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-1.5-flash"
   ];
-  // Remove legacy models that cause 404 errors (Interactions API context late 2026)
+  // Remove legacy models that cause 404 errors
   const deprecated = [
     "gemini-2.0-flash", "models/gemini-2.0-flash",
-    "gemini-1.5-pro", "models/gemini-1.5-pro",
-    "gemini-1.5-flash", "models/gemini-1.5-flash",
     "gemini-pro", "models/gemini-pro",
     "gemini-2.0-pro"
   ];
@@ -790,14 +792,14 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
       }
       try {
         const c = payloadOptions.config || {};
-        // Interactions API strictly requires snake_case. NEVER pass camelCase keys here.
+        const maxTokens = Number(c.max_output_tokens || c.maxOutputTokens || 8192);
         const generation_config: any = {
-          max_output_tokens: Number(c.max_output_tokens || c.maxOutputTokens || 8192),
+          max_output_tokens: maxTokens,
         };
 
         if (c.temperature !== undefined) generation_config.temperature = Number(c.temperature);
-        if (c.top_p !== undefined) generation_config.top_p = Number(c.top_p);
-        if (c.top_k !== undefined) generation_config.top_k = Number(c.top_k);
+        if (c.top_p !== undefined || c.topP !== undefined) generation_config.top_p = Number(c.top_p ?? c.topP);
+        if (c.top_k !== undefined || c.topK !== undefined) generation_config.top_k = Number(c.top_k ?? c.topK);
 
         if (c.response_mime_type || c.responseMimeType) {
           generation_config.response_mime_type = c.response_mime_type || c.responseMimeType;
@@ -811,21 +813,27 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
         
         // Map payload contents to interaction input
         let input: any = payloadOptions.contents;
+        let role = "user";
+        
+        let turns: any[] = [];
         if (typeof input === 'string') {
-          input = [{ text: input }];
+          turns = [{ role: "user", parts: [{ text: input }] }];
         } else if (Array.isArray(input)) {
-          // Interactions API expects an array of ContentPart
-          if (input.length > 0 && input[0].parts) {
-            input = input.flatMap((c: any) => c.parts || []);
+          // If it's already an array of turns, use it. Otherwise wrap it.
+          if (input.length > 0 && input[0].role) {
+            turns = input;
+          } else {
+            // It might be an array of parts
+            turns = [{ role: "user", parts: input }];
           }
-          // If it's already an array of parts, it's fine. 
-          // If it's an array of strings, map them.
-          input = input.map((item: any) => typeof item === 'string' ? { text: item } : item);
+        } else if (typeof input === 'object' && input !== null) {
+          // It might be a single part object
+          turns = [{ role: "user", parts: [input] }];
         }
 
         const interaction = await client.interactions.create({
           model,
-          input,
+          input: turns,
           system_instruction: c.system_instruction || c.systemInstruction || defaultSystemInstruction,
           generation_config
         });
@@ -902,22 +910,28 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
       }
       try {
         let input: any = payloadOptions.contents;
+        let turns: any[] = [];
         if (typeof input === 'string') {
-          input = [{ text: input }];
+          turns = [{ role: "user", parts: [{ text: input }] }];
         } else if (Array.isArray(input)) {
-          if (input.length > 0 && input[0].parts) {
-            input = input.flatMap((c: any) => c.parts || []);
+          if (input.length > 0 && input[0].role) {
+            turns = input;
+          } else {
+            turns = [{ role: "user", parts: input }];
           }
+        } else if (typeof input === 'object' && input !== null) {
+          turns = [{ role: "user", parts: [input] }];
         }
+
         const c = payloadOptions.config || {};
-        // Interactions API strictly requires snake_case. NEVER pass camelCase keys here.
+        const maxTokens = Number(c.max_output_tokens || c.maxOutputTokens || 8192);
         const generation_config: any = {
-          max_output_tokens: Number(c.max_output_tokens || c.maxOutputTokens || 8192),
+          max_output_tokens: maxTokens,
         };
 
         if (c.temperature !== undefined) generation_config.temperature = Number(c.temperature);
-        if (c.top_p !== undefined) generation_config.top_p = Number(c.top_p);
-        if (c.top_k !== undefined) generation_config.top_k = Number(c.top_k);
+        if (c.top_p !== undefined || c.topP !== undefined) generation_config.top_p = Number(c.top_p ?? c.topP);
+        if (c.top_k !== undefined || c.topK !== undefined) generation_config.top_k = Number(c.top_k ?? c.topK);
 
         if (c.response_mime_type || c.responseMimeType) {
           generation_config.response_mime_type = c.response_mime_type || c.responseMimeType;
@@ -931,7 +945,7 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
 
         const stream = await client.interactions.create({
           model,
-          input,
+          input: turns,
           system_instruction: c.system_instruction || c.systemInstruction || defaultSystemInstruction,
           generation_config,
           stream: true
