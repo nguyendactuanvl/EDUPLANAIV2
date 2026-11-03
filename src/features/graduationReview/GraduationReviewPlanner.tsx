@@ -731,6 +731,7 @@ TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG ĐƯỢC GHI '...tương tự giáo vi�
       const cleanKey = apiKey.trim();
       if (cleanKey) {
         localStorage.setItem(API_KEY_STORAGE, cleanKey);
+        localStorage.setItem("eduplan_gemini_api_key_v2", cleanKey);
       }
       const prompt = buildSystemPrompt();
 

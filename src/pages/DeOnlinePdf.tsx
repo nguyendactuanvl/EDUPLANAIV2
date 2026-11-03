@@ -395,7 +395,7 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("eduplan_gemini_api_key_v2") || ""}`
+          "Authorization": `Bearer ${localStorage.getItem("custom_gemini_api_key") || localStorage.getItem("eduplan_gemini_api_key_v2") || ""}`
         },
         body: JSON.stringify({
           file: base64,
@@ -1369,7 +1369,7 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("eduplan_gemini_api_key_v2") || ""}`
+          "Authorization": `Bearer ${localStorage.getItem("custom_gemini_api_key") || localStorage.getItem("eduplan_gemini_api_key_v2") || ""}`
         },
         body: JSON.stringify({
           file: base64,

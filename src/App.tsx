@@ -9,6 +9,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SettingsModal } from "./components/SettingsModal";
 import { UserGuideModal } from "./components/UserGuideModal";
 import { getInitialTheme, applyTheme, ThemeMode } from "./lib/theme";
+import { getCustomApiKey } from "./lib/apiFetch";
 
 function safeLazy<T extends React.ComponentType<any>>(
   factory: () => Promise<any>,
@@ -113,11 +114,11 @@ export default function App() {
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [hasApiKey, setHasApiKey] = useState<boolean>(() => {
-    return !!(localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim();
+    return !!getCustomApiKey();
   });
 
   const checkApiKeyStatus = () => {
-    setHasApiKey(!!(localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim());
+    setHasApiKey(!!getCustomApiKey());
   };
 
   useEffect(() => {
@@ -196,19 +197,29 @@ export default function App() {
     window.addEventListener('toggle-focus-mode', handleFocusMode);
     window.addEventListener('focus-mode', handleFocusMode);
     window.addEventListener('hsa-focus-mode', handleFocusMode);
+    const handleUserLoggedIn = () => {
+      checkApiKeyStatus();
+      if (!getCustomApiKey()) {
+        setSettingsDefaultTab("apikey");
+        setIsSettingsOpen(true);
+      }
+    };
+
     window.addEventListener('open-exam-stats', handleOpenStats);
     window.addEventListener('switch-tab', handleSwitchTab);
     window.addEventListener('storage', checkApiKeyStatus);
+    window.addEventListener('api-key-updated', checkApiKeyStatus);
+    window.addEventListener('user-logged-in', handleUserLoggedIn);
 
-    // Auto-prompt API Key modal on first visit if no key is set
-    const userKey = (localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim();
-    const hasPrompted = sessionStorage.getItem("eduplan_apikey_first_prompted");
-    if (!userKey && !hasPrompted) {
-      sessionStorage.setItem("eduplan_apikey_first_prompted", "true");
+    // Auto-prompt API Key modal upon entering app if no key is set (except when in student exam mode)
+    const { examId: locExamId, isStudentMode: locIsStudent } = parseExamIdFromLocation();
+    const isStudent = !!(locExamId || locIsStudent || window.location.pathname.startsWith('/exam/') || window.location.pathname.startsWith('/thi/'));
+    const userKey = getCustomApiKey();
+    if (!userKey && !isStudent) {
       setTimeout(() => {
         setSettingsDefaultTab("apikey");
         setIsSettingsOpen(true);
-      }, 600);
+      }, 500);
     }
 
     return () => {
@@ -221,6 +232,8 @@ export default function App() {
       window.removeEventListener('open-exam-stats', handleOpenStats);
       window.removeEventListener('switch-tab', handleSwitchTab);
       window.removeEventListener('storage', checkApiKeyStatus);
+      window.removeEventListener('api-key-updated', checkApiKeyStatus);
+      window.removeEventListener('user-logged-in', handleUserLoggedIn);
     };
   }, []);
 

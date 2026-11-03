@@ -51,6 +51,9 @@ export const googleSignIn = async (): Promise<{ user: User | any; accessToken: s
       throw new Error("Không thể lấy Token truy cập Google Sheets.");
     }
     cachedAccessToken = credential.accessToken;
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('user-logged-in', { detail: result.user }));
+    }
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
     if (

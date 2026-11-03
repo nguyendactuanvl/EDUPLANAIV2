@@ -160,7 +160,7 @@ export function Gamification() {
       const base64 = event.target?.result as string;
       setIsExtractingSt(true);
       try {
-        const key = localStorage.getItem("eduplan_gemini_api_key_v2") || "";
+        const key = localStorage.getItem("custom_gemini_api_key") || localStorage.getItem("eduplan_gemini_api_key_v2") || "";
         const res = await apiFetch("/api/extract-data", {
           method: "POST",
           headers: {

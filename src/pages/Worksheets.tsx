@@ -1313,6 +1313,7 @@ export function Worksheets() {
       });
 
       if (response.headers.get('x-custom-key-failed') === 'true') {
+        localStorage.removeItem('custom_gemini_api_key');
         localStorage.removeItem('eduplan_gemini_api_key_v2');
       }
 

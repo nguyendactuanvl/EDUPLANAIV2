@@ -37,7 +37,7 @@ export interface SvgAiIllustratorProps {
 }
 
 export function SvgAiIllustrator({ initialPrompt, onInsertSnippet }: SvgAiIllustratorProps = {}) {
-  const [selectedModel, setSelectedModel] = useState("gemini-3.5-flash-lite");
+  const [selectedModel, setSelectedModel] = useState("gemini-3.8-flash");
   const [prompt, setPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [svgContent, setSvgContent] = useState("");
@@ -157,7 +157,7 @@ Nhiệm vụ của bạn là đọc đề bài (qua văn bản hoặc hình ản
     setIsGenerating(true);
     setSvgContent("");
 
-    const targetKey = (localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim();
+    const targetKey = (localStorage.getItem("custom_gemini_api_key") || localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim();
 
     // 1. Thử dùng API proxy /api/generate-math-simulation trước nếu không có targetKey thủ công
     if (!targetKey && !fileBase64) {
@@ -326,8 +326,8 @@ Nhiệm vụ của bạn là đọc đề bài (qua văn bản hoặc hình ản
                 }}
                 className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:bg-white focus:ring-1 focus:ring-indigo-500 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-700 focus:outline-none cursor-pointer"
               >
-                <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (Khuyên dùng - Nhanh & Mới nhất)</option>
-                <option value="gemini-3.5-flash">Gemini 3.5 Flash (Hiệu suất cao)</option>
+                <option value="gemini-3.8-flash">Gemini 3.8 Flash (Khuyên dùng - Nhanh & Mới nhất)</option>
+                <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</option>
                 <option value="gemini-3.1-flash">Gemini 3.1 Flash</option>
                 <option value="gemini-3.5-pro">Gemini 3.5 Pro (Tư duy & Vẽ phức tạp)</option>
                 <option value="gemini-3.1-pro">Gemini 3.1 Pro</option>

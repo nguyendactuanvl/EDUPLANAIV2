@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Camera, Settings, Users, FileText, BarChart2, CheckSquare, RotateCcw, Volume2, Upload, Download, Printer } from 'lucide-react';
 import { cn } from '../lib/utils';
-import * as XLSX from 'xlsx';
+import { XLSX } from '../lib/xlsxUtils';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';

@@ -1,6 +1,35 @@
 import { safeJsonParse } from './utils';
 
-export const API_KEY_STORAGE = 'eduplan_gemini_api_key_v2';
+export const API_KEY_STORAGE = 'custom_gemini_api_key';
+export const LEGACY_API_KEY_STORAGE = 'eduplan_gemini_api_key_v2';
+
+export function getCustomApiKey(): string {
+  if (typeof window === 'undefined') return '';
+  return (
+    localStorage.getItem('custom_gemini_api_key') ||
+    localStorage.getItem('eduplan_gemini_api_key_v2') ||
+    localStorage.getItem('gemini_user_api_key') ||
+    localStorage.getItem('gemini_api_key') ||
+    ''
+  ).trim();
+}
+
+export function setCustomApiKey(key: string): void {
+  const clean = key.trim();
+  if (clean) {
+    localStorage.setItem('custom_gemini_api_key', clean);
+    localStorage.setItem('eduplan_gemini_api_key_v2', clean);
+    localStorage.setItem('gemini_user_api_key', clean);
+  } else {
+    localStorage.removeItem('custom_gemini_api_key');
+    localStorage.removeItem('eduplan_gemini_api_key_v2');
+    localStorage.removeItem('gemini_user_api_key');
+    localStorage.removeItem('gemini_api_key');
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('api-key-updated', { detail: clean }));
+  }
+}
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -10,7 +39,7 @@ export function getApiHeaders(options: RequestInit = {}, skipCustomKey = false):
   headers.delete('Authorization');
   
   if (!skipCustomKey) {
-    const customKey = localStorage.getItem(API_KEY_STORAGE);
+    const customKey = getCustomApiKey();
     if (customKey) {
       headers.set('Authorization', 'Bearer ' + encodeURIComponent(customKey));
       headers.set('x-gemini-api-key', encodeURIComponent(customKey));
@@ -64,7 +93,7 @@ export async function uploadFileChunked(fileData: string, type: string, extraHea
 }
 
 export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const customKey = (localStorage.getItem(API_KEY_STORAGE) || '').trim();
+  const customKey = getCustomApiKey();
   const isAiEndpoint = url.startsWith('/api/') && !url.includes('/api/health') && !url.includes('/api/exams') && !url.includes('/api/upload-chunk');
 
   // PRIORITY #1: If user has set a personal API key and it's an AI endpoint, call Gemini API directly!

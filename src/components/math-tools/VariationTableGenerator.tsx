@@ -530,7 +530,7 @@ export const VariationTableView: React.FC<VariationTableViewProps> = ({ data, co
 // ============================================================================
 export const VariationTableGenerator: React.FC = () => {
   const [apiKey, setApiKey] = useState<string>(() => {
-    return localStorage.getItem("eduplan_gemini_api_key_v2") || localStorage.getItem("gemini_user_api_key") || "";
+    return localStorage.getItem("custom_gemini_api_key") || localStorage.getItem("eduplan_gemini_api_key_v2") || localStorage.getItem("gemini_user_api_key") || "";
   });
   const [showApiKey, setShowApiKey] = useState(false);
   const [userPrompt, setUserPrompt] = useState<string>("Khảo sát và vẽ Bảng biến thiên hàm số bậc ba: y = x^3 - 3x^2 + 4");
@@ -565,8 +565,11 @@ export const VariationTableGenerator: React.FC = () => {
 
   // Lưu API Key cá nhân vào localStorage
   const handleSaveApiKey = (newKey: string) => {
-    setApiKey(newKey);
-    localStorage.setItem("gemini_user_api_key", newKey.trim());
+    const clean = newKey.trim();
+    setApiKey(clean);
+    localStorage.setItem("custom_gemini_api_key", clean);
+    localStorage.setItem("eduplan_gemini_api_key_v2", clean);
+    localStorage.setItem("gemini_user_api_key", clean);
   };
 
   // ============================================================================
@@ -584,7 +587,7 @@ export const VariationTableGenerator: React.FC = () => {
     // Tiền tố vai trò chuyên gia bắt buộc theo yêu cầu hệ thống
     const finalPrompt = `Bạn là chuyên gia toán học sư phạm và lập trình SVG chuẩn SGK GDPT Việt Nam. Hãy phân tích hàm số và trả về dữ liệu cấu trúc JSON chuẩn xác để vẽ Bảng biến thiên.\n\nYêu cầu: ${userPrompt}`;
 
-    const effectiveKey = apiKey.trim() || localStorage.getItem("eduplan_gemini_api_key_v2") || "";
+    const effectiveKey = apiKey.trim() || localStorage.getItem("custom_gemini_api_key") || localStorage.getItem("eduplan_gemini_api_key_v2") || "";
 
     try {
       let jsonText = "";
@@ -597,7 +600,7 @@ export const VariationTableGenerator: React.FC = () => {
         // Sử dụng GoogleGenAI SDK với key cá nhân
         const ai = new GoogleGenAI({ apiKey: effectiveKey });
         const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash-lite",
+          model: "gemini-3.8-flash",
           contents: [{ role: "user", parts: [{ text: finalPrompt }] }],
           config: {
             responseMimeType: "application/json",

@@ -4,6 +4,7 @@ import {
   CheckCircle2, Settings 
 } from "lucide-react";
 import { useSubjects } from "../lib/subjects";
+import { getCustomApiKey, setCustomApiKey } from "../lib/apiFetch";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -24,7 +25,7 @@ export function SettingsModal({ isOpen, onClose, defaultTab }: SettingsModalProp
       if (defaultTab) {
         setActiveTab(defaultTab);
       }
-      const storedKey = localStorage.getItem("eduplan_gemini_api_key_v2") || "";
+      const storedKey = getCustomApiKey();
       setApiKey(storedKey);
       setIsSaved(false);
       setNewSubjectInput("");
@@ -33,11 +34,7 @@ export function SettingsModal({ isOpen, onClose, defaultTab }: SettingsModalProp
 
   const handleSaveApiKey = () => {
     const clean = apiKey.trim();
-    if (clean) {
-      localStorage.setItem("eduplan_gemini_api_key_v2", clean);
-    } else {
-      localStorage.removeItem("eduplan_gemini_api_key_v2");
-    }
+    setCustomApiKey(clean);
     setIsSaved(true);
     setTimeout(() => {
       onClose();
@@ -45,7 +42,7 @@ export function SettingsModal({ isOpen, onClose, defaultTab }: SettingsModalProp
   };
 
   const handleClearApiKey = () => {
-    localStorage.removeItem("eduplan_gemini_api_key_v2");
+    setCustomApiKey("");
     setApiKey("");
     setIsSaved(true);
   };

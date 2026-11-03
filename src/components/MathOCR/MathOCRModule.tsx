@@ -160,7 +160,7 @@ export const MathOCRModule: React.FC = () => {
     setLatexOutput('');
 
     try {
-      const apiKey = localStorage.getItem('eduplan_gemini_api_key_v2') || '';
+      const apiKey = localStorage.getItem('custom_gemini_api_key') || localStorage.getItem('eduplan_gemini_api_key_v2') || '';
       const response = await fetch('/api/math-ocr', {
         method: 'POST',
         headers: {
