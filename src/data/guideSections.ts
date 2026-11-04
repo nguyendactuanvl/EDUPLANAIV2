@@ -57,64 +57,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     youtubeUrl: "https://youtu.be/r9fZgy-Eyys?si=SAuC5tn3WUbXPqM1" 
   },
   {
-    id: "math_ocr",
-    title: "Mục 2: Math OCR & Quét công thức LaTeX sang Word",
-    category: "Chuyên môn Toán",
-    badge: "Nhận diện AI 1-Click",
-    iconName: "ScanLine",
-    shortDesc: "Quét ảnh câu hỏi/đề toán thành công thức LaTeX và xuất sang Word OMML",
-    description: "Nhận diện AI công thức toán học từ ảnh chụp sách vở, màn hình hoặc file PDF scan, tự động chuyển thành định dạng LaTeX và công thức Word (Alt + =).",
-    steps: [
-      {
-        title: "Bước 1: Tải ảnh hoặc Dán ảnh (Ctrl + V)",
-        detail: "Tải file ảnh đề toán, kéo thả hoặc bấm Ctrl + V trực tiếp từ bộ nhớ tạm clipboard."
-      },
-      {
-        title: "Bước 2: Cắt vùng công thức cần nhận diện",
-        detail: "Sử dụng công cụ cắt ảnh (Crop) để chọn chính xác câu hỏi hoặc công thức cần chuyển đổi."
-      },
-      {
-        title: "Bước 3: Xem kết quả & Sao chép sang Word",
-        detail: "AI tự động trích xuất công thức LaTeX chuẩn. Nhấn 'Sao chép mã LaTeX' hoặc 'Chép công thức Word' để dán thẳng vào giáo án."
-      }
-    ],
-    tips: [
-      "Tính năng dán ảnh trực tiếp Ctrl + V giúp thao tác nhanh gấp 3 lần khi soạn giáo án.",
-      "Công thức xuất ra ở dạng OMML MathType tương thích chuẩn Word 2016 trở lên."
-    ],
-    youtubeUrl: ""
-  },
-  {
-    id: "ink",
-    title: "Mục 3: EduPlan AI Ink - Bảng vẽ tương tác 3D & Xoay khối 3D",
-    category: "Chuyên môn Toán",
-    badge: "Tương tác 3D cảm ứng",
-    iconName: "PenTool",
-    shortDesc: "Bảng giảng dạy trực tiếp, vẽ hình học phẳng/không gian 3D, xoay khối 3D và thước ảo",
-    description: "Bảng đen/xanh điện tử chuyên dụng cho lớp học thông minh: Hỗ trợ viết vẽ mượt mà với bút Stylus, tự động nắn chỉnh hình phẳng (Line, Rect, Circle) và Thư viện mô hình 3D tương tác (Chóp tứ giác, Chóp cụt, Lăng trụ, Nón, Trụ, Cầu) xoay 360° trực quan.",
-    steps: [
-      {
-        title: "Bước 1: Chọn màu bút, loại bảng & thước kẻ ảo",
-        detail: "Chọn màu phấn/mực, độ dày nét vẽ, bật thước kẻ đo khoảng cách hoặc đổi nền bảng Xanh/Đen/Trắng/Ô ly."
-      },
-      {
-        title: "Bước 2: Mở Thư viện khối 3D & Chèn mô hình",
-        detail: "Bấm biểu tượng 'Khối 3D' trên thanh công cụ -> Chọn mô hình 3D (ví dụ: Hình chóp cụt ABCD.A'B'C'D', Hình lập phương) và nhấn Chèn vào bảng."
-      },
-      {
-        title: "Bước 3: Xoay khối 3D 360° trực tiếp",
-        detail: "Dùng ngón tay/bút vuốt trực tiếp trên khối 3D để xoay mọi góc nhìn, bật/ẩn tên đỉnh (A, B, C...) hoặc điều chỉnh độ phóng to."
-      }
-    ],
-    tips: [
-      "Tính năng Palm Rejection (Từ chối lòng bàn tay) giúp đặt tay lên màn hình vẽ tự nhiên như bảng thật.",
-      "Có thể xuất toàn bộ trang bảng ra ảnh PNG hoặc file tài liệu PDF bài giảng cho học sinh."
-    ],
-    youtubeUrl: ""
-  },
-  {
     id: "kshs_graphing",
-    title: "Mục 4: Bộ công cụ KSHS & Vẽ đồ thị hàm số (Bậc 3, Phân thức, Parabol...)",
+    title: "Mục 2: Bộ công cụ KSHS & Vẽ đồ thị hàm số (Bậc 3, Phân thức, Parabol...)",
     category: "Chuyên môn Toán",
     badge: "Toán 10, 11, 12",
     iconName: "TrendingUp",
@@ -142,7 +86,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "bbt_ai_export",
-    title: "Mục 5: Bảng biến thiên AI & Xuất ảnh đồ thị PNG / Chép lời giải vào Word",
+    title: "Mục 3: Bảng biến thiên AI & Xuất ảnh đồ thị PNG / Chép lời giải vào Word",
     category: "Chuyên môn Toán",
     badge: "Chuẩn SGK & Word",
     iconName: "BarChart3",
@@ -170,7 +114,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "geogebra_casio",
-    title: "Mục 6: Công cụ Vẽ hình GeoGebra (Flat & 3D) và Giả lập Casio fx-580VN X",
+    title: "Mục 4: Công cụ Vẽ hình GeoGebra (Flat & 3D) và Giả lập Casio fx-580VN X",
     category: "Chuyên môn Toán",
     badge: "Trực quan & Máy tính",
     iconName: "Calculator",
@@ -198,7 +142,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "statistics_grouped",
-    title: "Mục 7: Xử lý Thống kê mẫu số liệu ghép nhóm (Toán 10, 11, 12)",
+    title: "Mục 5: Xử lý Thống kê mẫu số liệu ghép nhóm (Toán 10, 11, 12)",
     category: "Chuyên môn Toán",
     badge: "Toán thống kê mới",
     iconName: "BarChart2",
@@ -226,7 +170,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "pdf_exam_converter",
-    title: "Mục 8: Đề thi Online từ PDF của GV",
+    title: "Mục 6: Đề thi Online từ PDF của GV",
     category: "Kiểm tra & Thi",
     badge: "Phòng thi Online & QR",
     iconName: "FileCheck",
@@ -254,7 +198,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "khgd",
-    title: "Mục 9: Kế hoạch giáo dục (KHGD / Phân phối chương trình)",
+    title: "Mục 7: Kế hoạch giáo dục (KHGD / Phân phối chương trình)",
     category: "Cấu hình",
     badge: "Phân phối chuẩn",
     iconName: "Calendar",
@@ -282,7 +226,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "khdh",
-    title: "Mục 10: Kế hoạch dạy học (Soạn Giáo án 5512 AI)",
+    title: "Mục 8: Kế hoạch dạy học (Soạn Giáo án 5512 AI)",
     category: "Cấu hình",
     badge: "Công văn 5512",
     iconName: "BookOpen",
@@ -310,7 +254,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "worksheet_generator",
-    title: "Mục 11: Tạo Phiếu học tập thông minh GDPT 2018",
+    title: "Mục 9: Tạo Phiếu học tập thông minh GDPT 2018",
     category: "Chuyên môn Toán",
     badge: "Chuẩn GDPT 2018 & Xuất Word",
     iconName: "BookOpen",
@@ -343,7 +287,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "exercise_solver",
-    title: "Mục 12: Giải bài tập Toán học & Sửa lỗi công thức",
+    title: "Mục 10: Giải bài tập Toán học & Sửa lỗi công thức",
     category: "Chuyên môn Toán",
     badge: "Lời giải AI chi tiết",
     iconName: "Sparkles",
@@ -371,7 +315,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "pdf2word",
-    title: "Mục 13: Chuyển file PDF sang Word giữ nguyên công thức",
+    title: "Mục 11: Chuyển file PDF sang Word giữ nguyên công thức",
     category: "Kiểm tra & Thi",
     badge: "Giữ nguyên LaTeX/OMML",
     iconName: "FileEdit",
@@ -399,7 +343,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "exam_generator",
-    title: "Mục 14: Tạo & Trộn đề thi GDPT 2018 (4 Phần chuẩn)",
+    title: "Mục 12: Tạo & Trộn đề thi GDPT 2018 (4 Phần chuẩn)",
     category: "Kiểm tra & Thi",
     badge: "Trộn đề & Đáp án Ma trận",
     iconName: "FileCheck",
@@ -426,36 +370,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     youtubeUrl: ""
   },
   {
-    id: "ai_studio",
-    title: "Mục 15: AI Studio Suite & Sáng tạo nội dung",
-    category: "Cấu hình",
-    badge: "Sáng tạo AI đa năng",
-    iconName: "Sparkles",
-    shortDesc: "Trợ lý AI sáng tạo đề xuất hoạt động học tập, câu hỏi thực tế và bài viết chuyên môn",
-    description: "Bộ công cụ sáng tạo mở rộng: Gợi ý bài toán ứng dụng thực tế, tạo câu hỏi vận dụng cao, viết lời dẫn bài giảng lôi cuốn và tạo ảnh minh họa AI.",
-    steps: [
-      {
-        title: "Bước 1: Chọn loại nhiệm vụ sáng tạo",
-        detail: "Chọn chủ đề sáng tạo (Sáng tác bài toán thực tế, Tạo tình huống STEM, Viết bài viết...)."
-      },
-      {
-        title: "Bước 2: Nhập từ khóa hoặc yêu cầu",
-        detail: "Nhập nội dung ngắn về chủ đề dạy học."
-      },
-      {
-        title: "Bước 3: Nhận kết quả & Tùy biến",
-        detail: "Sao chép ý tưởng độc đáo do AI gợi ý để đưa vào bài giảng."
-      }
-    ],
-    tips: [
-      "Các bài toán thực tế liên môn giúp tiết học sinh động và gần gũi hơn.",
-      "Có thể yêu cầu AI viết theo phong cách hóm hỉnh hoặc chuyên sâu."
-    ],
-    youtubeUrl: ""
-  },
-  {
     id: "homeroom",
-    title: "Mục 16: Sổ chủ nhiệm & Quản lý học sinh",
+    title: "Mục 13: Sổ chủ nhiệm & Quản lý học sinh",
     category: "Công tác GV",
     badge: "Sổ tay Chủ nhiệm",
     iconName: "ShieldCheck",
@@ -483,7 +399,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "classmap_gamification",
-    title: "Mục 17: Sơ đồ lớp, Thi đua & Vòng quay gọi tên học sinh",
+    title: "Mục 14: Sơ đồ lớp, Thi đua & Vòng quay gọi tên học sinh",
     category: "Công tác GV",
     badge: "Quản lý & Hoạt náo",
     iconName: "Users",
@@ -511,7 +427,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "timetable",
-    title: "Mục 18: Thời khóa biểu & Quản lý công việc",
+    title: "Mục 15: Thời khóa biểu & Quản lý công việc",
     category: "Công tác GV",
     badge: "Lịch tuần & Nhắc việc",
     iconName: "CalendarDays",
@@ -539,7 +455,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "circulars",
-    title: "Mục 19: Tài liệu & Thông tư Quy định GDPT 2018",
+    title: "Mục 16: Tài liệu & Thông tư Quy định GDPT 2018",
     category: "Cấu hình",
     badge: "Tra cứu Văn bản",
     iconName: "FileText",
@@ -567,7 +483,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "history",
-    title: "Mục 20: Lịch sử đã tạo & Lưu trữ dữ liệu",
+    title: "Mục 17: Lịch sử đã tạo & Lưu trữ dữ liệu",
     category: "Cấu hình",
     badge: "Lưu trữ cá nhân",
     iconName: "Clock",

@@ -8,6 +8,7 @@ import {
   signOut
 } from "firebase/auth";
 import firebaseConfig from "../../firebase-applet-config.json";
+import { saveExamToWebhook } from "./cloudExamStore";
 
 // Initialize Firebase using the generated credentials
 const app = initializeApp(firebaseConfig);

@@ -2,15 +2,16 @@ import React from 'react';
 import { AlertTriangle, Key, RefreshCw, X, HelpCircle, Sparkles } from 'lucide-react';
 
 interface ApiErrorBannerProps {
-  error: string | null;
+  error: any;
   onDismiss?: () => void;
   onRetry?: () => void;
   className?: string;
 }
 
-export function isQuotaOrApiError(errorMsg?: string | null): boolean {
+export function isQuotaOrApiError(errorMsg?: any): boolean {
   if (!errorMsg) return false;
-  const lower = errorMsg.toLowerCase();
+  const str = typeof errorMsg === 'object' ? (errorMsg.message || errorMsg.error?.message || JSON.stringify(errorMsg)) : String(errorMsg || '');
+  const lower = str.toLowerCase();
   return (
     lower.includes('quota') ||
     lower.includes('exceeded') ||
@@ -34,7 +35,13 @@ export const ApiErrorBanner: React.FC<ApiErrorBannerProps> = ({
 }) => {
   if (!error) return null;
 
-  const isQuota = isQuotaOrApiError(error);
+  const errorString = typeof error === 'object' && error !== null
+    ? (error.message || error.error?.message || error.error || JSON.stringify(error))
+    : String(error || '');
+
+  if (!errorString || errorString === 'null' || errorString === 'undefined' || errorString === '{}') return null;
+
+  const isQuota = isQuotaOrApiError(errorString);
 
   const handleOpenApiKeyModal = () => {
     window.dispatchEvent(new CustomEvent('show-api-key-modal'));
@@ -58,7 +65,7 @@ export const ApiErrorBanner: React.FC<ApiErrorBannerProps> = ({
                 Hạn mức lượt tạo AI miễn phí mặc định của máy chủ trong ngày đã đạt giới hạn. Để tiếp tục sử dụng ứng dụng ngay lập tức không bị gián đoạn, thầy/cô vui lòng <b>nhập API Key cá nhân</b> (Miễn phí 100% do Google cấp).
               </span>
             ) : (
-              error
+              errorString
             )}
           </p>
 

@@ -1189,7 +1189,7 @@ Hãy trả về duy nhất một chuỗi JSON thuần (không chứa markdown ba
         })
       });
       const data = await res.json();
-      text = data.result || data.text || JSON.stringify(data);
+      const text = data.result || data.text || JSON.stringify(data);
 
       const cleanedJson = text.replace(/```json/gi, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(cleanedJson);

@@ -66,6 +66,13 @@ async function startServer() {
       console.error("Server error:", err);
       process.exit(1);
     });
+    process.on("unhandledRejection", (reason) => {
+      console.warn("Unhandled promise rejection in server:", reason);
+    });
+
+    process.on("uncaughtException", (err) => {
+      console.error("Uncaught exception in server:", err);
+    });
   } catch (err) {
     console.error("Failed to start server:", err);
     process.exit(1);

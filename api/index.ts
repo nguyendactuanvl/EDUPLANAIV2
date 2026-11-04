@@ -737,21 +737,10 @@ function safeJsonParse<T = any>(text: string, fallback?: T): T {
 
 function getValidGeminiModels(requestedModel?: string): string[] {
   let primary = requestedModel || "gemini-3.8-flash";
-  if (primary.includes("2.0") || primary.includes("2.5")) primary = "gemini-3.8-flash";
-  const list = [
-    primary,
-    "gemini-3.8-flash",
-    "gemini-1.5-flash"
-  ];
-  // Remove legacy models that cause 404/deprecation errors
-  const deprecated = [
-    "gemini-2.0-flash", "models/gemini-2.0-flash",
-    "gemini-2.5-flash", "models/gemini-2.5-flash",
-    "gemini-2.5-pro", "models/gemini-2.5-pro",
-    "gemini-pro", "models/gemini-pro",
-    "gemini-2.0-pro"
-  ];
-  return Array.from(new Set(list)).filter(m => m && !deprecated.includes(m));
+  if (primary.includes("2.0") || primary.includes("2.5") || primary.includes("1.5") || primary.includes("pro")) {
+    primary = "gemini-3.8-flash";
+  }
+  return [primary, "gemini-3.8-flash", "gemini-flash-latest"].filter((v, i, a) => a.indexOf(v) === i);
 }
 
 async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
@@ -862,7 +851,12 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
 
   if (primaryError) {
     if (isCustom) {
-      const errMsg = primaryError?.message || "";
+      let errMsg = primaryError?.message || "";
+      try {
+        const parsed = JSON.parse(errMsg);
+        if (parsed?.error?.message) errMsg = parsed.error.message;
+        else if (parsed?.message) errMsg = parsed.message;
+      } catch (e) {}
       if (errMsg.includes("429") || errMsg.includes("quota") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("Free Tier")) {
         throw new Error("API Key cá nhân của bạn đã chạm ngưỡng hạn mức gọi AI của Google (Lỗi 429 Quota Exceeded). Vui lòng thử đổi API Key khác hoặc đợi Google làm mới hạn mức.");
       }
@@ -4754,7 +4748,7 @@ app.post("/api/generate-image", async (req, res) => {
 
       for (const step of interaction.steps) {
         if (step.type === 'model_output') {
-          const imageContent = step.content?.find((c: any) => c.type === 'image');
+          const imageContent = step.content?.find((c: any) => c.type === 'image') as any;
           if (imageContent && imageContent.data) {
             imageUrl = `data:${imageContent.mime_type || 'image/jpeg'};base64,${imageContent.data}`;
             break;

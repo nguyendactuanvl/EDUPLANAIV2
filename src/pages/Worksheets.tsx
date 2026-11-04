@@ -1,4 +1,4 @@
-import { apiFetch, getApiHeaders, getCustomApiKey } from '../lib/apiFetch';
+import { apiFetch, getApiHeaders, getCustomApiKey, parseGeminiStreamChunk } from '../lib/apiFetch';
 import { useSubjects } from '../lib/subjects';
 import LZString from 'lz-string';
 import { exportHtmlToWord, exportElementToImage } from "../lib/exportUtils";
@@ -22,6 +22,7 @@ import {
 import { MathView } from "../components/MathView";
 import { run1ClickMathFix } from "../components/math-tools/MathFormulaFixer";
 import { ErrorBoundary } from "../components/ErrorBoundary";
+import { ApiErrorBanner } from "../components/ApiErrorBanner";
 import { UploadTeacherExamModal } from "../components/UploadTeacherExamModal";
 import { QuestionEditModal } from "../components/QuestionEditModal";
 import { HeaderConfigModal } from "../components/HeaderConfigModal";
@@ -35,7 +36,7 @@ import { HistoryItem } from '../types';
 import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMath, cleanQuestionStem, cleanOptionText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections, sanitizeExamQuestion, sanitizeAndPolishMath, normalizeArrayAndTableEnvironments } from "../lib/utils";
 import { parseRawExamText } from '../lib/examParser';
 import { printElement, ensureMathRendered } from '../lib/print';
-import { saveExamToCloud, saveExamToWebhook } from '../lib/cloudExamStore';
+import { saveExamToCloud, saveExamToWebhook, fetchExamFromCloud } from '../lib/cloudExamStore';
 import { registerExamUrlMapping } from "../lib/smartRouter";
 import { KNTT_CURRICULUM, getKnttCurriculum } from "../data/knttCurriculum";
 import { LanguageSpeechControls } from "../components/LanguageSpeechControls";
@@ -1343,7 +1344,7 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
       
     } catch (err: any) {
       console.error(err);
-      let errMsg = err.message || "Không thể tạo phiếu bài tập tương tác lúc này.";
+      let errMsg = typeof err === 'object' && err !== null ? (err.message || err.error?.message || err.error || JSON.stringify(err)) : String(err || "Không thể tạo phiếu bài tập tương tác lúc này.");
       if (errMsg.includes('400') || errMsg.includes('API_KEY_INVALID') || errMsg.includes('API key not valid') || errMsg.includes('INVALID_ARGUMENT')) {
         errMsg = "API KEY KHÔNG HỢP LỆ (400): Mã Gemini API Key hiện tại chưa đúng hoặc đã bị vô hiệu hóa trên Google AI Studio. Hệ thống vừa mở cửa sổ Cài đặt, thầy/cô vui lòng dán lại mã API Key mới (tạo miễn phí tại https://aistudio.google.com) để tiếp tục.";
         localStorage.removeItem('custom_gemini_api_key');
@@ -1375,11 +1376,9 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
       const currentChapter = semData?.chapters.find(c => c.id === selectedChapterId);
       const selectedChapterName = currentChapter?.name || "";
 
-      const response = await fetch('/api/generate-worksheet-stream', {
+      const response = await apiFetch('/api/generate-worksheet-stream', {
         method: 'POST',
-        headers: getApiHeaders({
-          headers: { 'Content-Type': 'application/json' }
-        }),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           lesson: customLessonName,
           chapter: selectedChapterName,
@@ -1472,7 +1471,8 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
-        rawAccumulated += chunk;
+        const cleanChunk = parseGeminiStreamChunk(chunk);
+        rawAccumulated += cleanChunk;
 
         // Check if stream contains raw server error string
         if (rawAccumulated.includes('SERVER_ERROR:') || rawAccumulated.includes('"code": 503') || rawAccumulated.includes('"code":503') || rawAccumulated.includes('Service Unavailable')) {
@@ -2262,6 +2262,9 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
         </div>
 
         <div className="p-4 border-t border-slate-200 bg-slate-50">
+          {error && (
+            <ApiErrorBanner error={error} onDismiss={() => setError(null)} className="mb-3" />
+          )}
           
           <div className="flex gap-2">
             <button

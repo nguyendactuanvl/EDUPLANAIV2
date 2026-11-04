@@ -238,7 +238,7 @@ export function AiMatrixSuggestModal({
           {errorMsg && (
             <div className="p-3.5 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
-              <span>{errorMsg}</span>
+              <span>{typeof errorMsg === 'object' ? ((errorMsg as any)?.message || JSON.stringify(errorMsg)) : String(errorMsg || '')}</span>
             </div>
           )}
 

@@ -92,29 +92,186 @@ export async function uploadFileChunked(fileData: string, type: string, extraHea
   return fileId;
 }
 
+export const WORKER_PROXY_URL = 'https://gemini-proxy.dactuandhsp.workers.dev';
+export const WORKER_STREAM_PROXY_URL = 'https://gemini-proxy.dactuandhsp.workers.dev/stream';
+
+export function parseGeminiStreamChunk(chunk: string): string {
+  if (!chunk) return "";
+  if (!chunk.includes("data:")) {
+    return chunk;
+  }
+  let result = "";
+  const lines = chunk.split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("data:")) {
+      const dataStr = trimmed.substring(5).trim();
+      if (dataStr === "[DONE]") continue;
+      try {
+        const json = JSON.parse(dataStr);
+        const parts = json?.candidates?.[0]?.content?.parts;
+        if (Array.isArray(parts)) {
+          for (const p of parts) {
+            if (p?.text) result += p.text;
+          }
+        } else if (json?.candidates?.[0]?.content?.parts?.[0]?.text) {
+          result += json.candidates[0].content.parts[0].text;
+        } else if (typeof json?.text === 'string') {
+          result += json.text;
+        }
+      } catch (e) {}
+    }
+  }
+  return result;
+}
+
 export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const customKey = getCustomApiKey();
   const baseUrl = (import.meta as any).env.VITE_API_BASE_URL || "";
   const maxRetries = 3;
 
-  // Prepare request body with apiKey included for Cloudflare Pages / Express backend
-  let fetchOptions = { ...options };
-  const headers = getApiHeaders(options, false);
+  // Determine if this is a non-AI endpoint (e.g. file chunking, exam sharing)
+  const isStorageRoute = url.startsWith('/api/upload-chunk') || url.startsWith('/api/exams');
+  const isAiRoute = !isStorageRoute;
 
-  if (customKey && fetchOptions.body && typeof fetchOptions.body === 'string') {
+  let fetchOptions = { ...options };
+  let headers = getApiHeaders(options, false);
+
+  let parsedBody: any = {};
+  if (fetchOptions.body && typeof fetchOptions.body === 'string') {
     try {
-      const parsedBody = JSON.parse(fetchOptions.body);
-      if (typeof parsedBody === 'object' && parsedBody !== null) {
-        if (!parsedBody.apiKey) {
-          parsedBody.apiKey = customKey;
-          fetchOptions.body = JSON.stringify(parsedBody);
-        }
-      }
+      parsedBody = JSON.parse(fetchOptions.body);
     } catch (e) {
-      // not JSON string
+      parsedBody = { contents: fetchOptions.body };
     }
   }
 
+  // Set apiKey on body if missing
+  if (customKey && typeof parsedBody === 'object' && parsedBody !== null) {
+    if (!parsedBody.apiKey) {
+      parsedBody.apiKey = customKey;
+    }
+    fetchOptions.body = JSON.stringify(parsedBody);
+  }
+
+  // If it's an AI route, route request to the Cloudflare Worker proxy
+  if (isAiRoute) {
+    const isStream = url.includes('stream');
+    const proxyTargetUrl = isStream ? WORKER_STREAM_PROXY_URL : WORKER_PROXY_URL;
+
+    const workerHeaders = new Headers(headers);
+    workerHeaders.set('Content-Type', 'application/json');
+    if (customKey) {
+      workerHeaders.set('x-gemini-api-key', customKey);
+    }
+
+    // Build standard contents payload
+    let contentsPayload: any = parsedBody?.contents || parsedBody?.prompt;
+    if (!contentsPayload && parsedBody?.lesson) {
+      const totalQuestions = (parsedBody.numPartI || 0) + (parsedBody.numPartII || 0) + (parsedBody.numPartIII || 0) + (parsedBody.numPartIV || 0) || 20;
+      contentsPayload = `Hãy tạo phiếu học tập A4 chuẩn GDPT 2018 cho bài học: "${parsedBody.lesson}", Lớp ${parsedBody.grade || 11}, Môn ${parsedBody.subject || "Toán"}, ${parsedBody.semester || "Học kỳ 1"}.
+Cấu trúc yêu cầu: Tổng ${totalQuestions} câu hỏi hoàn chỉnh.
+- Phần I: ${parsedBody.numPartI ?? 12} câu trắc nghiệm 4 lựa chọn A, B, C, D.
+- Phần II: ${parsedBody.numPartII ?? 4} câu trắc nghiệm Đúng/Sai (mỗi câu 4 ý a, b, c, d).
+- Phần III: ${parsedBody.numPartIII ?? 6} câu trả lời ngắn (kết quả là số cụ thể).
+${parsedBody.numPartIV > 0 ? `- Phần IV: ${parsedBody.numPartIV} câu tự luận.` : '- CẤM TUYỆT ĐỐI TỰ LUẬN (Đề 3 phần).'}
+QUY TẮC ĐỊNH DẠNG TOÁN HỌC BẮT BUỘC: Mọi biến số, biểu thức, số liệu toán học ($x$, $y$, $m$, $a$, $b$, $\\alpha$, $\\pi$...) BẮT BUỘC đặt trong cặp dấu đô la $...$ hoặc $$...$$. Tuyệt đối không viết text thường cho công thức. Luôn dùng \\frac thay cho \\dfrac. Giữ nguyên tiếng Việt UTF-8.`;
+    } else if (!contentsPayload) {
+      contentsPayload = typeof fetchOptions.body === 'string' ? fetchOptions.body : JSON.stringify(parsedBody);
+    }
+
+    const workerPayload: any = {
+      ...parsedBody,
+      apiKey: customKey || parsedBody?.apiKey || '',
+      contents: contentsPayload,
+      model: parsedBody?.model || 'gemini-3.8-flash'
+    };
+
+    try {
+      const proxyRes = await fetch(proxyTargetUrl, {
+        method: 'POST',
+        headers: workerHeaders,
+        body: JSON.stringify(workerPayload),
+        signal: options.signal
+      });
+
+      if (isStream) {
+        // For streaming, return the stream response directly so the consumer can read SSE chunks
+        return proxyRes;
+      }
+
+      if (proxyRes.ok) {
+        // For non-stream, wrap json parsing
+        proxyRes.json = async () => {
+          const text = await proxyRes.text();
+          const clean = text.trim();
+          try {
+            return safeJsonParse(clean);
+          } catch (e: any) {
+            const match = clean.match(/```(?:json)?\s*([\s\S]*?)```/i) || clean.match(/(\{|\[)[\s\S]*(\}|\])/);
+            if (match) {
+              try {
+                return safeJsonParse(match[1] || match[0]);
+              } catch (e2) {}
+            }
+            if (clean && clean.length > 0) {
+              return { result: clean, text: clean };
+            }
+            throw new Error("Máy chủ AI phản hồi dữ liệu chưa hoàn chỉnh. Thầy cô vui lòng bấm thử lại.");
+          }
+        };
+        return proxyRes;
+      } else if (proxyRes.status === 404) {
+        // Worker root endpoint may return 404 if only /stream is deployed on the Worker.
+        // Fallback to /stream endpoint and accumulate stream into single response.
+        try {
+          const streamFallbackRes = await fetch(WORKER_STREAM_PROXY_URL, {
+            method: 'POST',
+            headers: workerHeaders,
+            body: JSON.stringify(workerPayload),
+            signal: options.signal
+          });
+
+          if (streamFallbackRes.ok && streamFallbackRes.body) {
+            const reader = streamFallbackRes.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let accumulated = '';
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              const chunk = decoder.decode(value, { stream: true });
+              accumulated += parseGeminiStreamChunk(chunk);
+            }
+            const cleanAcc = accumulated.trim();
+            const syntheticRes = new Response(JSON.stringify({ result: cleanAcc, text: cleanAcc }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' }
+            });
+            syntheticRes.json = async () => {
+              try {
+                return safeJsonParse(cleanAcc);
+              } catch (e) {
+                return { result: cleanAcc, text: cleanAcc };
+              }
+            };
+            return syntheticRes;
+          } else if (!streamFallbackRes.ok) {
+            // Return stream error directly
+            return streamFallbackRes;
+          }
+        } catch (streamErr) {
+          console.warn(`[apiFetch] Worker stream fallback failed:`, streamErr);
+        }
+      } else {
+        // If Worker returned an explicit error (e.g. 400 Invalid API Key, 429 Quota Exceeded), return it
+        return proxyRes;
+      }
+    } catch (proxyErr) {
+      console.warn(`[apiFetch] Worker proxy attempt failed for ${url}, falling back to local route:`, proxyErr);
+    }
+  }
+
+  // Fallback / standard route to local server
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     let response: Response | null = null;
     try {
@@ -183,9 +340,24 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
       errorData = { error: errText };
     }
 
-    const errorMsg = typeof errorData?.error === 'string' ? errorData.error : JSON.stringify(errorData?.error || "");
+    let errorMsg = "";
+    if (typeof errorData?.error === 'string') {
+      errorMsg = errorData.error;
+    } else if (typeof errorData?.error?.message === 'string') {
+      errorMsg = errorData.error.message;
+    } else if (typeof errorData?.message === 'string') {
+      errorMsg = errorData.message;
+    } else if (errorData && typeof errorData === 'object') {
+      errorMsg = errorData.error
+        ? (typeof errorData.error === 'object' ? (errorData.error.message || JSON.stringify(errorData.error)) : String(errorData.error))
+        : JSON.stringify(errorData);
+    } else {
+      errorMsg = String(errText || "Đã xảy ra lỗi khi kết nối.");
+    }
+
     throw new Error(errorMsg || "Đã xảy ra lỗi khi kết nối.");
   }
   
   throw new Error("Request failed after retries.");
 }
+

@@ -9,7 +9,6 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SettingsModal } from "./components/SettingsModal";
 import { UserGuideModal } from "./components/UserGuideModal";
 import { getInitialTheme, applyTheme, ThemeMode } from "./lib/theme";
-import { getCustomApiKey } from "./lib/apiFetch";
 
 function safeLazy<T extends React.ComponentType<any>>(
   factory: () => Promise<any>,
@@ -71,19 +70,10 @@ const WeeklyTimetable = safeLazy(() => import('./pages/WeeklyTimetable'), "Weekl
 const Gamification = safeLazy(() => import('./pages/Gamification'), "Gamification");
 const MathTools = safeLazy(() => import('./pages/MathTools'), "MathTools");
 const DeOnlinePdf = safeLazy(() => import('./pages/DeOnlinePdf'), "DeOnlinePdf");
-const AiStudioSuite = safeLazy(() => import('./pages/AiStudioSuite'), "AiStudioSuite");
-const EduPlanInkPage = safeLazy(() => import('./pages/EduPlanInkPage'), "EduPlanInkPage");
-const MathOCRPage = safeLazy(() => import('./pages/MathOCRPage'), "MathOCRPage");
 const HsaTsaHub = safeLazy(() => import('./pages/HsaTsaHub'), "HsaTsaHub");
 const ExamStatsDashboard = safeLazy(() => import('./pages/ExamStatsDashboard'), "ExamStatsDashboard");
 const OverallAnalyticsDashboard = safeLazy(() => import('./pages/OverallAnalyticsDashboard'), "OverallAnalyticsDashboard");
 const ExamShufflerView = safeLazy(() => import('./components/ExamShuffler/ExamShufflerView'), "ExamShufflerView");
-const BiologyWorkspace = safeLazy(() => import('./features/biology/BiologyWorkspace'), "BiologyWorkspace");
-const PhysicsWorkspace = safeLazy(() => import('./features/physics/PhysicsWorkspace'), "PhysicsWorkspace");
-const SubjectHubWorkspace = safeLazy(() => import('./features/subjects/SubjectHubWorkspace'), "SubjectHubWorkspace");
-const SpatialGeometryWorkspace = safeLazy(() => import('./features/spatialGeometry').then(m => ({ default: m.SpatialGeometryWorkspace })), "SpatialGeometryWorkspace");
-const GraduationReviewPlanner = safeLazy(() => import('./features/graduationReview/GraduationReviewPlanner'), "GraduationReviewPlannerModule");
-const OMRWorkspace = safeLazy(() => import('./pages/OMRWorkspace'), "OMRWorkspace");
 
 import { parseExamIdFromLocation, registerExamUrlMapping } from "./lib/smartRouter";
 
@@ -92,11 +82,6 @@ export default function App() {
     const urlParams = new URLSearchParams(window.location.search);
     const tabParam = urlParams.get('tab') || urlParams.get('view');
     if (tabParam === 'exam_stats' || tabParam === 'stats') return 'exam_stats';
-    if (tabParam === 'biology' || tabParam === 'bio') return 'biology';
-    if (tabParam === 'physics' || tabParam === 'phy') return 'physics';
-    if (tabParam === 'chemistry' || tabParam === 'chem' || tabParam === 'hoa') return 'chemistry';
-    if (tabParam === 'english' || tabParam === 'eng' || tabParam === 'anh') return 'english';
-    if (tabParam === 'subjects_hub' || tabParam === 'hub') return 'subjects_hub';
     return "math_tools";
   });
   const [statsExamId, setStatsExamId] = useState<string | undefined>(() => {
@@ -113,11 +98,6 @@ export default function App() {
   // Theme State
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [isFocusMode, setIsFocusMode] = useState(false);
-  const [hasApiKey, setHasApiKey] = useState<boolean>(true);
-
-  const checkApiKeyStatus = () => {
-    setHasApiKey(true);
-  };
 
   useEffect(() => {
     applyTheme(theme);
@@ -153,7 +133,6 @@ export default function App() {
     const handleShowModal = () => {
       setSettingsDefaultTab("apikey");
       setIsSettingsOpen(true);
-      checkApiKeyStatus();
     };
     const handleShowGuide = (e: any) => {
       if (e?.detail?.sectionId) {
@@ -182,22 +161,19 @@ export default function App() {
       setActiveTab("exam_stats");
     };
 
-    const handleSwitchTab = (e: any) => {
-      const target = typeof e?.detail === 'string' ? e.detail : e?.detail?.tab;
-      if (target) {
-        setActiveTab(target);
-      }
-    };
-
     window.addEventListener('show-api-key-modal', handleShowModal);
     window.addEventListener('show-user-guide-modal', handleShowGuide);
     window.addEventListener('api-retry-status', handleRetryStatus);
     window.addEventListener('toggle-focus-mode', handleFocusMode);
     window.addEventListener('focus-mode', handleFocusMode);
     window.addEventListener('hsa-focus-mode', handleFocusMode);
-    const handleUserLoggedIn = () => {
-      checkApiKeyStatus();
-    };
+    window.addEventListener('open-exam-stats', handleOpenStats);
+
+    const storedKey = localStorage.getItem("eduplan_gemini_api_key_v2");
+    if (!storedKey) {
+      setSettingsDefaultTab("apikey");
+      setIsSettingsOpen(true);
+    }
 
     return () => {
       window.removeEventListener('show-api-key-modal', handleShowModal);
@@ -207,10 +183,6 @@ export default function App() {
       window.removeEventListener('focus-mode', handleFocusMode);
       window.removeEventListener('hsa-focus-mode', handleFocusMode);
       window.removeEventListener('open-exam-stats', handleOpenStats);
-      window.removeEventListener('switch-tab', handleSwitchTab);
-      window.removeEventListener('storage', checkApiKeyStatus);
-      window.removeEventListener('api-key-updated', checkApiKeyStatus);
-      window.removeEventListener('user-logged-in', handleUserLoggedIn);
     };
   }, []);
 
@@ -377,21 +349,11 @@ export default function App() {
           <ErrorBoundary key={activeTab}>
             <Suspense fallback={<div className="flex items-center justify-center h-full text-slate-500">Đang tải...</div>}>
               {activeTab === "hsa_tsa" && <HsaTsaHub />}
-              {activeTab === "math_ocr" && <MathOCRPage />}
-              {activeTab === "ink" && <EduPlanInkPage />}
-              {activeTab === "ai_studio" && <AiStudioSuite />}
               {activeTab === "khgd" && <EducationalPlan />}
               {activeTab === "khdh" && <LessonPlan />}
-              {activeTab === "graduation_review" && <GraduationReviewPlanner />}
               {activeTab === "worksheets" && <Worksheets />}
               {activeTab === "exercise" && <ExerciseSolver />}
               {activeTab === "math_tools" && <MathTools />}
-              {activeTab === "spatial_geometry" && <SpatialGeometryWorkspace />}
-              {(activeTab === "physics" || activeTab === "physics_toolkit") && <SubjectHubWorkspace initialSubject="physics" />}
-              {(activeTab === "chemistry" || activeTab === "chemistry_toolkit") && <SubjectHubWorkspace initialSubject="chemistry" />}
-              {activeTab === "biology" && <BiologyWorkspace />}
-              {(activeTab === "english" || activeTab === "english_toolkit") && <SubjectHubWorkspace initialSubject="english" />}
-              {activeTab === "subjects_hub" && <SubjectHubWorkspace initialSubject="physics" />}
               {activeTab === "gamification" && <Gamification />}
               {activeTab === "classmap" && <ClassMap />}
               {activeTab === "homeroom" && <HomeroomManagement />}
@@ -404,7 +366,6 @@ export default function App() {
               {activeTab === "de_online_pdf" && <DeOnlinePdf />}
               {activeTab === "circulars" && <Circulars />}
               {activeTab === "history" && <HistoryPage />}
-              {activeTab === "omr_scanner" && <OMRWorkspace />}
             </Suspense>
           </ErrorBoundary>
         </div>
