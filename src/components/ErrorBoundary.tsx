@@ -31,9 +31,9 @@ export class ErrorBoundary extends Component<Props, State> {
       msg.includes("Importing a module script failed");
 
     if (isChunkOrHookMismatch && typeof window !== "undefined") {
-      const reloadKey = "eduplan_auto_reload_deps";
-      if (!sessionStorage.getItem(reloadKey)) {
-        sessionStorage.setItem(reloadKey, "1");
+      const lastReload = Number(sessionStorage.getItem("eduplan_last_auto_reload") || "0");
+      if (Date.now() - lastReload > 8000) {
+        sessionStorage.setItem("eduplan_last_auto_reload", String(Date.now()));
         window.location.reload();
       }
     }

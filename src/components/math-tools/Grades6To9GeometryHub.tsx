@@ -2018,8 +2018,8 @@ export const Grades6To9GeometryHub: React.FC = () => {
       setShapeParams(prev => ({ ...prev, r: newR, h: newH }));
     } else if (selectedShapeId === "thales_8") {
       const t = Math.max(0.2, Math.min(0.8, (y + 90) / 170));
-      const newAD = Math.round(t * (prev => prev.ab || 12) * 2) / 2 || Math.round(t * 12 * 2) / 2;
-      setShapeParams(prev => ({ ...prev, ad: Math.max(1, Math.min(prev.ab || 12, Math.round(t * 12 * 2) / 2)) }));
+      const abVal = shapeParams.ab || 12;
+      setShapeParams(prev => ({ ...prev, ad: Math.max(1, Math.min(prev.ab || 12, Math.round(t * (prev.ab || 12) * 2) / 2)) }));
     } else if (selectedShapeId === "similar_triangle") {
       const newK = Math.max(0.5, Math.min(3, Math.round((Math.abs(x - 85) / 50) * 10) / 10));
       setShapeParams(prev => ({ ...prev, k: newK }));

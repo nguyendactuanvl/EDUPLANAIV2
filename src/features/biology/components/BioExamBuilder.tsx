@@ -25,6 +25,7 @@ const DEFAULT_SAMPLE_EXAM: BiologyExamPaper = {
   grade: '12',
   durationMinutes: 50,
   schoolYear: '2025 - 2026',
+  createdAt: new Date().toISOString(),
   part1_mc: [
     {
       id: 'mc_1',

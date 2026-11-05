@@ -9,6 +9,9 @@ import { TikzRenderer, getTikzSvg } from './TikzRenderer';
 
 interface MathViewProps {
   content?: string | null;
+  value?: string | null;
+  tex?: string | null;
+  math?: string | null;
   className?: string;
   inline?: boolean;
 }
@@ -216,9 +219,9 @@ const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
  * Tự động tiền xử lý, tự động kích hoạt MathJax typesetPromise mỗi khi content thay đổi,
  * hỗ trợ render trực tiếp SVG Bảng biến thiên (BBT), Đồ thị và TikZ.
  */
-export const MathView: React.FC<MathViewProps> = React.memo(({ content, className, inline = false }) => {
+export const MathView: React.FC<MathViewProps> = React.memo(({ content, value, tex, math, className, inline = false }) => {
   const containerRef = useRef<HTMLDivElement | HTMLSpanElement | null>(null);
-  const processed = preprocessMath(content);
+  const processed = preprocessMath(content ?? value ?? tex ?? math);
   const lastProcessedRef = useRef<string | null>(null);
 
   useEffect(() => {

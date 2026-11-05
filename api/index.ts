@@ -363,37 +363,23 @@ function isValidGeminiApiKey(key?: string): boolean {
 }
 
 function getSystemAiClient() {
-  const serverKey = process.env.GEMINI_API_KEY || "";
-  if (!serverKey) {
-    throw new Error("Server GEMINI_API_KEY is missing. Please configure GEMINI_API_KEY in environment variables.");
-  }
-  return new GoogleGenAI({
-    apiKey: serverKey,
-    httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-  });
+  throw new Error("Ứng dụng quy định 100% người dùng tự nhập Gemini API Key cá nhân. Không sử dụng API Key mặc định của hệ thống.");
 }
 
 function getAiClient(req: any) {
-  const authHeader = req?.headers?.['authorization'] as string;
+  const authHeader = req.headers['authorization'] as string;
   let customKey = '';
   if (authHeader && authHeader.startsWith('Bearer ')) {
     customKey = authHeader.substring(7);
   } else {
-    customKey = req?.headers?.['x-gemini-api-key'] as string;
+    customKey = req.headers['x-gemini-api-key'] as string;
   }
   
-  let keyToUse = '';
   if (isValidGeminiApiKey(customKey)) {
-    keyToUse = customKey;
-  } else if (process.env.GEMINI_API_KEY) {
-    keyToUse = process.env.GEMINI_API_KEY;
-  }
-  
-  if (keyToUse) {
-    try { keyToUse = decodeURIComponent(keyToUse); } catch (e) {}
-    keyToUse = keyToUse.replace(/[^\x20-\x7E]/g, '').trim();
+    try { customKey = decodeURIComponent(customKey); } catch (e) {}
+    customKey = customKey.replace(/[^\x20-\x7E]/g, '').trim();
     return new GoogleGenAI({ 
-      apiKey: keyToUse,
+      apiKey: customKey,
       httpOptions: {
         headers: {
           'User-Agent': 'aistudio-build'
@@ -402,17 +388,13 @@ function getAiClient(req: any) {
     });
   }
   
-  throw new Error("Missing Gemini API Key. Please configure process.env.GEMINI_API_KEY on the server or enter a key in Settings.");
+  throw new Error("YÊU CẦU NHẬP API KEY CÁ NHÂN: Ứng dụng quy định 100% người dùng tự dán Gemini API Key cá nhân của mình để sử dụng. Vui lòng dán mã API Key cá nhân vào Cài đặt.");
 }
 
 function handleAiError(error: any, req: any, res: any) {
   const errorMsg = error?.message || "";
   const lowerMsg = errorMsg.toLowerCase();
   const isCustomKey = !!req.headers['x-gemini-api-key'] || (!!req.headers['authorization'] && (req.headers['authorization'] as string).startsWith('Bearer '));
-
-  if (error?.status === 400 || (error?.code === 400)) {
-     return res.status(400).json({ error: `Lỗi yêu cầu (400): ${errorMsg || 'Không xác định'}` });
-  }
 
   if (lowerMsg.includes("api_key_invalid") || lowerMsg.includes("api key not valid")) {
     return res.status(400).json({ error: "API Key không hợp lệ. Vui lòng kiểm tra lại Cài đặt hệ thống và đảm bảo API Key chính xác." });
@@ -437,11 +419,19 @@ function handleAiError(error: any, req: any, res: any) {
     }
     return res.status(429).json({ error: "API Key cá nhân của thầy/cô đã vượt quá giới hạn số lượt yêu cầu của Google (Lỗi 429 - Quota Exceeded). Vui lòng thử lại sau ít phút hoặc đổi sang API Key cá nhân khác." });
   }
-  if (lowerMsg.includes("503") || error?.status === 503 || lowerMsg.includes("unavailable")) {
+  if (
+    lowerMsg.includes("503") || 
+    error?.status === 503 || 
+    lowerMsg.includes("unavailable") || 
+    lowerMsg.includes("high demand") || 
+    lowerMsg.includes("spikes in demand") || 
+    lowerMsg.includes("overloaded") || 
+    lowerMsg.includes("try again later")
+  ) {
     if (!isCustomKey) {
-        return res.status(429).json({ error: "Hệ thống đang quá tải hoặc tạm thời không khả dụng do nhu cầu cao (429). Vui lòng thử lại sau ít phút hoặc sử dụng API Key cá nhân." });
+        return res.status(429).json({ error: "Mô hình AI hiện tại từ Google đang có lưu lượng truy cập cao đột biến (High Demand). Hệ thống đã tự động thử các mô hình dự phòng, thầy/cô vui lòng bấm 'Tạo lại' sau vài giây hoặc nhập API Key cá nhân trong Cài đặt (miễn phí 100%)." });
     }
-    return res.status(429).json({ error: "Hệ thống AI của Google đang quá tải (429). Vui lòng đợi vài giây và thử lại." });
+    return res.status(429).json({ error: "Mô hình AI của Google hiện đang có lượng truy cập cao đột biến (High Demand). Thầy/cô vui lòng đợi vài giây và bấm 'Thử lại' hoặc đổi sang API Key cá nhân khác." });
   }
 
   if (lowerMsg.includes("fetch failed") || lowerMsg.includes("failed to fetch") || lowerMsg.includes("networkerror") || lowerMsg.includes("econnreset")) {
@@ -450,6 +440,14 @@ function handleAiError(error: any, req: any, res: any) {
 
   if (lowerMsg.includes("bad escaped character") || lowerMsg.includes("unexpected token") || lowerMsg.includes("syntaxerror")) {
     return res.status(500).json({ error: "Phản hồi từ AI chứa ký tự công thức chưa chuẩn. Hệ thống đang tự động tối ưu hóa, thầy/cô vui lòng bấm thử lại." });
+  }
+
+  if (lowerMsg.includes("user location is not supported") || lowerMsg.includes("location is not supported") || lowerMsg.includes("geoblocked")) {
+    return res.status(400).json({ error: "Vị trí địa lý (Location/IP) hiện tại chưa nằm trong khu vực hỗ trợ mặc định của Google Gemini API. Để tiếp tục sử dụng ứng dụng ngay lập tức, thầy/cô vui lòng dán mã API Key cá nhân trong phần Cài đặt (tạo hoàn toàn miễn phí tại https://aistudio.google.com)." });
+  }
+
+  if (lowerMsg.includes("not found") || error?.status === 404 || lowerMsg.includes("no longer available")) {
+    return res.status(404).json({ error: "Mô hình AI trước đây không còn khả dụng trên Google AI Studio. Hệ thống đã tự động chuyển sang mô hình mới nhất (gemini-3.8-flash). Thầy/cô vui lòng bấm thử lại." });
   }
 
   console.error("AI Error Debug:", error?.name || "Error", error?.message || String(error), error?.status);
@@ -736,11 +734,42 @@ function safeJsonParse<T = any>(text: string, fallback?: T): T {
 }
 
 function getValidGeminiModels(requestedModel?: string): string[] {
-  let primary = requestedModel || "gemini-3.8-flash";
-  if (primary.includes("2.0") || primary.includes("2.5") || primary.includes("1.5") || primary.includes("pro")) {
+  let primary = (requestedModel || "").replace(/^models\//, "").trim();
+  if (
+    !primary ||
+    primary.startsWith("gemini-1.") ||
+    primary.startsWith("gemini-2.") ||
+    primary.startsWith("gemini-3.5") ||
+    primary === "gemini-pro" ||
+    primary.includes("1.5") || 
+    primary.includes("2.0") || 
+    primary.includes("2.5") || 
+    primary.includes("3.5")
+  ) {
     primary = "gemini-3.8-flash";
   }
-  return [primary, "gemini-3.8-flash", "gemini-flash-latest"].filter((v, i, a) => a.indexOf(v) === i);
+  const list = [
+    primary,
+    "gemini-3.8-flash",
+    "gemini-flash-latest",
+    "gemini-3.1-flash-lite",
+    "gemini-4-argon"
+  ];
+  return Array.from(new Set(list));
+}
+
+function normalizeGeminiContents(rawContents: any): any[] {
+  if (Array.isArray(rawContents)) return rawContents;
+  if (typeof rawContents === 'string') {
+    return [{ role: 'user', parts: [{ text: rawContents }] }];
+  }
+  if (rawContents && typeof rawContents === 'object') {
+    if (rawContents.parts || rawContents.role) {
+      return [rawContents];
+    }
+    return [{ role: 'user', parts: [{ text: JSON.stringify(rawContents) }] }];
+  }
+  return [{ role: 'user', parts: [{ text: String(rawContents || '') }] }];
 }
 
 async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
@@ -748,10 +777,9 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
   let isCustom = isValidGeminiApiKey((req.headers['authorization'] || req.headers['x-gemini-api-key']) as string);
   let customKeyFailed = false;
   const models = getValidGeminiModels(payloadOptions?.model);
-  const startTime = Date.now();
 
   let primaryError: any = null;
-  const maxRetries = 2;
+  const maxRetries = 3;
 
   const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán:
 - TẤT CẢ các biến số, tham số đơn lẻ (như x, y, m, a, b, c, d, S...) BẮT BUỘC phải đặt trong cặp dấu đô la: $x$, $y$, $m$, $a$, $b$, $c$, $d$, $S$.
@@ -759,104 +787,68 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
 - Số mũ BẮT BUỘC dùng dấu mũ: $x^2$, $a^3$.
 - Phân số BẮT BUỘC dùng \\frac{tử}{mẫu}.`;
 
+  const extractTextFromResponse = (response: any): string => {
+    let text = response?.text ? response.text.normalize("NFC").trim() : "";
+    if (!text && response?.candidates?.[0]?.content?.parts) {
+      text = response.candidates[0].content.parts
+        .filter((p: any) => !p.thought && p.text)
+        .map((p: any) => p.text)
+        .join("\n")
+        .normalize("NFC")
+        .trim();
+    }
+    return text;
+  };
+  
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     for (const model of models) {
-      if (Date.now() - startTime > 42000) {
-        console.warn("[generateWithFallback] Time budget (42s) reached, breaking loop.");
-        break;
-      }
       try {
-        const c = payloadOptions.config || {};
-        const maxTokens = Number(c.max_output_tokens || c.maxOutputTokens || 8192);
-        
-        const configObj: any = {
-          systemInstruction: c.system_instruction || c.systemInstruction || defaultSystemInstruction,
-          maxOutputTokens: maxTokens,
-        };
-
-        if (c.temperature !== undefined) configObj.temperature = Number(c.temperature);
-        if (c.top_p !== undefined || c.topP !== undefined) configObj.topP = Number(c.top_p ?? c.topP);
-        if (c.top_k !== undefined || c.topK !== undefined) configObj.topK = Number(c.top_k ?? c.topK);
-
-        if (c.response_mime_type || c.responseMimeType) {
-          configObj.responseMimeType = c.response_mime_type || c.responseMimeType;
-        }
-        if (c.response_schema || c.responseSchema) {
-          configObj.responseSchema = c.response_schema || c.responseSchema;
+        const rawConfig = { ...(payloadOptions.config || {}) };
+        if (model.includes("3.8") || model.includes("4-") || model.includes("latest")) {
+          delete rawConfig.temperature;
+          delete rawConfig.topP;
+          delete rawConfig.topK;
+          delete rawConfig.candidateCount;
         }
 
-        let rawInput: any = payloadOptions.contents;
-        let formattedContents: any = rawInput;
-
-        if (typeof rawInput === 'string') {
-          formattedContents = rawInput;
-        } else if (Array.isArray(rawInput)) {
-          if (rawInput.length > 0 && rawInput[0].role) {
-            formattedContents = rawInput;
-          } else {
-            formattedContents = [{ role: 'user', parts: rawInput }];
-          }
-        } else if (typeof rawInput === 'object' && rawInput !== null) {
-          if (rawInput.role && rawInput.parts) {
-            formattedContents = [rawInput];
-          } else if (rawInput.parts) {
-            formattedContents = [{ role: 'user', parts: rawInput.parts }];
-          } else if (rawInput.text || rawInput.inlineData) {
-            formattedContents = [{ role: 'user', parts: [rawInput] }];
-          } else {
-            formattedContents = [rawInput];
-          }
-        }
-
-        const response = await client.models.generateContent({
+        const updatedPayload = { 
+          ...payloadOptions, 
+          contents: normalizeGeminiContents(payloadOptions.contents),
           model,
-          contents: formattedContents,
-          config: configObj
-        });
-
-        const normText = (response.text || "").normalize("NFC").trim();
+          config: {
+            maxOutputTokens: 32768,
+            ...rawConfig,
+            systemInstruction: rawConfig.systemInstruction || defaultSystemInstruction
+          } 
+        };
+        const response = await client.models.generateContent(updatedPayload);
+        const normText = extractTextFromResponse(response);
         if (!normText) {
           console.warn(`[generateWithFallback] Model ${model} returned empty text, continuing fallback...`);
           continue;
         }
-
         return {
           text: normText,
-          result: normText,
+          candidates: response.candidates ? response.candidates.map((c: any) => ({ finishReason: c.finishReason, index: c.index })) : undefined,
           customKeyFailed
         } as any;
-
+  
       } catch (e: any) {
         primaryError = e;
         console.warn(`[generateWithFallback] Model ${model} error (isCustomKey: ${isCustom}):`, e?.message);
-        
-        if (e?.message?.includes("PROXY_GENERATION_DISABLED") || e?.message?.includes("User location is not supported")) {
-          console.warn(`[generateWithFallback] Critical environment error with ${model}, trying next model or falling back...`);
-        }
-        
-        await delay(200);
+        await delay(300);
         continue;
       }
     }
     
-    if (Date.now() - startTime > 40000) break;
     if (primaryError && attempt < maxRetries - 1) {
-      await delay(400 * (attempt + 1));
+      await delay(1000 * (attempt + 1));
     }
   }
   
-  if (Date.now() - startTime > 40000) {
-    throw new Error("MÁY CHỦ AI BẮT ĐẦU CHẬM: Thời gian xử lý từ dịch vụ AI vượt quá 42 giây (giới hạn Vercel 60s). Thầy/cô vui lòng bấm 'Thử tạo lại' hoặc giảm bớt số lượng câu hỏi.");
-  }
-
   if (primaryError) {
     if (isCustom) {
-      let errMsg = primaryError?.message || "";
-      try {
-        const parsed = JSON.parse(errMsg);
-        if (parsed?.error?.message) errMsg = parsed.error.message;
-        else if (parsed?.message) errMsg = parsed.message;
-      } catch (e) {}
+      const errMsg = primaryError?.message || "";
       if (errMsg.includes("429") || errMsg.includes("quota") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("Free Tier")) {
         throw new Error("API Key cá nhân của bạn đã chạm ngưỡng hạn mức gọi AI của Google (Lỗi 429 Quota Exceeded). Vui lòng thử đổi API Key khác hoặc đợi Google làm mới hạn mức.");
       }
@@ -871,8 +863,8 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
   let client = getAiClient(req);
   let isCustom = isValidGeminiApiKey((req.headers['authorization'] || req.headers['x-gemini-api-key']) as string);
   const models = getValidGeminiModels(payloadOptions?.model);
-  const startTime = Date.now();
 
+  const config = payloadOptions.config || {};
   const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán.
 - LUÔN LUÔN sử dụng \\frac thay thế cho \\dfrac.
 - TẤT CẢ các biến số, tham số đơn lẻ (như x, y, m, a, b, c...) BẮT BUỘC bọc trong cặp dấu $...$.
@@ -881,64 +873,31 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
   let primaryError: any = null;
   let streamStarted = false;
 
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     for (const model of models) {
-      if (Date.now() - startTime > 42000) {
-        console.warn("[generateWithFallbackStream] Time budget (42s) reached, breaking loop.");
-        break;
-      }
       try {
-        let rawInput: any = payloadOptions.contents;
-        let formattedContents: any = rawInput;
-
-        if (typeof rawInput === 'string') {
-          formattedContents = rawInput;
-        } else if (Array.isArray(rawInput)) {
-          if (rawInput.length > 0 && rawInput[0].role) {
-            formattedContents = rawInput;
-          } else {
-            formattedContents = [{ role: 'user', parts: rawInput }];
-          }
-        } else if (typeof rawInput === 'object' && rawInput !== null) {
-          if (rawInput.role && rawInput.parts) {
-            formattedContents = [rawInput];
-          } else if (rawInput.parts) {
-            formattedContents = [{ role: 'user', parts: rawInput.parts }];
-          } else if (rawInput.text || rawInput.inlineData) {
-            formattedContents = [{ role: 'user', parts: [rawInput] }];
-          } else {
-            formattedContents = [rawInput];
-          }
+        const rawConfig = { ...(payloadOptions.config || {}) };
+        if (model.includes("3.8") || model.includes("4-") || model.includes("latest") || model.includes("3.1")) {
+          delete rawConfig.temperature;
+          delete rawConfig.topP;
+          delete rawConfig.topK;
+          delete rawConfig.candidateCount;
         }
 
-        const c = payloadOptions.config || {};
-        const maxTokens = Number(c.max_output_tokens || c.maxOutputTokens || 8192);
-        
-        const configObj: any = {
-          systemInstruction: c.system_instruction || c.systemInstruction || defaultSystemInstruction,
-          maxOutputTokens: maxTokens,
+        const updatedPayload = {
+          ...payloadOptions,
+          contents: normalizeGeminiContents(payloadOptions.contents),
+          model,
+          config: {
+            maxOutputTokens: 8192,
+            ...rawConfig,
+            systemInstruction: rawConfig.systemInstruction || defaultSystemInstruction
+          }
         };
 
-        if (c.temperature !== undefined) configObj.temperature = Number(c.temperature);
-        if (c.top_p !== undefined || c.topP !== undefined) configObj.topP = Number(c.top_p ?? c.topP);
-        if (c.top_k !== undefined || c.topK !== undefined) configObj.topK = Number(c.top_k ?? c.topK);
-
-        if (c.response_mime_type || c.responseMimeType) {
-          configObj.responseMimeType = c.response_mime_type || c.responseMimeType;
-        }
-        if (c.response_schema || c.responseSchema) {
-          configObj.responseSchema = c.response_schema || c.responseSchema;
-        }
-
-        const streamResult = await client.models.generateContentStream({
-          model,
-          contents: formattedContents,
-          config: configObj
-        });
-
-        for await (const chunk of streamResult) {
-          const text = chunk.text || "";
-          if (text) {
+        const responseStream = await client.models.generateContentStream(updatedPayload);
+        for await (const chunk of responseStream) {
+          if (chunk.text) {
             if (!streamStarted) {
               res.setHeader('Content-Type', 'text/plain; charset=utf-8');
               res.setHeader('Transfer-Encoding', 'chunked');
@@ -947,10 +906,9 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
               res.setHeader('Access-Control-Allow-Origin', '*');
               streamStarted = true;
             }
-            res.write(text);
+            res.write(chunk.text);
           }
         }
-
         if (streamStarted) {
           res.end();
           return;
@@ -958,30 +916,19 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
       } catch (e: any) {
         primaryError = e;
         console.warn(`[generateWithFallbackStream] Error with model ${model} (isCustomKey: ${isCustom}):`, e?.message);
-        
-        if (e?.message?.includes("PROXY_GENERATION_DISABLED") || e?.message?.includes("User location is not supported")) {
-          console.warn(`[generateWithFallbackStream] Environment blocker on ${model}, falling back...`);
-        }
-
         if (streamStarted) {
           res.write('\n\n⚠️ GIÁN ĐOẠN DỮ LIỆU: Quá trình truyền dữ liệu từ AI bị gián đoạn. Vui lòng bấm "Thử tạo lại".');
           res.end();
           return;
         }
-        await delay(200);
+        await delay(300);
         continue;
       }
     }
-    if (Date.now() - startTime > 40000) break;
-    await delay(300 * (attempt + 1));
+    await delay(500 * (attempt + 1));
   }
 
   if (!streamStarted) {
-    if (Date.now() - startTime > 40000) {
-      return res.status(504).json({
-        error: "Thời gian xử lý của AI vượt quá 45 giây (Hạn mức Vercel Serverless Timeout 60s). Thầy/cô vui lòng bấm 'Thử tạo lại' hoặc chọn số câu ngắn hơn."
-      });
-    }
     if (primaryError) {
       return handleAiError(primaryError, req, res);
     }
@@ -1026,13 +973,13 @@ app.all("/api/extract-data", async (req, res) => {
     try {
       const { file, type } = resolveSingleFile(req.body);
       let promptText = "";
-      let response_schema;
+      let responseSchema;
       
       if (type === "timetable") {
         promptText = `Trích xuất Thời khóa biểu từ tài liệu. Hệ thống tiết học: Sáng (tiết 1, 2, 3, 4, 5), Chiều (tiết 6, 7, 8, 9, 10), Tối (tiết Tối).
 Nếu trong tài liệu ghi buổi chiều tiết 1,2,3,4,5 thì tự động chuyển đổi thành tiết 6,7,8,9,10.
 Trả về danh sách các tiết học/lịch công tác.`;
-        response_schema = {
+        responseSchema = {
           type: Type.OBJECT,
           properties: {
             entries: {
@@ -1052,7 +999,7 @@ Trả về danh sách các tiết học/lịch công tác.`;
         };
       } else if (type === "student_profiles") {
         promptText = "Trích xuất danh sách học sinh kèm thông tin liên lạc từ tài liệu đính kèm. Bỏ qua tiêu đề. Lấy họ tên, ngày sinh, số điện thoại học sinh, họ tên phụ huynh, số điện thoại phụ huynh, địa chỉ, ghi chú (nếu có).";
-        response_schema = {
+        responseSchema = {
           type: Type.OBJECT,
           properties: {
             students: {
@@ -1076,7 +1023,7 @@ Trả về danh sách các tiết học/lịch công tác.`;
         };
       } else if (type === "students") {
         promptText = "Trích xuất danh sách họ và tên học sinh từ tài liệu đính kèm. Bỏ qua các tiêu đề, STT, cột điểm, chỉ lấy họ và tên.";
-        response_schema = {
+        responseSchema = {
           type: Type.OBJECT,
           properties: {
             students: {
@@ -1088,7 +1035,7 @@ Trả về danh sách các tiết học/lịch công tác.`;
         };
       } else if (type === "raw_text") {
         promptText = "Trích xuất toàn bộ nội dung văn bản từ tài liệu đính kèm. Hãy giữ nguyên định dạng ngắt dòng. Trả về toàn bộ dưới dạng chuỗi trong trường text.";
-        response_schema = {
+        responseSchema = {
           type: Type.OBJECT,
           properties: {
             text: { type: Type.STRING }
@@ -1116,8 +1063,8 @@ Trả về danh sách các tiết học/lịch công tác.`;
         contents: [{ role: "user", parts }],
         config: {
           temperature: 0.1,
-          response_mime_type: "application/json",
-          response_schema
+          responseMimeType: "application/json",
+          responseSchema
         }
       };
 
@@ -1366,7 +1313,7 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
         }
       ],
       config: {
-        response_mime_type: "application/json",
+        responseMimeType: "application/json",
         temperature: 0.3
       }
     });
@@ -1815,7 +1762,7 @@ ${MATH_FORMATTING_RULES}
       ],
       config: {
         temperature: 0.5,
-        max_output_tokens: 8192,
+        maxOutputTokens: 8192,
       }
     });
 
@@ -1868,8 +1815,8 @@ app.all("/api/generate-plan", async (req, res) => {
     const response = await generateWithFallback(req, {
       contents: contents,
       config: {
-        response_mime_type: "application/json",
-        response_schema: {
+        responseMimeType: "application/json",
+        responseSchema: {
           type: Type.ARRAY,
           items: {
             type: Type.OBJECT,
@@ -1894,6 +1841,32 @@ app.all("/api/generate-plan", async (req, res) => {
 });
 
 // Route for Kế hoạch bài dạy Ôn thi Tốt nghiệp THPT (Module 8b)
+app.all(["/api/generate-graduation-review-plan"], async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  return keepAliveExecute(req, res, async () => {
+    const prompt = req.body.prompt || "";
+    const requestedModel = req.body.model || "gemini-3.8-flash";
+    if (!prompt) {
+      throw new Error("Không có nội dung yêu cầu tạo kế hoạch bài dạy ôn tập.");
+    }
+    const response = await generateWithFallback(req, {
+      contents: prompt,
+      model: requestedModel,
+      config: {
+        maxOutputTokens: 16384,
+      }
+    });
+    return {
+      result: response.text || ""
+    };
+  });
+});
 
 // Route for fetching available Gemini models via server proxy
 app.all(["/api/list-gemini-models"], async (req, res) => {
@@ -1947,7 +1920,7 @@ app.all(["/api/generate-lesson-plan", "/api/generate-lesson-plan-file"], async (
       const prompt = `Bạn là một Tổ trưởng chuyên môn và chuyên gia giáo dục. Hãy tạo mẫu Kế hoạch giáo dục (KHGD) cho môn ${subject}, lớp ${grade}, chủ đề "${topic}". Trả về kết quả dưới dạng danh sách JSON array với các thuộc tính: lesson, periods, requirement, digitalComp, aiComp, stem, note.`;
       const response = await generateWithFallback(req, {
         contents: prompt,
-        config: { response_mime_type: "application/json" }
+        config: { responseMimeType: "application/json" }
       });
       return safeJsonParse(response.text || "[]");
     }
@@ -1962,7 +1935,7 @@ app.all(["/api/generate-lesson-plan", "/api/generate-lesson-plan-file"], async (
     const stem = req.body.stem || "";
     const textbook = req.body.textbook || "Kết nối tri thức với cuộc sống";
     const includeInclusiveEducation = req.body.includeInclusiveEducation === true;
-    const max_output_tokens = 16384;
+    const maxOutputTokens = 16384;
     const files = resolveFiles(req.body);
 
     const inclusiveEducationBlock = includeInclusiveEducation ? `
@@ -2123,9 +2096,9 @@ ${MATH_FORMATTING_RULES}`;
     const response = await generateWithFallback(req, {
       contents: contents,
       config: {
-        system_instruction: lessonPlanSystemInstruction,
+        systemInstruction: lessonPlanSystemInstruction,
         temperature: 0.5,
-        max_output_tokens: max_output_tokens
+        maxOutputTokens: maxOutputTokens
       }
     });
 
@@ -2216,7 +2189,7 @@ ${MATH_FORMATTING_RULES}`;
       contents: contents,
       config: {
         temperature: 0.5,
-        max_output_tokens: 16384
+        maxOutputTokens: 16384
       }
     });
 
@@ -2261,7 +2234,7 @@ ${MATH_FORMATTING_RULES}`;
       contents: prompt,
       config: {
         temperature: 0.5,
-        max_output_tokens: 16384
+        maxOutputTokens: 16384
       }
     });
 
@@ -2457,9 +2430,9 @@ ${exampleJsonQuestions.join(',\n')}
     const response = await generateWithFallback(req, {
       contents: promptText,
       config: {
-        response_mime_type: "application/json",
-        max_output_tokens: 8192,
-        temperature: 0.25
+        responseMimeType: "application/json",
+        maxOutputTokens: 16384,
+        temperature: 0.3
       }
     });
 
@@ -2762,7 +2735,7 @@ ${numPartIV > 0 ? `     + PHẦN IV: **Câu 1:** [Đề bài] \\n\\n **Câu 2:**
     contents: prompt,
     config: { 
       temperature: 0.7,
-      max_output_tokens: 16384
+      maxOutputTokens: 16384
     }
   });
 });
@@ -2843,7 +2816,7 @@ ${!isSinglePageMode ? '- Ở ranh giới chuyển tiếp giữa các trang, bắ
         ],
         config: {
           temperature: 0.1,
-          max_output_tokens: 8192,
+          maxOutputTokens: 8192,
         }
       });
       
@@ -3214,8 +3187,8 @@ Tuyệt đối chỉ trả về JSON hợp lệ, không kèm bất kỳ lời d�
       ],
       config: {
         temperature: 0.1,
-        max_output_tokens: 32768,
-        response_mime_type: "application/json"
+        maxOutputTokens: 32768,
+        responseMimeType: "application/json"
       }
     });
 
@@ -3301,9 +3274,8 @@ Tuyệt đối chỉ trả về JSON hợp lệ, không kèm bất kỳ lời d�
   });
 });
 
-const SYSTEM_EXAM_WEBHOOK = "https://script.google.com/macros/s/AKfycbwYHVplKQAUoUVBo6QbjSBnO_TB71eUXeeP2MmQ42nQIVJiUjvmLrrJwvCC-lsCXc7k/exec";
 const KV_STORE_ID = 'jaku8xjm';
-const CHUNK_SIZE = 120; // 120 hex chars per chunk is well within URL path limits (~180 chars total) to prevent 414 URI Too Long errors
+const CHUNK_SIZE = 800; // immanuel.co limit is 1024, so 800 is extremely safe and fast
 
 function strToHex(str: string): string {
   let hex = '';
@@ -3348,7 +3320,7 @@ async function saveToCloudKV(cleanId: string, data: any): Promise<boolean> {
     // Save count
     await fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${cleanId}_C/${count}`, {
       method: 'POST'
-    }).catch(() => {});
+    });
 
     // Save all chunks in parallel
     const chunkPromises: Promise<any>[] = [];
@@ -3357,24 +3329,10 @@ async function saveToCloudKV(cleanId: string, data: any): Promise<boolean> {
       chunkPromises.push(
         fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${cleanId}__${i}/${chunk}`, {
           method: 'POST'
-        }).catch(() => {})
+        })
       );
     }
     await Promise.all(chunkPromises);
-
-    // Parallel backup to Google Apps Script Webhook
-    try {
-      fetch(SYSTEM_EXAM_WEBHOOK, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action: "saveExam",
-          examId: cleanId,
-          ...data
-        })
-      }).catch(() => {});
-    } catch (e) {}
-
     return true;
   } catch (err) {
     return false;
@@ -3471,20 +3429,6 @@ async function loadFromCloudKV(cleanId: string): Promise<any> {
             return parsed;
           }
         } catch (e) {}
-      }
-    }
-  } catch (e) {}
-
-  // 3. Try Google Apps Script Webhook Store
-  try {
-    const webhookRes = await fetch(`${SYSTEM_EXAM_WEBHOOK}?action=getExam&examId=${encodeURIComponent(cleanId)}`);
-    if (webhookRes.ok) {
-      const webhookText = await webhookRes.text();
-      if (webhookText && !webhookText.trim().startsWith('<') && !webhookText.includes('<!DOCTYPE html>')) {
-        const parsed = JSON.parse(webhookText);
-        if (isServerValidExamPayload(parsed)) {
-          return parsed;
-        }
       }
     }
   } catch (e) {}
@@ -4012,7 +3956,7 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
       const response = await generateWithFallback(req, {
         contents: [{ role: "user", parts: [{ text: promptText }] }],
         config: {
-          response_mime_type: "application/json",
+          responseMimeType: "application/json",
           temperature: 0.4
         }
       });
@@ -4167,7 +4111,7 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT 1 ĐỐI TƯỢNG JSON VỚI ĐỊNH DẠNG:
       const response = await generateWithFallback(req, {
         contents: [{ role: "user", parts: [{ text: promptText }] }],
         config: {
-          response_mime_type: "application/json",
+          responseMimeType: "application/json",
           temperature: 0.3
         }
       });
@@ -4362,7 +4306,7 @@ YÊU CẦU TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C�
         }
       ],
       config: {
-        response_mime_type: "application/json",
+        responseMimeType: "application/json",
         temperature: 0.1
       }
     });
@@ -4400,7 +4344,7 @@ Nhiệm vụ của bạn là đọc đề bài toán học và dựng một hìn
     const response = await generateWithFallback(req, {
       contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${userMessage}` }] }],
       system_instruction: { parts: [{ text: systemPrompt }] },
-      generation_config: { temperature: 0.15 }
+      generationConfig: { temperature: 0.15 }
     });
 
     let rawSvg = (response && response.text) ? response.text : "";
@@ -4508,7 +4452,7 @@ QUY TẮC VẼ SVG CỰC KỲ CHÍNH XÁC:
         ]
       }],
       config: {
-        system_instruction: systemPrompt,
+        systemInstruction: systemPrompt,
         temperature: 0.15
       }
     });
@@ -4680,7 +4624,7 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON (không kèm markd
         parts: [{ text: userPrompt }]
       }],
       config: {
-        system_instruction: systemPrompt,
+        systemInstruction: systemPrompt,
         temperature: 0.2
       }
     });
@@ -4731,32 +4675,25 @@ app.post("/api/generate-image", async (req, res) => {
     const client = getAiClient(req);
     let imageUrl = "";
 
-    // Thử dùng Nano Banana 2.1 via Interactions API
+    // Thử dùng Imagen 3 via SDK
     try {
       const formattedPrompt = `${prompt}. Style: ${style}.${negativePrompt ? ` Exclude: ${negativePrompt}` : ""}`;
-      const interaction = await client.interactions.create({
-        model: 'gemini-nano-banana-2.1',
-        input: formattedPrompt,
-        response_modalities: ['image', 'text'],
-        generation_config: {
-          image_config: {
-            aspect_ratio: (aspectRatio === "16:9" || aspectRatio === "9:16" || aspectRatio === "4:3" || aspectRatio === "3:4" || aspectRatio === "1:1") ? aspectRatio : "1:1",
-            image_size: "1K"
-          },
+      const imageResult = await client.models.generateImages({
+        model: 'imagen-3.0-generate-002',
+        prompt: formattedPrompt,
+        config: {
+          numberOfImages: 1,
+          outputMimeType: 'image/jpeg',
+          aspectRatio: (aspectRatio === "16:9" || aspectRatio === "9:16" || aspectRatio === "4:3" || aspectRatio === "3:4" || aspectRatio === "1:1") ? aspectRatio : "1:1",
         },
       });
 
-      for (const step of interaction.steps) {
-        if (step.type === 'model_output') {
-          const imageContent = step.content?.find((c: any) => c.type === 'image') as any;
-          if (imageContent && imageContent.data) {
-            imageUrl = `data:${imageContent.mime_type || 'image/jpeg'};base64,${imageContent.data}`;
-            break;
-          }
-        }
+      if (imageResult?.generatedImages?.[0]?.image?.imageBytes) {
+        const base64 = imageResult.generatedImages[0].image.imageBytes;
+        imageUrl = `data:image/jpeg;base64,${base64}`;
       }
     } catch (err: any) {
-      console.warn("Nano Banana Image generation failed, trying Gemini SVG fallback:", err?.message || err);
+      console.warn("Imagen 3 SDK call failed, trying Gemini multimodal or fallback:", err?.message || err);
     }
 
     // Nếu Imagen không trả về, thử mô hình Gemini 3.8 Flash cho ra SVG / Canvas Art chất lượng cao
@@ -4841,26 +4778,27 @@ app.post("/api/generate-video", async (req, res) => {
     const client = getAiClient(req);
     let videoUrl = "";
 
-    // Thử gọi Gemini Omni 1.1 Flash via Interactions API
+    // Thử gọi Veo 2 / Veo 3 nếu có trong SDK
     try {
       const formattedPrompt = `${prompt || "Animate static image into cinematic video"}. Motion style: ${motionStyle}. Aspect ratio: ${aspectRatio}.`;
-      const interaction = await client.interactions.create({
-        model: 'gemini-omni-1.1-flash',
-        input: formattedPrompt,
-        response_format: {
-          type: 'video',
-          aspect_ratio: (aspectRatio === "9:16" || aspectRatio === "16:9") ? aspectRatio : "16:9",
-          duration: durationSeconds === 10 ? '10s' : '5s',
-          resolution: (resolution === '1080p' || resolution === '4k' || resolution === '720p' || resolution === '360p') ? resolution : '720p'
+      
+      const operation = await client.models.generateVideos({
+        model: 'veo-3.1-lite-generate-preview',
+        prompt: formattedPrompt,
+        config: {
+          numberOfVideos: 1,
+          aspectRatio: (aspectRatio === "9:16" || aspectRatio === "16:9") ? aspectRatio : "16:9",
+          durationSeconds: durationSeconds === 10 ? 10 : 5,
         }
-      }, { timeout: 300000 });
+      });
 
-      const videoPart = interaction.output_video;
-      if (videoPart && videoPart.data) {
-        videoUrl = `data:${videoPart.mime_type || 'video/mp4'};base64,${videoPart.data}`;
+      const opRes: any = operation;
+      if (opRes?.generatedVideos?.[0]?.video?.videoBytes) {
+        const base64 = opRes.generatedVideos[0].video.videoBytes;
+        videoUrl = `data:video/mp4;base64,${base64}`;
       }
     } catch (err: any) {
-      console.warn("Omni Flash video generation failed, using fallback signal:", err?.message || err);
+      console.warn("Veo video SDK call failed, using high-definition Motion Video Renderer fallback:", err?.message || err);
     }
 
     // Nếu không có videoUrl từ Veo SDK (do chưa hỗ trợ key free), sinh video motion chất lượng cao
@@ -4948,7 +4886,7 @@ app.post("/api/math-ocr", async (req, res) => {
       return res.status(400).json({ error: "Dữ liệu hình ảnh không hợp lệ." });
     }
 
-    const system_instruction = `You are an expert Math OCR tool equivalent to Mathpix Snip. Convert all text, formulas, equations, geometric figures, and tables in the image into precise LaTeX format.
+    const systemInstruction = `You are an expert Math OCR tool equivalent to Mathpix Snip. Convert all text, formulas, equations, geometric figures, and tables in the image into precise LaTeX format.
 
 CRITICAL FORMATTING RULES FOR MATHTYPE & WORD:
 1. DELIMITERS:
@@ -4982,7 +4920,7 @@ CRITICAL FORMATTING RULES FOR MATHTYPE & WORD:
         ]
       }],
       config: {
-        system_instruction,
+        systemInstruction,
         temperature: 0.1
       }
     });
@@ -5055,7 +4993,7 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT 1 MẢNG JSON CÁC CÂU HỎI ĐÃ DỊCH CÓ
       const response = await generateWithFallback(req, {
         contents: [{ role: "user", parts: [{ text: promptText }] }],
         config: {
-          response_mime_type: "application/json",
+          responseMimeType: "application/json",
           temperature: 0.2
         }
       });
@@ -5187,15 +5125,14 @@ app.post("/api/generate-graduation-review-plan", async (req, res) => {
       model: model || "gemini-3.8-flash",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
-        max_output_tokens: 8192,
-        temperature: 0.3,
-        system_instruction: `Bạn là chuyên gia thẩm định chương trình giáo dục phổ thông kiêm giáo viên dạy giỏi cốt cán cấp Tỉnh/Thành phố.
+        temperature: 0.35,
+        systemInstruction: `Bạn là chuyên gia thẩm định chương trình giáo dục phổ thông kiêm giáo viên dạy giỏi cốt cán cấp Tỉnh/Thành phố.
 Nhiệm vụ của bạn là soạn KẾ HOẠCH BÀI DẠY (GIÁO ÁN) ÔN TẬP TĂNG CƯỜNG BUỔI CHIỀU hoàn chỉnh, sâu sắc, chuẩn mực theo Công văn 5512/BGDĐT, bám sát Chương trình GDPT 2018 và đúng cấu trúc định dạng đề thi Tốt nghiệp THPT mới nhất của Bộ GD&ĐT.
 BẮT BUỘC TUÂN THỦ:
 1. Tất cả công thức toán học, biến số đơn lẻ (x, y, m, a...) BẮT BUỘC đặt trong cặp dấu đô la: $công_thức$ (nội dòng) hoặc $$công_thức$$ (khối riêng).
 2. Dùng cú pháp LaTeX chuẩn: \\frac{a}{b}, \\sqrt{...}, \\pi, \\Leftrightarrow, \\ge, \\le, \\in. Luôn dùng \\frac thay vì \\dfrac.
 3. Giữ nguyên vẹn font tiếng Việt UTF-8 chuẩn.
-4. TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG ĐƯỢC GHI '...tương tự giáo viên hướng dẫn'. Bắt buộc viết chi tiết từng lời giải ví dụ mẫu và giải thích toàn bộ các ý a, b, c, d của câu hỏi trắc nghiệm Đúng/Sai.`
+4. Tuyệt đối không cắt ngắn hay dùng các câu tóm tắt sơ sài. Soạn đầy đủ từ đầu đến cuối.`
       }
     };
 

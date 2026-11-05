@@ -75,7 +75,6 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
   // Sync initial props whenever modal opens
   useEffect(() => {
     if (isOpen) {
-      setIsSharing(false);
       const normType = normalizeExamType(initialExamType);
       setModalExamType(normType);
       

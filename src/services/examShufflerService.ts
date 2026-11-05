@@ -1995,7 +1995,7 @@ function parseTextWithMathAndImages(
                 width: 320,
                 height: 180,
               },
-            })
+            } as any)
           );
         } catch (e) {
           children.push(new TextRun({ text: '[Hình ảnh]', italics: true, font: 'Times New Roman', size: 22 }));
@@ -2879,8 +2879,8 @@ export async function downloadSampleExamDocx(): Promise<void> {
     if (ctx) {
       const img = new Image();
       const svgBlob = new Blob([sampleSvg], { type: 'image/svg+xml;charset=utf-8' });
-      const URL = window.URL || window.webkitURL || window;
-      const blobURL = URL.createObjectURL(svgBlob);
+      const urlObj = window.URL || (window as any).webkitURL;
+      const blobURL = urlObj.createObjectURL(svgBlob);
       await new Promise((resolve) => {
         img.onload = () => {
           ctx.drawImage(img, 0, 0);
@@ -2937,7 +2937,7 @@ export async function downloadSampleExamDocx(): Promise<void> {
             ? [
                 new Paragraph({
                   alignment: AlignmentType.CENTER,
-                  children: [new ImageRun({ data: samplePngBuffer, transformation: { width: 320, height: 110 } })],
+                  children: [new ImageRun({ data: samplePngBuffer, transformation: { width: 320, height: 110 } } as any)],
                 }),
               ]
             : []),
@@ -3277,8 +3277,8 @@ export async function downloadSampleExamPdf(): Promise<void> {
       await window.html2pdf().set(opt).from(container).save();
     } else {
       const html2pdfModule = await import('html2pdf.js');
-      const h2p = html2pdfModule.default || html2pdfModule;
-      await h2p().set(opt).from(container).save();
+      const h2p = (html2pdfModule as any).default || html2pdfModule;
+      await (h2p as any)().set(opt).from(container).save();
     }
   } catch (err) {
     console.error('Error exporting PDF:', err);

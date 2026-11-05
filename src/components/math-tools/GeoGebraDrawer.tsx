@@ -4,8 +4,8 @@ import { Interactive3DGeometryEngine } from './Interactive3DGeometryEngine';
 
 declare global {
   interface Window {
-    GGBApplet: any;
-    ggbApplet: any;
+    GGBApplet?: any;
+    ggbApplet?: any;
   }
 }
 

@@ -1,4 +1,4 @@
-import { apiFetch, getApiHeaders, getCustomApiKey, parseGeminiStreamChunk } from '../lib/apiFetch';
+import { apiFetch, getApiHeaders } from '../lib/apiFetch';
 import { useSubjects } from '../lib/subjects';
 import LZString from 'lz-string';
 import { exportHtmlToWord, exportElementToImage } from "../lib/exportUtils";
@@ -10,7 +10,7 @@ import {
   TrendingUp, BarChart2, Plus, Box, BarChart3, School, User, Wand2, Users, BarChart, Loader2, FileSpreadsheet, Trash2, RefreshCw, X, ShieldCheck, Key
 } from "lucide-react";
 import { StudentExamView } from "./StudentExamView";
-import { XLSX } from "../lib/xlsxUtils";
+import * as XLSX from "xlsx";
 import { 
   googleSignIn, 
   googleSignOut, 
@@ -22,13 +22,13 @@ import {
 import { MathView } from "../components/MathView";
 import { run1ClickMathFix } from "../components/math-tools/MathFormulaFixer";
 import { ErrorBoundary } from "../components/ErrorBoundary";
-import { ApiErrorBanner } from "../components/ApiErrorBanner";
 import { UploadTeacherExamModal } from "../components/UploadTeacherExamModal";
 import { QuestionEditModal } from "../components/QuestionEditModal";
 import { HeaderConfigModal } from "../components/HeaderConfigModal";
 import { HeaderConfig, getHeaderConfig, saveHeaderConfig } from "../lib/headerConfig";
 import { QuestionVisualizerPanel } from "../components/math-tools/QuestionVisualizerPanel";
 import { WorksheetAiInspectorModal } from "../components/WorksheetAiInspectorModal";
+import { fetchExamFromCloud } from "../lib/cloudExamStore";
 import { analyzeFunctionToBbt, generateBbtSvg, convertBbtTableToSvg, autoEnrichTextWithVisuals } from "../lib/bbtRenderer";
 import { getTikzSvg, embedTikzSvgsInText } from "../components/TikzRenderer";
 import { saveToHistory, getHistory, deleteFromHistory } from '../lib/history';
@@ -36,7 +36,7 @@ import { HistoryItem } from '../types';
 import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMath, cleanQuestionStem, cleanOptionText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections, sanitizeExamQuestion, sanitizeAndPolishMath, normalizeArrayAndTableEnvironments } from "../lib/utils";
 import { parseRawExamText } from '../lib/examParser';
 import { printElement, ensureMathRendered } from '../lib/print';
-import { saveExamToCloud, saveExamToWebhook, fetchExamFromCloud } from '../lib/cloudExamStore';
+import { saveExamToCloud, saveExamToWebhook } from '../lib/cloudExamStore';
 import { registerExamUrlMapping } from "../lib/smartRouter";
 import { KNTT_CURRICULUM, getKnttCurriculum } from "../data/knttCurriculum";
 import { LanguageSpeechControls } from "../components/LanguageSpeechControls";
@@ -1013,133 +1013,76 @@ export function Worksheets() {
     setShareLink("");
     
     try {
-      const userKey = getCustomApiKey();
+      // 1. Generate Interactive Worksheet JSON
+      const response = await apiFetch('/api/generate-interactive-worksheet', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          lesson: customLessonName,
+          subject: subject,
+          grade: selectedGrade,
+          type: worksheetType,
+          additionalNotes,
+          numPartI,
+          numPartII,
+          numPartIII,
+          numPartIV,
+          realWorldPercent,
+          hasParametric
+        })
+      });
 
-      const totalRequired = (numPartI || 0) + (numPartII || 0) + (numPartIII || 0) + (numPartIV || 0);
-      const totalCount = totalRequired > 0 ? totalRequired : 16;
-
-      const parametricRule = hasParametric
-        ? `YÊU CẦU THAM SỐ: Thiết kế các câu hỏi chứa tham số thực ($m, a, b...$) ở mức độ vận dụng để phân hóa tư duy học sinh.`
-        : `QUY TẮC CẤM THAM SỐ: TUYỆT ĐỐI KHÔNG XUẤT HIỆN BẤT KỲ THAM SỐ NÀO (như $m$, $k$, $a$, $b$, $\\alpha$ làm tham số). Tất cả các hệ số trong đề bài, hàm số, phương trình và 4 phương án là các con số thực cụ thể.`;
-
-      const partIVRule = numPartIV > 0
-        ? `4. PHẦN IV (essay): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartIV} CÂU Tự luận (loại "essay") - bài tập tự luận có hướng dẫn chấm ngắn gọn.`
-        : `QUY TẮC CẤU TRÚC: TUYỆT ĐỐI KHÔNG SINH BÀI TẬP TỰ LUẬN! Mảng "questions" chỉ chứa câu hỏi thuộc các phần trắc nghiệm.`;
-
-      const promptText = `Bạn là một giáo viên xuất sắc môn ${subject || "Toán"} (chuẩn GDPT 2018). Hãy tạo Phiếu bài tập (Worksheet) tương tác chất lượng cao cho học sinh Lớp ${selectedGrade}, môn ${subject || "Toán"}, bài học/chủ đề: "${customLessonName}". Hình thức: ${worksheetType}.
-
-RÀNG BUỘC PHẠM VI NỘI DUNG VÀ CHỦ ĐỀ:
-- TẤT CẢ CÁC CÂU HỎI trong phiếu bài tập BẮT BUỘC phải tập trung chính xác và 100% nằm trong phạm vi kiến thức, bài học/chủ đề: "${customLessonName}".
-- Tuân thủ 100% thuật ngữ, ký hiệu SGK Kết nối tri thức.
-
-CẤU TRÚC VÀ SỐ LƯỢNG CÂU HỎI BẮT BUỘC (TỔNG CHÍNH XÁC ĐỦ ${totalCount} CÂU):
-BẮT BUỘC phải sinh đúng các phần sau vào mảng "questions":
-${numPartI > 0 ? `1. PHẦN I (mc): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartI} CÂU Trắc nghiệm 4 lựa chọn (loại "mc") - gồm "content", 4 phương án vào mảng "options", "correctOptionIndex" (0, 1, 2, 3).` : ''}
-${numPartII > 0 ? `2. PHẦN II (tf): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartII} CÂU Đúng/Sai (loại "tf") - mảng "tfStatements" gồm ĐÚNG 4 ý [{ "statement": "...", "correct": true/false }].` : ''}
-${numPartIII > 0 ? `3. PHẦN III (sa): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartIII} CÂU Trả lời ngắn (loại "sa") - "correctAnswer" là 1 số cụ thể tối đa 4 ký tự.` : ''}
-${partIVRule}
-
-- Tỷ lệ thực tế: Khoảng ${realWorldPercent}%.
-- ${parametricRule}
-${additionalNotes ? `- Ghi chú riêng từ giáo viên: ${additionalNotes}` : ''}
-
-QUY TẮC CÔNG THỨC TOÁN HỌC:
-- Tất cả công thức toán, biến số đơn lẻ (x, y, m, u_n, d, S_n...) BẮT BUỘC đặt trong cặp dấu đô la: $công_thức$.
-- LUÔN LUÔN sử dụng \\frac thay thế cho \\dfrac.
-- Kèm trường "solution": Lời giải súc tích, ngắn gọn, các bước biến đổi rõ ràng, trọng tâm.
-
-BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI CẤU TRÚC SAU:
-{
-  "examName": "Phiếu bài tập: ${customLessonName}",
-  "questions": [
-    {
-      "type": "mc",
-      "content": "Nội dung câu hỏi trắc nghiệm...",
-      "options": ["A. $...$", "B. $...$", "C. $...$", "D. $...$"],
-      "correctOptionIndex": 0,
-      "solution": "Lời giải chi tiết ngắn gọn..."
-    }
-  ]
-}`;
-
-      let rawText = "";
-
-      // Direct client-side calls to Google are disabled. All requests go through server proxy.
-      if (!rawText) {
-        // We will proceed to fallback to apiFetch below
-      }
-
-
-      // 2. Nếu cuộc gọi trực tiếp chưa có dữ liệu, thử fallback qua máy chủ trung gian
-      if (!rawText) {
-        const response = await apiFetch('/api/generate-interactive-worksheet', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json;charset=utf-8',
-          },
-          body: JSON.stringify({
-            lesson: customLessonName,
-            subject: subject,
-            grade: selectedGrade,
-            type: worksheetType,
-            additionalNotes,
-            numPartI,
-            numPartII,
-            numPartIII,
-            numPartIV,
-            realWorldPercent,
-            hasParametric
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error("Lỗi khi kết nối dịch vụ tạo phiếu bài tập.");
+      if (!response.ok) {
+        let errMsg = "Lỗi khi tạo phiếu bài tập tương tác.";
+        try {
+          const errRes = await response.json();
+          if (errRes && errRes.error) {
+            errMsg = typeof errRes.error === 'string' ? errRes.error : (errRes.error.message || JSON.stringify(errRes.error));
+          }
+        } catch (e) {
+          try {
+            const rawText = await response.text();
+            if (rawText && !rawText.trim().startsWith('<')) errMsg = rawText;
+          } catch (e2) {}
         }
-
-        rawText = await response.text();
-      }
-
-      // Kiểm tra dữ liệu trả về có hợp lệ không
-      if (rawText.trim().startsWith('<') || rawText.includes('<!DOCTYPE html>')) {
-        console.error("Server trả về HTML thay vì JSON:", rawText);
-        throw new Error("Dịch vụ tạo đề tạm thời gián đoạn. Thầy cô vui lòng kiểm tra lại cấu hình API Key cá nhân.");
+        throw new Error(errMsg);
       }
 
       let examData: any;
       try {
-        examData = JSON.parse(rawText);
+        examData = await response.json();
       } catch (e) {
-        console.error("Lỗi parse JSON:", rawText);
+        let rawText = "";
+        try {
+          rawText = await response.text();
+        } catch (e2) {}
+        if (rawText.trim().startsWith('<') || rawText.includes('<!DOCTYPE html>')) {
+          throw new Error("Dịch vụ tạo đề tạm thời gián đoạn hoặc API Key chưa được nạp đúng. Vui lòng kiểm tra lại cấu hình API trong Cài đặt.");
+        }
         try {
           examData = parseApiResponse(rawText);
-        } catch (e2) {
-          throw new Error("Máy chủ AI hiện đang tạm thời quá tải. Thầy cô vui lòng nhấn nút 'Tự động tạo Phiếu học tập' để thử lại sau ít phút.");
+        } catch (e3) {
+          throw new Error("Máy chủ AI hiện đang tạm thời quá tải (Lỗi 503 Service Unavailable). Thầy cô vui lòng bấm thử lại sau ít phút.");
         }
       }
 
-      // Xử lý linh hoạt trường hợp máy chủ trả về dạng bọc { result: ... }
-      if (examData && (!Array.isArray(examData.questions) || examData.questions.length === 0) && examData.result) {
-        if (typeof examData.result === 'string') {
-          try {
-            const innerParsed = parseApiResponse(examData.result);
-            if (innerParsed && (Array.isArray(innerParsed.questions) || innerParsed.examName)) {
-              examData = innerParsed;
-            }
-          } catch (e) {
-            try {
-              const innerJson = JSON.parse(examData.result);
-              if (innerJson && (Array.isArray(innerJson.questions) || innerJson.examName)) {
-                examData = innerJson;
-              }
-            } catch (e2) {}
-          }
-        } else if (typeof examData.result === 'object' && Array.isArray(examData.result.questions)) {
-          examData = examData.result;
-        }
+      if (examData?.error) {
+        throw new Error(typeof examData.error === 'string' ? examData.error : (examData.error.message || JSON.stringify(examData.error)));
+      }
+
+      if (typeof examData === 'string') {
+        examData = parseApiResponse(examData);
+      } else if (examData && !examData.questions && (examData.result || examData.text)) {
+        const raw = examData.result || examData.text;
+        try {
+          examData = parseApiResponse(raw);
+        } catch (e) {}
       }
 
       if (!examData || !Array.isArray(examData.questions) || examData.questions.length === 0) {
-        throw new Error("Máy chủ AI chưa trả về đủ danh sách câu hỏi cho chủ đề này. Thầy/cô vui lòng bấm 'Tạo lại' để hệ thống tự động sinh lại đầy đủ.");
+        throw new Error("Dữ liệu phiếu bài tập trả về từ AI rỗng hoặc chưa đúng định dạng. Thầy cô vui lòng nhấn 'Tự động tạo Phiếu học tập' để thử lại.");
       }
       
       // Clean and sanitize math formulas for MathJax in interactive online worksheet questions
@@ -1177,15 +1120,47 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
         ]
       };
       
-      // 3. Generate 6-char PIN code immediately for instant room creation
+      // 3. Generate 6-char fallback PIN and save to server/cloud store
       const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
       let fallbackCode = '';
       for (let i = 0; i < 6; i++) {
         fallbackCode += chars.charAt(Math.floor(Math.random() * chars.length));
       }
-      const examId = fallbackCode;
 
-      // Primary short PIN link (~30 chars)
+      let examId = fallbackCode;
+      try {
+        const shareRes = await apiFetch('/api/exams/share', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...payload, customId: fallbackCode }),
+          redirect: 'follow',
+        });
+        if (shareRes.ok) {
+          const shareRaw = await shareRes.text();
+          if (!shareRaw.trim().startsWith('<') && !shareRaw.includes('<!DOCTYPE html>')) {
+            try {
+              const shareJson = JSON.parse(shareRaw);
+              if (shareJson.examId) {
+                examId = shareJson.examId;
+              }
+            } catch (e) {}
+          }
+        }
+      } catch (e) {
+        console.warn("Share to api failed:", e);
+      }
+
+      // Sync to cloud store & Webhook unconditionally
+      try {
+        await saveExamToCloud(examId, payload);
+        registerExamUrlMapping(`/exam/${examId}`, examId);
+        registerExamUrlMapping(`/p/${examId}`, examId);
+        registerExamUrlMapping(`/thi/${examId}`, examId);
+        registerExamUrlMapping(`/?pin=${examId}`, examId);
+        registerExamUrlMapping(`/#/exam/${examId}`, examId);
+      } catch (e) {}
+
+      // Primary link is clean short PIN url (~40 chars)
       const shortLink = `${window.location.origin}/?pin=${examId}`;
       let compressed = '';
       try {
@@ -1198,9 +1173,9 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
         ? `${window.location.origin}/?pin=${examId}&d=${compressed}`
         : shortLink;
        
-      // Render room link and save to local state IMMEDIATELY without waiting for cloud sync
       setShareLink(shortLink);
 
+      // Save room to history
       const roomCode = examId;
       const newRoom = {
         code: roomCode,
@@ -1214,40 +1189,10 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
         linkedSheetId: null,
         linkedSheetUrl: null
       };
-
       const updatedHistory = [newRoom, ...examsHistory.filter(h => h.code !== newRoom.code)];
       setExamsHistory(updatedHistory);
       localStorage.setItem("eduplan_worksheet_exams_history", JSON.stringify(updatedHistory));
       localStorage.setItem(`examCache_${roomCode}`, JSON.stringify(payload));
-
-      // Asynchronous non-blocking Cloud Sync in background
-      (async () => {
-        try {
-          await apiFetch('/api/exams/share', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...payload, customId: examId }),
-            redirect: 'follow',
-          });
-        } catch (e) {}
-
-        try {
-          await saveExamToCloud(examId, payload);
-          registerExamUrlMapping(`/exam/${examId}`, examId);
-          registerExamUrlMapping(`/p/${examId}`, examId);
-          registerExamUrlMapping(`/thi/${examId}`, examId);
-          registerExamUrlMapping(`/?pin=${examId}`, examId);
-          registerExamUrlMapping(`/#/exam/${examId}`, examId);
-        } catch (e) {}
-      })();
-
-      // Auto-scroll down to the share link box so teacher sees it instantly
-      setTimeout(() => {
-        const box = document.getElementById("online-room-share-box");
-        if (box) {
-          box.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-      }, 100);
       
       // Cập nhật danh sách câu hỏi để giáo viên kiểm tra lời giải chi tiết trực quan
       const formattedQuestions = (examData.questions || []).map((q: any, idx: number) => {
@@ -1344,16 +1289,7 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
       
     } catch (err: any) {
       console.error(err);
-      let errMsg = typeof err === 'object' && err !== null ? (err.message || err.error?.message || err.error || JSON.stringify(err)) : String(err || "Không thể tạo phiếu bài tập tương tác lúc này.");
-      if (errMsg.includes('400') || errMsg.includes('API_KEY_INVALID') || errMsg.includes('API key not valid') || errMsg.includes('INVALID_ARGUMENT')) {
-        errMsg = "API KEY KHÔNG HỢP LỆ (400): Mã Gemini API Key hiện tại chưa đúng hoặc đã bị vô hiệu hóa trên Google AI Studio. Hệ thống vừa mở cửa sổ Cài đặt, thầy/cô vui lòng dán lại mã API Key mới (tạo miễn phí tại https://aistudio.google.com) để tiếp tục.";
-        localStorage.removeItem('custom_gemini_api_key');
-        window.dispatchEvent(new CustomEvent('show-api-key-modal'));
-      } else if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('Quota exceeded')) {
-        errMsg = "HẠN MỨC MIỄN PHÍ TẠM THỜI ĐÃ HẾT: API Key của thầy/cô đã vượt quá số lượt gọi miễn phí trong ngày của Google. Thầy/cô vui lòng bấm vào nút 'Cài đặt' để nhập hoặc đổi sang một Gemini API Key mới (tạo hoàn toàn miễn phí tại https://aistudio.google.com).";
-        window.dispatchEvent(new CustomEvent('show-api-key-modal'));
-      }
-      setError(errMsg);
+      setError(err.message || "Không thể tạo phiếu bài tập tương tác lúc này.");
     } finally {
       setIsGeneratingInteractive(false);
     }
@@ -1376,9 +1312,11 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
       const currentChapter = semData?.chapters.find(c => c.id === selectedChapterId);
       const selectedChapterName = currentChapter?.name || "";
 
-      const response = await apiFetch('/api/generate-worksheet-stream', {
+      const response = await fetch('/api/generate-worksheet-stream', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getApiHeaders({
+          headers: { 'Content-Type': 'application/json' }
+        }),
         body: JSON.stringify({
           lesson: customLessonName,
           chapter: selectedChapterName,
@@ -1402,7 +1340,6 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
       });
 
       if (response.headers.get('x-custom-key-failed') === 'true') {
-        localStorage.removeItem('custom_gemini_api_key');
         localStorage.removeItem('eduplan_gemini_api_key_v2');
       }
 
@@ -1471,8 +1408,7 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
-        const cleanChunk = parseGeminiStreamChunk(chunk);
-        rawAccumulated += cleanChunk;
+        rawAccumulated += chunk;
 
         // Check if stream contains raw server error string
         if (rawAccumulated.includes('SERVER_ERROR:') || rawAccumulated.includes('"code": 503') || rawAccumulated.includes('"code":503') || rawAccumulated.includes('Service Unavailable')) {
@@ -2262,9 +2198,6 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
         </div>
 
         <div className="p-4 border-t border-slate-200 bg-slate-50">
-          {error && (
-            <ApiErrorBanner error={error} onDismiss={() => setError(null)} className="mb-3" />
-          )}
           
           <div className="flex gap-2">
             <button
@@ -2316,7 +2249,7 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
           </div>
           
           {shareLink && (
-            <div id="online-room-share-box" className="mt-4 p-4 bg-emerald-50 rounded-xl border border-emerald-200 shadow-sm animate-in fade-in slide-in-from-top-2">
+            <div className="mt-4 p-4 bg-emerald-50 rounded-xl border border-emerald-200">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-bold text-emerald-900 flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />

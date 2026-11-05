@@ -4,8 +4,8 @@ import * as pdfjsLib from 'pdfjs-dist';
 if (typeof window !== 'undefined') {
   try {
     const workerVersion = '4.10.38';
-    // Sử dụng CDN chính thức đồng bộ phiên bản 4.10.38
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${workerVersion}/pdf.worker.min.mjs`;
+    // Sử dụng CDN jsDelivr chính thức đồng bộ phiên bản 4.10.38
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${workerVersion}/build/pdf.worker.min.mjs`;
   } catch (e) {
     console.warn('PDF worker setup failed:', e);
   }
@@ -40,9 +40,9 @@ function getDocumentOptions(safeData: Uint8Array) {
   const workerVersion = '4.10.38';
   return {
     data: safeData,
-    cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${workerVersion}/cmaps/`,
+    cMapUrl: `https://cdn.jsdelivr.net/npm/pdfjs-dist@${workerVersion}/cmaps/`,
     cMapPacked: true,
-    standardFontDataUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${workerVersion}/standard_fonts/`
+    standardFontDataUrl: `https://cdn.jsdelivr.net/npm/pdfjs-dist@${workerVersion}/standard_fonts/`
   };
 }
 

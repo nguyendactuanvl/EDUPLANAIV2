@@ -10,7 +10,14 @@ interface ApiErrorBannerProps {
 
 export function isQuotaOrApiError(errorMsg?: any): boolean {
   if (!errorMsg) return false;
-  const str = typeof errorMsg === 'object' ? (errorMsg.message || errorMsg.error?.message || JSON.stringify(errorMsg)) : String(errorMsg || '');
+  let str = "";
+  if (typeof errorMsg === 'string') {
+    str = errorMsg;
+  } else if (typeof errorMsg === 'object' && errorMsg !== null) {
+    str = errorMsg.message || errorMsg.error?.message || (typeof errorMsg.error === 'string' ? errorMsg.error : JSON.stringify(errorMsg));
+  } else {
+    str = String(errorMsg || '');
+  }
   const lower = str.toLowerCase();
   return (
     lower.includes('quota') ||
@@ -23,7 +30,13 @@ export function isQuotaOrApiError(errorMsg?: any): boolean {
     lower.includes('api_key') ||
     lower.includes('unauthenticated') ||
     lower.includes('quá tải') ||
-    lower.includes('hạn mức')
+    lower.includes('hạn mức') ||
+    lower.includes('high demand') ||
+    lower.includes('spikes in demand') ||
+    lower.includes('overloaded') ||
+    lower.includes('503') ||
+    lower.includes('unavailable') ||
+    lower.includes('try again later')
   );
 }
 
@@ -35,9 +48,26 @@ export const ApiErrorBanner: React.FC<ApiErrorBannerProps> = ({
 }) => {
   if (!error) return null;
 
-  const errorString = typeof error === 'object' && error !== null
-    ? (error.message || error.error?.message || error.error || JSON.stringify(error))
-    : String(error || '');
+  let errorString = "";
+  if (typeof error === 'string') {
+    errorString = error;
+  } else if (typeof error === 'object' && error !== null) {
+    if (typeof error.message === 'string') {
+      errorString = error.message;
+    } else if (error.error) {
+      if (typeof error.error === 'string') {
+        errorString = error.error;
+      } else if (typeof error.error.message === 'string') {
+        errorString = error.error.message;
+      } else {
+        errorString = JSON.stringify(error.error);
+      }
+    } else {
+      errorString = JSON.stringify(error);
+    }
+  } else {
+    errorString = String(error || '');
+  }
 
   if (!errorString || errorString === 'null' || errorString === 'undefined' || errorString === '{}') return null;
 

@@ -8,7 +8,6 @@ import {
   signOut
 } from "firebase/auth";
 import firebaseConfig from "../../firebase-applet-config.json";
-import { saveExamToWebhook } from "./cloudExamStore";
 
 // Initialize Firebase using the generated credentials
 const app = initializeApp(firebaseConfig);
@@ -52,9 +51,6 @@ export const googleSignIn = async (): Promise<{ user: User | any; accessToken: s
       throw new Error("Không thể lấy Token truy cập Google Sheets.");
     }
     cachedAccessToken = credential.accessToken;
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('user-logged-in', { detail: result.user }));
-    }
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
     if (
@@ -139,6 +135,20 @@ export const googleSignOut = async () => {
 
 export const getCachedToken = (): string | null => {
   return cachedAccessToken;
+};
+
+const saveExamToWebhook = async (payload: any) => {
+  try {
+    const res = await fetch("/api/webhook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    return null;
+  }
 };
 
 // API: Create a new Google Sheet

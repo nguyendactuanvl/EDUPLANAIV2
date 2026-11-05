@@ -13,7 +13,7 @@ import { getInitialTheme, applyTheme, ThemeMode } from "./lib/theme";
 function safeLazy<T extends React.ComponentType<any>>(
   factory: () => Promise<any>,
   componentName?: string,
-  retries = 2
+  retries = 3
 ): React.LazyExoticComponent<T> {
   return React.lazy(() => {
     return new Promise<{ default: T }>((resolve, reject) => {
@@ -33,18 +33,21 @@ function safeLazy<T extends React.ComponentType<any>>(
           })
           .catch((error) => {
             if (left > 0) {
-              setTimeout(() => attempt(left - 1), 500);
+              setTimeout(() => attempt(left - 1), 400 * (4 - left));
             } else {
               const isChunkLoadFailed = error?.message && (
-                error.message.includes('Failed to fetch dynamically imported module') ||
+                error.message.includes('Failed to fetch') ||
+                error.message.includes('dynamically imported module') ||
                 error.message.includes('Importing a module script failed') ||
-                error.message.includes('error loading dynamically imported module') ||
                 error.message.includes('Unexpected token')
               );
-              if (isChunkLoadFailed && typeof window !== 'undefined' && !sessionStorage.getItem('chunk_retry_done')) {
-                sessionStorage.setItem('chunk_retry_done', '1');
-                window.location.reload();
-                return;
+              if (isChunkLoadFailed && typeof window !== 'undefined') {
+                const lastReload = Number(sessionStorage.getItem('eduplan_last_auto_reload') || '0');
+                if (Date.now() - lastReload > 8000) {
+                  sessionStorage.setItem('eduplan_last_auto_reload', String(Date.now()));
+                  window.location.reload();
+                  return;
+                }
               }
               reject(error);
             }
@@ -55,25 +58,33 @@ function safeLazy<T extends React.ComponentType<any>>(
   });
 }
 
-const EducationalPlan = safeLazy(() => import("./pages/EducationalPlan"), "EducationalPlan");
-const LessonPlan = safeLazy(() => import("./pages/LessonPlan"), "LessonPlan");
-const Circulars = safeLazy(() => import("./pages/Circulars"), "Circulars");
-const HistoryPage = safeLazy(() => import("./pages/HistoryPage"), "HistoryPage");
-const Worksheets = safeLazy(() => import("./pages/Worksheets"), "Worksheets");
-const ExerciseSolver = safeLazy(() => import('./pages/ExerciseSolver'), "ExerciseSolver");
-const PdfToWord = safeLazy(() => import('./pages/PdfToWord'), "PdfToWord");
-const ExamGenerator = safeLazy(() => import('./pages/ExamGenerator'), "ExamGenerator");
-const StudentExamView = safeLazy(() => import('./pages/StudentExamView'), "StudentExamView");
-const ClassMap = safeLazy(() => import('./pages/ClassMap'), "ClassMap");
-const HomeroomManagement = safeLazy(() => import('./pages/HomeroomManagement'), "HomeroomManagement");
-const WeeklyTimetable = safeLazy(() => import('./pages/WeeklyTimetable'), "WeeklyTimetable");
-const Gamification = safeLazy(() => import('./pages/Gamification'), "Gamification");
-const MathTools = safeLazy(() => import('./pages/MathTools'), "MathTools");
-const DeOnlinePdf = safeLazy(() => import('./pages/DeOnlinePdf'), "DeOnlinePdf");
-const HsaTsaHub = safeLazy(() => import('./pages/HsaTsaHub'), "HsaTsaHub");
-const ExamStatsDashboard = safeLazy(() => import('./pages/ExamStatsDashboard'), "ExamStatsDashboard");
-const OverallAnalyticsDashboard = safeLazy(() => import('./pages/OverallAnalyticsDashboard'), "OverallAnalyticsDashboard");
-const ExamShufflerView = safeLazy(() => import('./components/ExamShuffler/ExamShufflerView'), "ExamShufflerView");
+const EducationalPlan = safeLazy(() => import("./pages/EducationalPlan.tsx"), "EducationalPlan");
+const LessonPlan = safeLazy(() => import("./pages/LessonPlan.tsx"), "LessonPlan");
+const Circulars = safeLazy(() => import("./pages/Circulars.tsx"), "Circulars");
+const HistoryPage = safeLazy(() => import("./pages/HistoryPage.tsx"), "HistoryPage");
+const Worksheets = safeLazy(() => import("./pages/Worksheets.tsx"), "Worksheets");
+const ExerciseSolver = safeLazy(() => import('./pages/ExerciseSolver.tsx'), "ExerciseSolver");
+const PdfToWord = safeLazy(() => import('./pages/PdfToWord.tsx'), "PdfToWord");
+const ExamGenerator = safeLazy(() => import('./pages/ExamGenerator.tsx'), "ExamGenerator");
+const StudentExamView = safeLazy(() => import('./pages/StudentExamView.tsx'), "StudentExamView");
+const ClassMap = safeLazy(() => import('./pages/ClassMap.tsx'), "ClassMap");
+const HomeroomManagement = safeLazy(() => import('./pages/HomeroomManagement.tsx'), "HomeroomManagement");
+const WeeklyTimetable = safeLazy(() => import('./pages/WeeklyTimetable.tsx'), "WeeklyTimetable");
+const Gamification = safeLazy(() => import('./pages/Gamification.tsx'), "Gamification");
+const MathTools = safeLazy(() => import('./pages/MathTools.tsx'), "MathTools");
+const DeOnlinePdf = safeLazy(() => import('./pages/DeOnlinePdf.tsx'), "DeOnlinePdf");
+const AiStudioSuite = safeLazy(() => import('./pages/AiStudioSuite.tsx'), "AiStudioSuite");
+const EduPlanInkPage = safeLazy(() => import('./pages/EduPlanInkPage.tsx'), "EduPlanInkPage");
+const MathOCRPage = safeLazy(() => import('./pages/MathOCRPage.tsx'), "MathOCRPage");
+const HsaTsaHub = safeLazy(() => import('./pages/HsaTsaHub.tsx'), "HsaTsaHub");
+const ExamStatsDashboard = safeLazy(() => import('./pages/ExamStatsDashboard.tsx'), "ExamStatsDashboard");
+const OverallAnalyticsDashboard = safeLazy(() => import('./pages/OverallAnalyticsDashboard.tsx'), "OverallAnalyticsDashboard");
+const ExamShufflerView = safeLazy(() => import('./components/ExamShuffler/ExamShufflerView.tsx'), "ExamShufflerView");
+const BiologyWorkspace = safeLazy(() => import('./features/biology/BiologyWorkspace.tsx'), "BiologyWorkspace");
+const PhysicsWorkspace = safeLazy(() => import('./features/physics/PhysicsWorkspace.tsx'), "PhysicsWorkspace");
+const SubjectHubWorkspace = safeLazy(() => import('./features/subjects/SubjectHubWorkspace.tsx'), "SubjectHubWorkspace");
+const SpatialGeometryWorkspace = safeLazy(() => import('./features/spatialGeometry/index.ts').then(m => ({ default: m.SpatialGeometryWorkspace })), "SpatialGeometryWorkspace");
+const GraduationReviewPlanner = safeLazy(() => import('./features/graduationReview/GraduationReviewPlanner.tsx'), "GraduationReviewPlannerModule");
 
 import { parseExamIdFromLocation, registerExamUrlMapping } from "./lib/smartRouter";
 
@@ -82,6 +93,11 @@ export default function App() {
     const urlParams = new URLSearchParams(window.location.search);
     const tabParam = urlParams.get('tab') || urlParams.get('view');
     if (tabParam === 'exam_stats' || tabParam === 'stats') return 'exam_stats';
+    if (tabParam === 'biology' || tabParam === 'bio') return 'biology';
+    if (tabParam === 'physics' || tabParam === 'phy') return 'physics';
+    if (tabParam === 'chemistry' || tabParam === 'chem' || tabParam === 'hoa') return 'chemistry';
+    if (tabParam === 'english' || tabParam === 'eng' || tabParam === 'anh') return 'english';
+    if (tabParam === 'subjects_hub' || tabParam === 'hub') return 'subjects_hub';
     return "math_tools";
   });
   const [statsExamId, setStatsExamId] = useState<string | undefined>(() => {
@@ -98,6 +114,13 @@ export default function App() {
   // Theme State
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [isFocusMode, setIsFocusMode] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState<boolean>(() => {
+    return !!(localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim();
+  });
+
+  const checkApiKeyStatus = () => {
+    setHasApiKey(!!(localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim());
+  };
 
   useEffect(() => {
     applyTheme(theme);
@@ -133,6 +156,7 @@ export default function App() {
     const handleShowModal = () => {
       setSettingsDefaultTab("apikey");
       setIsSettingsOpen(true);
+      checkApiKeyStatus();
     };
     const handleShowGuide = (e: any) => {
       if (e?.detail?.sectionId) {
@@ -161,6 +185,13 @@ export default function App() {
       setActiveTab("exam_stats");
     };
 
+    const handleSwitchTab = (e: any) => {
+      const target = typeof e?.detail === 'string' ? e.detail : e?.detail?.tab;
+      if (target) {
+        setActiveTab(target);
+      }
+    };
+
     window.addEventListener('show-api-key-modal', handleShowModal);
     window.addEventListener('show-user-guide-modal', handleShowGuide);
     window.addEventListener('api-retry-status', handleRetryStatus);
@@ -168,11 +199,18 @@ export default function App() {
     window.addEventListener('focus-mode', handleFocusMode);
     window.addEventListener('hsa-focus-mode', handleFocusMode);
     window.addEventListener('open-exam-stats', handleOpenStats);
+    window.addEventListener('switch-tab', handleSwitchTab);
+    window.addEventListener('storage', checkApiKeyStatus);
 
-    const storedKey = localStorage.getItem("eduplan_gemini_api_key_v2");
-    if (!storedKey) {
-      setSettingsDefaultTab("apikey");
-      setIsSettingsOpen(true);
+    // Auto-prompt API Key modal on first visit if no key is set
+    const userKey = (localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim();
+    const hasPrompted = sessionStorage.getItem("eduplan_apikey_first_prompted");
+    if (!userKey && !hasPrompted) {
+      sessionStorage.setItem("eduplan_apikey_first_prompted", "true");
+      setTimeout(() => {
+        setSettingsDefaultTab("apikey");
+        setIsSettingsOpen(true);
+      }, 600);
     }
 
     return () => {
@@ -183,6 +221,8 @@ export default function App() {
       window.removeEventListener('focus-mode', handleFocusMode);
       window.removeEventListener('hsa-focus-mode', handleFocusMode);
       window.removeEventListener('open-exam-stats', handleOpenStats);
+      window.removeEventListener('switch-tab', handleSwitchTab);
+      window.removeEventListener('storage', checkApiKeyStatus);
     };
   }, []);
 
@@ -349,11 +389,21 @@ export default function App() {
           <ErrorBoundary key={activeTab}>
             <Suspense fallback={<div className="flex items-center justify-center h-full text-slate-500">Đang tải...</div>}>
               {activeTab === "hsa_tsa" && <HsaTsaHub />}
+              {activeTab === "math_ocr" && <MathOCRPage />}
+              {activeTab === "ink" && <EduPlanInkPage />}
+              {activeTab === "ai_studio" && <AiStudioSuite />}
               {activeTab === "khgd" && <EducationalPlan />}
               {activeTab === "khdh" && <LessonPlan />}
+              {activeTab === "graduation_review" && <GraduationReviewPlanner />}
               {activeTab === "worksheets" && <Worksheets />}
               {activeTab === "exercise" && <ExerciseSolver />}
               {activeTab === "math_tools" && <MathTools />}
+              {activeTab === "spatial_geometry" && <SpatialGeometryWorkspace />}
+              {(activeTab === "physics" || activeTab === "physics_toolkit") && <SubjectHubWorkspace initialSubject="physics" />}
+              {(activeTab === "chemistry" || activeTab === "chemistry_toolkit") && <SubjectHubWorkspace initialSubject="chemistry" />}
+              {activeTab === "biology" && <BiologyWorkspace />}
+              {(activeTab === "english" || activeTab === "english_toolkit") && <SubjectHubWorkspace initialSubject="english" />}
+              {activeTab === "subjects_hub" && <SubjectHubWorkspace initialSubject="physics" />}
               {activeTab === "gamification" && <Gamification />}
               {activeTab === "classmap" && <ClassMap />}
               {activeTab === "homeroom" && <HomeroomManagement />}

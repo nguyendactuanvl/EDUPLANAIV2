@@ -75,7 +75,7 @@ import {
   MixerQuestion
 } from '../lib/examMixer';
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { XLSX } from '../lib/xlsxUtils';
+import * as XLSX from 'xlsx';
 import { School, FileCheck, Sparkles, Shuffle, Download, Share2, Plus, Trash2, Printer, UploadCloud, FileSpreadsheet, FileText, FileCode, X, ExternalLink, Smartphone, Copy, Check, Edit3, ListPlus, Globe, Compass, RefreshCw, Eye, RotateCw, ZoomIn, ZoomOut, CheckCircle2, XCircle, AlertCircle, Save, MessageSquare, Award, Maximize2, Camera, TrendingUp, BarChart2, Box, BarChart3, Calculator, Wand2, FileDiff, ShieldCheck, BookOpen, Image as ImageIcon } from "lucide-react";
 import { run1ClickMathFix } from "../components/math-tools/MathFormulaFixer";
 
@@ -1630,7 +1630,8 @@ ${pin ? `🔑 Hoặc vào trang: ${publicBase} và nhập Mã phòng thi: ${pin}
     setQPoints({ mc: "0.25", tf: "1", sa: "0.5", essay: "1" });
   };
 
-  const handleGenerate = async (bypassCache: boolean = false) => {
+  const handleGenerate = async (bypassCacheParam: boolean | any = false) => {
+    const bypassCache = typeof bypassCacheParam === 'boolean' ? bypassCacheParam : false;
     if (generateMode === "from_matrix_file" && !matrixBase64) {
       alert("Bạn đã chọn 'Bám sát Ma trận đính kèm' nhưng chưa tải file lên. Vui lòng tải file ma trận lên trước.");
       return;
@@ -2781,7 +2782,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                        </div>
                        <div className="flex justify-between items-center">
                           <span className="text-sm text-slate-600">Model</span>
-                          <span className="font-bold text-slate-800">gemini-3.8-flash</span>
+                          <span className="font-bold text-slate-800">gemini-2.5-flash</span>
                        </div>
                     </div>
                  </div>

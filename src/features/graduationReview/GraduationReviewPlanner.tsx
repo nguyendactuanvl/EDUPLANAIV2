@@ -504,9 +504,10 @@ export function GraduationReviewPlannerModule() {
             const methods = m.supportedGenerationMethods || [];
             const canGenContent = methods.includes("generateContent");
             const isDeprecated =
-              rawName.startsWith("gemini-1.5") ||
-              rawName.startsWith("gemini-1.0") ||
-              rawName.startsWith("gemini-2.0") ||
+              rawName.startsWith("gemini-1.") ||
+              rawName.startsWith("gemini-2.") ||
+              rawName.startsWith("gemini-3.5") ||
+              rawName.includes("2.5") ||
               rawName === "gemini-pro";
             const isSpecialized =
               rawName.includes("embedding") ||
