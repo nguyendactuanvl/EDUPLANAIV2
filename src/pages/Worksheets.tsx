@@ -1312,7 +1312,7 @@ export function Worksheets() {
       const currentChapter = semData?.chapters.find(c => c.id === selectedChapterId);
       const selectedChapterName = currentChapter?.name || "";
 
-      const response = await fetch('/api/generate-worksheet-stream', {
+      const response = await apiFetch('/api/generate-worksheet-stream', {
         method: 'POST',
         headers: getApiHeaders({
           headers: { 'Content-Type': 'application/json' }

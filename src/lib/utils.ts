@@ -1,9 +1,10 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { unflattenMarkdownTables, embedBbtSvgsInText } from './bbtRenderer';
-import { normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections, autoWrapNakedMathExpression } from './globalMath';
+import { normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections, autoWrapNakedMathExpression, sanitizeSvgOrHtmlForReact, fixIncompleteFractions, balanceCasesEnvironments } from './globalMath';
 
-export { unflattenMarkdownTables, embedBbtSvgsInText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections, autoWrapNakedMathExpression };
+export { unflattenMarkdownTables, embedBbtSvgsInText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections, autoWrapNakedMathExpression, sanitizeSvgOrHtmlForReact, fixIncompleteFractions, balanceCasesEnvironments };
+
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -661,10 +662,8 @@ export function sanitizeLatexString(text: string): string {
   if (!text) return '';
   let s = text.normalize('NFC').replace(/\\dfrac\b/g, '\\frac');
 
-  // 0. Khắc phục triệt để lỗi double-backslash (\\ thay vì \) do tàn dư KaTeX cũ hoặc escape thừa:
-  // Đổi \\frac, \\sqrt, \\begin, \\alpha, \\le, \\in... thành \frac, \sqrt, \begin, \alpha, \le, \in...
-  // Bảo vệ tuyệt đối dấu \\ dùng để ngắt dòng trong \begin{cases}...\end{cases} hoặc matrix/aligned
-  s = s.replace(/\\{2,}([a-zA-Z]+)/g, (_m, g1) => '\\' + g1);
+  // 0. Khắc phục triệt để lỗi double-backslash cho các lệnh TeX cụ thể, KHÔNG làm phá hỏng dấu \\ ngắt dòng trong \begin{cases}...\end{cases}
+  s = s.replace(/\\{2,}(frac|sqrt|begin|end|alpha|beta|gamma|delta|pi|theta|sigma|omega|Delta|Sigma|infty|pm|mp|le|ge|leq|geq|neq|ne|in|notin|subset|supset|subseteq|supseteq|times|cdot|to|lim|ln|log|sin|cos|tan|cot|arcsin|arccos|arctan|vec|overrightarrow|underline|textbf|left|right|mathbb|mathcal|mathrm|text|quad|qquad|mid|parallel|perp|dots|cdots|ldots|vdots|ddots)\b/gi, '\\$1');
   s = s.replace(/\\{2,}([\{\}\[\]\(\)\$\%])/g, (_m, g1) => '\\' + g1);
   s = s.replace(/\\{3,}/g, '\\\\');
   s = s.replace(/(?<!\\)\\\s+(frac|sqrt|sin|cos|tan|cot|left|right|begin|end|text|pi|infty|mathbb|setminus|quad|mid|cap|cup|in|notin|subset|supset|subseteq|supseteq|ne|neq|le|ge|leq|geq|times|cdot|pm|lim|to|alpha|beta|gamma|theta|Delta|Omega|circ|overline|vert|parallel|perp|cases|aligned|matrix|array)\b/gi, '\\$1');

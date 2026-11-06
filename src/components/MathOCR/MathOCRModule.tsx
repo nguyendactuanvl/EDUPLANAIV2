@@ -5,6 +5,7 @@ import {
   HelpCircle, Layers, Wand2, ArrowRight
 } from 'lucide-react';
 import { MathView } from '../MathView';
+import { apiFetch } from '../../lib/apiFetch';
 import { MathOCRCropModal } from './MathOCRCropModal';
 import { ToastMessage } from './types';
 import { FeatureQuickGuideBanner } from '../FeatureQuickGuideBanner';
@@ -160,25 +161,26 @@ export const MathOCRModule: React.FC = () => {
     setLatexOutput('');
 
     try {
-      const apiKey = localStorage.getItem('custom_gemini_api_key') || localStorage.getItem('eduplan_gemini_api_key_v2') || '';
-      const response = await fetch('/api/math-ocr', {
+      const response = await apiFetch('/api/math-ocr', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
+          prompt: "Bạn là chuyên gia MathOCR. Hãy chuyển đổi ảnh chụp công thức toán hoặc câu hỏi toán học này sang mã LaTeX chuẩn 100%. Mọi biểu thức toán PHẢI bọc bằng $...$ hoặc $$...$$. Trả về mã LaTeX sạch.",
+          image: base64Img,
           imageBase64: base64Img,
           mimeType: 'image/png'
         })
       });
 
       const data = await response.json();
-      if (!response.ok || !data.success) {
+      const latexRes = data.latex || data.result || data.text || '';
+      if (!response.ok || !latexRes) {
         throw new Error(data.error || 'Lỗi nhận dạng công thức Toán.');
       }
 
-      setLatexOutput(data.latex || '');
+      setLatexOutput(latexRes.trim());
       setIsLoadingOCR(false);
       showToast('Nhận dạng thành công!', 'Công thức và bảng biểu đã được chuyển sang mã LaTeX.', 'success');
 

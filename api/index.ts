@@ -2074,6 +2074,94 @@ app.all(["/api/list-gemini-models"], async (req, res) => {
   }
 });
 
+// Generic server-side Gemini generation endpoint
+app.all(["/api/generate"], async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  try {
+    const { prompt, contents, systemInstruction, model, temperature, maxOutputTokens, responseMimeType } = req.body || {};
+    let finalContents = contents;
+    if (!finalContents && prompt) {
+      finalContents = [{ role: 'user', parts: [{ text: String(prompt) }] }];
+    }
+
+    const payload = {
+      model: model || "gemini-3.8-flash",
+      contents: finalContents,
+      config: {
+        ...(temperature !== undefined ? { temperature } : {}),
+        ...(maxOutputTokens ? { maxOutputTokens } : {}),
+        ...(responseMimeType ? { responseMimeType } : {}),
+        ...(systemInstruction ? { systemInstruction } : {})
+      }
+    };
+
+    const response = await generateWithFallback(req, payload, res);
+    const resultText = response?.text ? response.text.normalize("NFC").trim() : "";
+    return res.json({ success: true, result: resultText, text: resultText });
+  } catch (error: any) {
+    console.error("Lỗi /api/generate:", error);
+    return handleAiError(error, req, res);
+  }
+});
+
+// Generic server-side Gemini streaming endpoint
+app.all(["/api/generate-stream"], async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  try {
+    const { prompt, contents, systemInstruction, model, temperature, maxOutputTokens } = req.body || {};
+    let finalContents = contents;
+    if (!finalContents && prompt) {
+      finalContents = [{ role: 'user', parts: [{ text: String(prompt) }] }];
+    }
+
+    const payload = {
+      model: model || "gemini-3.8-flash",
+      contents: finalContents,
+      config: {
+        ...(temperature !== undefined ? { temperature } : {}),
+        ...(maxOutputTokens ? { maxOutputTokens } : {}),
+        ...(systemInstruction ? { systemInstruction } : {})
+      }
+    };
+
+    return await generateWithFallbackStream(req, res, payload);
+  } catch (error: any) {
+    console.error("Lỗi /api/generate-stream:", error);
+    return handleAiError(error, req, res);
+  }
+});
+
+// Server-side Live API token / session configuration endpoint
+app.all(["/api/live-token"], async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  try {
+    const apiKey = getAiApiKey(req);
+    if (!apiKey) {
+      return res.status(400).json({ error: "Thiếu Gemini API Key trên Server" });
+    }
+    return res.json({
+      success: true,
+      model: "gemini-3.8-live",
+      endpoint: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent",
+      apiKeyConfigured: true
+    });
+  } catch (err: any) {
+    return handleAiError(err, req, res);
+  }
+});
+
 // Route for Kế hoạch bài dạy (Giáo án CV 5512)
 app.all(["/api/generate-lesson-plan", "/api/generate-lesson-plan-file"], async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');

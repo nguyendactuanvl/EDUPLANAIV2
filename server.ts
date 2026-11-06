@@ -4,7 +4,7 @@ import fs from "fs";
 import express from "express";
 import app from "./api/index.ts";
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 async function startServer() {
   try {
@@ -13,7 +13,7 @@ async function startServer() {
     if (!isProduction) {
       const { createServer: createViteServer } = await import("vite");
       const vite = await createViteServer({
-        server: { middlewareMode: true, hmr: false },
+        server: { middlewareMode: true, hmr: false, ws: false },
         appType: "spa",
       });
       app.use(vite.middlewares);
@@ -64,8 +64,11 @@ async function startServer() {
 
     server.on("error", (err: any) => {
       console.error("Server error:", err);
-      process.exit(1);
+      if (err.code !== "EADDRINUSE") {
+        setTimeout(() => process.exit(1), 1000);
+      }
     });
+
     process.on("unhandledRejection", (reason) => {
       console.warn("Unhandled promise rejection in server:", reason);
     });
@@ -75,7 +78,6 @@ async function startServer() {
     });
   } catch (err) {
     console.error("Failed to start server:", err);
-    process.exit(1);
   }
 }
 

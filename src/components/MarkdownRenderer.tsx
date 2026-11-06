@@ -29,7 +29,8 @@ import {
   preProcessMathContent,
   rescueCodeAndNestedText,
   normalizePropositionQuotes,
-  normalizeArrayAndTableEnvironments
+  normalizeArrayAndTableEnvironments,
+  sanitizeSvgOrHtmlForReact
 } from '../lib/utils';
 
 export { 
@@ -290,7 +291,7 @@ const SvgImageRenderer: React.FC<{ svgCode: string }> = ({ svgCode }) => {
             <span>{downloadBtnLabel}</span>
           </button>
         </div>
-        <div className="pt-2 sm:pt-4" dangerouslySetInnerHTML={{ __html: svgCode }} />
+        <div className="pt-2 sm:pt-4" dangerouslySetInnerHTML={{ __html: sanitizeSvgOrHtmlForReact(svgCode) }} />
       </div>
     </div>
   );
@@ -315,23 +316,52 @@ const CustomImageRenderer: React.FC<{ cleanSrc: string; alt?: string; [key: stri
 
   const isBase64 = imgSrc.startsWith('data:image/');
 
-  // Nếu cleanSrc rỗng hoặc không hợp lệ, tự động sinh đồ thị/BBT vector SVG
+  // Nếu cleanSrc rỗng hoặc không hợp lệ:
+  // Chỉ tự động sinh đồ thị/BBT vector SVG khi altText yêu cầu RÕ RÀNG về đồ thị/BBT.
+  // Tuyệt đối KHÔNG tự động sinh đồ thị hàm số cho các câu hỏi hình học, que diêm, hình thang, bài toán thực tế.
+  const isExplicitGraph = /đồ\s*thị\s*hàm\s*số|đồ\s*thị\s*y\s*=|bảng\s*biến\s*thiên/i.test(altText);
+  const isNonGraphProblem = /que\s*diêm|hình\s*thang|tứ\s*diện|chóp|lăng\s*trụ|tam\s*giác|vuông|chữ\s*nhật|đường\s*tròn|cầu|trụ|nón|diện\s*tích|thể\s*tích/i.test(altText);
+
   if (!imgSrc || imgSrc === 'undefined' || imgSrc === 'null' || imgSrc.trim() === '' || (hasError && !isBase64)) {
     let fallbackSvg = '';
-    try {
-      const { generateFunctionGraphSvg, generateSyntheticGraphSvg, generateBbtSvg, analyzeFunctionToBbt } = require('../lib/bbtRenderer');
-      if (isBbt) {
-        const bbt = analyzeFunctionToBbt('x^3 - 3*x');
-        fallbackSvg = bbt ? generateBbtSvg(bbt) : '';
-      } else {
-        fallbackSvg = generateSyntheticGraphSvg(altText) || generateFunctionGraphSvg('x^3 - 3*x', altText);
-      }
-    } catch (e) {}
+    if (!isNonGraphProblem && (isBbt || isExplicitGraph)) {
+      try {
+        const { generateFunctionGraphSvg, generateSyntheticGraphSvg, generateBbtSvg, analyzeFunctionToBbt } = require('../lib/bbtRenderer');
+        if (isBbt) {
+          const bbt = analyzeFunctionToBbt('x^3 - 3*x');
+          fallbackSvg = bbt ? generateBbtSvg(bbt) : '';
+        } else {
+          fallbackSvg = generateSyntheticGraphSvg(altText) || generateFunctionGraphSvg('x^3 - 3*x', altText);
+        }
+      } catch (e) {}
+    }
 
     if (fallbackSvg) {
       return <SvgImageRenderer svgCode={fallbackSvg} />;
     }
-    return null;
+
+    // Đối với các câu hỏi không có đồ thị (như câu hỏi que diêm, hình học, thực tế):
+    // Hiển thị ô placeholder gọn gàng kèm nút "Cắt ảnh PDF gốc" thay vì vẽ đồ thị cubic sai.
+    return (
+      <div className="no-print my-4 p-4 rounded-xl border-2 border-dashed border-indigo-200 bg-indigo-50/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left max-w-[600px] mx-auto">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg">
+            <span className="text-xl">🖼️</span>
+          </div>
+          <div>
+            <p className="font-semibold text-slate-800 text-sm">{altText || 'Hình vẽ minh họa đề thi'}</p>
+            <p className="text-xs text-slate-500">Chèn ảnh cắt từ trang PDF gốc hoặc tải ảnh minh họa</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('open-pdf-cropper', { detail: { placeholder: altText } }))}
+          className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all shadow-xs cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+        >
+          <span>✂️ Cắt ảnh PDF gốc</span>
+        </button>
+      </div>
+    );
   }
 
   const handleCopy = async () => {

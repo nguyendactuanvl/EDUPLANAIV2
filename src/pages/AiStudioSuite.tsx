@@ -9,6 +9,7 @@ import {
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { Math3D2DLibrary } from "../components/Math3D2DLibrary";
 import { cn } from "../lib/utils";
+import { apiFetch } from "../lib/apiFetch";
 import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
 
 type TabType = "chatbot" | "image_gen" | "img2video" | "txt2video" | "science" | "math_models";
@@ -244,7 +245,7 @@ export function AiStudioSuite() {
         ...attachedFiles.map(f => `--- Tệp: ${f.name} ---\n${f.content}`)
       ].filter(Boolean).join("\n\n");
 
-      const response = await fetch("/api/chat", {
+      const response = await apiFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -376,7 +377,7 @@ export function AiStudioSuite() {
   const handleEnhancePrompt = async () => {
     if (!imgPrompt.trim()) return;
     try {
-      const res = await fetch("/api/chat", {
+      const res = await apiFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

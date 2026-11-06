@@ -1978,13 +1978,13 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
       <html>
         <head>
           <title>In Đề Kiểm Tra</title>
-          <script>
+          <${'script'}>
             window.MathJax = {
               tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
               svg: { fontCache: 'global' }
             };
-          </script>
-          <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-svg.js"></script>
+          </${'script'}>
+          <${'script'} id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-svg.js"></${'script'}>
           <style>
             body { font-family: "Times New Roman", Times, serif; line-height: 1.5; padding: 20px; }
             h2 { text-align: center; }
