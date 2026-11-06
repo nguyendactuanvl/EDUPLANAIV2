@@ -1139,8 +1139,8 @@ export const cleanVietnameseUnicode = (str: string): string => {
 export function fixSequencesAndFractions(text: string): string {
   if (!text) return '';
   
-  // Split by '$' to only replace OUTSIDE of existing math blocks
-  const parts = text.split('$');
+  // Split by math blocks to only replace OUTSIDE of existing math blocks ($...$ or $$...$$)
+  const parts = text.split(/(\$\$[\s\S]*?\$\$|\$[^\$\n]*?\$)/g);
   for (let i = 0; i < parts.length; i += 2) {
     let p = parts[i];
     if (!p) continue;
@@ -1189,7 +1189,7 @@ export function fixSequencesAndFractions(text: string): string {
     parts[i] = p;
   }
   
-  return parts.join('$');
+  return parts.join('');
 }
 
 /**
@@ -2049,8 +2049,8 @@ export const normalizeMathLatex = (rawText: string): string => {
     .replace(/\\not\s*\\equiv/g, ' \\not\\equiv ');
 
   // BƯỚC 2: Tự động khôi phục dấu backslash (\) bị mất bên trong công thức
-  // Áp dụng cho nội dung nằm trong cặp dấu $...$ hoặc các cụm từ khóa toán học đặc trưng
-  text = text.replace(/\$([^\$]+)\$/g, (match, formula) => {
+  // Áp dụng cho nội dung nằm trong cặp dấu $...$ (inline math, không ảnh hưởng display block $$...$$)
+  text = text.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)(?<!\$)\$(?!\$)/g, (match, formula) => {
     let fixed = formula
       // Khôi phục các toán tử tập hợp & quan hệ
       .replace(/(?<!\\)\b(cap|cup|in|notin|subset|supset|subseteq|supseteq|setminus|emptyset|varnothing|forall|exists)\b/g, '\\$1')
@@ -2070,8 +2070,9 @@ export const normalizeMathLatex = (rawText: string): string => {
   text = wrapNakedMathEnvironments(text);
   // Khắc phục triệt để lỗi double-backslash (\\ thay vì \) do tàn dư KaTeX cũ hoặc escape thừa:
   // Đổi \\frac, \\sqrt, \\begin, \\alpha, \\le, \\in, \\infty... thành \frac, \sqrt, \begin, \alpha, \le, \in, \infty...
+  // (CHỈ collapse trên tên lệnh chữ cái, không collapse trước ngoặc đơn ( để bảo toàn ngắt dòng \\ trong cases)
   text = text.replace(/\\{2,}([a-zA-Z]+)/g, (_m, g1) => '\\' + g1);
-  text = text.replace(/\\{2,}([\{\}\[\]\(\)\$\%])/g, (_m, g1) => '\\' + g1);
+  text = text.replace(/\$\$\s*(\\Leftrightarrow|\\Rightarrow|\\Leftarrow|=|\\iff)\s*\$\$/g, ' $1 ');
 
   return text;
 };
@@ -2206,6 +2207,9 @@ export function formatMathContent(raw?: string | null): string {
 
   // 6. Dọn dẹp rách/thừa dấu $ (vd: $$$ -> $, $$$$ -> $$)
   str = str.replace(/\${3,}/g, (m) => m.length % 2 === 1 ? '$' : '$$');
+
+  // 7. Gộp các khối display $$ liền kề nhau được nối bởi dấu tương đương / suy ra / bằng
+  str = str.replace(/\$\$\s*(\\Leftrightarrow|\\Rightarrow|\\Leftarrow|=|\\iff)\s*\$\$/g, ' $1 ');
 
   return str;
 }

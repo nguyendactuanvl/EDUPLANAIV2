@@ -147,11 +147,9 @@ export function fixTrigAndMathSyntax(text: string): string {
   // 2. Sửa các lệnh lượng giác/logarit/giới hạn/lượng giác ngược dính chữ (vd: \sinA -> \sin A, \cosB -> \cos B)
   s = s.replace(/\\(sin|cos|tan|cot|lim|ln|log|arcsin|arccos|arctan)(?!h\b)([A-Za-z])(?![a-zA-Z0-9])/g, (_m, fn, arg) => `\\${fn} ${arg}`);
 
-  // 3. Chuẩn hóa block math $$...$$ thành inline math $...$ để tránh nuốt ký tự hoặc vỡ hiển thị
-  s = s.replace(/\$\$([\s\S]*?)\$\$/g, (_m, body) => '$' + body.trim() + '$');
-  s = s.replace(/(?<=\$[^$\n]+)\$\$(?=[^$\n]+\$)/g, ' ');
-  s = s.replace(/(?<=\$[^$\n]+)\$\$(?=\s*[\=\+\-\<>]|\s*[a-zA-Z0-9\\])/g, ' ');
-  s = s.replace(/\$\$/g, '$');
+  // 3. Chuẩn hóa khoảng cách quanh dấu $$ và dọn dẹp số lượng $ thừa
+  s = s.replace(/\${3,}/g, (m) => m.length % 2 === 1 ? '$' : '$$');
+  s = s.replace(/\$\$\s*(\\Leftrightarrow|\\Rightarrow|\\Leftarrow|=|\\iff)\s*\$\$/g, ' $1 ');
 
   // 4. Dọn khoảng trắng thừa
   s = s.replace(/ {2,}/g, ' ');
@@ -263,9 +261,109 @@ export function convertLatexTabularToMarkdown(text: string): string {
   return s;
 }
 
+/**
+ * Tiền xử lý triệt để công thức Toán LaTeX và ký tự xuống dòng:
+ * 1. Thay thế toàn bộ chuỗi escaped literal \n hoặc \\n thành ký tự xuống dòng thực tế.
+ * 2. Tách các câu văn dính liền sau dấu chấm hoặc công thức toán.
+ * 3. Loại bỏ ký tự rác hoặc dấu gạch ngang dính liền vào công thức (như --- hoặc SS_n = -).
+ * 4. Quét và tự động bọc dấu $ vào các khối công thức toán bị thiếu delimiters (\frac, \sqrt, u_n, S_n...).
+ */
+export function sanitizeLatexMathAndDelimiters(raw: string): string {
+  if (!raw) return '';
+  let s = String(raw);
+
+  // 1. Xử lý triệt để ký tự escaped literal \n hoặc \\n bị in thô trên giao diện
+  // Bảo vệ các lệnh TeX bắt đầu bằng \n
+  s = s.replace(/\\neq\b/g, '___TEX_NEQ___');
+  s = s.replace(/\\notin\b/g, '___TEX_NOTIN___');
+  s = s.replace(/\\nexists\b/g, '___TEX_NEXISTS___');
+  s = s.replace(/\\nearrow\b/g, '___TEX_NEARROW___');
+  s = s.replace(/\\nabla\b/g, '___TEX_NABLA___');
+  s = s.replace(/\\nu\b/g, '___TEX_NU___');
+
+  // Đổi các literal \n hoặc \\n thành ký tự xuống dòng thực tế
+  s = s.replace(/\\\\n/g, '\n');
+  s = s.replace(/\\n/g, '\n');
+
+  // Khôi phục lại các lệnh TeX
+  s = s.replace(/___TEX_NEQ___/g, '\\neq');
+  s = s.replace(/___TEX_NOTIN___/g, '\\notin');
+  s = s.replace(/___TEX_NEXISTS___/g, '\\nexists');
+  s = s.replace(/___TEX_NEARROW___/g, '\\nearrow');
+  s = s.replace(/___TEX_NABLA___/g, '\\nabla');
+  s = s.replace(/___TEX_NU___/g, '\\nu');
+
+  // 2. Tách các câu văn dính liền sau dấu chấm hoặc công thức
+  s = s.replace(/\.([A-ZÀ-Ỹ])/g, '. $1');
+  s = s.replace(/\.\s*\n(?!\n)/g, '.\n\n');
+
+  // 3. Loại bỏ ký tự rác hoặc dấu gạch ngang dính liền vào công thức (--- hoặc SS_n = -)
+  s = s.replace(/\bSS_([a-zA-Z0-9]+|\{[^}]+\})/g, 'S_$1');
+  s = s.replace(/\buu_([a-zA-Z0-9]+|\{[^}]+\})/g, 'u_$1');
+  s = s.replace(/(?:^|\n)\s*(?:---|--)\s*([a-zA-ZÀ-ỹ])/g, '\n- $1');
+  s = s.replace(/(?<=\$\$|\$)\s*---+\s*$/gm, '');
+  s = s.replace(/\s*---\s*$/gm, '');
+  s = s.replace(/-\s*--\s*(?=\$\$|\$|\n|$)/g, '');
+  s = s.replace(/([uSxya-zA-Z]\b|S_|u_)\s*=\s*-\s*(?=[a-zA-Z0-9])/g, '$1 = -');
+
+  // 4. Quét và tự động bọc dấu $ vào các khối công thức toán học bị thiếu delimiters
+  const parts = s.split(/(\$\$[\s\S]*?\$\$|\$[^\$\n]*?\$)/g);
+  for (let i = 0; i < parts.length; i++) {
+    // Chỉ xử lý các đoạn nằm NGOÀI cặp dấu $ (chỉ số chẵn)
+    if (i % 2 === 0 && parts[i]) {
+      let p = parts[i];
+      const mathTokens: string[] = [];
+      const saveMath = (expr: string) => {
+        mathTokens.push(expr);
+        return `\x02MATH${mathTokens.length - 1}\x03`;
+      };
+
+      // a. Bọc chuỗi cases liên tiếp hoặc đơn lẻ
+      p = p.replace(/(?<!\$)(?:(?:\\begin\s*\{cases\*?\}[\s\S]*?\\end\s*\{cases\*?\})(?:\s*\\(?:Leftrightarrow|Rightarrow|Leftarrow|iff|implies)\s*\\begin\s*\{cases\*?\}[\s\S]*?\\end\s*\{cases\*?\})+)(?!\$)/g, (m) => saveMath(`\n\n$$\n${m.trim()}\n$$\n\n`));
+      p = p.replace(/(?<!\$)(?:\\begin\s*\{(?:cases|aligned|matrix|pmatrix|bmatrix)\*?\}[\s\S]*?\\end\s*\{(?:cases|aligned|matrix|pmatrix|bmatrix)\*?\})(?!\$)/g, (m) => saveMath(`\n\n$$\n${m.trim()}\n$$\n\n`));
+
+      // b. Bọc biểu thức chứa \frac{...}{...} hoặc \sqrt{...}
+      p = p.replace(/(?<!\$)\\frac\{[^{}]*\}\{[^{}]*\}(?!\$)/g, (match) => saveMath(`$${match}$`));
+      p = p.replace(/(?<!\$)\\sqrt(?:\[[^\]]*\])?\{[^{}]*\}(?!\$)/g, (match) => saveMath(`$${match}$`));
+
+      // c. Bọc biểu thức cấp số cộng / cấp số nhân / dãy số (u_n = ..., S_n = ...) không bị ngắt ở dấu ba chấm
+      p = p.replace(/(?<![\$\\\w])\b([uS]_(?:[a-zA-Z0-9]+|\{[^}]+\})\s*=\s*(?:\\(?:dots|cdots|ldots)|\.\.\.|[0-9a-zA-Z\(\)\[\]\{\}\+\-\*\/\^\_\s]|\\frac\{[^{}]*\}\{[^{}]*\})+?)(?=[,;!?]|\s+(?:được|là|tính|theo|bằng|với|khi|thì|tại|trong|ta(?:\s+được)?|đáp\s+án|công|sai|số|[A-D][\.\:\)])|\n|$)(?!\$)/g, (match) => {
+        let clean = match.trim();
+        if (clean.includes('$')) return match;
+        return saveMath(`$${clean}$`);
+      });
+
+      // d. Bọc các biến dãy số đơn lẻ u_1, u_2, (u_n), S_n ngoài công thức
+      p = p.replace(/(?<![\$\\\w])(\(?u_[0-9a-zA-Z]+\)?|S_[0-9a-zA-Z]+)(?![\$\w\}])/g, (match) => saveMath(`$${match}$`));
+
+      // e. Bọc các hệ thức so sánh / tập hợp: x \in \mathbb{R}, a \le b, x \ge 0, a \ne b
+      p = p.replace(/(?<![\$\\\w])\b([a-zA-Z0-9_]+\s*(?:\\in|\\notin|\\le|\\ge|\\ne|\\subset)\s*[^,\n\.\;]+)(?!\$)/g, (match) => saveMath(`$${match.trim()}$`));
+
+      // f. Bọc các ký hiệu toán đơn lẻ bị trần: \infty, \pi, \alpha, \beta, \Delta
+      p = p.replace(/(?<![\$\\\w])\\(?:alpha|beta|gamma|delta|pi|theta|sigma|omega|Delta|Sigma|infty|pm|mp)\b(?!\$)/g, (match) => saveMath(`$${match}$`));
+
+      // Khôi phục tất cả các khối toán đã được bọc an toàn (giải nén triệt để nếu có lồng nhau)
+      while (p.includes('\x02MATH')) {
+        p = p.replace(/\x02MATH(\d+)\x03/g, (_, idx) => mathTokens[Number(idx)]);
+      }
+
+      parts[i] = p;
+    }
+  }
+  s = parts.join('');
+
+  // 5. Gộp các khối $$ liền kề nhau được nối bởi dấu tương đương / suy ra / bằng
+  s = s.replace(/\$\$\s*(\\Leftrightarrow|\\Rightarrow|\\Leftarrow|=|\\iff)\s*\$\$/g, ' $1 ');
+
+  return s;
+}
+
 export function normalizeMathText(text: any): string {
   if (text === null || text === undefined) return '';
   if (typeof text !== 'string') text = String(text);
+
+  // Tiền xử lý dọn rác và unescape \n, bọc công thức trần
+  text = sanitizeLatexMathAndDelimiters(text);
 
   // 0. Chuyển đổi môi trường LaTeX tabular sang Markdown table
   text = convertLatexTabularToMarkdown(text);
@@ -290,7 +388,6 @@ export function normalizeMathText(text: any): string {
   // Đổi \\frac, \\sqrt, \\begin, \\alpha, \\le, \\in... thành \frac, \sqrt, \begin, \alpha, \le, \in...
   // Bảo vệ dấu \\ ngắt dòng phương trình trong \begin{cases}...\end{cases} hoặc matrix/aligned
   t = t.replace(/\\{2,}([a-zA-Z]+)/g, (_m, g1) => '\\' + g1);
-  t = t.replace(/\\{2,}([\{\}\[\]\(\)\$\%])/g, (_m, g1) => '\\' + g1);
   t = t.replace(/\\{3,}/g, '\\\\');
 
   // Loại bỏ triệt để các thuộc tính sự kiện inline HTML nguy hiểm (onclick, onmouseover...) gây lỗi React event listener string
@@ -501,82 +598,81 @@ export function rescueTrappedVietnameseFromMath(text: string): string {
  */
 export function wrapNakedMathInDocument(text: string): string {
   if (!text) return '';
-  let s = text;
+  const parts = text.split(/(\$\$[\s\S]*?\$\$|\$[^\$\n]*?\$)/g);
+  for (let i = 0; i < parts.length; i += 2) {
+    let s = parts[i];
+    if (!s) continue;
 
-  // 1. Tự động bọc các tập hợp trần trụi: A = {x \in R | ...} hoặc B = {x \in \mathbb{R} | ...}
-  s = s.replace(/(?<![\$\w])([A-Z]\s*=\s*)\\?\{\s*([a-zA-Z]\s*(?:\\in|in)\s*(?:\\mathbb\{[A-Z]\}|[A-Z]|R|N|Z|Q)\s*(?:\\mid|\|)\s*(?:\{[^{}]*\}|[^\}\n])+?)\\?\}(?![\$\w])/g, (_m, name, body) => {
-    let cleanBody = body
-      .replace(/(?:\\in|in)\s*R\b/g, '\\in \\mathbb{R}')
-      .replace(/(?:\\in|in)\s*Z\b/g, '\\in \\mathbb{Z}')
-      .replace(/(?:\\in|in)\s*N\b/g, '\\in \\mathbb{N}')
-      .replace(/(?:\\in|in)\s*Q\b/g, '\\in \\mathbb{Q}')
-      .replace(/\|/g, '\\mid ')
-      .replace(/\\geq\b/g, '\\ge ')
-      .replace(/\\leq\b/g, '\\le ')
-      .trim();
-    return `$${name}\\{${cleanBody}\\}$`;
-  });
-
-  // 1.5 Tự động bọc phép toán tập hợp: A \cap B, A \cup B, A \setminus B
-  s = s.replace(/(?<![\$\w])([A-Z]\s*\\(?:cap|cup|setminus)\s*[A-Z])(?![\$\w])/g, '$$$1$$');
-
-  // 2. Tự động bọc điều kiện trong ngoặc đơn chứa \neq hoặc \in: (x \neq \frac{\pi}{2} + k\pi, k \in \mathbb{Z})
-  s = s.replace(/(?<![\$\w])\(\s*([a-zA-Z0-9_\+\-\*\/\s\\]*?(?:\\neq|\\ge|\\le|\\in)[^$\n\(\)]+?)\s*\)(?![\$\w])/g, '($$$1$$)');
-
-  // 3. Tự động bọc các phương án trắc nghiệm A., B., C., D. đứng đầu dòng hoặc theo sau nhãn
-  // Ví dụ: A. x - 1 \ge 0  ->  A. $x - 1 \ge 0$
-  //        **A.** a + b \le 0  ->  **A.** $a + b \le 0$
-  //        A. P = \sin x  ->  A. $P = \sin x$
-  s = s.replace(/(^|\n|\r)[ \t]*((?:[-*−]\s*)?(?:\*{0,2})[A-Da-d][\.\:\)](?:\*{0,2}))[ \t]+([^\n\r]+)/g, (fullLine, prefix, label, content) => {
-    let trimmed = content.trim();
-    // Nếu nội dung đã có dấu $ hoặc $$ hoặc là code block hoặc bảng
-    if (trimmed.includes('$') || trimmed.startsWith('|') || trimmed.startsWith('```')) {
-      return fullLine;
-    }
-    // Bỏ qua các dấu sao markdown bold/italic khi kiểm tra ký hiệu toán
-    const strippedOfMarkdown = trimmed.replace(/\*+/g, '').trim();
-    if (!strippedOfMarkdown) return fullLine;
-
-    // Không bao giờ bọc dấu $ cho các tiêu đề mục sư phạm hoặc câu văn tiếng Việt
-    if (/^(?:Mục\s*tiêu|Nội\s*dung|Sản\s*phẩm|Tổ\s*chức|Khẳng\s*định|Đạo\s*hàm|Hàm\s*số|Giá\s*trị|Phương\s*trình|Bất\s*phương\s*trình|Lời\s*giải|Đáp\s*án|Đúng|Sai|Do\s*đó|Vì|Vậy|Ta\s*có|Khi|Nếu|Gọi)/i.test(strippedOfMarkdown)) {
-      return fullLine;
-    }
-
-    const hasVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(strippedOfMarkdown);
-    if (hasVietnamese) {
-      return fullLine;
-    }
-
-    const hasMathSymbol = /[\\^_=><\+\-\/]|\b(?:le|ge|leq|geq|neq|sin|cos|tan|cot|sqrt|frac)\b|[0-9a-zA-Z]\s*(?:<=|>=|<|>|=)/.test(strippedOfMarkdown);
-    if (hasMathSymbol) {
-      let cleanMath = strippedOfMarkdown
+    // 1. Tự động bọc các tập hợp trần trụi: A = {x \in R | ...} hoặc B = {x \in \mathbb{R} | ...}
+    s = s.replace(/(?<![\$\w])([A-Z]\s*=\s*)\\?\{\s*([a-zA-Z]\s*(?:\\in|in)\s*(?:\\mathbb\{[A-Z]\}|[A-Z]|R|N|Z|Q)\s*(?:\\mid|\|)\s*(?:\{[^{}]*\}|[^\}\n])+?)\\?\}(?![\$\w])/g, (_m, name, body) => {
+      let cleanBody = body
+        .replace(/(?:\\in|in)\s*R\b/g, '\\in \\mathbb{R}')
+        .replace(/(?:\\in|in)\s*Z\b/g, '\\in \\mathbb{Z}')
+        .replace(/(?:\\in|in)\s*N\b/g, '\\in \\mathbb{N}')
+        .replace(/(?:\\in|in)\s*Q\b/g, '\\in \\mathbb{Q}')
+        .replace(/\|/g, '\\mid ')
         .replace(/\\geq\b/g, '\\ge ')
         .replace(/\\leq\b/g, '\\le ')
-        .replace(/\\ge([0-9a-zA-Z])/g, '\\ge $1')
-        .replace(/\\le([0-9a-zA-Z])/g, '\\le $1')
-        .replace(/\\neq([0-9a-zA-Z])/g, '\\neq $1');
-      return `${prefix}${label} $${cleanMath}$`;
-    }
-    return fullLine;
-  });
+        .trim();
+      return `$${name}\\{${cleanBody}\\}$`;
+    });
 
-  // 4. Tự động bọc phương trình đứng độc lập trong câu hỏi
-  // ví dụ: "y = \frac{1}{\sqrt{x - 1}}" -> "$y = \frac{1}{\sqrt{x - 1}}$"
-  //        "y = f(x)" -> "$y = f(x)$"
-  //        "P = \frac{\sin 2x + \sin x}{1 + \cos x + \cos 2x}" -> "$P = \frac{\sin 2x + \sin x}{1 + \cos x + \cos 2x}$"
-  s = s.replace(/(?<![\$\w])\b([yfxP]\s*=\s*(?:\\(?:frac|sqrt)|[0-9a-zA-Z\(\)\+\-\*\/\^\_]+)(?:\{[^{}]*\}|[0-9a-zA-Z\(\)\+\-\*\/\^\_\s\\]*?))(?=[,;!?]|\s+[a-zà-ỹÀ-Ỹ]|\s+(?:với|khi|thì|tại|trong|ta\s+được|đáp\s+án|[A-D][\.\:\)])|\n|$)/g, (_m, expr) => {
-    let clean = expr.trim();
-    if (clean.includes('$')) return expr;
-    if (/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(clean)) return expr;
-    return `$${clean}$`;
-  });
+    // 1.5 Tự động bọc phép toán tập hợp: A \cap B, A \cup B, A \setminus B
+    s = s.replace(/(?<![\$\w])([A-Z]\s*\\(?:cap|cup|setminus)\s*[A-Z])(?![\$\w])/g, '$$$1$$');
 
-  // 4.5. Tự động bọc $...$ cho các môi trường toán trần trụi: \begin{cases}...\end{cases}, f(x) = \begin{cases}...\end{cases}
-  s = s.replace(/(?<!\$)(?:([a-zA-Z]\s*(?:\([a-zA-Z0-9,\s]+\))?\s*=\s*)?(\\begin\s*\{(?:cases|aligned|matrix|pmatrix|bmatrix)\}[\s\S]*?\\end\s*\{(?:cases|aligned|matrix|pmatrix|bmatrix)\}))(?!\$)/g, (_m, prefix, env) => {
-    return `$${(prefix || '')}${env}$`;
-  });
+    // 2. Tự động bọc điều kiện trong ngoặc đơn chứa \neq hoặc \in: (x \neq \frac{\pi}{2} + k\pi, k \in \mathbb{Z})
+    s = s.replace(/(?<![\$\w])\(\s*([a-zA-Z0-9_\+\-\*\/\s\\]*?(?:\\neq|\\ge|\\le|\\in)[^$\n\(\)]+?)\s*\)(?![\$\w])/g, '($$$1$$)');
 
-  return s;
+    // 3. Tự động bọc các phương án trắc nghiệm A., B., C., D. đứng đầu dòng hoặc theo sau nhãn
+    s = s.replace(/(^|\n|\r)[ \t]*((?:[-*−]\s*)?(?:\*{0,2})[A-Da-d][\.\:\)](?:\*{0,2}))[ \t]+([^\n\r]+)/g, (fullLine, prefix, label, content) => {
+      let trimmed = content.trim();
+      if (trimmed.includes('$') || trimmed.startsWith('|') || trimmed.startsWith('```')) {
+        return fullLine;
+      }
+      const strippedOfMarkdown = trimmed.replace(/\*+/g, '').trim();
+      if (!strippedOfMarkdown) return fullLine;
+
+      if (/^(?:Mục\s*tiêu|Nội\s*dung|Sản\s*phẩm|Tổ\s*chức|Khẳng\s*định|Đạo\s*hàm|Hàm\s*số|Giá\s*trị|Phương\s*trình|Bất\s*phương\s*trình|Lời\s*giải|Đáp\s*án|Đúng|Sai|Do\s*đó|Vì|Vậy|Ta\s*có|Khi|Nếu|Gọi)/i.test(strippedOfMarkdown)) {
+        return fullLine;
+      }
+
+      const hasVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(strippedOfMarkdown);
+      if (hasVietnamese) {
+        return fullLine;
+      }
+
+      const hasMathSymbol = /[\\^_=><\+\-\/]|\b(?:le|ge|leq|geq|neq|sin|cos|tan|cot|sqrt|frac)\b|[0-9a-zA-Z]\s*(?:<=|>=|<|>|=)/.test(strippedOfMarkdown);
+      if (hasMathSymbol) {
+        let cleanMath = strippedOfMarkdown
+          .replace(/\\geq\b/g, '\\ge ')
+          .replace(/\\leq\b/g, '\\le ')
+          .replace(/\\ge([0-9a-zA-Z])/g, '\\ge $1')
+          .replace(/\\le([0-9a-zA-Z])/g, '\\le $1')
+          .replace(/\\neq([0-9a-zA-Z])/g, '\\neq $1');
+        return `${prefix}${label} $${cleanMath}$`;
+      }
+      return fullLine;
+    });
+
+    // 4. Tự động bọc phương trình đứng độc lập trong câu hỏi
+    s = s.replace(/(?<![\$\w])\b([yfxP]\s*=\s*(?:\\(?:frac|sqrt)|[0-9a-zA-Z\(\)\+\-\*\/\^\_]+)(?:\{[^{}]*\}|[0-9a-zA-Z\(\)\+\-\*\/\^\_\s\\]*?))(?=[,;!?]|\s+[a-zà-ỹÀ-Ỹ]|\s+(?:với|khi|thì|tại|trong|ta\s+được|đáp\s+án|[A-D][\.\:\)])|\n|$)/g, (_m, expr) => {
+      let clean = expr.trim();
+      if (clean.includes('$')) return expr;
+      if (/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(clean)) return expr;
+      return `$${clean}$`;
+    });
+
+    // 4.5. Tự động bọc display $$...$$ cho các môi trường toán trần trụi: \begin{cases}...\end{cases}, f(x) = \begin{cases}...\end{cases}
+    s = s.replace(/(?<!\$)(?:([a-zA-Z]\s*(?:\([a-zA-Z0-9,\s]+\))?\s*=\s*)?(\\begin\s*\{(?:cases|aligned|matrix|pmatrix|bmatrix)\*?\}[\s\S]*?\\end\s*\{(?:cases|aligned|matrix|pmatrix|bmatrix)\*?\}))(?!\$)/g, (_m, prefix, env) => {
+      return `\n\n$$\n${(prefix || '')}${env}\n$$\n\n`;
+    });
+
+    parts[i] = s;
+  }
+  let res = parts.join('');
+  res = res.replace(/\$\$\s*(\\Leftrightarrow|\\Rightarrow|\\Leftarrow|=|\\iff)\s*\$\$/g, ' $1 ');
+
+  return res;
 }
 
 /**

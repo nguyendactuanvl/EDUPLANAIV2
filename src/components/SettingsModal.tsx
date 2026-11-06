@@ -125,7 +125,7 @@ export function SettingsModal({ isOpen, onClose, defaultTab }: SettingsModalProp
                   className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-slate-800 font-mono text-sm"
                 />
                 <p className="mt-2 text-xs text-slate-500 leading-relaxed">
-                  🔒 <strong>An toàn:</strong> Key này được lưu trữ cục bộ riêng trên trình duyệt máy của Thầy/Cô. Khi học sinh làm bài thi qua link, mã key này <strong>hoàn toàn không được gửi đi</strong> và không thể bị trích xuất.
+                  🔒 <strong>Ghi chú:</strong> Khóa API lưu cục bộ trên thiết bị, kết nối trực tiếp đến Google AI Studio.
                 </p>
                 
                 <div className="mt-4 p-4 bg-emerald-50/70 border border-emerald-100 rounded-xl text-xs text-emerald-900 space-y-1.5">

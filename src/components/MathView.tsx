@@ -106,7 +106,7 @@ const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
 
   const sharedComponents = {
     p: ({ children, ...props }: any) => (
-      <div className="my-2.5 leading-relaxed" {...cleanProps(props)}>
+      <div className="my-2.5 leading-relaxed whitespace-pre-line" {...cleanProps(props)}>
         {children}
       </div>
     ),
@@ -273,7 +273,7 @@ export const MathView: React.FC<MathViewProps> = React.memo(({ content, value, t
   return (
     <div
       ref={containerRef as React.RefObject<HTMLDivElement>}
-      className={className || "math-view-container font-serif leading-relaxed text-slate-800"}
+      className={className || "math-view-container font-serif leading-relaxed text-slate-800 whitespace-pre-line"}
     >
       <Markdown
         remarkPlugins={REMARK_PLUGINS}

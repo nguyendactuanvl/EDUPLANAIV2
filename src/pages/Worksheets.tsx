@@ -3722,7 +3722,7 @@ export function Worksheets() {
                                       </button>
                                     </div>
                                   </div>
-                                  <div className="text-slate-800">
+                                  <div className="text-slate-800 whitespace-pre-line">
                                     <MathView content={q.solution || q.explanation || "Chưa có lời giải chi tiết cho câu hỏi này."} />
                                   </div>
                                 </div>
@@ -3761,8 +3761,8 @@ export function Worksheets() {
                                 <div style={{ fontWeight: 'bold', color: '#0f172a', marginBottom: '3pt', fontSize: '11pt' }}>
                                   💡 Lời giải chi tiết:
                                 </div>
-                                <div style={{ fontSize: '11pt', color: '#1e293b' }}>
-                                  <MarkdownRenderer className="markdown-body inline-block" content={fixMath(q.solution || q.explanation || '')} />
+                                <div className="whitespace-pre-line" style={{ fontSize: '11pt', color: '#1e293b' }}>
+                                  <MarkdownRenderer className="markdown-body inline-block whitespace-pre-line" content={fixMath(q.solution || q.explanation || '')} />
                                 </div>
                               </div>
                             )}
@@ -4078,13 +4078,13 @@ export function Worksheets() {
                               {isSolutionOpen('doc-solution') && (
                                 <div 
                                   style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '16px', marginTop: '10px' }}
-                                  className="text-slate-800 text-sm leading-relaxed not-prose"
+                                  className="text-slate-800 text-sm leading-relaxed not-prose whitespace-pre-line"
                                 >
                                   <div className="font-bold text-slate-900 mb-2 flex items-center gap-1.5 text-base">
                                     <span>💡 Lời giải chi tiết & Hướng dẫn chấm:</span>
                                   </div>
-                                  <div className="text-slate-800">
-                                    <MarkdownRenderer content={fixMath(solutionDocContent)} />
+                                  <div className="text-slate-800 whitespace-pre-line">
+                                    <MarkdownRenderer className="whitespace-pre-line" content={fixMath(solutionDocContent)} />
                                   </div>
                                 </div>
                               )}

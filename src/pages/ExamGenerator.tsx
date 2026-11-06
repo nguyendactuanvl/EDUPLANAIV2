@@ -4201,8 +4201,8 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                                   </button>
                                 </div>
                               </div>
-                              <div className="text-slate-800">
-                                <MarkdownRenderer content={fixMath(q.solution || q.explanation || "Chưa có lời giải chi tiết cho câu hỏi này.")} />
+                              <div className="text-slate-800 whitespace-pre-line">
+                                <MarkdownRenderer className="whitespace-pre-line" content={fixMath(q.solution || q.explanation || "Chưa có lời giải chi tiết cho câu hỏi này.")} />
                               </div>
                             </div>
                           )}

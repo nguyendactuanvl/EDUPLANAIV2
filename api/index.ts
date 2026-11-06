@@ -366,29 +366,47 @@ function getSystemAiClient() {
   throw new Error("Ứng dụng quy định 100% người dùng tự nhập Gemini API Key cá nhân. Không sử dụng API Key mặc định của hệ thống.");
 }
 
-function getAiClient(req: any) {
-  const authHeader = req.headers['authorization'] as string;
+function getAiApiKey(req?: any): string {
+  const authHeader = req?.headers?.['authorization'] as string;
   let customKey = '';
   if (authHeader && authHeader.startsWith('Bearer ')) {
     customKey = authHeader.substring(7);
   } else {
-    customKey = req.headers['x-gemini-api-key'] as string;
+    customKey = (req?.headers?.['x-gemini-api-key'] as string) || req?.body?.apiKey || '';
   }
-  
+
   if (isValidGeminiApiKey(customKey)) {
     try { customKey = decodeURIComponent(customKey); } catch (e) {}
-    customKey = customKey.replace(/[^\x20-\x7E]/g, '').trim();
-    return new GoogleGenAI({ 
-      apiKey: customKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build'
-        }
-      }
-    });
+    return customKey.replace(/[^\x20-\x7E]/g, '').trim();
   }
-  
-  throw new Error("YÊU CẦU NHẬP API KEY CÁ NHÂN: Ứng dụng quy định 100% người dùng tự dán Gemini API Key cá nhân của mình để sử dụng. Vui lòng dán mã API Key cá nhân vào Cài đặt.");
+
+  // Flexible environment keys: GEMINI_API_KEY or VITE_GEMINI_API_KEY
+  const envKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.VITE_GEMINI_KEY_1 || '';
+  if (isValidGeminiApiKey(envKey)) {
+    try { return decodeURIComponent(envKey).trim(); } catch (e) {}
+    return envKey.trim();
+  }
+
+  return '';
+}
+
+function getAiClient(req?: any) {
+  const apiKey = getAiApiKey(req);
+  if (!apiKey) {
+    const err: any = new Error("Missing Gemini API Key. Vui lòng kiểm tra biến môi trường.");
+    err.status = 400;
+    err.isMissingKey = true;
+    throw err;
+  }
+
+  return new GoogleGenAI({ 
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build'
+      }
+    }
+  });
 }
 
 function handleAiError(error: any, req: any, res: any) {
@@ -396,14 +414,17 @@ function handleAiError(error: any, req: any, res: any) {
   const lowerMsg = errorMsg.toLowerCase();
   const isCustomKey = !!req.headers['x-gemini-api-key'] || (!!req.headers['authorization'] && (req.headers['authorization'] as string).startsWith('Bearer '));
 
-  if (lowerMsg.includes("api_key_invalid") || lowerMsg.includes("api key not valid")) {
-    return res.status(400).json({ error: "API Key không hợp lệ. Vui lòng kiểm tra lại Cài đặt hệ thống và đảm bảo API Key chính xác." });
+  if (
+    error?.isMissingKey ||
+    error?.status === 400 ||
+    lowerMsg.includes("missing gemini api key") ||
+    lowerMsg.includes("yêu cầu gemini api key")
+  ) {
+    return res.status(400).json({ error: "Missing Gemini API Key. Vui lòng kiểm tra biến môi trường." });
   }
-  if (lowerMsg.includes("unauthenticated") || lowerMsg.includes("service account is deleted") || error?.status === 401 || lowerMsg.includes("account_state_invalid")) {
-    if (!isCustomKey) {
-        return res.status(401).json({ error: "Tài khoản API mặc định của hệ thống đang tạm ngưng. Để tiếp tục sử dụng ứng dụng, thầy/cô vui lòng bấm vào mục \"Nhập mã API key\" ở thanh menu bên trái và điền API Key cá nhân của mình (từ Google AI Studio). Xin lỗi thầy/cô vì sự bất tiện này!" });
-    }
-    return res.status(401).json({ error: "UNAUTHENTICATED: Tài khoản dịch vụ liên kết với API Key cá nhân của bạn đã bị vô hiệu hóa hoặc không hợp lệ." });
+
+  if (lowerMsg.includes("api_key_invalid") || lowerMsg.includes("api key not valid") || lowerMsg.includes("api key expired") || lowerMsg.includes("unauthenticated") || error?.status === 401) {
+    return res.status(401).json({ error: "API Key không hợp lệ hoặc không xác thực được (Lỗi 401). Vui lòng kiểm tra lại biến môi trường GEMINI_API_KEY / VITE_GEMINI_API_KEY hoặc cài đặt API Key cá nhân." });
   }
 
   if (lowerMsg.includes("suspended") || lowerMsg.includes("permission_denied") || error?.status === 403) {
@@ -414,10 +435,7 @@ function handleAiError(error: any, req: any, res: any) {
   }
 
   if (lowerMsg.includes("resource_exhausted") || lowerMsg.includes("quota") || lowerMsg.includes("429") || error?.status === 429) {
-    if (!isCustomKey) {
-      return res.status(429).json({ error: "Hệ thống AI đang quá tải hoặc tạm thời hết lượt yêu cầu miễn phí trong ngày (Lỗi 429). Vui lòng thử lại sau ít phút hoặc nhập API Key cá nhân trong Cài đặt hệ thống." });
-    }
-    return res.status(429).json({ error: "API Key cá nhân của thầy/cô đã vượt quá giới hạn số lượt yêu cầu của Google (Lỗi 429 - Quota Exceeded). Vui lòng thử lại sau ít phút hoặc đổi sang API Key cá nhân khác." });
+    return res.status(429).json({ error: "Hệ thống AI đang quá tải hoặc tạm thời hết lượt yêu cầu (Lỗi 429 - Quota Exceeded). Hệ thống đã tự động thử các model dự phòng. Vui lòng thử lại sau ít phút hoặc đổi sang API Key khác." });
   }
   if (
     lowerMsg.includes("503") || 
@@ -428,10 +446,7 @@ function handleAiError(error: any, req: any, res: any) {
     lowerMsg.includes("overloaded") || 
     lowerMsg.includes("try again later")
   ) {
-    if (!isCustomKey) {
-        return res.status(429).json({ error: "Mô hình AI hiện tại từ Google đang có lưu lượng truy cập cao đột biến (High Demand). Hệ thống đã tự động thử các mô hình dự phòng, thầy/cô vui lòng bấm 'Tạo lại' sau vài giây hoặc nhập API Key cá nhân trong Cài đặt (miễn phí 100%)." });
-    }
-    return res.status(429).json({ error: "Mô hình AI của Google hiện đang có lượng truy cập cao đột biến (High Demand). Thầy/cô vui lòng đợi vài giây và bấm 'Thử lại' hoặc đổi sang API Key cá nhân khác." });
+    return res.status(503).json({ error: "Mô hình AI hiện tại từ Google đang có lưu lượng truy cập cao đột biến (High Demand). Hệ thống đã tự động thử các mô hình dự phòng, thầy/cô vui lòng bấm 'Tạo lại' sau vài giây hoặc nhập API Key cá nhân trong Cài đặt." });
   }
 
   if (lowerMsg.includes("fetch failed") || lowerMsg.includes("failed to fetch") || lowerMsg.includes("networkerror") || lowerMsg.includes("econnreset")) {
@@ -682,10 +697,85 @@ function repairTruncatedJson(str: string): string {
 export function cleanLatexMathField(str: any): string {
   if (str === null || str === undefined) return '';
   let s = String(str);
+
+  // 1. Unescape escaped literal \n
+  s = s.replace(/\\neq\b/g, '___TEX_NEQ___');
+  s = s.replace(/\\notin\b/g, '___TEX_NOTIN___');
+  s = s.replace(/\\nexists\b/g, '___TEX_NEXISTS___');
+  s = s.replace(/\\nearrow\b/g, '___TEX_NEARROW___');
+  s = s.replace(/\\\\n/g, '\n');
+  s = s.replace(/\\n/g, '\n');
+  s = s.replace(/___TEX_NEQ___/g, '\\neq');
+  s = s.replace(/___TEX_NOTIN___/g, '\\notin');
+  s = s.replace(/___TEX_NEXISTS___/g, '\\nexists');
+  s = s.replace(/___TEX_NEARROW___/g, '\\nearrow');
+
+  // 2. Tách câu sau dấu chấm
+  s = s.replace(/\.([A-ZÀ-Ỹ])/g, '. $1');
+  s = s.replace(/\.\s*\n(?!\n)/g, '.\n\n');
+
+  // 3. Sửa lỗi SS_n -> S_n, uu_n -> u_n, và dấu gạch ngang rác
+  s = s.replace(/\bSS_([a-zA-Z0-9]+|\{[^}]+\})/g, 'S_$1');
+  s = s.replace(/\buu_([a-zA-Z0-9]+|\{[^}]+\})/g, 'u_$1');
+  s = s.replace(/(?:^|\n)\s*(?:---|--)\s*([a-zA-ZÀ-ỹ])/g, '\n- $1');
+  s = s.replace(/(?<=\$\$|\$)\s*---+\s*$/gm, '');
+  s = s.replace(/\s*---\s*$/gm, '');
+  s = s.replace(/-\s*--\s*(?=\$\$|\$|\n|$)/g, '');
+  s = s.replace(/([uSxya-zA-Z]\b|S_|u_)\s*=\s*-\s*(?=[a-zA-Z0-9])/g, '$1 = -');
+
+  // 4. Chuẩn hóa dfrac và double backslash (chỉ collapse trên tên lệnh chữ cái, không collapse trước ngoặc)
   s = s.replace(/\\dfrac\b/g, '\\frac');
   s = s.replace(/\\{2,}([a-zA-Z]+)/g, (_m, g1) => '\\' + g1);
-  s = s.replace(/\\{2,}([\{\}\[\]\(\)\$\%])/g, (_m, g1) => '\\' + g1);
   s = s.replace(/\\{3,}/g, '\\\\');
+
+  // 5. Bọc các công thức toán trần thiếu dấu $
+  const parts = s.split(/(\$\$[\s\S]*?\$\$|\$[^\$\n]*?\$)/g);
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 0 && parts[i]) {
+      let p = parts[i];
+      const mathTokens: string[] = [];
+      const saveMath = (expr: string) => {
+        mathTokens.push(expr);
+        return `\x02MATH${mathTokens.length - 1}\x03`;
+      };
+
+      // a. Bọc chuỗi cases liên tiếp hoặc đơn lẻ
+      p = p.replace(/(?<!\$)(?:(?:\\begin\s*\{cases\*?\}[\s\S]*?\\end\s*\{cases\*?\})(?:\s*\\(?:Leftrightarrow|Rightarrow|Leftarrow|iff|implies)\s*\\begin\s*\{cases\*?\}[\s\S]*?\\end\s*\{cases\*?\})+)(?!\$)/g, (m) => saveMath(`\n\n$$\n${m.trim()}\n$$\n\n`));
+      p = p.replace(/(?<!\$)(?:\\begin\s*\{(?:cases|aligned|matrix|pmatrix|bmatrix)\*?\}[\s\S]*?\\end\s*\{(?:cases|aligned|matrix|pmatrix|bmatrix)\*?\})(?!\$)/g, (m) => saveMath(`\n\n$$\n${m.trim()}\n$$\n\n`));
+
+      // b. Bọc biểu thức chứa \frac hoặc \sqrt
+      p = p.replace(/(?<!\$)\\frac\{[^{}]*\}\{[^{}]*\}(?!\$)/g, (match) => saveMath(`$${match}$`));
+      p = p.replace(/(?<!\$)\\sqrt(?:\[[^\]]*\])?\{[^{}]*\}(?!\$)/g, (match) => saveMath(`$${match}$`));
+
+      // c. Bọc biểu thức cấp số cộng / cấp số nhân / dãy số (u_n = ..., S_n = ...) không ngắt ở dấu ba chấm
+      p = p.replace(/(?<![\$\\\w])\b([uS]_(?:[a-zA-Z0-9]+|\{[^}]+\})\s*=\s*(?:\\(?:dots|cdots|ldots)|\.\.\.|[0-9a-zA-Z\(\)\[\]\{\}\+\-\*\/\^\_\s]|\\frac\{[^{}]*\}\{[^{}]*\})+?)(?=[,;!?]|\s+(?:được|là|tính|theo|bằng|với|khi|thì|tại|trong|ta(?:\s+được)?|đáp\s+án|công|sai|số|[A-D][\.\:\)])|\n|$)(?!\$)/g, (match) => {
+        let clean = match.trim();
+        if (clean.includes('$')) return match;
+        return saveMath(`$${clean}$`);
+      });
+
+      // d. Bọc các biến dãy số đơn lẻ u_1, u_2, (u_n), S_n khi đứng ngoài công thức
+      p = p.replace(/(?<![\$\\\w])(\(?u_[0-9a-zA-Z]+\)?|S_[0-9a-zA-Z]+)(?![\$\w\}])/g, (match) => saveMath(`$${match}$`));
+
+      // e. Bọc các hệ thức so sánh / tập hợp: x \in \mathbb{R}, a \le b, x \ge 0, a \ne b
+      p = p.replace(/(?<![\$\\\w])\b([a-zA-Z0-9_]+\s*(?:\\in|\\notin|\\le|\\ge|\\ne|\\subset)\s*[^,\n\.\;]+)(?!\$)/g, (match) => saveMath(`$${match.trim()}$`));
+
+      // f. Bọc các ký hiệu toán đơn lẻ bị trần
+      p = p.replace(/(?<![\$\\\w])\\(?:alpha|beta|gamma|delta|pi|theta|sigma|omega|Delta|Sigma|infty)\b(?!\$)/g, (match) => saveMath(`$${match}$`));
+
+      // Khôi phục tất cả các khối toán đã được bọc an toàn (giải nén triệt để nếu có lồng nhau)
+      while (p.includes('\x02MATH')) {
+        p = p.replace(/\x02MATH(\d+)\x03/g, (_, idx) => mathTokens[Number(idx)]);
+      }
+
+      parts[i] = p;
+    }
+  }
+  s = parts.join('');
+
+  // 6. Gộp các khối $$ liền kề nhau được nối bởi dấu tương đương / suy ra / bằng
+  s = s.replace(/\$\$\s*(\\Leftrightarrow|\\Rightarrow|\\Leftarrow|=|\\iff)\s*\$\$/g, ' $1 ');
+
   return s;
 }
 
@@ -737,23 +827,18 @@ function getValidGeminiModels(requestedModel?: string): string[] {
   let primary = (requestedModel || "").replace(/^models\//, "").trim();
   if (
     !primary ||
-    primary.startsWith("gemini-1.") ||
-    primary.startsWith("gemini-2.") ||
-    primary.startsWith("gemini-3.5") ||
-    primary === "gemini-pro" ||
     primary.includes("1.5") || 
-    primary.includes("2.0") || 
-    primary.includes("2.5") || 
-    primary.includes("3.5")
+    primary.includes("1.0") || 
+    primary === "gemini-pro"
   ) {
     primary = "gemini-3.8-flash";
   }
   const list = [
     primary,
     "gemini-3.8-flash",
-    "gemini-flash-latest",
-    "gemini-3.1-flash-lite",
-    "gemini-4-argon"
+    "gemini-3.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite"
   ];
   return Array.from(new Set(list));
 }
@@ -773,13 +858,21 @@ function normalizeGeminiContents(rawContents: any): any[] {
 }
 
 async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
-  let client = getAiClient(req);
+  let client;
+  try {
+    client = getAiClient(req);
+  } catch (err: any) {
+    if (res && !res.headersSent) {
+      return handleAiError(err, req, res);
+    }
+    throw err;
+  }
   let isCustom = isValidGeminiApiKey((req.headers['authorization'] || req.headers['x-gemini-api-key']) as string);
   let customKeyFailed = false;
   const models = getValidGeminiModels(payloadOptions?.model);
 
   let primaryError: any = null;
-  const maxRetries = 3;
+  const maxRetries = 2;
 
   const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán:
 - TẤT CẢ các biến số, tham số đơn lẻ (như x, y, m, a, b, c, d, S...) BẮT BUỘC phải đặt trong cặp dấu đô la: $x$, $y$, $m$, $a$, $b$, $c$, $d$, $S$.
@@ -804,11 +897,8 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
     for (const model of models) {
       try {
         const rawConfig = { ...(payloadOptions.config || {}) };
-        if (model.includes("3.8") || model.includes("4-") || model.includes("latest")) {
-          delete rawConfig.temperature;
-          delete rawConfig.topP;
-          delete rawConfig.topK;
-          delete rawConfig.candidateCount;
+        if (rawConfig.temperature === undefined) {
+          rawConfig.temperature = 0.7;
         }
 
         const updatedPayload = { 
@@ -816,7 +906,7 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
           contents: normalizeGeminiContents(payloadOptions.contents),
           model,
           config: {
-            maxOutputTokens: 32768,
+            maxOutputTokens: rawConfig.maxOutputTokens || 32768,
             ...rawConfig,
             systemInstruction: rawConfig.systemInstruction || defaultSystemInstruction
           } 
@@ -835,14 +925,17 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
   
       } catch (e: any) {
         primaryError = e;
-        console.warn(`[generateWithFallback] Model ${model} error (isCustomKey: ${isCustom}):`, e?.message);
+        const errMsg = e?.message || "";
+        const isQuota = errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("quota") || e?.status === 429;
+        console.warn(`[generateWithFallback] Model ${model} error (isQuota: ${isQuota}, isCustomKey: ${isCustom}):`, errMsg);
+        // Automatic fallback on 429 / RESOURCE_EXHAUSTED: continue loop to next model (gemini-3.5-flash-lite / gemini-2.5-flash-lite)
         await delay(300);
         continue;
       }
     }
     
     if (primaryError && attempt < maxRetries - 1) {
-      await delay(1000 * (attempt + 1));
+      await delay(800 * (attempt + 1));
     }
   }
   
@@ -860,7 +953,12 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
 }
 
 async function generateWithFallbackStream(req: any, res: any, payloadOptions: any) {
-  let client = getAiClient(req);
+  let client;
+  try {
+    client = getAiClient(req);
+  } catch (err: any) {
+    return handleAiError(err, req, res);
+  }
   let isCustom = isValidGeminiApiKey((req.headers['authorization'] || req.headers['x-gemini-api-key']) as string);
   const models = getValidGeminiModels(payloadOptions?.model);
 
@@ -1115,48 +1213,65 @@ app.all("/api/generate-exam", async (req, res) => {
       files.push({ data: fileData, type: fileType });
     }
 
-    let mcCount = Number(qCounts.mc) || 0;
-    let tfCount = Number(qCounts.tf) || 0;
-    let saCount = Number(qCounts.sa) || 0;
-    let essayCount = Number(qCounts.essay) || 0;
+    const hasExplicitQCounts = req.body && req.body.qCounts && typeof req.body.qCounts === 'object' && Object.keys(req.body.qCounts).length > 0;
+
+    let mcCount = Number(qCounts.mc);
+    let tfCount = Number(qCounts.tf);
+    let saCount = Number(qCounts.sa);
+    let essayCount = Number(qCounts.essay);
+
+    if (isNaN(mcCount)) mcCount = 0;
+    if (isNaN(tfCount)) tfCount = 0;
+    if (isNaN(saCount)) saCount = 0;
+    if (isNaN(essayCount)) essayCount = 0;
 
     const combinedMatrixText = `${matrix || ''} ${customPrompt || ''}`;
     const hasMatrixFile = Boolean(matrixFile) || (matrix && matrix.toLowerCase().includes('ma trận')) || (customPrompt && customPrompt.toLowerCase().includes('ma trận'));
 
-    // Tự động nhận diện số câu TLN (Trả lời ngắn) nếu người dùng cung cấp ma trận hoặc ghi trong yêu cầu
-    const tlnMatches = combinedMatrixText.match(/(\d+)\s*(?:câu)?\s*(?:TLN|trả\s*lời\s*ngắn|điền\s*khuyết|điền\s*số)/i)
-      || combinedMatrixText.match(/(?:TLN|trả\s*lời\s*ngắn|Phần\s*III|Phần\s*3)[^0-9\n]{0,25}(\d+)\s*câu/i);
-    if (tlnMatches && tlnMatches[1]) {
-      const detectedSa = parseInt(tlnMatches[1], 10);
-      if (detectedSa > 0) {
-        saCount = detectedSa;
+    // Chỉ tự động nhận diện số câu nếu người dùng không cung cấp qCounts hoặc tổng số câu = 0
+    if (!hasExplicitQCounts || (mcCount === 0 && tfCount === 0 && saCount === 0 && essayCount === 0)) {
+      const tlnMatches = combinedMatrixText.match(/(\d+)\s*(?:câu)?\s*(?:TLN|trả\s*lời\s*ngắn|điền\s*khuyết|điền\s*số)/i)
+        || combinedMatrixText.match(/(?:TLN|trả\s*lời\s*ngắn|Phần\s*III|Phần\s*3)[^0-9\n]{0,25}(\d+)\s*câu/i);
+      if (tlnMatches && tlnMatches[1]) {
+        const detectedSa = parseInt(tlnMatches[1], 10);
+        if (detectedSa > 0) {
+          saCount = detectedSa;
+        }
+      } else if (saCount === 0 && (hasMatrixFile || /tln|trả\s*lời\s*ngắn|phần\s*iii/i.test(combinedMatrixText))) {
+        saCount = 6;
       }
-    } else if (saCount === 0 && (hasMatrixFile || /tln|trả\s*lời\s*ngắn|phần\s*iii/i.test(combinedMatrixText))) {
-      saCount = 6;
-    }
 
-    // Tự động nhận diện số câu Đúng/Sai (TF)
-    const tfMatches = combinedMatrixText.match(/(\d+)\s*(?:câu)?\s*(?:đúng\s*[\/\s]*sai|Đ\/S|Đ-S)/i)
-      || combinedMatrixText.match(/(?:Phần\s*II|Phần\s*2)[^0-9\n]{0,25}(\d+)\s*câu/i);
-    if (tfMatches && tfMatches[1]) {
-      const detectedTf = parseInt(tfMatches[1], 10);
-      if (detectedTf > 0) {
-        tfCount = detectedTf;
+      // Tự động nhận diện số câu Đúng/Sai (TF)
+      const tfMatches = combinedMatrixText.match(/(\d+)\s*(?:câu)?\s*(?:đúng\s*[\/\s]*sai|Đ\/S|Đ-S)/i)
+        || combinedMatrixText.match(/(?:Phần\s*II|Phần\s*2)[^0-9\n]{0,25}(\d+)\s*câu/i);
+      if (tfMatches && tfMatches[1]) {
+        const detectedTf = parseInt(tfMatches[1], 10);
+        if (detectedTf > 0) {
+          tfCount = detectedTf;
+        }
+      } else if (tfCount === 0 && (hasMatrixFile || /đúng\s*[\/\s]*sai|phần\s*ii/i.test(combinedMatrixText))) {
+        tfCount = 4;
       }
-    } else if (tfCount === 0 && (hasMatrixFile || /đúng\s*[\/\s]*sai|phần\s*ii/i.test(combinedMatrixText))) {
-      tfCount = 4;
-    }
 
-    // Nếu có ma trận nhưng mcCount là 0 hoặc chưa chỉnh số câu chuẩn 2025
-    const mcMatches = combinedMatrixText.match(/(\d+)\s*(?:câu)?\s*(?:trắc\s*nghiệm\s*nhiều\s*lựa\s*chọn|TN4LC|TNNLC|TN\s*lựa\s*chọn|câu\s*TN\b)/i)
-      || combinedMatrixText.match(/(?:Phần\s*I|Phần\s*1)[^0-9\n]{0,25}(\d+)\s*câu/i);
-    if (mcMatches && mcMatches[1]) {
-      mcCount = parseInt(mcMatches[1], 10);
-    } else if ((hasMatrixFile || saCount > 0) && (mcCount === 0 || mcCount === 20)) {
-      mcCount = 12;
+      // Nếu có ma trận nhưng mcCount là 0 hoặc chưa chỉnh số câu chuẩn 2025
+      const mcMatches = combinedMatrixText.match(/(\d+)\s*(?:câu)?\s*(?:trắc\s*nghiệm\s*nhiều\s*lựa\s*chọn|TN4LC|TNNLC|TN\s*lựa\s*chọn|câu\s*TN\b)/i)
+        || combinedMatrixText.match(/(?:Phần\s*I|Phần\s*1)[^0-9\n]{0,25}(\d+)\s*câu/i);
+      if (mcMatches && mcMatches[1]) {
+        mcCount = parseInt(mcMatches[1], 10);
+      } else if ((hasMatrixFile || saCount > 0) && (mcCount === 0 || mcCount === 20)) {
+        mcCount = 12;
+      }
     }
 
     const totalQuestions = mcCount + tfCount + saCount + essayCount;
+
+    // RÀNG BUỘC CHUẨN CẤU HÌNH: Nếu phần nào = 0 câu, tuyệt đối CẤM sinh tiêu đề và CẤM sinh bất kỳ câu hỏi nào
+    const zeroPartsRules: string[] = [];
+    if (mcCount === 0) zeroPartsRules.push('- PHẦN I (mc): Số câu = 0. TUYỆT ĐỐI CẤM sinh tiêu đề Phần I và TUYỆT ĐỐI CẤM sinh bất kỳ câu hỏi trắc nghiệm nhiều lựa chọn ("mc") nào!');
+    if (tfCount === 0) zeroPartsRules.push('- PHẦN II (tf): Số câu = 0. TUYỆT ĐỐI CẤM sinh tiêu đề Phần II và TUYỆT ĐỐI CẤM sinh bất kỳ câu hỏi đúng/sai ("tf") nào!');
+    if (saCount === 0) zeroPartsRules.push('- PHẦN III (sa): Số câu = 0. TUYỆT ĐỐI CẤM sinh tiêu đề Phần III và TUYỆT ĐỐI CẤM sinh bất kỳ câu hỏi trả lời ngắn ("sa") nào!');
+    if (essayCount === 0) zeroPartsRules.push('- PHẦN IV (essay): Số câu = 0. TUYỆT ĐỐI CẤM sinh tiêu đề Phần IV và TUYỆT ĐỐI CẤM sinh bất kỳ câu hỏi tự luận ("essay") nào!');
+    const zeroPartsDirective = zeroPartsRules.length > 0 ? `\nQUY TẮC CẤM PHẦN CÓ 0 CÂU (BẮT BUỘC TUÂN THỦ 100%):\n${zeroPartsRules.join('\n')}\n` : '';
 
     const isRealWorldEnabled = realWorldConfig ? realWorldConfig.enabled !== false : false;
     const rwLevel = realWorldConfig?.level || "standard";
@@ -1206,8 +1321,9 @@ Hình thức/Kỳ thi: ${examType}.
 ${customPrompt ? `Yêu cầu chi tiết của giáo viên:\n${customPrompt}` : ''}
 ${realWorldDirective}
 ${matrixDirective}
+${zeroPartsDirective}
 
-CẤU TRÚC VÀ SỐ LƯỢNG CÂU HỎI BẮT BUỘC:
+CẤU TRÚC VÀ SỐ LƯỢNG CÂU HỎI BẮT BUỘC (CHỈ SINH ĐÚNG CÁC PHẦN CÓ SỐ LƯỢNG > 0):
 TUYỆT ĐỐI KHÔNG ĐƯỢC tóm tắt, không được bỏ qua bất kỳ câu nào, TUYỆT ĐỐI KHÔNG ĐƯỢC sinh placeholder như "(Các câu tương tự...)" hay viết tắt câu. Phải sinh ĐỦ 100% các câu hỏi theo đúng số lượng yêu cầu:
 ${mcCount > 0 ? `- Phần I: ĐÚNG ${mcCount} câu hỏi Trắc nghiệm nhiều lựa chọn (loại "mc") - mỗi câu gồm đúng 4 phương án lựa chọn trong mảng "options", chỉ có 1 phương án đúng.` : ''}
 ${tfCount > 0 ? `- Phần II: ĐÚNG ${tfCount} câu hỏi Trắc nghiệm Đúng/Sai (loại "tf") - mỗi câu BẮT BUỘC có đề dẫn chung và ĐÚNG 4 ý a), b), c), d) trong mảng "tfStatements" (4 phần tử). Học sinh xác định từng ý là Đúng (true) hay Sai (false).` : ''}
@@ -1229,28 +1345,28 @@ QUY TẮC BẮT BUỘC VỀ TOÁN HỌC VÀ KỸ THUẬT:
 ${MATH_FORMATTING_RULES}
 - Mọi công thức, ký hiệu toán, biến số đơn lẻ (như $x, y, z, m, a, b, c, \\alpha, \\beta, \\pi, \\in, \\le, \\ge, -\\infty, +\\infty...$) BẮT BUỘC đặt trong cặp dấu đô la $...$ hoặc $$...$$. CẤM viết LaTeX trần.
 - LUÔN DÙNG \\frac THAY CHO \\dfrac (CẤM dùng \\dfrac).
-- BẢNG BIẾN THIÊN (BBT): Tuyệt đối KHÔNG để khung rỗng. Khi câu hỏi cần BBT, BẮT BUỘC 100% vẽ bảng biến thiên trực quan bằng Markdown Table chuẩn ngay trong câu hỏi đề bài, mỗi hàng BẮT BUỘC xuống dòng riêng biệt (có ký tự \n giữa các hàng):
+- BẢNG BIẾN THIÊN (BBT): Tuyệt đối KHÔNG để khung rỗng. Khi câu hỏi cần BBT, BẮT BUỘC 100% vẽ bảng biến thiên trực quan bằng Markdown Table chuẩn ngay trong câu hỏi đề bài, mỗi hàng BẮT BUỘC xuống dòng riêng biệt (có ký tự \\n giữa các hàng):
   | $x$ | $-\\infty$ | | $x_0$ | | $+\\infty$ |
   |---|---|---|---|---|---|
   | $y'$ | | $+$ | $0$ | $-$ | |
   | $y$ | $-\\infty$ | $\\nearrow$ | $y_{CĐ}$ | $\\searrow$ | $-\\infty$ |
   Nếu có tiệm cận đứng hoặc điểm gián đoạn (như hàm phân thức bậc nhất/bậc nhất): dùng vạch đôi $\\|$ ở hàng $y'$ và phân tách 2 giới hạn ở hàng $y$ bằng $\\|$ (ví dụ: $2 \\searrow -\\infty \\| +\\infty \\searrow 2$). TUYỆT ĐỐI KHÔNG viết bảng biến thiên dính liền trên 1 dòng.
 - HÌNH VẼ ĐỒ THỊ: Nếu trích dẫn đồ thị mà không có URL ảnh thực tế, BẮT BUỘC 100% mô tả rõ đặc điểm đồ thị bằng lời trong đề (ví dụ: "Đồ thị đi qua điểm A(0; -1), đỉnh I(1; -2)...") hoặc sinh kèm mã SVG đồ thị nội tuyến, KHÔNG để thẻ img/div trống rỗng.
-- LỜI GIẢI CHI TIẾT ('solution' / 'explanation'): Lời giải viết ngắn gọn, súc tích (1-3 dòng tập trung bước biến đổi then chốt và kết quả), KHÔNG lặp lại BẢNG BIẾN THIÊN hay HÌNH VẼ ĐỒ THỊ, không viết dông dài để tối ưu tối đa tốc độ sinh đề thi.
+- LỜI GIẢI CHI TIẾT ('solution' / 'explanation'): Với các câu trắc nghiệm nhận biết/thông hiểu cơ bản (như tính $u_n$, công thức cơ bản), yêu cầu trình bày lời giải ngắn gọn súc tích trong 2-3 dòng, tập trung vào công thức then chốt và bước biến đổi chính. KHÔNG lặp lại BẢNG BIẾN THIÊN hay HÌNH VẼ ĐỒ THỊ, không viết dông dài để tối ưu tối đa tốc độ sinh đề thi.
 - CẤM TUYỆT ĐỐI sinh mã HTML inline phức tạp (<mark style="...">, <span>). Chỉ dùng Markdown chuẩn (**in đậm**, *in nghiêng*).
 - Ký hiệu vô cùng/vô cực BẮT BUỘC viết chuẩn LaTeX là \\infty (ví dụ: $(-\\infty; -1)$, $(-1; +\\infty)$, $[0; +\\infty)$, $(-\\infty; +\\infty)$). Tuyệt đối KHÔNG viết thiếu dấu gạch chéo ngược thành -infty, +infty, in fty.
 - TUYỆT ĐỐI KHÔNG lặp lại các chữ A, B, C, D vào nội dung của câu hỏi hoặc phương án (hệ thống sẽ tự động gán nhãn A, B, C, D).
 - Câu trắc nghiệm (mc): mảng "options" phải có ĐÚNG 4 phần tử dạng chuỗi. "correctOptionIndex" là chỉ số đáp án đúng (0, 1, 2, 3).
 - Câu đúng/sai (tf): "tfStatements" phải là mảng ĐÚNG 4 đối tượng [{ "statement": "...", "correct": true/false }].
 - Câu trả lời ngắn (sa): "correctAnswer" BẮT BUỘC là MỘT SỐ CỤ THỂ có độ dài TỐI ĐA 4 KÝ TỰ (ví dụ: "22", "-3.5", "13", "102"). Tuyệt đối không dùng dạng mở hay công thức.
-- BẮT BUỘC KÈM TRƯỜNG "solution": Lời giải súc tích (1-3 dòng trọng tâm), kèm lý do chọn đáp án, dùng công thức LaTeX chuẩn cho TẤT CẢ các câu hỏi (mc, tf, sa, essay).
+- BẮT BUỘC KÈM TRƯỜNG "solution": Lời giải súc tích (2-3 dòng trọng tâm), kèm lý do chọn đáp án, dùng công thức LaTeX chuẩn cho TẤT CẢ các câu hỏi.
 
-BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI CẤU TRÚC SAU:
-{
-  "examName": "${examType.toUpperCase().startsWith('ĐỀ') ? examType.toUpperCase() : 'ĐỀ ' + examType.toUpperCase()} - MÔN ${subject.toUpperCase()} ${grade.replace(/^(LỚP|KHỐI)\s*/i, '').trim()} (${duration} PHÚT)",
-  "questions": [
-    {
-      "id": 1,
+${(() => {
+  const exampleBlocks: string[] = [];
+  let exId = 1;
+  if (mcCount > 0 || totalQuestions === 0) {
+    exampleBlocks.push(`    {
+      "id": ${exId++},
       "type": "mc",
       "level": "Nhận biết",
       "topic": "Hàm số và đồ thị",
@@ -1259,10 +1375,12 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
       "content": "Nội dung câu hỏi...",
       "options": ["Phương án A", "Phương án B", "Phương án C", "Phương án D"],
       "correctOptionIndex": 0,
-      "solution": "Lời giải chi tiết từng bước biến đổi, kèm lý do chọn đáp án..."
-    },
-    {
-      "id": 2,
+      "solution": "Lời giải ngắn gọn 2-3 dòng, tập trung công thức then chốt..."
+    }`);
+  }
+  if (tfCount > 0 || (totalQuestions === 0)) {
+    exampleBlocks.push(`    {
+      "id": ${exId++},
       "type": "tf",
       "level": "Thông hiểu",
       "topic": "Hàm số và đồ thị",
@@ -1275,30 +1393,41 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
         { "statement": "Khẳng định c", "correct": true },
         { "statement": "Khẳng định d", "correct": false }
       ],
-      "solution": "Lời giải chi tiết cho 4 ý..."
-    },
-    {
-      "id": 3,
+      "solution": "Lời giải chi tiết ngắn gọn cho 4 ý..."
+    }`);
+  }
+  if (saCount > 0 || (totalQuestions === 0)) {
+    exampleBlocks.push(`    {
+      "id": ${exId++},
       "type": "sa",
       "level": "Vận dụng",
       "topic": "Hình học không gian",
       "subtopic": "Thể tích khối đa diện",
       "content": "Tính diện tích tam giác $ABC$... (Kết quả làm tròn đến hàng đơn vị).",
       "correctAnswer": "25",
-      "solution": "Lời giải chi tiết..."
-    },
-    {
-      "id": 4,
+      "solution": "Lời giải súc tích 2-3 dòng..."
+    }`);
+  }
+  if (essayCount > 0) {
+    exampleBlocks.push(`    {
+      "id": ${exId++},
       "type": "essay",
       "level": "Vận dụng cao",
       "topic": "Toán thực tế và tối ưu",
       "subtopic": "Giá trị lớn nhất và nhỏ nhất",
       "content": "Nội dung bài toán tự luận...",
       "correctAnswer": "Hướng dẫn chấm chi tiết",
-      "solution": "Lời giải chi tiết..."
-    }
+      "solution": "Lời giải chi tiết từng bước..."
+    }`);
+  }
+  return `BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI CẤU TRÚC SAU:
+{
+  "examName": "${examType.toUpperCase().startsWith('ĐỀ') ? examType.toUpperCase() : 'ĐỀ ' + examType.toUpperCase()} - MÔN ${subject.toUpperCase()} ${grade.replace(/^(LỚP|KHỐI)\s*/i, '').trim()} (${duration} PHÚT)",
+  "questions": [
+${exampleBlocks.join(',\n')}
   ]
 }`;
+})()}`;
 
     const processedFiles = await processFilesForAI(files);
 
@@ -1605,7 +1734,18 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
       ];
     }
 
-    // 1. Bù đắp câu hỏi Trắc nghiệm nhiều lựa chọn (mc) nếu AI trả về thiếu
+    // Lọc triệt để loại bỏ bất kỳ câu hỏi nào thuộc phần có cấu hình = 0 câu
+    const allowedExamTypes = new Set<string>();
+    if (mcCount > 0) allowedExamTypes.add('mc');
+    if (tfCount > 0) allowedExamTypes.add('tf');
+    if (saCount > 0) allowedExamTypes.add('sa');
+    if (essayCount > 0) allowedExamTypes.add('essay');
+
+    if (allowedExamTypes.size > 0) {
+      parsedData.questions = (parsedData.questions || []).filter((q: any) => allowedExamTypes.has(q.type));
+    }
+
+    // 1. Bù đắp câu hỏi Trắc nghiệm nhiều lựa chọn (mc) nếu AI trả về thiếu (CHỈ KHI mcCount > 0)
     const currentMcList = parsedData.questions.filter((q: any) => q.type === 'mc');
     if (mcCount > 0 && currentMcList.length < mcCount) {
       const missingMc = mcCount - currentMcList.length;
@@ -1627,7 +1767,7 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
       }
     }
 
-    // 2. Bù đắp câu hỏi Đúng/Sai (tf) nếu AI trả về thiếu
+    // 2. Bù đắp câu hỏi Đúng/Sai (tf) nếu AI trả về thiếu (CHỈ KHI tfCount > 0)
     const currentTfList = parsedData.questions.filter((q: any) => q.type === 'tf');
     if (tfCount > 0 && currentTfList.length < tfCount) {
       const missingTf = tfCount - currentTfList.length;
@@ -1649,7 +1789,7 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
       }
     }
 
-    // 3. Bù đắp câu hỏi Trả lời ngắn (sa) nếu AI trả về thiếu (BẮT BUỘC ĐỦ saCount CÂU)
+    // 3. Bù đắp câu hỏi Trả lời ngắn (sa) nếu AI trả về thiếu (CHỈ KHI saCount > 0)
     const currentSaList = parsedData.questions.filter((q: any) => q.type === 'sa');
     if (saCount > 0 && currentSaList.length < saCount) {
       const missingSa = saCount - currentSaList.length;
@@ -1670,6 +1810,37 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ VỚI C
         });
       }
     }
+
+    // Cắt gọt đúng số lượng và lọc lại lần cuối, gán lại id tuần tự 1..N
+    if (allowedExamTypes.size > 0) {
+      parsedData.questions = parsedData.questions.filter((q: any) => allowedExamTypes.has(q.type));
+      
+      let mcIdx = 0, tfIdx = 0, saIdx = 0, essayIdx = 0;
+      parsedData.questions = parsedData.questions.filter((q: any) => {
+        if (q.type === 'mc') {
+          mcIdx++;
+          return mcIdx <= mcCount;
+        }
+        if (q.type === 'tf') {
+          tfIdx++;
+          return tfIdx <= tfCount;
+        }
+        if (q.type === 'sa') {
+          saIdx++;
+          return saIdx <= saCount;
+        }
+        if (q.type === 'essay') {
+          essayIdx++;
+          return essayIdx <= essayCount;
+        }
+        return false;
+      });
+    }
+
+    parsedData.questions = parsedData.questions.map((q: any, idx: number) => ({
+      ...q,
+      id: idx + 1
+    }));
 
     return parsedData;
   });
@@ -2343,8 +2514,26 @@ app.all("/api/generate-interactive-worksheet", async (req, res) => {
       additionalNotes = ''
     } = req.body || {};
 
-    const totalRequired = (numPartI || 0) + (numPartII || 0) + (numPartIII || 0) + (numPartIV || 0);
+    const p1 = typeof numPartI !== 'undefined' ? Number(numPartI) : 12;
+    const p2 = typeof numPartII !== 'undefined' ? Number(numPartII) : 4;
+    const p3 = typeof numPartIII !== 'undefined' ? Number(numPartIII) : 6;
+    const p4 = typeof numPartIV !== 'undefined' ? Number(numPartIV) : 2;
+
+    const countI = isNaN(p1) ? 12 : p1;
+    const countII = isNaN(p2) ? 4 : p2;
+    const countIII = isNaN(p3) ? 6 : p3;
+    const countIV = isNaN(p4) ? 2 : p4;
+
+    const totalRequired = countI + countII + countIII + countIV;
     const totalCount = totalRequired > 0 ? totalRequired : 24;
+
+    // RÀNG BUỘC CHUẨN CẤU HÌNH: Nếu phần nào = 0 câu, tuyệt đối CẤM sinh tiêu đề và CẤM sinh bất kỳ câu hỏi nào
+    const zeroPartsRules: string[] = [];
+    if (countI === 0) zeroPartsRules.push('- PHẦN I (mc): Số câu = 0. TUYỆT ĐỐI CẤM sinh tiêu đề Phần I và TUYỆT ĐỐI CẤM sinh bất kỳ câu hỏi trắc nghiệm nhiều lựa chọn ("mc") nào!');
+    if (countII === 0) zeroPartsRules.push('- PHẦN II (tf): Số câu = 0. TUYỆT ĐỐI CẤM sinh tiêu đề Phần II và TUYỆT ĐỐI CẤM sinh bất kỳ câu hỏi đúng/sai ("tf") nào!');
+    if (countIII === 0) zeroPartsRules.push('- PHẦN III (sa): Số câu = 0. TUYỆT ĐỐI CẤM sinh tiêu đề Phần III và TUYỆT ĐỐI CẤM sinh bất kỳ câu hỏi trả lời ngắn ("sa") nào!');
+    if (countIV === 0) zeroPartsRules.push('- PHẦN IV (essay): Số câu = 0. TUYỆT ĐỐI CẤM sinh tiêu đề Phần IV và TUYỆT ĐỐI CẤM sinh bất kỳ câu hỏi tự luận ("essay") nào!');
+    const zeroPartsDirective = zeroPartsRules.length > 0 ? `\nQUY TẮC CẤM PHẦN CÓ 0 CÂU (BẮT BUỘC TUÂN THỦ 100%):\n${zeroPartsRules.join('\n')}\n` : '';
        
     const parametricRule = hasParametric
       ? `YÊU CẦU THAM SỐ: Thiết kế các câu hỏi chứa tham số thực ($m, a, b...$) ở mức độ vận dụng để phân hóa tư duy học sinh.`
@@ -2354,22 +2543,25 @@ app.all("/api/generate-interactive-worksheet", async (req, res) => {
 - TUYỆT ĐỐI KHÔNG có các câu hỏi dạng: "Tìm m để...", "Tìm tất cả giá trị thực của tham số m...", "Hàm số chứa tham số m...", "Phương trình có nghiệm thỏa mãn m...".
 - TẤT CẢ các hệ số, số liệu trong đề bài, hàm số, phương trình, bất phương trình và 4 phương án BẮT BUỘC 100% là CÁC CON SỐ THỰC CỤ THỂ (ví dụ: $y = 2x^3 - 3x^2 + 1$, $x = 2$, $-5$, $\\frac{1}{2}$, ...).`;
 
-    const partIVRule = numPartIV > 0
-      ? `4. PHẦN IV (essay): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartIV} CÂU Tự luận (loại "essay") - bài tập tự luận có hướng dẫn chấm.`
+    const partIVRule = countIV > 0
+      ? `4. PHẦN IV (essay): BẮT BUỘC ĐỦ CHÍNH XÁC ${countIV} CÂU Tự luận (loại "essay") - bài tập tự luận có hướng dẫn chấm.`
       : `QUY TẮC CẤU TRÚC ĐỀ 3 PHẦN (CỰC KỲ QUAN TRỌNG - BẮT BUỘC TUÂN THỦ 100%):
 - Giáo viên đã chọn cấu trúc ĐỀ 3 PHẦN (không có tự luận).
 - TUYỆT ĐỐI KHÔNG SINH PHẦN IV HOẶC BẤT KỲ BÀI TẬP TỰ LUẬN NÀO!
-- TUYỆT ĐỐI KHÔNG sinh câu hỏi có type "essay". Mảng "questions" chỉ chứa câu hỏi thuộc 3 phần (loại "mc", "tf", "sa").`;
+- TUYỆT ĐỐI KHÔNG sinh câu hỏi có type "essay". Mảng "questions" chỉ chứa câu hỏi thuộc các phần được cấu hình > 0.`;
 
-    const exampleJsonQuestions = [
-      `        {
+    const exampleJsonQuestions: string[] = [];
+    if (countI > 0) {
+      exampleJsonQuestions.push(`        {
           "type": "mc",
           "content": "Nội dung câu hỏi trắc nghiệm 4 lựa chọn...",
           "options": ["Đáp án A", "Đáp án B", "Đáp án C", "Đáp án D"],
           "correctOptionIndex": 0,
-          "solution": "Lời giải chi tiết từng bước..."
-        }`,
-      `        {
+          "solution": "Lời giải ngắn gọn 2-3 dòng, tập trung công thức then chốt..."
+        }`);
+    }
+    if (countII > 0) {
+      exampleJsonQuestions.push(`        {
           "type": "tf",
           "content": "Nội dung câu hỏi Đúng/Sai...",
           "tfStatements": [
@@ -2378,22 +2570,32 @@ app.all("/api/generate-interactive-worksheet", async (req, res) => {
             { "statement": "Ý c...", "correct": true },
             { "statement": "Ý d...", "correct": false }
           ],
-          "solution": "Lời giải chi tiết..."
-        }`,
-      `        {
+          "solution": "Lời giải chi tiết ngắn gọn cho 4 ý..."
+        }`);
+    }
+    if (countIII > 0) {
+      exampleJsonQuestions.push(`        {
           "type": "sa",
           "content": "Nội dung câu trả lời ngắn...",
           "correctAnswer": "25",
-          "solution": "Lời giải chi tiết..."
-        }`
-    ];
-
-    if (numPartIV > 0) {
+          "solution": "Lời giải súc tích 2-3 dòng..."
+        }`);
+    }
+    if (countIV > 0) {
       exampleJsonQuestions.push(`        {
           "type": "essay",
           "content": "Nội dung tự luận rèn luyện...",
           "correctAnswer": "Hướng dẫn chấm chi tiết",
-          "solution": "Lời giải chi tiết..."
+          "solution": "Lời giải chi tiết từng bước..."
+        }`);
+    }
+    if (exampleJsonQuestions.length === 0) {
+      exampleJsonQuestions.push(`        {
+          "type": "mc",
+          "content": "Nội dung câu hỏi trắc nghiệm 4 lựa chọn...",
+          "options": ["Đáp án A", "Đáp án B", "Đáp án C", "Đáp án D"],
+          "correctOptionIndex": 0,
+          "solution": "Lời giải ngắn gọn 2-3 dòng..."
         }`);
     }
 
@@ -2404,11 +2606,13 @@ app.all("/api/generate-interactive-worksheet", async (req, res) => {
     - TUYỆT ĐỐI KHÔNG BỊA RA HOẶC TỰ Ý CHÈN THÊM bất kỳ câu hỏi nào thuộc bài học khác, chương học khác hay khối lớp khác ngoài chủ đề "${lesson}".
     - Tuân thủ 100% thuật ngữ, ký hiệu, mạch kiến thức theo đúng SGK Kết nối tri thức với cuộc sống áp dụng từ năm học 2026-2027.
 
-    YÊU CẦU ĐẶC BIỆT CỤ THỂ VỀ CẤU TRÚC VÀ SỐ LƯỢNG CÂU HỎI BẮT BUỘC (TỔNG CHÍNH XÁC ĐỦ ${totalCount} CÂU):
+    ${zeroPartsDirective}
+
+    YÊU CẦU ĐẶC BIỆT CỤ THỂ VỀ CẤU TRÚC VÀ SỐ LƯỢNG CÂU HỎI BẮT BUỘC (TỔNG CHÍNH XÁC ĐỦ ${totalCount} CÂU, CHỈ SINH CÁC PHẦN CÓ SỐ LƯỢNG > 0):
     BẮT BUỘC phải sinh đúng 100% chính xác các phần sau vào mảng "questions" (TUYỆT ĐỐI KHÔNG ĐƯỢC TÓM TẮT hay dùng placeholder "..."):
-    ${numPartI > 0 ? `1. PHẦN I (mc): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartI} CÂU Trắc nghiệm 4 lựa chọn (loại "mc") - mỗi câu gồm "content", 4 phương án vào mảng "options", "correctOptionIndex".` : ''}
-    ${numPartII > 0 ? `2. PHẦN II (tf): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartII} CÂU Trắc nghiệm Đúng/Sai (loại "tf") - mỗi câu BẮT BUỘC có mảng "tfStatements" gồm ĐÚNG 4 đối tượng [{ "statement": "...", "correct": true/false }].` : ''}
-    ${numPartIII > 0 ? `3. PHẦN III (sa): BẮT BUỘC ĐỦ CHÍNH XÁC ${numPartIII} CÂU Trắc nghiệm Trả lời ngắn (loại "sa") - "correctAnswer" là 1 số cụ thể có độ dài tối đa 4 ký tự.` : ''}
+    ${countI > 0 ? `1. PHẦN I (mc): BẮT BUỘC ĐỦ CHÍNH XÁC ${countI} CÂU Trắc nghiệm 4 lựa chọn (loại "mc") - mỗi câu gồm "content", 4 phương án vào mảng "options", "correctOptionIndex".` : ''}
+    ${countII > 0 ? `2. PHẦN II (tf): BẮT BUỘC ĐỦ CHÍNH XÁC ${countII} CÂU Trắc nghiệm Đúng/Sai (loại "tf") - mỗi câu BẮT BUỘC có mảng "tfStatements" gồm ĐÚNG 4 đối tượng [{ "statement": "...", "correct": true/false }].` : ''}
+    ${countIII > 0 ? `3. PHẦN III (sa): BẮT BUỘC ĐỦ CHÍNH XÁC ${countIII} CÂU Trắc nghiệm Trả lời ngắn (loại "sa") - "correctAnswer" là 1 số cụ thể có độ dài tối đa 4 ký tự.` : ''}
     ${partIVRule}
 
     - Tỷ lệ thực tế: Khoảng ${realWorldPercent}%.
@@ -2416,9 +2620,9 @@ app.all("/api/generate-interactive-worksheet", async (req, res) => {
     ${additionalNotes ? `- Ghi chú riêng từ giáo viên: ${additionalNotes}` : ''}
 
     ${MATH_FORMATTING_RULES}
-    5. BẮT BUỘC KÈM TRƯỜNG "solution": Lời giải chi tiết từng bước biến đổi, kèm lý do chọn đáp án, viết bằng công thức LaTeX chuẩn cho TẤT CẢ các câu hỏi.
+    5. BẮT BUỘC KÈM TRƯỜNG "solution": Với các câu trắc nghiệm nhận biết/thông hiểu cơ bản (như tính $u_n$, công thức cơ bản), yêu cầu trình bày lời giải ngắn gọn súc tích trong 2-3 dòng, tập trung vào công thức then chốt và bước biến đổi chính, không viết dông dài để tối ưu tốc độ sinh đề.
     6. BẮT BUỘC SỬA LỖI CHÍNH TẢ tiếng Việt thật cẩn thận.
-    7. BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CẤU TRÚC SAU (MẢNG "questions" PHẢI CÓ ĐỦ CHÍNH XÁC ${totalCount} PHẦN TỬ CÂU HỎI, ${numPartIV === 0 ? 'TUYỆT ĐỐI KHÔNG CÓ CÂU LOẠI "essay"' : ''}):
+    7. BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CẤU TRÚC SAU (MẢNG "questions" PHẢI CÓ ĐỦ CHÍNH XÁC ${totalCount} PHẦN TỬ CÂU HỎI, ${countIV === 0 ? 'TUYỆT ĐỐI KHÔNG CÓ CÂU LOẠI "essay"' : ''}):
     {
       "examName": "Phiếu bài tập: ${lesson}",
       "questions": [
@@ -2442,10 +2646,25 @@ ${exampleJsonQuestions.join(',\n')}
     // Process questions
     const formattedQuestions = (parsedData.questions || []).map((q: any, idx: number) => {
        const sol = (q.solution || q.explanation || "").trim();
+       let qType = String(q.type || '').toLowerCase().trim();
+       if (qType === 'short_answer' || qType === 'shortanswer' || qType === 'tln' || qType === 'dien_so' || qType === 'trả lời ngắn') {
+         qType = 'sa';
+       } else if (qType === 'multiple_choice' || qType === 'trắc nghiệm' || (!qType && Array.isArray(q.options) && q.options.length > 0)) {
+         qType = 'mc';
+       } else if (qType === 'true_false' || qType === 'tf' || (!qType && Array.isArray(q.tfStatements) && q.tfStatements.length > 0)) {
+         qType = 'tf';
+       } else if (qType === 'tự luận' || qType === 'tu_luan') {
+         qType = 'essay';
+       } else if (!qType) {
+         if (q.correctAnswer && (!q.options || q.options.length === 0)) qType = 'sa';
+         else qType = 'mc';
+       }
+
        return {
          ...q,
          id: idx + 1,
          number: idx + 1,
+         type: qType,
          content: cleanLatexMathField(q.content || q.question || ''),
          question: cleanLatexMathField(q.question || q.content || ''),
          options: Array.isArray(q.options) ? q.options.map(cleanLatexMathField) : q.options,
@@ -2459,9 +2678,48 @@ ${exampleJsonQuestions.join(',\n')}
        };
     });
 
+    // Lọc triệt để loại bỏ bất kỳ câu hỏi nào thuộc phần có cấu hình = 0 câu
+    const allowedWSTypes = new Set<string>();
+    if (countI > 0) allowedWSTypes.add('mc');
+    if (countII > 0) allowedWSTypes.add('tf');
+    if (countIII > 0) allowedWSTypes.add('sa');
+    if (countIV > 0) allowedWSTypes.add('essay');
+
+    let filteredQuestions = formattedQuestions;
+    if (allowedWSTypes.size > 0) {
+      filteredQuestions = filteredQuestions.filter((q: any) => allowedWSTypes.has(q.type));
+
+      let c1 = 0, c2 = 0, c3 = 0, c4 = 0;
+      filteredQuestions = filteredQuestions.filter((q: any) => {
+        if (q.type === 'mc') {
+          c1++;
+          return c1 <= countI;
+        }
+        if (q.type === 'tf') {
+          c2++;
+          return c2 <= countII;
+        }
+        if (q.type === 'sa') {
+          c3++;
+          return c3 <= countIII;
+        }
+        if (q.type === 'essay') {
+          c4++;
+          return c4 <= countIV;
+        }
+        return false;
+      });
+    }
+
+    filteredQuestions = filteredQuestions.map((q: any, idx: number) => ({
+      ...q,
+      id: idx + 1,
+      number: idx + 1
+    }));
+
     return {
        ...parsedData,
-       questions: formattedQuestions
+       questions: filteredQuestions
     };
   });
 });
@@ -2546,20 +2804,31 @@ YÊU CẦU PHONG CÁCH: A4 CHUẨN IN ẤN (Đen trắng / Tiết kiệm mực -
   + PHẦN IV: BÀI TẬP TỰ LUẬN (Có dòng kẻ chấm chấm "......................................................" hoặc khung trống phù hợp để học sinh làm bài trực tiếp trên giấy in).`;
       }
 
-      let exercisePrompt = `Cấu trúc số lượng câu của các phần trong Phiếu học tập BẮT BUỘC sinh hoàn chỉnh:`;
-      if (numPartI > 0) {
-        exercisePrompt += `\n- PHẦN I: CÂU HỎI TRẮC NGHIỆM NHIỀU PHƯƠNG ÁN LỰA CHỌN: đúng chính xác ${numPartI} câu hỏi độc lập (mỗi câu gồm 4 phương án lựa chọn A, B, C, D).`;
-      }
-      if (numPartII > 0) {
-        exercisePrompt += `\n- PHẦN II: CÂU HỎI TRẮC NGHIỆM ĐÚNG / SAI: đúng chính xác ${numPartII} câu hỏi (mỗi câu gồm mệnh đề dẫn và 4 ý a, b, c, d độc lập phán đoán Đúng/Sai).`;
-      }
-      if (numPartIII > 0) {
-        exercisePrompt += `\n- PHẦN III: CÂU HỎI TRẮC NGHIỆM TRẢ LỜI NGẮN: đúng chính xác ${numPartIII} câu hỏi dứt khoát (đáp số là số nguyên, phân số tối giản hoặc số thập phân).`;
-      }
-      if (numPartIV > 0) {
-        exercisePrompt += `\n- PHẦN IV: BÀI TẬP TỰ LUẬN RÈN LUYỆN: đúng chính xác ${numPartIV} bài toán rèn luyện tư duy tự luận trình bày lập luận logic.`;
+      const nPartI = typeof numPartI !== 'undefined' ? Number(numPartI) : 12;
+      const nPartII = typeof numPartII !== 'undefined' ? Number(numPartII) : 2;
+      const nPartIII = typeof numPartIII !== 'undefined' ? Number(numPartIII) : 4;
+      const nPartIV = typeof numPartIV !== 'undefined' ? Number(numPartIV) : 2;
+
+      let exercisePrompt = `Cấu trúc số lượng câu của các phần trong Phiếu học tập BẮT BUỘC tuân thủ chính xác (CHỈ SINH ĐÚNG CÁC PHẦN CÓ SỐ LƯỢNG > 0):`;
+      if (nPartI > 0) {
+        exercisePrompt += `\n- PHẦN I: CÂU HỎI TRẮC NGHIỆM NHIỀU PHƯƠNG ÁN LỰA CHỌN: đúng chính xác ${nPartI} câu hỏi độc lập (mỗi câu gồm 4 phương án lựa chọn A, B, C, D).`;
       } else {
-        exercisePrompt += `\n- CẤM TUYỆT ĐỐI PHẦN IV (TỰ LUẬN): Giáo viên đã chọn cấu trúc ĐỀ 3 PHẦN. TUYỆT ĐỐI KHÔNG ĐƯỢC CÓ PHẦN IV HAY BÀI TẬP TỰ LUẬN. KHÔNG TẠO MỤC PHẦN IV TRONG ĐỀ BÀI CŨNG NHƯ TRONG BẢNG ĐÁP ÁN VÀ HƯỚNG DẪN GIẢI!`;
+        exercisePrompt += `\n- CẤM TUYỆT ĐỐI PHẦN I: Số câu là 0. TUYỆT ĐỐI KHÔNG sinh tiêu đề Phần I và TUYỆT ĐỐI KHÔNG sinh bất kỳ câu hỏi trắc nghiệm nhiều lựa chọn nào!`;
+      }
+      if (nPartII > 0) {
+        exercisePrompt += `\n- PHẦN II: CÂU HỎI TRẮC NGHIỆM ĐÚNG / SAI: đúng chính xác ${nPartII} câu hỏi (mỗi câu gồm mệnh đề dẫn và 4 ý a, b, c, d độc lập phán đoán Đúng/Sai).`;
+      } else {
+        exercisePrompt += `\n- CẤM TUYỆT ĐỐI PHẦN II: Số câu là 0. TUYỆT ĐỐI KHÔNG sinh tiêu đề Phần II và TUYỆT ĐỐI KHÔNG sinh bất kỳ câu hỏi đúng/sai nào!`;
+      }
+      if (nPartIII > 0) {
+        exercisePrompt += `\n- PHẦN III: CÂU HỎI TRẮC NGHIỆM TRẢ LỜI NGẮN: đúng chính xác ${nPartIII} câu hỏi dứt khoát (đáp số là số nguyên, phân số tối giản hoặc số thập phân).`;
+      } else {
+        exercisePrompt += `\n- CẤM TUYỆT ĐỐI PHẦN III: Số câu là 0. TUYỆT ĐỐI KHÔNG sinh tiêu đề Phần III và TUYỆT ĐỐI KHÔNG sinh bất kỳ câu hỏi trả lời ngắn nào!`;
+      }
+      if (nPartIV > 0) {
+        exercisePrompt += `\n- PHẦN IV: BÀI TẬP TỰ LUẬN RÈN LUYỆN: đúng chính xác ${nPartIV} bài toán rèn luyện tư duy tự luận trình bày lập luận logic.`;
+      } else {
+        exercisePrompt += `\n- CẤM TUYỆT ĐỐI PHẦN IV (TỰ LUẬN): Số câu là 0. TUYỆT ĐỐI KHÔNG ĐƯỢC CÓ PHẦN IV HAY BÀI TẬP TỰ LUẬN. KHÔNG TẠO MỤC PHẦN IV TRONG ĐỀ BÀI CŨNG NHƯ TRONG BẢNG ĐÁP ÁN VÀ HƯỚNG DẪN GIẢI!`;
       }
 
       exercisePrompt += `\n- Tỷ lệ bài toán gắn với thực tiễn cuộc sống hoặc liên môn: Khoảng ${realWorldPercent}%.`;
@@ -2577,7 +2846,7 @@ YÊU CẦU PHONG CÁCH: A4 CHUẨN IN ẤN (Đen trắng / Tiết kiệm mực -
       } else if (answerMode === 'summary') {
         answerPrompt = 'Ở cuối tài liệu, hãy cung cấp bảng đáp số/đáp án ngắn gọn (dạng bảng đáp án trắc nghiệm và kết số tự luận), phân cách bằng tiêu đề "--- BẢNG ĐÁP ÁN NHANH ---".';
       } else {
-        answerPrompt = 'Ở cuối tài liệu, hãy cung cấp phần Hướng dẫn giải chi tiết từng câu, phân cách bằng tiêu đề "--- HƯỚNG DẪN CHẤM / ĐÁP ÁN CHI TIẾT ---". BẮT BUỘC giải thích chi tiết từng bước biến đổi, kèm lý do chọn đáp án, viết bằng công thức LaTeX chuẩn cho từng câu hỏi.';
+        answerPrompt = 'Ở cuối tài liệu, hãy cung cấp phần Hướng dẫn giải súc tích từng câu, phân cách bằng tiêu đề "--- HƯỚNG DẪN CHẤM / ĐÁP ÁN CHI TIẾT ---". Với các câu trắc nghiệm nhận biết/thông hiểu cơ bản (như tính $u_n$, công thức cơ bản), chỉ cần trình bày lời giải ngắn gọn trong 2-3 dòng tập trung vào công thức then chốt và bước biến đổi chính, viết bằng công thức LaTeX chuẩn.';
       }
 
       const prompt = `Bạn là chuyên gia sư phạm bộ môn ${subject || "Toán"} hàng đầu Việt Nam, nắm vững 100% Chương trình GDPT 2018 và bộ sách giáo khoa "Kết nối tri thức với cuộc sống" (KNTT) áp dụng từ năm học 2026-2027.
@@ -3750,10 +4019,17 @@ app.post("/api/shorten", async (req, res) => {
 // Adding back chat route
 app.post("/api/chat", async (req, res) => {
   try {
-    const { prompt, context } = req.body;
+    const { prompt, context, messages } = req.body || {};
     let fullPrompt = prompt;
+    if (!fullPrompt && Array.isArray(messages) && messages.length > 0) {
+      const lastMsg = messages[messages.length - 1];
+      fullPrompt = typeof lastMsg === 'string' ? lastMsg : (lastMsg?.content || lastMsg?.parts?.[0]?.text || '');
+    }
+    if (!fullPrompt) {
+      return res.status(400).json({ error: "Vui lòng nhập nội dung câu hỏi (prompt)." });
+    }
     if (context) {
-      fullPrompt = `Ngữ cảnh: ${JSON.stringify(context)}\n\nCâu hỏi: ${prompt}`;
+      fullPrompt = `Ngữ cảnh: ${JSON.stringify(context)}\n\nCâu hỏi: ${fullPrompt}`;
     }
     const response = await generateWithFallback(req, {
       contents: [{ role: "user", parts: [{ text: fullPrompt }] }]

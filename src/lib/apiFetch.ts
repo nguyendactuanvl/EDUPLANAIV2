@@ -1,11 +1,12 @@
 import { safeJsonParse } from './utils';
 
-export const API_KEY_STORAGE = 'custom_gemini_api_key';
-export const LEGACY_API_KEY_STORAGE = 'eduplan_gemini_api_key_v2';
+export const API_KEY_STORAGE = 'user_gemini_api_key';
+export const LEGACY_API_KEY_STORAGE = 'custom_gemini_api_key';
 
 export function getCustomApiKey(): string {
   if (typeof window === 'undefined') return '';
   return (
+    localStorage.getItem('user_gemini_api_key') ||
     localStorage.getItem('custom_gemini_api_key') ||
     localStorage.getItem('eduplan_gemini_api_key_v2') ||
     localStorage.getItem('gemini_user_api_key') ||
@@ -17,10 +18,12 @@ export function getCustomApiKey(): string {
 export function setCustomApiKey(key: string): void {
   const clean = key.trim();
   if (clean) {
+    localStorage.setItem('user_gemini_api_key', clean);
     localStorage.setItem('custom_gemini_api_key', clean);
     localStorage.setItem('eduplan_gemini_api_key_v2', clean);
     localStorage.setItem('gemini_user_api_key', clean);
   } else {
+    localStorage.removeItem('user_gemini_api_key');
     localStorage.removeItem('custom_gemini_api_key');
     localStorage.removeItem('eduplan_gemini_api_key_v2');
     localStorage.removeItem('gemini_user_api_key');
@@ -92,8 +95,6 @@ export async function uploadFileChunked(fileData: string, type: string, extraHea
   return fileId;
 }
 
-
-
 export function parseGeminiStreamChunk(chunk: string): string {
   if (!chunk) return "";
   if (!chunk.includes("data:")) {
@@ -124,38 +125,16 @@ export function parseGeminiStreamChunk(chunk: string): string {
   return result;
 }
 
+/**
+ * SERVER-SIDE API FETCH ROUTER:
+ * Routes all Gemini API requests securely to Express server endpoints (/api/...) using @google/genai SDK and process.env.GEMINI_API_KEY.
+ */
 export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const customKey = getCustomApiKey();
   const baseUrl = (import.meta as any).env.VITE_API_BASE_URL || "";
   const maxRetries = 3;
-
-  // Determine if this is a non-AI endpoint (e.g. file chunking, exam sharing)
-  const isStorageRoute = url.startsWith('/api/upload-chunk') || url.startsWith('/api/exams');
-  const isAiRoute = !isStorageRoute;
-
   let fetchOptions = { ...options };
   let headers = getApiHeaders(options, false);
 
-  let parsedBody: any = {};
-  if (fetchOptions.body && typeof fetchOptions.body === 'string') {
-    try {
-      parsedBody = JSON.parse(fetchOptions.body);
-    } catch (e) {
-      parsedBody = { contents: fetchOptions.body };
-    }
-  }
-
-  // Set apiKey on body if missing
-  if (customKey && typeof parsedBody === 'object' && parsedBody !== null) {
-    if (!parsedBody.apiKey) {
-      parsedBody.apiKey = customKey;
-    }
-    fetchOptions.body = JSON.stringify(parsedBody);
-  }
-
-  // Direct fetch to backend routes (/api/...)
-
-  // Fallback / standard route to local server
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     let response: Response | null = null;
     try {
@@ -191,26 +170,32 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
         continue;
       }
 
-      throw new Error("Máy chủ đang tạm thời bảo trì. Thầy cô vui lòng kiểm tra cài đặt API Key cá nhân để tiếp tục.");
+      throw new Error("Máy chủ đang tạm thời bảo trì. Thầy cô vui lòng thử lại sau giây lát.");
     }
 
     if (response.ok) {
+      const originalJson = response.json.bind(response);
       response.json = async () => {
-        const text = await response.text();
-        const clean = text.trim();
         try {
-          return safeJsonParse(clean);
+          const data = await originalJson();
+          return data;
         } catch (e: any) {
-          const match = clean.match(/```(?:json)?\s*([\s\S]*?)```/i) || clean.match(/(\{|\[)[\s\S]*(\}|\])/);
-          if (match) {
-            try {
-              return safeJsonParse(match[1] || match[0]);
-            } catch (e2) {}
+          const text = await response.text();
+          const clean = text.trim();
+          try {
+            return safeJsonParse(clean);
+          } catch (e2: any) {
+            const match = clean.match(/```(?:json)?\s*([\s\S]*?)```/i) || clean.match(/(\{|\[)[\s\S]*(\}|\])/);
+            if (match) {
+              try {
+                return safeJsonParse(match[1] || match[0]);
+              } catch (e3) {}
+            }
+            if (clean && clean.length > 0) {
+              return { result: clean };
+            }
+            throw new Error("Máy chủ AI phản hồi dữ liệu chưa hoàn chỉnh. Thầy cô vui lòng bấm thử lại.");
           }
-          if (clean && clean.length > 0) {
-            return { result: clean };
-          }
-          throw new Error("Máy chủ AI phản hồi dữ liệu chưa hoàn chỉnh. Thầy cô vui lòng bấm thử lại.");
         }
       };
       return response;
@@ -244,4 +229,3 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
   
   throw new Error("Request failed after retries.");
 }
-
