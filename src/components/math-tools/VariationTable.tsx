@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { generateBbtSvg, BBTData, cleanMathText } from "../../lib/bbtRenderer";
+import { sanitizeSvgOrHtmlForReact } from "../../lib/globalMath";
 import { Copy, Check } from "lucide-react";
 
 export interface VariationTablePoint {
@@ -102,7 +103,7 @@ export const VariationTable: React.FC<VariationTableProps> = ({
       </div>
 
       {/* BBT SGK Standard Vector SVG */}
-      <div className="w-full flex justify-center overflow-x-auto" dangerouslySetInnerHTML={{ __html: svgHtml }} />
+      <div className="w-full flex justify-center overflow-x-auto" dangerouslySetInnerHTML={{ __html: sanitizeSvgOrHtmlForReact(svgHtml) }} />
     </div>
   );
 };

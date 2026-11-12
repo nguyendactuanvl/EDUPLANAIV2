@@ -535,42 +535,60 @@ export const KNTT_CURRICULUM: CurriculumData = {
             { id: "g10_s1_c4_l4", name: "Bài 14: Tích vô hướng của hai vectơ" },
             { id: "g10_s1_c4_l5", name: "Ôn tập chương IV" }
           ]
+        },
+        {
+          id: "g10_s1_c5",
+          name: "Chương V: Các số đặc trưng của mẫu số liệu không ghép nhóm",
+          lessons: [
+            { id: "g10_s1_c5_l1", name: "Bài 12: Số trung bình và trung vị của mẫu số liệu không ghép nhóm" },
+            { id: "g10_s1_c5_l2", name: "Bài 13: Mốt và tứ phân vị của mẫu số liệu không ghép nhóm" },
+            { id: "g10_s1_c5_l3", name: "Bài 14: Các số đặc trưng đo độ phân tán (Khoảng biến thiên, khoảng tứ phân vị, phương sai, độ lệch chuẩn)" },
+            { id: "g10_s1_c5_l4", name: "Ôn tập chương V: Các số đặc trưng của mẫu số liệu không ghép nhóm" }
+          ]
         }
       ]
     },
     semester_2: {
       chapters: [
         {
-          id: "g10_s2_c5",
-          name: "Chương V: Hàm số, đồ thị và đại số tổ hợp",
-          lessons: [
-            { id: "g10_s2_c5_l1", name: "Bài 15: Hàm số và đồ thị" },
-            { id: "g10_s2_c5_l2", name: "Bài 16: Hàm số bậc hai" },
-            { id: "g10_s2_c5_l3", name: "Bài 17: Dấu của tam thức bậc hai" },
-            { id: "g10_s2_c5_l4", name: "Bài 18: Phương trình quy về phương trình bậc hai" },
-            { id: "g10_s2_c5_l5", name: "Bài 19: Quy tắc cộng và quy tắc nhân" },
-            { id: "g10_s2_c5_l6", name: "Bài 20: Hoán vị, chỉnh hợp và tổ hợp" },
-            { id: "g10_s2_c5_l7", name: "Bài 21: Nhị thức Newton" },
-            { id: "g10_s2_c5_l8", name: "Ôn tập chương V" }
-          ]
-        },
-        {
           id: "g10_s2_c6",
-          name: "Chương VI: Phương pháp tọa độ trong mặt phẳng",
+          name: "Chương VI: Hàm số, đồ thị và ứng dụng",
           lessons: [
-            { id: "g10_s2_c6_l1", name: "Bài 22: Phương trình đường thẳng" },
-            { id: "g10_s2_c6_l2", name: "Bài 23: Đường tròn trong mặt phẳng tọa độ" },
-            { id: "g10_s2_c6_l3", name: "Bài 24: Ba đường conic" },
-            { id: "g10_s2_c6_l4", name: "Ôn tập chương VI" }
+            { id: "g10_s2_c6_l1", name: "Bài 15: Hàm số và đồ thị" },
+            { id: "g10_s2_c6_l2", name: "Bài 16: Hàm số bậc hai" },
+            { id: "g10_s2_c6_l3", name: "Bài 17: Dấu của tam thức bậc hai" },
+            { id: "g10_s2_c6_l4", name: "Bài 18: Phương trình quy về phương trình bậc hai" },
+            { id: "g10_s2_c6_l5", name: "Ôn tập chương VI: Hàm số, đồ thị và ứng dụng" }
           ]
         },
         {
           id: "g10_s2_c7",
-          name: "Chương VII: Tính toán xác suất",
+          name: "Chương VII: Phương pháp tọa độ trong mặt phẳng",
           lessons: [
-            { id: "g10_s2_c7_l1", name: "Bài 25: Không gian mẫu và biến cố" },
-            { id: "g10_s2_c7_l2", name: "Bài 26: Xác suất của biến cố" },
-            { id: "g10_s2_c7_l3", name: "Ôn tập chương VII" }
+            { id: "g10_s2_c7_l1", name: "Bài 19: Phương trình đường thẳng" },
+            { id: "g10_s2_c7_l2", name: "Bài 20: Vị trí tương đối giữa hai đường thẳng, góc và khoảng cách" },
+            { id: "g10_s2_c7_l3", name: "Bài 21: Đường tròn trong mặt phẳng tọa độ" },
+            { id: "g10_s2_c7_l4", name: "Bài 22: Ba đường conic" },
+            { id: "g10_s2_c7_l5", name: "Ôn tập chương VII: Phương pháp tọa độ trong mặt phẳng" }
+          ]
+        },
+        {
+          id: "g10_s2_c8",
+          name: "Chương VIII: Đại số tổ hợp",
+          lessons: [
+            { id: "g10_s2_c8_l1", name: "Bài 23: Quy tắc cộng và quy tắc nhân" },
+            { id: "g10_s2_c8_l2", name: "Bài 24: Hoán vị, chỉnh hợp và tổ hợp" },
+            { id: "g10_s2_c8_l3", name: "Bài 25: Nhị thức Newton" },
+            { id: "g10_s2_c8_l4", name: "Ôn tập chương VIII: Đại số tổ hợp" }
+          ]
+        },
+        {
+          id: "g10_s2_c9",
+          name: "Chương IX: Tính toán xác suất",
+          lessons: [
+            { id: "g10_s2_c9_l1", name: "Bài 26: Biến cố và định nghĩa cổ điển của xác suất" },
+            { id: "g10_s2_c9_l2", name: "Bài 27: Thực hành tính xác suất theo định nghĩa cổ điển" },
+            { id: "g10_s2_c9_l3", name: "Ôn tập chương IX: Tính toán xác suất" }
           ]
         }
       ]

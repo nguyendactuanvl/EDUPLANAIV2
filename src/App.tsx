@@ -9,6 +9,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SettingsModal } from "./components/SettingsModal";
 import { UserGuideModal } from "./components/UserGuideModal";
 import { getInitialTheme, applyTheme, ThemeMode } from "./lib/theme";
+import { generateContent, getApiKey } from "./services/geminiService";
 
 function safeLazy<T extends React.ComponentType<any>>(
   factory: () => Promise<any>,
@@ -98,7 +99,12 @@ export default function App() {
     if (tabParam === 'chemistry' || tabParam === 'chem' || tabParam === 'hoa') return 'chemistry';
     if (tabParam === 'english' || tabParam === 'eng' || tabParam === 'anh') return 'english';
     if (tabParam === 'subjects_hub' || tabParam === 'hub') return 'subjects_hub';
-    return "math_tools";
+    if (tabParam) return tabParam;
+    try {
+      const saved = localStorage.getItem('eduplan_last_active_tab');
+      if (saved) return saved;
+    } catch (_) {}
+    return "worksheets";
   });
   const [statsExamId, setStatsExamId] = useState<string | undefined>(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -115,11 +121,11 @@ export default function App() {
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [hasApiKey, setHasApiKey] = useState<boolean>(() => {
-    return !!(localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim();
+    return !!(getApiKey() || localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim();
   });
 
   const checkApiKeyStatus = () => {
-    setHasApiKey(!!(localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim());
+    setHasApiKey(!!(getApiKey() || localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim());
   };
 
   useEffect(() => {
@@ -189,6 +195,7 @@ export default function App() {
       const target = typeof e?.detail === 'string' ? e.detail : e?.detail?.tab;
       if (target) {
         setActiveTab(target);
+        try { localStorage.setItem('eduplan_last_active_tab', target); } catch (_) {}
       }
     };
 
@@ -286,6 +293,7 @@ export default function App() {
             activeTab={activeTab} 
             setActiveTab={(tab) => {
               setActiveTab(tab);
+              try { localStorage.setItem('eduplan_last_active_tab', tab); } catch (_) {}
               setIsSidebarOpen(false);
             }} 
             onOpenSettings={(tab) => {

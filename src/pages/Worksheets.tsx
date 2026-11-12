@@ -2,7 +2,7 @@ import { apiFetch, getApiHeaders } from '../lib/apiFetch';
 import { useSubjects } from '../lib/subjects';
 import LZString from 'lz-string';
 import { exportHtmlToWord, exportElementToImage } from "../lib/exportUtils";
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
 import { 
   BookOpen, Download, AlertCircle, Edit3, Eye, Printer, Share2, Copy, CheckCircle2, 
@@ -33,7 +33,7 @@ import { analyzeFunctionToBbt, generateBbtSvg, convertBbtTableToSvg, autoEnrichT
 import { getTikzSvg, embedTikzSvgsInText } from "../components/TikzRenderer";
 import { saveToHistory, getHistory, deleteFromHistory } from '../lib/history';
 import { HistoryItem } from '../types';
-import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMath, cleanQuestionStem, cleanOptionText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections, sanitizeExamQuestion, sanitizeAndPolishMath, normalizeArrayAndTableEnvironments } from "../lib/utils";
+import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMath, cleanQuestionStem, cleanOptionText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, normalizeGeometricProgressionFormulas, formatWorksheetQuestionsAndSections, sanitizeExamQuestion, sanitizeAndPolishMath, normalizeArrayAndTableEnvironments, cleanMathAndUnwrapHeadings, formatStructuredJsonToMarkdown, safeJsonParse } from "../lib/utils";
 import { parseRawExamText } from '../lib/examParser';
 import { printElement, ensureMathRendered } from '../lib/print';
 import { saveExamToCloud, saveExamToWebhook } from '../lib/cloudExamStore';
@@ -42,6 +42,7 @@ import { KNTT_CURRICULUM, getKnttCurriculum } from "../data/knttCurriculum";
 import { LanguageSpeechControls } from "../components/LanguageSpeechControls";
 import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
+import { stripQuickAnswerSection } from "../lib/globalMath";
 
 export type LayoutStyle = 'a4_print' | 'infographic' | 'poster' | 'mindmap';
 
@@ -81,9 +82,12 @@ export function getFormattedLessonTitle(rawName?: string): string {
  * 2. Loại bỏ bất kỳ tiêu đề "Góc lượng giác" bị lẫn khi bài học đang chọn là Cấp số cộng.
  * 3. Chuẩn hóa công thức Cấp số cộng và tách chữ tiếng Việt ra khỏi dấu $.
  */
-export function cleanDocumentContent(content: string, lessonName?: string): string {
+export function cleanDocumentContent(content: string, lessonName?: string, skipVisualEnrich: boolean = false, isSolution: boolean = false): string {
   if (!content) return '';
   let cleaned = content.trim();
+
+  // 0. Làm sạch công thức LaTeX và giải phóng tiêu đề bị bọc $$
+  cleaned = cleanMathAndUnwrapHeadings(normalizeMathText(cleaned));
 
   // 1. Loại bỏ các dòng tiêu đề thừa/lẫn ở đầu thân văn bản markdown
   cleaned = cleaned.replace(/^\s*#+\s*(?:PHIẾU\s*HỌC\s*TẬP[^\n]*|BÀI\s*\d*[^\n]*|CHỦ\s*ĐỀ[^\n]*)\n+/gi, '');
@@ -95,17 +99,25 @@ export function cleanDocumentContent(content: string, lessonName?: string): stri
     cleaned = cleaned.replace(/(?:^|\n)\s*#+\s*(?:BÀI\s*\d*\s*:\s*)?Góc\s*lượng\s*giác[^\n]*/gi, '');
   }
 
-  // 3. Chuẩn hóa công thức Cấp số cộng & Tách chữ tiếng Việt ra khỏi dấu $
+  // 3. Chuẩn hóa công thức Cấp số cộng & Cấp số nhân & Tách chữ tiếng Việt ra khỏi dấu $
   cleaned = normalizeArithmeticProgressionFormulas(cleaned);
+  cleaned = normalizeGeometricProgressionFormulas(cleaned);
 
   // 3.5 Chuẩn hóa các môi trường bảng số liệu thống kê \begin{array}... \end{array}
   cleaned = normalizeArrayAndTableEnvironments(cleaned);
 
-  // 4. Chuẩn hóa đánh số câu hỏi (Câu 1, Câu 2...) và tách các phương án A, B, C, D rõ ràng
-  cleaned = formatWorksheetQuestionsAndSections(cleaned);
+  // 4. Chuẩn hóa đánh số câu hỏi (Câu 1, Câu 2...) và tách các phương án A, B, C, D rõ ràng (chỉ chạy trên phần đề bài)
+  if (!isSolution) {
+    cleaned = formatWorksheetQuestionsAndSections(cleaned);
+  }
 
-  // 5. Tự động hoàn thiện BBT & Đồ thị vector (zero-effort cho giáo viên)
-  cleaned = autoEnrichTextWithVisuals(cleaned);
+  // 4.5. Bỏ hoàn toàn BẢNG ĐÁP ÁN NHANH khỏi Phiếu học tập, chỉ giữ HƯỚNG DẪN GIẢI CHI TIẾT
+  cleaned = stripQuickAnswerSection(cleaned);
+
+  // 5. Tự động hoàn thiện BBT & Đồ thị vector (chỉ chạy sau khi hoàn tất stream để tránh đơ trình duyệt)
+  if (!skipVisualEnrich) {
+    cleaned = autoEnrichTextWithVisuals(cleaned, isSolution);
+  }
 
   return cleaned.trim();
 }
@@ -210,10 +222,10 @@ export function Worksheets() {
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string>("");
   
-  // Tùy chọn Lời giải chi tiết & Hiển thị
+  // Tùy chọn Lời giải chi tiết & Hiển thị (Mặc định mở sẵn lời giải khi giáo viên chọn kèm lời giải)
   const [includeDetailedSolution, setIncludeDetailedSolution] = useState<boolean>(true);
-  const [showAllSolutions, setShowAllSolutions] = useState<boolean>(false);
-  const [openSolutions, setOpenSolutions] = useState<Record<string | number, boolean>>({});
+  const [showAllSolutions, setShowAllSolutions] = useState<boolean>(true);
+  const [openSolutions, setOpenSolutions] = useState<Record<string | number, boolean>>({ 'doc-solution': true });
   const [worksheetQuestions, setWorksheetQuestions] = useState<any[]>([]);
   const [viewMode, setViewMode] = useState<'document' | 'questions'>('document');
   const [resultsViewTab, setResultsViewTab] = useState<'table' | 'analytics'>('table');
@@ -316,9 +328,45 @@ export function Worksheets() {
   };
 
   const handleInsertDocVisualizerSnippet = (target: "content" | "solution", snippet: string) => {
-    setSuggestion(prev => `${prev.trimEnd()}\n\n${snippet}\n\n`);
+    setSuggestion(prev => {
+      const current = prev || "";
+      const detailsMatch =
+        current.match(/<details(?:\s+class=["']solution-box["'])?[^>]*>([\s\S]*?)<\/details>/i) ||
+        current.match(/<details(?:\s+class=["']solution-box["'])?[^>]*>([\s\S]*)$/i);
+      const solDelimRegex = /(?:(?:^|\n)\s*---+\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN|LỜI GIẢI|HƯỚNG DẪN GIẢI|BẢNG ĐÁP ÁN)[^\n]*(?:---+)?\s*(?:\n|$)|(?:^|\n)\s*(?:#{1,4}|\*{2,3})\s*(?:(?:PHẦN|Phần)\s*(?:[1-5]|I{1,3}|IV|V)\s*[:.]?\s*)?(?:[1-5]|I{1,3}|IV|V)?\.?\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN|LỜI GIẢI|HƯỚNG DẪN GIẢI|BẢNG ĐÁP ÁN)\b[^\n]*(?:\n|$))/i;
+
+      if (target === "content") {
+        if (detailsMatch) {
+          const idx = current.indexOf(detailsMatch[0]);
+          const before = current.substring(0, idx).trimEnd();
+          const after = current.substring(idx);
+          return `${before}\n\n${snippet}\n\n${after}`;
+        }
+        const delimMatch = current.match(solDelimRegex);
+        if (delimMatch && delimMatch.index !== undefined) {
+          const before = current.substring(0, delimMatch.index).trimEnd();
+          const after = current.substring(delimMatch.index);
+          return `${before}\n\n${snippet}\n\n${after}`;
+        }
+        return `${current.trimEnd()}\n\n${snippet}\n\n`;
+      } else {
+        // target === "solution"
+        if (detailsMatch) {
+          if (/<\/details>/i.test(detailsMatch[0])) {
+            return current.replace(/<\/details>/i, `\n\n${snippet}\n\n</details>`);
+          }
+          return `${current.trimEnd()}\n\n${snippet}\n\n</details>`;
+        }
+        return `${current.trimEnd()}\n\n${snippet}\n\n`;
+      }
+    });
+
+    if (worksheetQuestions.length > 0) {
+      handleInsertVisualizerSnippet(0, target, snippet);
+    }
+
     setIsDocVisualizerOpen(false);
-    showToast(`Đã chèn ${snippet.includes('<svg-wrapper') ? 'BBT (ảnh SVG)' : 'Đồ thị (ảnh PNG)'} vào phiếu học tập!`);
+    showToast(`Đã chèn ${snippet.includes('<svg-wrapper') ? 'BBT (ảnh SVG)' : 'hình minh họa'} vào ${target === 'content' ? 'đề bài' : 'lời giải'} phiếu học tập!`);
   };
 
   const handleAiFixBbtForWorksheetQuestion = async (q: any, idx: number) => {
@@ -458,6 +506,9 @@ export function Worksheets() {
   const toggleAllSolutions = () => {
     const nextState = !showAllSolutions;
     setShowAllSolutions(nextState);
+    if (nextState && !includeDetailedSolution) {
+      setIncludeDetailedSolution(true);
+    }
     const updated: Record<string | number, boolean> = { 'doc-solution': nextState };
     if (worksheetQuestions && worksheetQuestions.length > 0) {
       worksheetQuestions.forEach((q, idx) => {
@@ -465,6 +516,7 @@ export function Worksheets() {
       });
     }
     setOpenSolutions(updated);
+    showToast(nextState ? "👁️ Đã hiện tất cả lời giải chi tiết!" : "🙈 Đã ẩn tất cả lời giải chi tiết!");
   };
 
   const isSolutionOpen = (id: string | number) => {
@@ -1376,7 +1428,16 @@ export function Worksheets() {
           });
           const data = await resNonStream.json();
           if (data && data.result) {
-            setSuggestion(normalizeMathText(data.result || ''));
+            let resText = data.result;
+            if (typeof resText === 'string' && resText.trim().startsWith('{')) {
+              try {
+                const parsedObj = safeJsonParse(resText);
+                if (parsedObj && (parsedObj.part1 || parsedObj.part2 || parsedObj.part3 || parsedObj.questions || parsedObj.summary)) {
+                  resText = formatStructuredJsonToMarkdown(parsedObj);
+                }
+              } catch (e) {}
+            }
+            setSuggestion(normalizeMathText(resText || ''));
             setStreamProgress({ percentage: 100, text: "Tạo phiếu học tập hoàn tất!" });
             setTimeout(() => setStreamProgress(null), 1000);
             setIsLoading(false);
@@ -1403,6 +1464,7 @@ export function Worksheets() {
       const decoder = new TextDecoder("utf-8");
       let rawAccumulated = "";
 
+      let lastRenderTime = 0;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -1424,26 +1486,42 @@ export function Worksheets() {
           return;
         }
 
-        // Progressive display normalized cleanly
-        setSuggestion(normalizeMathText(rawAccumulated));
+        // Throttle progressive display & progress bar updates every 250ms to prevent browser freeze ("Trang không phản hồi")
+        const now = Date.now();
+        if (now - lastRenderTime > 250) {
+          lastRenderTime = now;
+          if (!rawAccumulated.trim().startsWith('{')) {
+            setSuggestion(rawAccumulated);
+          }
 
-        // Update progress bar based on structural sections
-        if (rawAccumulated.includes('PHẦN IV')) {
-          setStreamProgress({ percentage: 85, text: "Đang sinh PHẦN IV: Bài tập tự luận..." });
-        } else if (rawAccumulated.includes('PHẦN III')) {
-          setStreamProgress({ percentage: 65, text: "Đang sinh PHẦN III: Trắc nghiệm trả lời ngắn..." });
-        } else if (rawAccumulated.includes('PHẦN II')) {
-          setStreamProgress({ percentage: 45, text: "Đang sinh PHẦN II: Trắc nghiệm Đúng / Sai..." });
-        } else if (rawAccumulated.includes('PHẦN I')) {
-          setStreamProgress({ percentage: 25, text: "Đang sinh PHẦN I: Trắc nghiệm lựa chọn..." });
-        } else if (rawAccumulated.includes('details') || rawAccumulated.includes('ĐÁP ÁN')) {
-          setStreamProgress({ percentage: 95, text: "Đang hoàn thiện Bảng đáp án & Hướng dẫn giải..." });
-        } else {
-          setStreamProgress({ percentage: 15, text: "Đang phân tích cấu trúc phiếu học tập..." });
+          // Update progress bar based on structural sections inside throttle window
+          if (rawAccumulated.includes('details') || rawAccumulated.includes('ĐÁP ÁN') || rawAccumulated.includes('HƯỚNG DẪN GIẢI')) {
+            setStreamProgress({ percentage: 95, text: "Đang hoàn thiện Bảng đáp án & Hướng dẫn giải..." });
+          } else if (rawAccumulated.includes('PHẦN IV')) {
+            setStreamProgress({ percentage: 80, text: "Đang sinh PHẦN IV: Bài tập tự luận..." });
+          } else if (rawAccumulated.includes('PHẦN III')) {
+            setStreamProgress({ percentage: 60, text: "Đang sinh PHẦN III: Trắc nghiệm trả lời ngắn..." });
+          } else if (rawAccumulated.includes('PHẦN II')) {
+            setStreamProgress({ percentage: 40, text: "Đang sinh PHẦN II: Trắc nghiệm Đúng / Sai..." });
+          } else if (rawAccumulated.includes('PHẦN I')) {
+            setStreamProgress({ percentage: 25, text: "Đang sinh PHẦN I: Trắc nghiệm lựa chọn..." });
+          } else {
+            setStreamProgress({ percentage: 15, text: "Đang thiết lập lý thuyết trọng tâm..." });
+          }
         }
       }
 
-      let processedResult = preProcessMathContent(rawAccumulated);
+      let inputToFormat = rawAccumulated;
+      if (rawAccumulated.trim().startsWith('{')) {
+        try {
+          const parsedObj = safeJsonParse(rawAccumulated);
+          if (parsedObj && (parsedObj.part1 || parsedObj.part2 || parsedObj.part3 || parsedObj.questions || parsedObj.summary)) {
+            inputToFormat = formatStructuredJsonToMarkdown(parsedObj);
+          }
+        } catch (e) {}
+      }
+
+      let processedResult = preProcessMathContent(inputToFormat);
       processedResult = embedTikzSvgsInText(processedResult);
       processedResult = processedResult.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
         if (/(?:y'|f'\(x\)|\\searrow|\\nearrow)/i.test(match)) {
@@ -1458,6 +1536,7 @@ export function Worksheets() {
 
       setSuggestion(processedResult);
       setStreamProgress({ percentage: 100, text: "Tạo phiếu học tập thành công!" });
+      setTimeout(() => triggerGlobalMathRender(), 100);
 
       // Automatically parse structured questions
       try {
@@ -1535,7 +1614,12 @@ export function Worksheets() {
       });
       setHistoryItems(getHistory().filter(item => item.type === 'PHT'));
 
-      // Non-blocking background MathJax rendering
+      // Non-blocking background MathJax rendering & typeset sync
+      if (typeof window !== 'undefined' && (window as any).MathJax && (window as any).MathJax.typesetPromise) {
+        try {
+          await (window as any).MathJax.typesetPromise();
+        } catch (e) {}
+      }
       triggerGlobalMathRender();
 
       setTimeout(() => setStreamProgress(null), 1200);
@@ -1553,78 +1637,88 @@ export function Worksheets() {
     }
   };
 
-  const handleExportPNG = async () => {
-    if (!exportRef.current) return;
+  const sanitizeExportName = (raw: string) => {
+    return (raw || 'PhieuHocTap')
+      .replace(/[:\\/*?"<>|]+/g, '')
+      .trim()
+      .replace(/\s+/g, '_');
+  };
+
+  const runAfterPreviewReady = async (callback: (el: HTMLElement) => Promise<void>) => {
     if (isEditing) {
-      alert("Vui lòng chuyển sang chế độ 'Xem trước' (con mắt) trước khi tải ảnh Poster.");
+      setIsEditing(false);
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    }
+    if (!exportRef.current) {
+      showToast("Không tìm thấy vùng nội dung phiếu học tập để xuất file.");
       return;
     }
+    await ensureMathRendered(exportRef.current);
+    if (typeof window !== 'undefined' && (window as any).MathJax && (window as any).MathJax.typesetPromise) {
+      try {
+        await (window as any).MathJax.typesetPromise([exportRef.current]);
+      } catch (e) {}
+    }
+    await callback(exportRef.current);
+  };
+
+  const handleExportPNG = async () => {
     setIsExportingImage(true);
     try {
-      const cleanTitle = customLessonName ? customLessonName.replace(/\s+/g, '_') : 'PhieuHocTap';
-      await exportElementToImage(exportRef.current, `Poster_${cleanTitle}_${layoutStyle}.png`);
+      await runAfterPreviewReady(async (el) => {
+        const cleanTitle = sanitizeExportName(customLessonName);
+        await exportElementToImage(el, `Poster_${cleanTitle}_${layoutStyle}.png`);
+        showToast("🖼️ Đã tải ảnh Poster (PNG) thành công!");
+      });
     } catch (err) {
       console.error("Lỗi khi tải ảnh Poster:", err);
-      alert("Không thể tải ảnh lúc này. Bạn có thể dùng nút 'In / Xuất PDF' để lưu tài liệu.");
+      showToast("Không thể tải ảnh lúc này. Bạn có thể dùng nút 'In / PDF' để lưu tài liệu.");
     } finally {
       setIsExportingImage(false);
     }
   };
 
   const handleExportPDF = async () => {
-    if (isEditing) {
-      alert("Vui lòng chuyển sang chế độ 'Xem trước' (con mắt) trước khi in hoặc xuất PDF.");
-      return;
-    }
-    const cleanTitle = customLessonName ? `PhieuHocTap_${customLessonName.replace(/\s+/g, '_')}` : "PhieuHocTap";
-    if (exportRef.current) {
-      await ensureMathRendered(exportRef.current);
-    }
-    printElement(exportRef.current, cleanTitle);
+    await runAfterPreviewReady(async (el) => {
+      const cleanTitle = `PhieuHocTap_${sanitizeExportName(customLessonName)}`;
+      printElement(el, cleanTitle);
+    });
   };
 
   const handleExportWord = async () => {
-    if (isEditing) {
-      if (window.confirm("Bạn đang ở chế độ chỉnh sửa (hiển thị mã Markdown). Bạn có muốn chuyển sang chế độ Xem trước để xuất file đẹp hơn không?")) {
-        setIsEditing(false);
-        setTimeout(async () => {
-          if (exportRef.current) {
-            await ensureMathRendered(exportRef.current);
-            exportHtmlToWord(exportRef.current, `PhieuHocTap_${customLessonName.replace(/\s+/g, '_')}.doc`);
-          }
-        }, 500);
+    await runAfterPreviewReady(async (el) => {
+      const cleanTitle = sanitizeExportName(customLessonName);
+      const blob = await exportHtmlToWord(el, `PhieuHocTap_${cleanTitle}.docx`, 'omml');
+      if (blob) {
+        showToast("✅ Đã xuất file Word (.docx) chuẩn Equation (OMML) thành công!");
       } else {
-        alert("Vui lòng chuyển sang chế độ 'Xem trước' (con mắt) trước khi tải xuống.");
+        showToast("⚠️ Có lỗi khi xuất file Word. Vui lòng thử lại.");
       }
-      return;
-    }
-
-    if (exportRef.current) {
-      await ensureMathRendered(exportRef.current);
-      exportHtmlToWord(exportRef.current, `PhieuHocTap_${customLessonName.replace(/\s+/g, '_')}.doc`);
-    }
+    });
   };
 
   const handleExportWordLatex = async () => {
-    if (isEditing) {
-      alert("Vui lòng chuyển sang chế độ 'Xem trước' (con mắt) trước khi tải xuống.");
-      return;
-    }
-    if (exportRef.current) {
-      await ensureMathRendered(exportRef.current);
-      exportHtmlToWord(exportRef.current, `PhieuHocTap_${customLessonName.replace(/\s+/g, '_')}_LaTeX.doc`, true);
-    }
+    await runAfterPreviewReady(async (el) => {
+      const cleanTitle = sanitizeExportName(customLessonName);
+      const blob = await exportHtmlToWord(el, `PhieuHocTap_${cleanTitle}_LaTeX.docx`, 'latex');
+      if (blob) {
+        showToast("✅ Đã xuất file Word (LaTeX) thành công!");
+      } else {
+        showToast("⚠️ Có lỗi khi xuất file Word (LaTeX). Vui lòng thử lại.");
+      }
+    });
   };
 
   const handleExportWordImage = async () => {
-    if (isEditing) {
-      alert("Vui lòng chuyển sang chế độ 'Xem trước' (con mắt) trước khi tải xuống.");
-      return;
-    }
-    if (exportRef.current) {
-      await ensureMathRendered(exportRef.current);
-      exportHtmlToWord(exportRef.current, `PhieuHocTap_${customLessonName.replace(/\s+/g, '_')}_Anh.doc`, 'image');
-    }
+    await runAfterPreviewReady(async (el) => {
+      const cleanTitle = sanitizeExportName(customLessonName);
+      const blob = await exportHtmlToWord(el, `PhieuHocTap_${cleanTitle}_Anh.docx`, 'image');
+      if (blob) {
+        showToast("✅ Đã xuất file Word (Ảnh) thành công!");
+      } else {
+        showToast("⚠️ Có lỗi khi xuất file Word (Ảnh). Vui lòng thử lại.");
+      }
+    });
   };
 
   const splitContent = (content: string) => {
@@ -1645,6 +1739,64 @@ export function Worksheets() {
       right: paragraphs.slice(half).join("\n\n")
     };
   };
+
+  const { mainDocContent, solutionDocContent } = useMemo(() => {
+    if (!suggestion) {
+      return { mainDocContent: "", solutionDocContent: "" };
+    }
+    const SOLUTION_DELIMITER_REGEX = /(?:(?:^|\n)\s*---+\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN|LỜI GIẢI|HƯỚNG DẪN GIẢI|BẢNG ĐÁP ÁN)[^\n]*(?:---+)?\s*(?:\n|$)|(?:^|\n)\s*(?:#{1,4}|\*{2,3})?\s*(?:(?:PHẦN|Phần)\s*(?:[1-5]|I{1,3}|IV|V)\s*[:.]?\s*)?(?:[1-5]|I{1,3}|IV|V)?\.?\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN\s*(?:VÀ|&)?\s*HƯỚNG DẪN GIẢI|LỜI GIẢI CHI TIẾT|HƯỚNG DẪN GIẢI CHI TIẾT|BẢNG ĐÁP ÁN)\b[^\n]*(?:\n|$))/i;
+
+    let mainPart = suggestion;
+    let solPart = "";
+
+    // Thu thập TẤT CẢ các khối <details>...</details> trên toàn văn bản để nếu AI đặt <details> sau từng phần (Phần I, Phần II, Phần III)
+    // thì KHÔNG BAO GIỜ bị cắt mất Phần II và Phần III phía sau!
+    const detailsBlocks: string[] = [];
+    const closedDetailsRegex = /<details(?:\s+class=["']solution-box["'])?[^>]*>([\s\S]*?)<\/details>/gi;
+    let match: RegExpExecArray | null;
+    while ((match = closedDetailsRegex.exec(suggestion)) !== null) {
+      const inner = match[1].replace(/<summary[\s\S]*?<\/summary>/gi, "").replace(/<\/details>/gi, "").trim();
+      if (inner) detailsBlocks.push(inner);
+    }
+
+    if (detailsBlocks.length > 0) {
+      mainPart = suggestion.replace(closedDetailsRegex, "\n\n").trim();
+      const unclosedMatch = mainPart.match(/<details(?:\s+class=["']solution-box["'])?[^>]*>([\s\S]*)$/i);
+      if (unclosedMatch && unclosedMatch.index !== undefined) {
+        const inner = unclosedMatch[1].replace(/<summary[\s\S]*?<\/summary>/gi, "").replace(/<\/details>/gi, "").trim();
+        if (inner) detailsBlocks.push(inner);
+        mainPart = mainPart.substring(0, unclosedMatch.index).trim();
+      }
+      solPart = detailsBlocks.join("\n\n");
+    } else {
+      const unclosedMatch = suggestion.match(/<details(?:\s+class=["']solution-box["'])?[^>]*>([\s\S]*)$/i);
+      if (unclosedMatch && unclosedMatch.index !== undefined) {
+        mainPart = suggestion.substring(0, unclosedMatch.index).trim();
+        solPart = unclosedMatch[1].replace(/<summary[\s\S]*?<\/summary>/gi, "").replace(/<\/details>/gi, "").trim();
+      } else {
+        const delimiterMatch = suggestion.match(SOLUTION_DELIMITER_REGEX);
+        if (delimiterMatch && delimiterMatch.index !== undefined) {
+          const candidateMain = suggestion.substring(0, delimiterMatch.index).trim();
+          const candidateSol = suggestion.substring(delimiterMatch.index).trim();
+          // Chỉ tách nếu phần sau không chứa đề bài PHẦN II / PHẦN III bị sót
+          const missingPart2InMain = !/PHẦN\s*(?:II|2)\b/i.test(candidateMain) && /PHẦN\s*(?:II|2)\s*[:.\-]\s*(?:CÂU\s*HỎI|TRẮC\s*NGHIỆM\s*ĐÚNG)/i.test(candidateSol);
+          if (!missingPart2InMain) {
+            mainPart = candidateMain;
+            solPart = candidateSol;
+          }
+        }
+      }
+    }
+
+    if (!includeDetailedSolution) {
+      mainPart = mainPart.replace(/<details[\s\S]*?(?:<\/details>|$)/gi, "").trim();
+      solPart = "";
+    }
+
+    const cleanedMain = cleanDocumentContent(mainPart, customLessonName, isLoading, false);
+    const cleanedSol = solPart ? cleanDocumentContent(solPart, customLessonName, isLoading, true) : "";
+    return { mainDocContent: cleanedMain, solutionDocContent: cleanedSol };
+  }, [suggestion, includeDetailedSolution, customLessonName, isLoading]);
 
   return (
     <div className="flex flex-col lg:flex-row min-h-full bg-slate-50 lg:overflow-hidden">
@@ -1693,10 +1845,27 @@ export function Worksheets() {
                 if (val) {
                   const item = historyItems.find(h => h.id === val);
                   if (item) {
-                    setSuggestion(item.content);
+                    const cleaned = preProcessMathContent(item.content || "");
+                    setSuggestion(cleaned);
                     setCustomLessonName(item.lessonName);
                     if (item.subject) setSubject(item.subject);
                     if (item.grade) setSelectedGrade(item.grade);
+                    try {
+                      const parsed = parseRawExamText(cleaned);
+                      if (parsed && parsed.length > 0) {
+                        setWorksheetQuestions(parsed.map((q: any, idx: number) => ({
+                          ...q,
+                          id: q.id || idx + 1,
+                          solution: q.solution || q.explanation || "",
+                          explanation: q.explanation || q.solution || ""
+                        })));
+                      } else {
+                        setWorksheetQuestions([]);
+                      }
+                    } catch (err) {
+                      setWorksheetQuestions([]);
+                    }
+                    setTimeout(() => triggerGlobalMathRender(), 100);
                   }
                 }
               }}
@@ -2185,7 +2354,15 @@ export function Worksheets() {
                   <select
                     className="w-full px-2 py-1 bg-slate-50 border border-slate-300 rounded text-xs font-semibold focus:ring-1 focus:ring-emerald-500 focus:outline-none"
                     value={answerMode}
-                    onChange={(e) => setAnswerMode(e.target.value as any)}
+                    onChange={(e) => {
+                      const val = e.target.value as 'full' | 'summary' | 'none';
+                      setAnswerMode(val);
+                      setIncludeDetailedSolution(val !== 'none');
+                      if (val !== 'none') {
+                        setShowAllSolutions(true);
+                        setOpenSolutions(prev => ({ ...prev, 'doc-solution': true }));
+                      }
+                    }}
                   >
                     <option value="full">Đầy đủ lời giải & hướng dẫn chấm chi tiết</option>
                     <option value="summary">Chỉ kèm bảng đáp án nhanh / kết số</option>
@@ -2878,25 +3055,39 @@ export function Worksheets() {
                 <LanguageSpeechControls
                   content={suggestion}
                   onContentChange={(translatedContent) => setSuggestion(translatedContent)}
+                  questions={worksheetQuestions}
+                  onQuestionsChange={(qs) => setWorksheetQuestions(qs)}
                   subject={subject}
                 />
 
                 <button
                   type="button"
                   onClick={() => {
-                    if (suggestion) setSuggestion(prev => run1ClickMathFix(prev));
+                    if (suggestion) {
+                      setSuggestion(prev => cleanDocumentContent(run1ClickMathFix(prev), customLessonName, false));
+                    }
                     if (worksheetQuestions.length > 0) {
                       setWorksheetQuestions(prev => prev.map((q: any) => ({
                         ...q,
-                        content: run1ClickMathFix(q.content),
+                        content: run1ClickMathFix(q.content || q.question || ''),
+                        question: run1ClickMathFix(q.question || q.content || ''),
                         solution: q.solution ? run1ClickMathFix(q.solution) : q.solution,
                         explanation: q.explanation ? run1ClickMathFix(q.explanation) : q.explanation,
-                        options: q.options ? q.options.map((opt: string) => run1ClickMathFix(opt)) : q.options
+                        options: Array.isArray(q.options) ? q.options.map((opt: string) => run1ClickMathFix(opt)) : q.options,
+                        tfStatements: Array.isArray(q.tfStatements)
+                          ? q.tfStatements.map((st: any) =>
+                              typeof st === 'string'
+                                ? run1ClickMathFix(st)
+                                : { ...st, text: st.text ? run1ClickMathFix(st.text) : st.text, content: st.content ? run1ClickMathFix(st.content) : st.content }
+                            )
+                          : q.tfStatements
                       })));
                     }
+                    setTimeout(() => triggerGlobalMathRender(), 80);
+                    showToast("⚡ Đã sửa lỗi công thức Toán và chuẩn hóa định dạng phiếu học tập!");
                   }}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg transition-all shadow-xs text-xs font-bold cursor-pointer active:scale-95"
-                  title="Tự động sửa lỗi rách dấu $, lỗi dính chữ và lỗi KaTeX trong phiếu học tập"
+                  title="Tự động sửa lỗi rách dấu $, lỗi dính chữ và lỗi MathJax trong phiếu học tập"
                 >
                   <Wand2 className="w-3.5 h-3.5 text-emerald-200 animate-pulse" />
                   <span>⚡ Sửa lỗi Toán 1-Click</span>
@@ -3066,12 +3257,10 @@ export function Worksheets() {
 
                 {/* Export Poster Image (PNG) */}
                 <button
+                  type="button"
                   onClick={handleExportPNG}
                   disabled={isExportingImage}
-                  className={cn(
-                    "px-3.5 py-1.5 sm:py-2 text-white text-xs sm:text-sm font-semibold rounded-lg flex items-center gap-1.5 shadow-xs transition-colors",
-                    isEditing ? "bg-slate-400 cursor-not-allowed" : "bg-purple-600 hover:bg-purple-700 active:bg-purple-800"
-                  )}
+                  className="px-3.5 py-1.5 sm:py-2 text-white text-xs sm:text-sm font-semibold rounded-lg flex items-center gap-1.5 shadow-xs transition-colors bg-purple-600 hover:bg-purple-700 active:bg-purple-800 cursor-pointer"
                   title="Tải ảnh Poster sắc nét (PNG) để chia sẻ Zalo/Facebook hoặc in màu"
                 >
                   {isExportingImage ? (
@@ -3101,52 +3290,44 @@ export function Worksheets() {
 
                 {/* Export PDF / In */}
                 <button
+                  type="button"
                   onClick={handleExportPDF}
-                  className={cn(
-                    "px-3.5 py-1.5 sm:py-2 text-white text-xs sm:text-sm font-semibold rounded-lg flex items-center gap-1.5 shadow-xs transition-colors",
-                    isEditing ? "bg-slate-400 cursor-not-allowed" : "bg-slate-700 hover:bg-slate-800"
-                  )}
+                  className="px-3.5 py-1.5 sm:py-2 text-white text-xs sm:text-sm font-semibold rounded-lg flex items-center gap-1.5 shadow-xs transition-colors bg-slate-700 hover:bg-slate-800 cursor-pointer"
                   title="In trực tiếp hoặc Lưu file PDF chuẩn A4/A3"
                 >
                   <Printer className="w-4 h-4" />
                   <span>In / PDF</span>
                 </button>
 
-                {/* Export Word */}
+                {/* Nút Xuất file A4 chuẩn định dạng .docx */}
                 <button
+                  type="button"
                   onClick={handleExportWord}
-                  className={cn(
-                    "px-3.5 py-1.5 sm:py-2 text-white text-xs sm:text-sm font-semibold rounded-lg flex items-center gap-1.5 shadow-xs transition-colors",
-                    isEditing ? "bg-slate-400 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700"
-                  )}
-                  title={isEditing ? "Chuyển sang chế độ xem trước để tải xuống" : "Xuất file Word .docx chuẩn font và bảng biểu"}
+                  className="px-3.5 py-1.5 sm:py-2 text-white text-xs sm:text-sm font-bold rounded-lg flex items-center gap-1.5 shadow-md transition-all bg-emerald-600 hover:bg-emerald-700 hover:scale-[1.02] active:scale-[0.98] cursor-pointer ring-2 ring-emerald-400/30"
+                  title="Tải xuống phiếu học tập đã soạn dưới dạng tệp .docx chuẩn định dạng A4"
                 >
-                  <Download className="w-4 h-4" />
-                  <span>Xuất Word</span>
+                  <FileText className="w-4 h-4 text-emerald-100" />
+                  <span>Xuất file A4</span>
                 </button>
 
                 {/* Export Word (Ảnh) */}
                 <button
+                  type="button"
                   onClick={handleExportWordImage}
-                  className={cn(
-                    "px-3.5 py-1.5 sm:py-2 text-white text-xs sm:text-sm font-semibold rounded-lg flex items-center gap-1.5 shadow-xs transition-colors",
-                    isEditing ? "bg-slate-400 cursor-not-allowed" : "bg-teal-600 hover:bg-teal-700"
-                  )}
-                  title="Xuất file Word với toàn bộ Bảng biến thiên, Đồ thị và công thức toán học dưới dạng ảnh chất lượng cao (không lo lỗi font/lỗi tex)"
+                  className="px-3 py-1.5 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-xs transition-colors bg-teal-600 hover:bg-teal-700 cursor-pointer"
+                  title="Xuất file Word với toàn bộ Bảng biến thiên, Đồ thị và công thức toán học dưới dạng chuẩn sắc nét"
                 >
-                  <Download className="w-4 h-4" />
-                  <span>Word (Ảnh)</span>
+                  <Download className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Word (Ảnh)</span>
                 </button>
 
                 <button
+                  type="button"
                   onClick={handleExportWordLatex}
-                  className={cn(
-                    "hidden xl:flex px-3.5 py-1.5 sm:py-2 text-white text-xs sm:text-sm font-semibold rounded-lg items-center gap-1.5 shadow-xs transition-colors",
-                    isEditing ? "bg-slate-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
-                  )}
-                  title={isEditing ? "Chuyển sang chế độ xem trước để tải xuống" : "Xuất Word giữ nguyên mã LaTeX để dùng chức năng Toggle TeX của MathType"}
+                  className="hidden xl:flex px-3 py-1.5 text-white text-xs font-semibold rounded-lg items-center gap-1.5 shadow-xs transition-colors bg-blue-600 hover:bg-blue-700 cursor-pointer"
+                  title="Xuất Word giữ nguyên mã LaTeX để dùng chức năng Toggle TeX của MathType"
                 >
-                  <Download className="w-4 h-4" />
+                  <Download className="w-3.5 h-3.5" />
                   <span>Word (LaTeX)</span>
                 </button>
               </>
@@ -3188,53 +3369,92 @@ export function Worksheets() {
         )}
         
         <div className="flex-1 overflow-y-auto bg-slate-100 p-4 sm:p-8">
-          {isLoading ? (
+          {isLoading && !suggestion ? (
             <div className="h-full min-h-[400px] flex flex-col items-center justify-center space-y-4">
               <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
               <div className="text-emerald-700 font-bold text-base">Đang khởi tạo phiếu học tập phong cách {LAYOUT_STYLE_OPTIONS.find(s => s.id === layoutStyle)?.title}...</div>
               <div className="text-slate-500 text-sm max-w-sm text-center">
-                AI đang cấu trúc hóa kiến thức trọng tâm, bài toán thực tế và lời giải chi tiết. Vui lòng đợi trong giây lát...
+                {streamProgress?.text || "AI đang cấu trúc hóa kiến thức trọng tâm, bài toán thực tế và lời giải chi tiết. Vui lòng đợi trong giây lát..."}
               </div>
+              {streamProgress && (
+                <div className="w-64 bg-slate-200 rounded-full h-2.5 overflow-hidden mt-2">
+                  <div 
+                    className="bg-emerald-600 h-2.5 rounded-full transition-all duration-300"
+                    style={{ width: `${streamProgress.percentage}%` }}
+                  ></div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="max-w-4xl mx-auto">
+              {isLoading && streamProgress && (
+                <div className="sticky top-0 z-20 mb-4 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl shadow-lg flex items-center justify-between animate-pulse">
+                  <div className="flex items-center gap-2.5 text-xs sm:text-sm font-semibold">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>{streamProgress.text}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-24 sm:w-32 bg-white/30 rounded-full h-2 overflow-hidden">
+                      <div 
+                        className="bg-white h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${streamProgress.percentage}%` }}
+                      ></div>
+                    </div>
+                    <span className="font-mono text-xs font-bold">{streamProgress.percentage}%</span>
+                  </div>
+                </div>
+              )}
+              {/* Document-level BBT, Graph, 3D Geometry & Statistics Visualizer Drawer */}
+              {isDocVisualizerOpen && (
+                <div className="mb-6 p-4 bg-white rounded-2xl border-2 border-emerald-400 shadow-md no-print max-w-[210mm] mx-auto">
+                  <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200">
+                    <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                      {docVisualizerTab === 'bbt' && (
+                        <>
+                          <TrendingUp className="w-4 h-4 text-emerald-600" />
+                          <span>Module Tạo Bảng Biến Thiên Dạng Ảnh Vector SVG (Chuẩn SGK)</span>
+                        </>
+                      )}
+                      {docVisualizerTab === 'graph' && (
+                        <>
+                          <BarChart2 className="w-4 h-4 text-blue-600" />
+                          <span>Module Vẽ & Xuất Đồ Thị 2D & Bất Phương Trình</span>
+                        </>
+                      )}
+                      {docVisualizerTab === 'geometry3d' && (
+                        <>
+                          <Box className="w-4 h-4 text-purple-600" />
+                          <span>Module Vẽ Hình Học Không Gian 3D (Chóp, Lăng trụ, Nón, Trụ, Cầu)</span>
+                        </>
+                      )}
+                      {docVisualizerTab === 'statistics' && (
+                        <>
+                          <BarChart3 className="w-4 h-4 text-amber-600" />
+                          <span>Module Biểu Đồ & Bảng Thống Kê (Mẫu số liệu ghép nhóm và rời rạc)</span>
+                        </>
+                      )}
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setIsDocVisualizerOpen(false)}
+                      className="text-xs px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium cursor-pointer"
+                    >
+                      Đóng
+                    </button>
+                  </div>
+                  <QuestionVisualizerPanel
+                    questionNumber={1}
+                    questionContent={customLessonName || "Hàm số"}
+                    solutionContent=""
+                    defaultTab={docVisualizerTab}
+                    defaultTarget="content"
+                    onInsertSnippet={handleInsertDocVisualizerSnippet}
+                    onClose={() => setIsDocVisualizerOpen(false)}
+                  />
+                </div>
+              )}
+
               {(() => {
-                const SOLUTION_DELIMITER_REGEX = /(?:(?:^|\n)\s*---+\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN|LỜI GIẢI|HƯỚNG DẪN GIẢI|BẢNG ĐÁP ÁN)[^\n]*(?:---+)?\s*(?:\n|$)|(?:^|\n)\s*(?:#{1,4}|\*{2,3})\s*(?:(?:PHẦN|Phần)\s*(?:[1-5]|I{1,3}|IV|V)\s*[:.]?\s*)?(?:[1-5]|I{1,3}|IV|V)?\.?\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN|LỜI GIẢI|HƯỚNG DẪN GIẢI|BẢNG ĐÁP ÁN)\b[^\n]*(?:\n|$))/i;
-                
-                let mainDocContent = suggestion;
-                let solutionDocContent = "";
-
-                // Robust check for AI-embedded HTML <details class="solution-box"> tag
-                const detailsMatch = suggestion ? suggestion.match(/<details(?:\s+class=["\']solution-box["\'])?[^>]*>([\s\S]*?)<\/details>/i) : null;
-                if (detailsMatch) {
-                  const startIndex = suggestion.indexOf(detailsMatch[0]);
-                  mainDocContent = suggestion.substring(0, startIndex).trim();
-                  
-                  // Extract contents and strip <summary>...</summary>
-                  let detailsInner = detailsMatch[1];
-                  detailsInner = detailsInner.replace(/<summary[\s\S]*?<\/summary>/i, "").trim();
-                  solutionDocContent = detailsInner;
-                } else {
-                  // Fallback to standard Markdown delimiter matching
-                  const delimiterMatch = suggestion ? suggestion.match(SOLUTION_DELIMITER_REGEX) : null;
-                  if (delimiterMatch && delimiterMatch.index !== undefined) {
-                    mainDocContent = suggestion.substring(0, delimiterMatch.index).trim();
-                    solutionDocContent = suggestion.substring(delimiterMatch.index).trim();
-                  }
-                }
-
-                // If Student Mode selected (includeDetailedSolution === false), strip solutions completely
-                if (!includeDetailedSolution) {
-                  mainDocContent = mainDocContent.replace(/<details[\s\S]*?<\/details>/gi, "").trim();
-                  solutionDocContent = "";
-                }
-
-                // Chuẩn hóa nội dung tài liệu: loại bỏ tiêu đề thừa/lẫn, sửa AP formulas & tách chữ tiếng Việt
-                mainDocContent = cleanDocumentContent(mainDocContent, customLessonName);
-                if (solutionDocContent) {
-                  solutionDocContent = cleanDocumentContent(solutionDocContent, customLessonName);
-                }
-
                 if (viewMode === 'questions' && worksheetQuestions.length > 0) {
                   return (
                     <div 
@@ -3747,7 +3967,7 @@ export function Worksheets() {
                             {/* Lời giải chi tiết - Kèm theo khi In và Xuất Word (Bản Giáo viên) */}
                             {includeDetailedSolution && (q.solution || q.explanation) && (
                               <div 
-                                className="export-solution-block"
+                                className="export-solution-block hidden print:block"
                                 style={{ 
                                   backgroundColor: '#f8fafc', 
                                   border: '1px solid #cbd5e1', 
@@ -3782,54 +4002,6 @@ export function Worksheets() {
                     />
                   ) : (
                     <>
-                      {/* Document-level BBT & Graph Visualizer Tool */}
-                      {isDocVisualizerOpen && (
-                        <div className="mb-6 p-4 bg-white rounded-2xl border-2 border-emerald-400 shadow-md no-print max-w-[210mm] mx-auto">
-                          <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200">
-                            <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                              {docVisualizerTab === 'bbt' && (
-                                <>
-                                  <TrendingUp className="w-4 h-4 text-emerald-600" />
-                                  <span>Module Tạo Bảng Biến Thiên Dạng Ảnh Vector SVG (Chuẩn SGK)</span>
-                                </>
-                              )}
-                              {docVisualizerTab === 'graph' && (
-                                <>
-                                  <BarChart2 className="w-4 h-4 text-blue-600" />
-                                  <span>Module Vẽ & Xuất Đồ Thị 2D & Bất Phương Trình</span>
-                                </>
-                              )}
-                              {docVisualizerTab === 'geometry3d' && (
-                                <>
-                                  <Box className="w-4 h-4 text-purple-600" />
-                                  <span>Module Vẽ Hình Học Không Gian 3D (Chóp, Lăng trụ, Nón, Trụ, Cầu)</span>
-                                </>
-                              )}
-                              {docVisualizerTab === 'statistics' && (
-                                <>
-                                  <BarChart3 className="w-4 h-4 text-amber-600" />
-                                  <span>Module Biểu Đồ & Bảng Thống Kê (Mẫu số liệu ghép nhóm và rời rạc)</span>
-                                </>
-                              )}
-                            </h3>
-                            <button
-                              onClick={() => setIsDocVisualizerOpen(false)}
-                              className="text-xs px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium cursor-pointer"
-                            >
-                              Đóng
-                            </button>
-                          </div>
-                          <QuestionVisualizerPanel
-                            questionNumber={1}
-                            questionContent={customLessonName || "Hàm số"}
-                            solutionContent=""
-                            defaultTab={docVisualizerTab}
-                            defaultTarget="content"
-                            onInsertSnippet={handleInsertDocVisualizerSnippet}
-                            onClose={() => setIsDocVisualizerOpen(false)}
-                          />
-                        </div>
-                      )}
 
                       {/* Live Streaming Progress Bar */}
                       {streamProgress && (
@@ -4063,10 +4235,10 @@ export function Worksheets() {
                         </div>
                       )}
 
-                        {/* Document Solution Section Accordion Toggle on Screen */}
+                        {/* Document Solution Section Accordion Toggle on Screen & Print/Export */}
                         {includeDetailedSolution && solutionDocContent && (
                           <div className="mt-8 pt-6 border-t border-slate-200">
-                            <div className="no-print">
+                            <div className="no-print mb-3">
                               <button
                                 type="button"
                                 onClick={() => toggleSolution('doc-solution')}
@@ -4074,31 +4246,22 @@ export function Worksheets() {
                               >
                                 <span>{isSolutionOpen('doc-solution') ? "🙈 Ẩn lời giải chi tiết" : "💡 Xem lời giải chi tiết"}</span>
                               </button>
-
-                              {isSolutionOpen('doc-solution') && (
-                                <div 
-                                  style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '16px', marginTop: '10px' }}
-                                  className="text-slate-800 text-sm leading-relaxed not-prose whitespace-pre-line"
-                                >
-                                  <div className="font-bold text-slate-900 mb-2 flex items-center gap-1.5 text-base">
-                                    <span>💡 Lời giải chi tiết & Hướng dẫn chấm:</span>
-                                  </div>
-                                  <div className="text-slate-800 whitespace-pre-line">
-                                    <MarkdownRenderer className="whitespace-pre-line" content={fixMath(solutionDocContent)} />
-                                  </div>
-                                </div>
-                              )}
                             </div>
 
-                            {/* Khi In hoặc Xuất Word (Bản dành cho Giáo viên) */}
-                            <div className="docx-page-break page-break" style={{ pageBreakBefore: 'always' }}></div>
+                            {/* Khi mở trên màn hình hoặc khi In / Xuất Word (Bản dành cho Giáo viên) */}
+                            <div className={cn("docx-page-break page-break", !isSolutionOpen('doc-solution') && "hidden print:block")} style={{ pageBreakBefore: 'always' }}></div>
                             <div 
-                              className="export-solution-block mt-6 pt-4 border-t border-slate-400 not-prose"
+                              className={cn(
+                                "export-solution-block mt-2 p-5 rounded-xl bg-slate-50/80 border border-slate-200 not-prose",
+                                !isSolutionOpen('doc-solution') && "hidden print:block"
+                              )}
                             >
-                              <div className="font-bold text-slate-900 mb-2 text-base">
-                                <span>💡 Lời giải chi tiết & Hướng dẫn chấm:</span>
+                              <div className="font-bold text-slate-900 mb-3 text-base flex items-center gap-1.5">
+                                <span>💡 Đáp án & Hướng dẫn giải chi tiết:</span>
                               </div>
-                              <MarkdownRenderer content={fixMath(solutionDocContent)} />
+                              <ErrorBoundary>
+                                <MathView content={solutionDocContent} />
+                              </ErrorBoundary>
                             </div>
                           </div>
                         )}

@@ -4,7 +4,7 @@ import { exportHtmlToWord } from '../lib/exportUtils';
 import React, { useState, useRef } from "react";
 import { KHGDRow } from "../types";
 import { fullPlan } from "../data/mockData";
-import { Download, Upload, Sparkles, Plus, Loader2 } from "lucide-react";
+import { Download, Upload, Sparkles, Plus, Loader2, FileText } from "lucide-react";
 import { cn, parseApiResponse } from "../lib/utils";
 import { printElement } from '../lib/print';
 import { FeatureQuickGuideBanner } from '../components/FeatureQuickGuideBanner';
@@ -209,10 +209,11 @@ export function EducationalPlan() {
           <div className="flex items-center gap-3">
             <button 
               onClick={handleExportWord}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm rounded-lg transition-all shadow-md shadow-emerald-600/20 cursor-pointer active:scale-95"
+              title="Xuất kế hoạch giáo dục tổ chuyên môn sang file Word (.docx) chuẩn định dạng A4"
             >
-              <Download className="h-4 w-4" />
-              Xuất Word
+              <FileText className="h-4 w-4" />
+              <span>Xuất file A4 (.docx)</span>
             </button>
             <button 
               onClick={() => handleExportPDF()}

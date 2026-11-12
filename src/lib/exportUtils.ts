@@ -16,7 +16,6 @@ const saveAs = (blob: Blob | any, filename: string) => {
   }
 };
 import html2canvas from 'html2canvas';
-import katex from 'katex';
 import { mml2omml } from 'mathml2omml-plus';
 import {
   Document,
@@ -49,7 +48,7 @@ import {
 } from './utils';
 import { convertBbtTableToSvg, autoEnrichTextWithVisuals } from './bbtRenderer';
 import { getTikzSvg } from '../components/TikzRenderer';
-import { normalizeMathText, normalizeArithmeticProgressionFormulas } from './globalMath';
+import { normalizeMathText, normalizeArithmeticProgressionFormulas, preprocessMathText } from './globalMath';
 
 interface RunStyle {
   bold?: boolean;
@@ -114,18 +113,6 @@ function latexToOmmlComponent(rawTex: string, isBlock: boolean = false): any {
         mathmlHtml = (window as any).MathJax.tex2mml(cleanTex, { display: effectiveDisplayMode });
       } catch (e) {
         console.warn('MathJax.tex2mml conversion error:', e);
-      }
-    }
-
-    if (!mathmlHtml) {
-      try {
-        mathmlHtml = katex.renderToString(cleanTex, {
-          output: 'mathml',
-          displayMode: effectiveDisplayMode,
-          throwOnError: false,
-        });
-      } catch (e) {
-        console.warn('KaTeX mathml conversion error:', e);
       }
     }
 
@@ -354,11 +341,39 @@ function getNodeLatexOrText(node: Node): string {
     const el = node as HTMLElement;
     const tagName = el.tagName.toUpperCase();
 
-    // Check for preprocessed OMML math token
-    if (el.classList.contains('omml-math-node')) {
-      const tex = decodeURIComponent(el.getAttribute('data-latex') || '');
-      const isBlock = el.getAttribute('data-block') === '1';
-      return isBlock ? `\n$$${tex}$$\n` : `$${tex}$`;
+    // Check for preprocessed OMML math token or MathJax container
+    if (
+      el.classList.contains('omml-math-node') ||
+      tagName === 'MJX-CONTAINER' ||
+      el.classList.contains('MathJax') ||
+      el.classList.contains('MathJax_SVG') ||
+      el.classList.contains('mjx-chtml') ||
+      el.hasAttribute('data-latex')
+    ) {
+      let rawAttr = el.getAttribute('data-latex') || el.getAttribute('data-tex') || '';
+      let tex = '';
+      if (rawAttr) {
+        try {
+          tex = decodeURIComponent(rawAttr).trim();
+        } catch (e) {
+          tex = rawAttr.trim();
+        }
+      }
+      if (!tex) {
+        const ann =
+          el.querySelector("annotation[encoding='application/x-tex']") ||
+          el.querySelector('annotation') ||
+          el.querySelector("script[type*='math/tex']");
+        if (ann?.textContent) tex = ann.textContent.trim();
+      }
+      const isBlock =
+        el.getAttribute('data-block') === '1' ||
+        el.getAttribute('display') === 'true' ||
+        el.classList.contains('katex-display');
+      if (tex) {
+        return isBlock ? `\n\n$$${tex}$$\n\n` : ` $${tex}$ `;
+      }
+      return '';
     }
 
     // Check for KaTeX element
@@ -366,20 +381,24 @@ function getNodeLatexOrText(node: Node): string {
       const ann = el.querySelector("annotation[encoding='application/x-tex']") || el.querySelector("annotation");
       const isBlock = el.classList.contains('katex-display') || !!el.closest('.katex-display');
       if (ann && ann.textContent) {
-        return isBlock ? `\n$$${ann.textContent.trim()}$$\n` : `$${ann.textContent.trim()}$`;
+        return isBlock ? `\n\n$$${ann.textContent.trim()}$$\n\n` : ` $${ann.textContent.trim()}$ `;
       }
       const texAttr = el.getAttribute('data-tex') || el.getAttribute('data-latex');
-      if (texAttr) return isBlock ? `\n$$${texAttr}$$\n` : `$${texAttr}$`;
+      if (texAttr) return isBlock ? `\n\n$$${texAttr}$$\n\n` : ` $${texAttr}$ `;
       return '';
     }
 
-    // Guard: ignore internal KaTeX structures so they never leak raw text
+    // Guard: ignore internal KaTeX / MathJax assistive structures and SVGs so they never leak raw text
     if (
       el.classList.contains('katex-mathml') ||
       el.classList.contains('katex-html') ||
+      tagName === 'MJX-ASSISTIVE-MML' ||
       tagName === 'MATH' ||
       tagName === 'ANNOTATION' ||
-      tagName === 'SEMANTICS'
+      tagName === 'SEMANTICS' ||
+      tagName === 'SVG' ||
+      tagName === 'SVG-WRAPPER' ||
+      tagName === 'TIKZ-DIAGRAM'
     ) {
       return '';
     }
@@ -1022,6 +1041,117 @@ function buildTrueFalseParagraphs(
 }
 
 /**
+ * Groups fragmented multiple-choice option paragraphs (A, B, C, D) or stems with trailing A
+ * into a single unified invisible choice table for high-fidelity Word export.
+ */
+function tryExtractChoiceCluster(
+  nodes: Node[],
+  idx: number,
+  options: ExportOptions
+): { consumed: number; items: (Paragraph | Table)[] } | null {
+  if (idx >= nodes.length) return null;
+  const current = nodes[idx];
+  if (current.nodeType !== Node.ELEMENT_NODE) return null;
+  const currentEl = current as HTMLElement;
+  const currentText = stripInternalTags(getNodeLatexOrText(currentEl)).trim();
+
+  // TH1: Đề bài dính phương án A ở đuôi (ví dụ: "... là A. 15." hoặc "... bằng A. u_5 = 48.")
+  // và các node tiếp theo chứa B., C., D.
+  const stemWithAMatch = currentText.match(/^(.*?)\s+(?:[-*]\s*)?(?:\*{0,2})A[\.\)](?:\*{0,2})\s*([^\n]+)$/i);
+  if (stemWithAMatch) {
+    const nextEls: HTMLElement[] = [];
+    for (let j = idx + 1; j < Math.min(idx + 6, nodes.length); j++) {
+      if (nodes[j].nodeType === Node.ELEMENT_NODE) {
+        const text = stripInternalTags(getNodeLatexOrText(nodes[j])).trim();
+        if (text) nextEls.push(nodes[j] as HTMLElement);
+      }
+    }
+    if (nextEls.length >= 3) {
+      const tB = stripInternalTags(getNodeLatexOrText(nextEls[0])).trim();
+      const tC = stripInternalTags(getNodeLatexOrText(nextEls[1])).trim();
+      const tD = stripInternalTags(getNodeLatexOrText(nextEls[2])).trim();
+      if (
+        /^\s*(?:[-*]\s*)?(?:\*{0,2})B[\.\)]/i.test(tB) &&
+        /^\s*(?:[-*]\s*)?(?:\*{0,2})C[\.\)]/i.test(tC) &&
+        /^\s*(?:[-*]\s*)?(?:\*{0,2})D[\.\)]/i.test(tD)
+      ) {
+        const stemText = stemWithAMatch[1].trim();
+        const optA = stemWithAMatch[2].trim();
+        const optB = tB.replace(/^\s*(?:[-*]\s*)?(?:\*{0,2})B[\.\)](?:\*{0,2})\s*/i, '').trim();
+        const optC = tC.replace(/^\s*(?:[-*]\s*)?(?:\*{0,2})C[\.\)](?:\*{0,2})\s*/i, '').trim();
+        const optD = tD.replace(/^\s*(?:[-*]\s*)?(?:\*{0,2})D[\.\)](?:\*{0,2})\s*/i, '').trim();
+
+        const items: (Paragraph | Table)[] = [];
+        if (stemText) {
+          items.push(new Paragraph({
+            spacing: { line: 288, after: 80 },
+            children: parseTextWithMath(stemText, {}, options)
+          }));
+        }
+        items.push(buildInvisibleChoiceTable([
+          { label: 'A.', text: optA },
+          { label: 'B.', text: optB },
+          { label: 'C.', text: optC },
+          { label: 'D.', text: optD }
+        ], options));
+
+        const lastConsumedEl = nextEls[2];
+        let consumed = 1;
+        for (let k = idx + 1; k < nodes.length; k++) {
+          consumed++;
+          if (nodes[k] === lastConsumedEl) break;
+        }
+        return { consumed, items };
+      }
+    }
+  }
+
+  // TH2: Node hiện tại là riêng phương án A. ...
+  // và 3 node tiếp theo chứa B, C, D
+  if (/^\s*(?:[-*]\s*)?(?:\*{0,2})A[\.\)]/i.test(currentText)) {
+    const nextEls: HTMLElement[] = [];
+    for (let j = idx + 1; j < Math.min(idx + 6, nodes.length); j++) {
+      if (nodes[j].nodeType === Node.ELEMENT_NODE) {
+        const text = stripInternalTags(getNodeLatexOrText(nodes[j])).trim();
+        if (text) nextEls.push(nodes[j] as HTMLElement);
+      }
+    }
+    if (nextEls.length >= 3) {
+      const tB = stripInternalTags(getNodeLatexOrText(nextEls[0])).trim();
+      const tC = stripInternalTags(getNodeLatexOrText(nextEls[1])).trim();
+      const tD = stripInternalTags(getNodeLatexOrText(nextEls[2])).trim();
+      if (
+        /^\s*(?:[-*]\s*)?(?:\*{0,2})B[\.\)]/i.test(tB) &&
+        /^\s*(?:[-*]\s*)?(?:\*{0,2})C[\.\)]/i.test(tC) &&
+        /^\s*(?:[-*]\s*)?(?:\*{0,2})D[\.\)]/i.test(tD)
+      ) {
+        const optA = currentText.replace(/^\s*(?:[-*]\s*)?(?:\*{0,2})A[\.\)](?:\*{0,2})\s*/i, '').trim();
+        const optB = tB.replace(/^\s*(?:[-*]\s*)?(?:\*{0,2})B[\.\)](?:\*{0,2})\s*/i, '').trim();
+        const optC = tC.replace(/^\s*(?:[-*]\s*)?(?:\*{0,2})C[\.\)](?:\*{0,2})\s*/i, '').trim();
+        const optD = tD.replace(/^\s*(?:[-*]\s*)?(?:\*{0,2})D[\.\)](?:\*{0,2})\s*/i, '').trim();
+
+        const table = buildInvisibleChoiceTable([
+          { label: 'A.', text: optA },
+          { label: 'B.', text: optB },
+          { label: 'C.', text: optC },
+          { label: 'D.', text: optD }
+        ], options);
+
+        const lastConsumedEl = nextEls[2];
+        let consumed = 1;
+        for (let k = idx + 1; k < nodes.length; k++) {
+          consumed++;
+          if (nodes[k] === lastConsumedEl) break;
+        }
+        return { consumed, items: [table] };
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Recursively converts a DOM node or tree into an array of docx FileChild (Paragraph | Table).
  */
 async function parseDomToDocxChildren(
@@ -1248,6 +1378,14 @@ async function parseDomToDocxChildren(
               cellWidthPct += colWeights[k];
             }
             cellWidthPct = Math.round(cellWidthPct);
+          } else if (maxCols >= 9 && maxCols <= 15) {
+            // Quick Answer Table (e.g. 13 cols: Col 0 = "Câu", Cols 1..12 = 1..12)
+            if (c === 0) {
+              cellWidthPct = colSpan === 1 ? 12 : Math.round((colSpan / maxCols) * 100);
+            } else {
+              const remaining = 88 / (maxCols - 1);
+              cellWidthPct = Math.round(remaining * colSpan);
+            }
           } else {
             cellWidthPct = Math.round((colSpan / maxCols) * 100);
           }
@@ -1279,7 +1417,7 @@ async function parseDomToDocxChildren(
                 runs.forEach((run) => {
                   (run as any).options = {
                     ...(run as any).options,
-                    size: maxCols >= 15 ? 17 : 20, // 8.5pt or 10pt to prevent vertical character wrapping
+                    size: maxCols >= 15 ? 17 : (c === 0 ? 18 : 20), // 9pt for Col 0 header, 10pt for numbers
                     font: 'Times New Roman',
                   };
                 });
@@ -1319,7 +1457,7 @@ async function parseDomToDocxChildren(
                 width: { size: cellWidthPct, type: WidthType.PERCENTAGE },
                 borders: borderConfig,
                 margins: isDenseTable
-                  ? { top: 30, bottom: 30, left: 40, right: 40 }
+                  ? { top: 30, bottom: 30, left: (c === 0 ? 20 : 30), right: (c === 0 ? 20 : 30) }
                   : { top: 80, bottom: 80, left: 100, right: 100 },
                 children: cellParagraphs.length > 0 ? cellParagraphs : [new Paragraph({})],
               })
@@ -1377,7 +1515,7 @@ async function parseDomToDocxChildren(
       const isChoiceList =
         items.length >= 2 &&
         items.length <= 4 &&
-        itemTexts.every((t) => /^\s*(?:\*\*)?[A-D][\.\)]/i.test(t));
+        itemTexts.every((t) => /^\s*(?:[-*•]\s*)?(?:\*{0,2}|\s*)?([A-D])[\.\)]/i.test(t));
 
       if (isChoiceList) {
         const optsList = items.map((li, idx) => {
@@ -1604,7 +1742,10 @@ async function parseDomToDocxChildren(
       // Question stem or standard paragraph without images:
       // Parse directly from rawText to group ALL runs (lead text and formulas) into ONE single Paragraph.
       if (!el.querySelector('img')) {
-        const runs = parseTextWithMath(rawText, {}, options);
+        const hasMathMlOnlyNode = !!el.querySelector('.omml-math-node:not([data-latex])[data-mathml]');
+        const runs = hasMathMlOnlyNode
+          ? parseInlineContent(el, {}, options)
+          : parseTextWithMath(rawText, {}, options);
         if (runs.length > 0) {
           result.push(
             new Paragraph({
@@ -1724,13 +1865,26 @@ async function parseDomToDocxChildren(
     }
 
     const childNodes = Array.from(el.childNodes);
-    for (const child of childNodes) {
-      await processNode(child);
+    for (let i = 0; i < childNodes.length; i++) {
+      const cluster = tryExtractChoiceCluster(childNodes, i, options);
+      if (cluster) {
+        result.push(...cluster.items);
+        i += cluster.consumed - 1;
+        continue;
+      }
+      await processNode(childNodes[i]);
     }
   }
 
-  for (const child of Array.from(root.childNodes)) {
-    await processNode(child);
+  const rootChildren = Array.from(root.childNodes);
+  for (let i = 0; i < rootChildren.length; i++) {
+    const cluster = tryExtractChoiceCluster(rootChildren, i, options);
+    if (cluster) {
+      result.push(...cluster.items);
+      i += cluster.consumed - 1;
+      continue;
+    }
+    await processNode(rootChildren[i]);
   }
 
   return result;
@@ -1745,8 +1899,8 @@ export async function exportHtmlToWord(
   mathFormat: 'omml' | 'mathml' | 'latex' | 'image' | boolean = 'omml'
 ) {
   let resolvedMathFormat: 'omml' | 'latex' | 'image' = 'omml';
-  // LaTeX mode disabled for Word export.
   if (mathFormat === 'image') resolvedMathFormat = 'image';
+  else if (mathFormat === true || mathFormat === 'latex') resolvedMathFormat = 'latex';
   else resolvedMathFormat = 'omml';
 
   let loadingOverlay = document.getElementById('word-export-loading');
@@ -1773,6 +1927,29 @@ export async function exportHtmlToWord(
     document.body.appendChild(loadingOverlay);
   } else {
     loadingOverlay.style.display = 'flex';
+  }
+
+  // Đồng bộ tiến trình Xuất file Word với MathJax Typeset & gắn data-latex lên mọi mjx-container
+  if (typeof window !== 'undefined' && (window as any).MathJax) {
+    const mj = (window as any).MathJax;
+    if (mj.typesetPromise) {
+      try {
+        await mj.typesetPromise([element]);
+      } catch (e) {
+        console.warn('MathJax typesetting error before exportHtmlToWord:', e);
+      }
+    }
+    try {
+      const mathList = mj.startup?.document?.math;
+      if (mathList) {
+        for (const item of mathList) {
+          if (item && item.typesetRoot && typeof item.math === 'string') {
+            item.typesetRoot.setAttribute('data-latex', item.math);
+            item.typesetRoot.setAttribute('data-block', item.display ? '1' : '0');
+          }
+        }
+      }
+    } catch (e) {}
   }
 
   try {
@@ -1813,13 +1990,13 @@ export async function exportHtmlToWord(
       clonedCtrl.parentNode?.replaceChild(span, clonedCtrl);
     });
 
-    // Remove print-hidden elements and action buttons
-    clone.querySelectorAll('.no-print, button, [role="button"]').forEach(el => el.remove());
+    // Remove print-hidden elements, action buttons, and decorative UI Lucide icons
+    clone.querySelectorAll('.no-print, button, [role="button"], svg.lucide').forEach(el => el.remove());
 
-    // Ensure all print-only elements are visible during export
-    clone.querySelectorAll('.print-only, .only-print').forEach(el => {
+    // Ensure all print-only and export-solution-block elements are visible during export
+    clone.querySelectorAll('.print-only, .only-print, .export-solution-block, .docx-page-break').forEach(el => {
       (el as HTMLElement).style.display = 'block';
-      el.classList.remove('print-only', 'only-print');
+      el.classList.remove('print-only', 'only-print', 'hidden');
     });
 
     // Ensure all details elements (like solution boxes) are opened and visible during export
@@ -1870,44 +2047,8 @@ export async function exportHtmlToWord(
       }
     });
 
-    // 0. Pre-process naked math environments & AP formulas in DOM text nodes before word translation
-    const walkAndPreprocessTextNodes = (node: Node) => {
-      if (node.nodeType === Node.TEXT_NODE) {
-        let text = node.textContent || '';
-        const parent = node.parentNode;
-        if (parent && !['SCRIPT', 'STYLE', 'CODE', 'PRE'].includes(parent.nodeName)) {
-          let updated = normalizeArithmeticProgressionFormulas(text);
-          if (/(\\left\s*\[|\\begin\s*\{(?:aligned|cases|array|matrix)\*?\})/i.test(updated)) {
-            updated = preProcessMathContent(updated);
-          }
-          if (updated !== text) {
-            node.textContent = updated;
-          }
-        }
-        return;
-      }
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const el = node as HTMLElement;
-        if (el.classList.contains('katex') || el.classList.contains('omml-math-node')) return;
-
-        // Tự động bổ sung BBT / Đồ thị nếu khối câu hỏi đề cập BBT hoặc đồ thị mà thiếu hình vẽ
-        if (el.classList.contains('question-block') || el.classList.contains('question-stem') || el.classList.contains('math-view-container')) {
-          const html = el.innerHTML;
-          if (/(?:bảng\s*biến\s*thiên|bảng\s*xét\s*dấu|đồ\s*thị|hình\s*bên|hình\s*vẽ)/i.test(html) && !html.includes('svg-wrapper') && !html.includes('img') && !html.includes('svg')) {
-            const enriched = autoEnrichTextWithVisuals(html);
-            if (enriched !== html) {
-              el.innerHTML = enriched;
-            }
-          }
-        }
-
-        Array.from(node.childNodes).forEach(walkAndPreprocessTextNodes);
-      }
-    };
-    walkAndPreprocessTextNodes(clone);
-
-    // 0.2. PRE-PROCESS ALL MATH ELEMENTS (MathJax & KaTeX) IN CLONE INTO LIGHTWEIGHT OMML TOKENS
-    // This MUST run before any SVG rasterization so that MathJax SVGs are NEVER converted into PNG diagrams or stripped!
+    // 0.1. PRE-PROCESS ALL MATH ELEMENTS (MathJax & KaTeX) IN CLONE INTO LIGHTWEIGHT OMML TOKENS FIRST
+    // This MUST run BEFORE walkAndPreprocessTextNodes and SVG rasterization so internal MathML/SVG nodes are never corrupted!
     const mathContainers = Array.from(
       clone.querySelectorAll('mjx-container, .MathJax, .MathJax_SVG, .mjx-chtml, .katex, .katex-display, .math-inline, [data-latex]')
     );
@@ -1947,6 +2088,50 @@ export async function exportHtmlToWord(
         mc.parentNode.replaceChild(token, mc);
       }
     }
+
+    // 0.2. Pre-process naked math environments & AP formulas in DOM text nodes before word translation
+    const walkAndPreprocessTextNodes = (node: Node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        let text = node.textContent || '';
+        const parent = node.parentNode;
+        if (parent && !['SCRIPT', 'STYLE', 'CODE', 'PRE', 'MATH', 'ANNOTATION', 'SVG'].includes(parent.nodeName.toUpperCase())) {
+          let updated = preprocessMathText(text);
+          if (updated !== text) {
+            node.textContent = updated;
+          }
+        }
+        return;
+      }
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node as HTMLElement;
+        const tag = el.tagName.toUpperCase();
+        if (
+          el.classList.contains('katex') ||
+          el.classList.contains('omml-math-node') ||
+          tag === 'MJX-CONTAINER' ||
+          tag === 'MATH' ||
+          tag === 'SVG' ||
+          tag === 'SVG-WRAPPER' ||
+          tag === 'TIKZ-DIAGRAM'
+        ) {
+          return;
+        }
+
+        // Tự động bổ sung BBT / Đồ thị nếu khối câu hỏi đề cập BBT hoặc đồ thị mà thiếu hình vẽ
+        if (el.classList.contains('question-block') || el.classList.contains('question-stem') || el.classList.contains('math-view-container')) {
+          const html = el.innerHTML;
+          if (/(?:bảng\s*biến\s*thiên|bảng\s*xét\s*dấu|đồ\s*thị|hình\s*bên|hình\s*vẽ)/i.test(html) && !html.includes('svg-wrapper') && !html.includes('img') && !html.includes('svg')) {
+            const enriched = autoEnrichTextWithVisuals(html);
+            if (enriched !== html) {
+              el.innerHTML = enriched;
+            }
+          }
+        }
+
+        Array.from(node.childNodes).forEach(walkAndPreprocessTextNodes);
+      }
+    };
+    walkAndPreprocessTextNodes(clone);
 
     // 1. Pre-process custom SVG and TikZ wrapper elements in clone into high-res PNG images
     const svgWrappers = Array.from(clone.querySelectorAll('svg-wrapper, .svg-wrapper'));
@@ -2286,12 +2471,12 @@ export async function exportHtmlToWord(
 
     // 5. Generate and download genuine .docx file
     const docBlob = await Packer.toBlob(doc);
-    const finalFilename = filename.replace(/\.doc$/i, '') + '.docx';
+    const cleanBaseName = filename.replace(/\.(docx?|DOCX?)$/i, '').replace(/[:\\/*?"<>|]+/g, '_');
+    const finalFilename = `${cleanBaseName}.docx`;
     saveAs(docBlob, finalFilename);
     return docBlob;
   } catch (err) {
     console.error('DOCX Export failed:', err);
-    alert('Có lỗi xảy ra khi tạo file Word .docx. Vui lòng thử lại.');
     return null;
   } finally {
     if (loadingOverlay) {
@@ -2324,6 +2509,15 @@ export async function exportElementToImage(
   filename: string = "Poster_PhieuHocTap.png"
 ): Promise<void> {
   if (!element) return;
+
+  // Đồng bộ tiến trình Xuất ảnh với MathJax Typeset
+  if (typeof window !== 'undefined' && (window as any).MathJax && (window as any).MathJax.typesetPromise) {
+    try {
+      await (window as any).MathJax.typesetPromise();
+    } catch (e) {
+      console.warn('MathJax typesetting error before exportElementToImage:', e);
+    }
+  }
 
   const clone = element.cloneNode(true) as HTMLElement;
   const container = document.createElement('div');
@@ -2376,8 +2570,8 @@ export async function exportElementToImage(
     
     canvas.toBlob((blob) => {
       if (blob) {
-        const finalName = filename.endsWith('.png') ? filename : `${filename}.png`;
-        saveAs(blob, finalName);
+        const cleanImgName = (filename.endsWith('.png') ? filename : `${filename}.png`).replace(/[:\\/*?"<>|]+/g, '_');
+        saveAs(blob, cleanImgName);
       }
     }, 'image/png');
   } catch (err) {

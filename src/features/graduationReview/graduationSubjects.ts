@@ -45,9 +45,10 @@ export interface AiModelItem {
 
 // Danh sách mô hình AI khả dụng hiện tại
 export const DEFAULT_AI_MODELS: AiModelItem[] = [
-  { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", desc: "Mặc định • Tốc độ cao • Ổn định nhất", isRecommended: true },
-  { id: "gemini-flash-latest", name: "Gemini Flash Latest", desc: "Phiên bản Flash mới nhất" },
+  { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", desc: "Mặc định chuẩn • Tốc độ cao • Khuyên dùng", isRecommended: true },
+  { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash Lite", desc: "Siêu tốc • Hạn mức cao • Dự phòng tối ưu" },
   { id: "gemini-4-argon", name: "Gemini 4 Argon", desc: "Mô hình thông minh nhất • Dành cho tác vụ khó" },
+  { id: "gemini-4-carbon", name: "Gemini 4 Carbon", desc: "Suy luận chuyên sâu • Toán & Khoa học nâng cao" },
 ];
 
 // Danh sách 35 bài chuẩn Khung PPCT Ôn thi Tốt nghiệp THPT môn Toán (105 tiết, năm học 2026 - 2027)

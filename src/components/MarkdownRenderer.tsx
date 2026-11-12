@@ -3,7 +3,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
-import { rehypeSanitizeEventHandlers, cleanProps } from '../lib/globalMath';
+import { rehypeSanitizeEventHandlers, cleanProps, cleanMathAndUnwrapHeadings } from '../lib/globalMath';
 import { TikzRenderer, getTikzSvg } from './TikzRenderer';
 import { ImageViewerModal } from './ImageViewerModal';
 import { convertBbtTableToSvg, unflattenMarkdownTables } from '../lib/bbtRenderer';
@@ -53,48 +53,52 @@ export {
   normalizePropositionQuotes
 };
 
-/**
- * Triggers MathJax 3 typesetPromise on a given container or globally across the document.
- */
-export const typesetMathJax = (element?: HTMLElement | null) => {
-  if (typeof window === 'undefined') return;
-  const target = element || (typeof document !== 'undefined' ? document.body : null);
-  if (!target) return;
+let mathJaxQueue: Promise<void> = Promise.resolve();
 
-  const runTypeset = () => {
-    const mj = (window as any).MathJax;
-    if (mj && typeof mj.typesetPromise === 'function') {
+/**
+ * Triggers MathJax 3 typesetPromise sequentially on a given container or globally across the document.
+ * Uses a serialized queue to prevent concurrent typesetPromise collisions and ensure data-latex attributes.
+ */
+export const typesetMathJax = (element?: HTMLElement | null): Promise<void> => {
+  if (typeof window === 'undefined') return Promise.resolve();
+  const target = element || (typeof document !== 'undefined' ? document.body : null);
+  if (!target) return Promise.resolve();
+
+  const task = async () => {
+    let mj = (window as any).MathJax;
+    let retries = 0;
+    while ((!mj || typeof mj.typesetPromise !== 'function') && retries < 8) {
+      await new Promise((r) => setTimeout(r, 200));
+      mj = (window as any).MathJax;
+      retries++;
+    }
+    if (!mj) return;
+    if (mj.startup && mj.startup.promise) {
+      try { await mj.startup.promise; } catch (e) {}
+    }
+    if (typeof mj.typesetPromise === 'function') {
       try {
         if (typeof mj.typesetClear === 'function') {
           try { mj.typesetClear([target]); } catch (e) {}
         }
-        mj.typesetPromise([target])
-          .then(() => {
-            const containers = target.querySelectorAll('mjx-container');
-            containers.forEach((mjx: Element) => {
-              if (!mjx.hasAttribute('data-latex')) {
-                const text = mjx.getAttribute('aria-label') || mjx.querySelector('mjx-assistive-mml')?.textContent || '';
-                if (text) {
-                  mjx.setAttribute('data-latex', text.replace(/^\$+|\$+$/g, '').trim());
-                }
-              }
-            });
-          })
-          .catch((err: any) => console.warn('MathJax typeset error:', err));
-      } catch (e) {}
+        await mj.typesetPromise([target]);
+        const containers = target.querySelectorAll('mjx-container');
+        containers.forEach((mjx: Element) => {
+          if (!mjx.hasAttribute('data-latex')) {
+            const text = mjx.getAttribute('aria-label') || mjx.querySelector('mjx-assistive-mml')?.textContent || '';
+            if (text) {
+              mjx.setAttribute('data-latex', text.replace(/^\$+|\$+$/g, '').trim());
+            }
+          }
+        });
+      } catch (err: any) {
+        console.warn('MathJax typeset error:', err);
+      }
     }
   };
 
-  const mj = (window as any).MathJax;
-  if (mj && typeof mj.typesetPromise === 'function') {
-    runTypeset();
-  } else if (mj && mj.startup && mj.startup.promise) {
-    mj.startup.promise.then(runTypeset).catch(runTypeset);
-  } else {
-    // Retry shortly if MathJax script is still in flight
-    setTimeout(runTypeset, 120);
-    setTimeout(runTypeset, 350);
-  }
+  mathJaxQueue = mathJaxQueue.then(task).catch(() => {});
+  return mathJaxQueue;
 };
 
 /**
@@ -462,7 +466,7 @@ export const MarkdownRenderer = ({
 
   // Let's rewrite the text preparation block of MarkdownRenderer in a pristine, robust way.
   // Normalize math text globally (converts backticks to $, fixes torn backslashes)
-  let processedContent = preprocessMath(content);
+  let processedContent = cleanMathAndUnwrapHeadings(preprocessMath(content));
 
   // Normalize array and table environments (repair \begin{array} column specifiers and remove inner blank lines)
   processedContent = normalizeArrayAndTableEnvironments(processedContent);
@@ -510,6 +514,7 @@ export const MarkdownRenderer = ({
   processedContent = processedContent.replace(/\\(\$)/g, '$1');
 
   // 3.5 Dọn sạch các dấu * đánh dấu đáp án trắc nghiệm ở đầu hoặc cuối phương án A, B, C, D
+  processedContent = processedContent.replace(/^([ \t]*(?:[-*•]\s*)?)\*+\s*([A-D][\.\:\)])/gm, '$1$2');
   processedContent = processedContent.replace(/^([ \t]*(?:[-*−]\s*)?(?:\*{1,2}|<b>)?([A-D])[\.\:\)](?:\*{1,2}|<\/b>)?\s*)\*+([^\*\n]+?)\*+(?=\s*$)/gm, '$1$3');
   processedContent = processedContent.replace(/^([ \t]*(?:[-*−]\s*)?(?:\*{1,2}|<b>)?([A-D])[\.\:\)](?:\*{1,2}|<\/b>)?\s*)\*+([^\*\n]+)(?=\s*$)/gm, '$1$3');
   processedContent = processedContent.replace(/^([ \t]*(?:[-*−]\s*)?(?:\*{1,2}|<b>)?([A-D])[\.\:\)](?:\*{1,2}|<\/b>)?\s*)([^\*\n]+?)\*+(?=\s*$)/gm, '$1$3');
@@ -555,22 +560,25 @@ export const MarkdownRenderer = ({
   // 4. Auto-scanner effect with MathJax 3: whenever content updates or AI streams in new text,
   // scan the rendered DOM container with MathJax typeset and attach data-latex attributes
   useEffect(() => {
-    if (containerRef.current) {
-      typesetMathJax(containerRef.current);
-      setTimeout(() => {
-        if (containerRef.current) {
-          const containers = containerRef.current.querySelectorAll('mjx-container');
-          containers.forEach((mjx) => {
-            if (!mjx.hasAttribute('data-latex')) {
-              const text = mjx.getAttribute('aria-label') || mjx.querySelector('mjx-assistive-mml')?.textContent || '';
-              if (text) {
-                mjx.setAttribute('data-latex', text.replace(/^\$+|\$+$/g, '').trim());
+    const timer = setTimeout(() => {
+      if (containerRef.current) {
+        typesetMathJax(containerRef.current);
+        setTimeout(() => {
+          if (containerRef.current) {
+            const containers = containerRef.current.querySelectorAll('mjx-container');
+            containers.forEach((mjx) => {
+              if (!mjx.hasAttribute('data-latex')) {
+                const text = mjx.getAttribute('aria-label') || mjx.querySelector('mjx-assistive-mml')?.textContent || '';
+                if (text) {
+                  mjx.setAttribute('data-latex', text.replace(/^\$+|\$+$/g, '').trim());
+                }
               }
-            }
-          });
-        }
-      }, 200);
-    }
+            });
+          }
+        }, 180);
+      }
+    }, 100);
+    return () => clearTimeout(timer);
   }, [processedContent]);
 
   if (inline) {
@@ -598,7 +606,7 @@ export const MarkdownRenderer = ({
                 const text = String(children || '').trim();
                 const cleanMath = text.replace(/^\$+|\$+$/g, '').trim();
                 return (
-                  <span className="math-inline font-serif" data-latex={cleanMath} {...cleanProps(props)}>
+                  <span key={cleanMath} className="math-inline font-serif" data-latex={cleanMath} {...cleanProps(props)}>
                     {`$${cleanMath}$`}
                   </span>
                 );
@@ -612,16 +620,15 @@ export const MarkdownRenderer = ({
                 const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
                 const isDisplay = className.includes('math-display');
                 return isDisplay ? (
-                  <div className="math-display my-2.5 text-center font-serif overflow-x-auto" data-latex={cleanMath}>
+                  <div key={cleanMath} className="math-display my-2.5 text-center font-serif overflow-x-auto" data-latex={cleanMath}>
                     {`$$${cleanMath}$$`}
                   </div>
                 ) : (
-                  <span className="math-inline font-serif" data-latex={cleanMath}>
+                  <span key={cleanMath} className="math-inline font-serif" data-latex={cleanMath}>
                     {`$${cleanMath}$`}
                   </span>
                 );
               }
-              // Only treat as programming code if explicitly typed as code or non-math
               if (className && className.includes('language-') && !className.includes('math')) {
                 return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...cleanProps(props)}>{children}</code>;
               }
@@ -629,7 +636,7 @@ export const MarkdownRenderer = ({
                 return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...cleanProps(props)}>{children}</code>;
               }
               const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
-              return cleanMath ? <span className="math-inline font-serif" data-latex={cleanMath}>{`$${cleanMath}$`}</span> : null;
+              return cleanMath ? <span key={cleanMath} className="math-inline font-serif" data-latex={cleanMath}>{`$${cleanMath}$`}</span> : null;
             }
           }}
         >
@@ -662,7 +669,7 @@ export const MarkdownRenderer = ({
               const text = String(children || '').trim();
               const cleanMath = text.replace(/^\$+|\$+$/g, '').trim();
               return (
-                <span className="math-inline font-serif" data-latex={cleanMath} {...cleanProps(props)}>
+                <span key={cleanMath} className="math-inline font-serif" data-latex={cleanMath} {...cleanProps(props)}>
                   {`$${cleanMath}$`}
                 </span>
               );
@@ -676,11 +683,11 @@ export const MarkdownRenderer = ({
               const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
               const isDisplay = className.includes('math-display');
               return isDisplay ? (
-                <div className="math-display my-2.5 text-center font-serif overflow-x-auto" data-latex={cleanMath}>
+                <div key={cleanMath} className="math-display my-2.5 text-center font-serif overflow-x-auto" data-latex={cleanMath}>
                   {`$$${cleanMath}$$`}
                 </div>
               ) : (
-                <span className="math-inline font-serif" data-latex={cleanMath}>
+                <span key={cleanMath} className="math-inline font-serif" data-latex={cleanMath}>
                   {`$${cleanMath}$`}
                 </span>
               );
@@ -692,7 +699,7 @@ export const MarkdownRenderer = ({
               return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...cleanProps(props)}>{children}</code>;
             }
             const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
-            return cleanMath ? <span className="math-inline font-serif" data-latex={cleanMath}>{`$${cleanMath}$`}</span> : null;
+            return cleanMath ? <span key={cleanMath} className="math-inline font-serif" data-latex={cleanMath}>{`$${cleanMath}$`}</span> : null;
           },
           // @ts-ignore
           'svg-wrapper': ({node}: any) => {
@@ -782,6 +789,18 @@ export const MarkdownRenderer = ({
             </td>
           ),
           pre({node, children, ...props}: any) {
+            const getTxt = (n: any): string => {
+              if (!n) return '';
+              if (typeof n === 'string' || typeof n === 'number') return String(n);
+              if (Array.isArray(n)) return n.map(getTxt).join('');
+              if (React.isValidElement(n) && (n.props as any)?.children) return getTxt((n.props as any).children);
+              return '';
+            };
+            const txt = getTxt(children).trim();
+            if (!txt || txt === '$$$$' || txt === '$$' || txt === '$ $') return null;
+            if (/\\begin|\\end|\\frac|\\sqrt|\\ge|\\le|\\neq|\\Rightarrow|\\iff|\$\$|cases|PHẦN|Câu|Bài|Đáp|Lời/i.test(txt) || txt.includes('$')) {
+              return <div className="my-2.5 text-slate-800 leading-relaxed font-serif whitespace-pre-line">{children}</div>;
+            }
             return (
               <pre className="bg-slate-50 border border-slate-200 text-slate-800 rounded-lg p-3 overflow-x-auto my-3 text-sm font-mono" {...cleanProps(props)}>
                 {children}
@@ -801,7 +820,7 @@ export const MarkdownRenderer = ({
             // Check if items are multiple choice options (- **A.** ...)
             const isChoiceList = childArray.length >= 2 && childArray.length <= 4 && childArray.some((child: any) => {
               const text = getNodePlainText(child?.props?.children);
-              return /\b[A-D][\.\)]/.test(text);
+              return /^\s*(?:\*{0,2}|[-*•])*\s*[A-D][\.\)]/i.test(text) || /\b[A-D][\.\)]/.test(text);
             });
 
             if (isChoiceList) {
@@ -826,15 +845,15 @@ export const MarkdownRenderer = ({
             };
 
             const text = getNodePlainText(children);
-            const isChoice = /^\s*(?:\*\*)?[A-D][\.\)]/.test(text) || /\b[A-D][\.\)]/.test(text);
+            const isChoice = /^\s*(?:\*{0,2}|[-*•])*\s*[A-D][\.\)]/i.test(text) || /\b[A-D][\.\)]/.test(text);
             if (isChoice) {
               return (
-                <li className="flex items-baseline gap-2 py-1.5 px-3 rounded-lg bg-slate-50/70 border border-slate-200 text-slate-800 hover:bg-slate-100 transition-colors shadow-none list-none m-0" {...cleanProps(props)}>
+                <li className="flex items-baseline gap-2 py-1.5 px-3 rounded-lg bg-slate-50/70 border border-slate-200 text-slate-800 hover:bg-slate-100 transition-colors shadow-none list-none m-0 [&>div]:inline [&>p]:inline" {...cleanProps(props)}>
                   {children}
                 </li>
               );
             }
-            return <li className="my-1 leading-relaxed text-slate-800" {...cleanProps(props)}>{children}</li>;
+            return <li className="my-1 leading-relaxed text-slate-800 [&>div]:inline [&>p]:inline" {...cleanProps(props)}>{children}</li>;
           }
         }}
       >

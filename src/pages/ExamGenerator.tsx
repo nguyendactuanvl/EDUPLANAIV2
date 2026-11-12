@@ -3,6 +3,7 @@ import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { embedTikzSvgsInText } from "../components/TikzRenderer";
 import { embedBbtSvgsInText, convertBbtTableToSvg, analyzeFunctionToBbt, generateBbtSvg, autoEnrichTextWithVisuals, aiFixQuestionVisuals } from "../lib/bbtRenderer";
 import { apiFetch } from '../lib/apiFetch';
+import { generateContent, generateContentStream } from '../services/geminiService';
 import { aiCacheService, generateHashKey } from '../services/aiCacheService';
 import { asyncEnrichExamQuestions } from '../lib/workerHelper';
 import { AiCacheIndicator } from '../components/AiCacheIndicator';
@@ -1356,18 +1357,12 @@ const [examName, setExamName] = useState("");
 
   const handleAiRegenerateExamQuestion = async (q: Question, idx: number) => {
     try {
-      const res = await apiFetch('/api/fix-question', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q, mode: 'regenerate', subject, grade })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.question) {
-          const newQs = [...questions];
-          newQs[idx] = { ...newQs[idx], ...data.question };
-          setQuestions(newQs);
-        }
+      const { text: resText } = await generateContent({ question: q, mode: 'regenerate', subject, grade });
+      const data = parseApiResponse<any>(resText);
+      if (data && data.question) {
+        const newQs = [...questions];
+        newQs[idx] = { ...newQs[idx], ...data.question };
+        setQuestions(newQs);
       }
     } catch (e) {
       console.warn("AI regenerate error:", e);
@@ -1376,18 +1371,12 @@ const [examName, setExamName] = useState("");
 
   const handleAiReplaceExamQuestion = async (q: Question, idx: number) => {
     try {
-      const res = await apiFetch('/api/fix-question', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q, mode: 'replace_similar', subject, grade })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.question) {
-          const newQs = [...questions];
-          newQs[idx] = { ...newQs[idx], ...data.question };
-          setQuestions(newQs);
-        }
+      const { text: resText } = await generateContent({ question: q, mode: 'replace_similar', subject, grade });
+      const data = parseApiResponse<any>(resText);
+      if (data && data.question) {
+        const newQs = [...questions];
+        newQs[idx] = { ...newQs[idx], ...data.question };
+        setQuestions(newQs);
       }
     } catch (e) {
       console.warn("AI replace error:", e);
@@ -1760,31 +1749,8 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
         }
       }
 
-      const response = await apiFetch("/api/generate-exam", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestPayload)
-      });
-
-      if (!response.ok) {
-        const text = await response.text();
-        let errorMsg = "Có lỗi xảy ra khi tạo đề.";
-        try {
-          const err = parseApiResponse(text);
-          errorMsg = err.error || errorMsg;
-        } catch(e: any) {
-          errorMsg = e.message || errorMsg;
-        }
-        if (errorMsg.includes("UNAUTHENTICATED") || errorMsg.includes("Nhập mã API key") || response.status === 401) {
-          window.dispatchEvent(new CustomEvent('show-api-key-modal'));
-        }
-        throw new Error(errorMsg);
-      }
-
-      const text = await response.text();
-      const data = parseApiResponse<any>(text);
+      const { text: resText } = await generateContent(requestPayload);
+      const data = parseApiResponse<any>(resText);
       if (data && Array.isArray(data.questions) && data.questions.length > 0) {
         setExamName(data.examName || "Đề kiểm tra");
         
@@ -1972,6 +1938,11 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
   const handlePrint = async (contentId: string) => {
     const printContent = document.getElementById(contentId);
     if (!printContent) return;
+    if (typeof window !== 'undefined' && (window as any).MathJax && (window as any).MathJax.typesetPromise) {
+      try {
+        await (window as any).MathJax.typesetPromise();
+      } catch (e) {}
+    }
     await ensureMathRendered(printContent);
     const windowPrint = window.open('', '', 'left=0,top=0,width=800,height=900,toolbar=0,scrollbars=0,status=0');
     windowPrint?.document.write(`
@@ -2782,7 +2753,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                        </div>
                        <div className="flex justify-between items-center">
                           <span className="text-sm text-slate-600">Model</span>
-                          <span className="font-bold text-slate-800">gemini-2.5-flash</span>
+                          <span className="font-bold text-slate-800">gemini-3.8-flash</span>
                        </div>
                     </div>
                  </div>
@@ -4777,8 +4748,8 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                             <button onClick={() => handleExportWordAndImages(`print-exam-${exam.code}`, exam.code)} className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-sm rounded shadow-sm flex items-center gap-1.5 transition-all cursor-pointer active:scale-95" title="Tải đồng thời file Word (.docx) VÀ bộ ảnh PNG HD (BBT, đồ thị, bảng xét dấu) tránh lỗi định dạng">
                               <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" /> Tải Word + Bộ Ảnh HD
                             </button>
-                            <button onClick={() => handleExportWord(`print-exam-${exam.code}`, exam.code)} className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-sm font-medium rounded hover:bg-slate-50 flex items-center gap-2" title="Xuất Word định dạng chuẩn OMML, công thức có thể chỉnh sửa trực tiếp">
-                              <Download className="w-4 h-4" /> Xuất Word (Chuẩn)
+                            <button onClick={() => handleExportWord(`print-exam-${exam.code}`, exam.code)} className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm rounded shadow-sm flex items-center gap-1.5 transition-all cursor-pointer active:scale-95" title="Xuất đề kiểm tra sang tệp Word (.docx) chuẩn định dạng A4 in ấn">
+                              <FileText className="w-4 h-4" /> Xuất file A4 (.docx)
                             </button>
                             <button onClick={() => handleExportWordLatex(`print-exam-${exam.code}`, exam.code)} className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-sm font-medium rounded hover:bg-slate-50 flex items-center gap-2" title="Xuất Word giữ nguyên mã LaTeX để dùng chức năng Toggle TeX của MathType">
                               <Download className="w-4 h-4" /> Xuất Word (LaTeX)

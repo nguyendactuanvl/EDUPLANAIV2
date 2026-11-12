@@ -1,4 +1,3 @@
-import katex from 'katex';
 import { mml2omml } from 'mathml2omml-plus';
 import { sanitizeLatexString } from './utils';
 
@@ -29,21 +28,20 @@ export function latexToWordAltEqual(rawTex: string): string {
 }
 
 /**
- * Chuyển đổi mã LaTeX sang MathML (W3C Standard)
+ * Chuyển đổi mã LaTeX sang MathML (W3C Standard) bằng MathJax 3 (window.MathJax.tex2mml)
  */
 export function latexToMathML(rawTex: string, isBlock: boolean = false): string {
   if (!rawTex) return '';
   const cleanTex = latexToWordAltEqual(rawTex);
   try {
-    const mathmlHtml = katex.renderToString(cleanTex, {
-      displayMode: isBlock,
-      output: 'mathml',
-      throwOnError: false,
-    });
-    const match = mathmlHtml.match(/<math[\s\S]*?<\/math>/i);
-    return match ? match[0] : '';
+    if (typeof window !== 'undefined' && (window as any).MathJax && typeof (window as any).MathJax.tex2mml === 'function') {
+      const mml = (window as any).MathJax.tex2mml(cleanTex, { display: isBlock });
+      const match = mml.match(/<math[\s\S]*?<\/math>/i);
+      return match ? match[0] : mml;
+    }
+    return '';
   } catch (err) {
-    console.warn('Lỗi chuyển đổi MathML:', err);
+    console.warn('Lỗi chuyển đổi MathML bằng MathJax:', err);
     return '';
   }
 }

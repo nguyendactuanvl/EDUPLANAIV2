@@ -85,8 +85,35 @@ export function parseExamIdFromLocation(): { examId: string | null; examData: st
 
   const urlParams = new URLSearchParams(search);
 
-  // Hash parsing (support HashRouter #/exam/NQ9JE5 or #pin=NQ9JE5 or #NQ9JE5)
+  // Hash parsing
   const hashStr = hash.startsWith("#") ? hash.substring(1) : hash;
+
+  let hashExamData: string | null = null;
+  if (hashStr.includes("data=")) {
+    const dataMatch = hashStr.match(/(?:^|[&#?])data=([^&]+)/);
+    if (dataMatch && dataMatch[1]) {
+      hashExamData = dataMatch[1];
+    }
+  }
+
+  // If URL hash contains #data=..., return immediately to open StudentExamView
+  if (hashExamData) {
+    return {
+      examId: null,
+      examData: hashExamData,
+      isStudentMode: true,
+    };
+  }
+
+  // Check /exam pathname
+  if (pathname === "/exam" || pathname === "/exam/") {
+    return {
+      examId: urlParams.get("pin") || urlParams.get("code") || null,
+      examData: urlParams.get("data") || urlParams.get("d") || null,
+      isStudentMode: true,
+    };
+  }
+
   const hashQuestionIdx = hashStr.indexOf("?");
   let hashPath = hashStr;
   let hashQueryStr = "";
@@ -111,7 +138,7 @@ export function parseExamIdFromLocation(): { examId: string | null; examData: st
     }
   }
 
-  // 2. Direct pathname regex check: /exam/XYZ, /p/XYZ, /thi/XYZ, /test/XYZ, /room/XYZ, /phong/XYZ, /student/XYZ, /worksheet/XYZ, /pht/XYZ, /s/XYZ, /e/XYZ
+  // 2. Direct pathname regex check
   const pathRegex = /^\/(?:exam|p|thi|test|room|phong|student|worksheet|pht|s|e)\/([A-Za-z0-9_-]+)/i;
   const pathMatch = pathname.match(pathRegex);
   if (pathMatch && pathMatch[1]) {
@@ -122,7 +149,7 @@ export function parseExamIdFromLocation(): { examId: string | null; examData: st
     };
   }
 
-  // 3. Hash path regex check: #/exam/XYZ, #/p/XYZ, #/thi/XYZ, #/test/XYZ, #/room/XYZ, #/student/XYZ, #/worksheet/XYZ, #/pht/XYZ
+  // 3. Hash path regex check
   const hashRegex = /^\/(?:exam|p|thi|test|room|phong|student|worksheet|pht|s|e)\/([A-Za-z0-9_-]+)/i;
   const hashMatch = hashPath.match(hashRegex);
   if (hashMatch && hashMatch[1]) {
@@ -133,7 +160,7 @@ export function parseExamIdFromLocation(): { examId: string | null; examData: st
     };
   }
 
-  // 4. Standalone 6-character code in path or hash e.g. /NQ9JE5 or #NQ9JE5 or #/NQ9JE5
+  // 4. Standalone 6-character code in path or hash
   const standaloneCodeRegex = /^\/?([23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{6})$/i;
   const pathCodeMatch = pathname.match(standaloneCodeRegex);
   if (pathCodeMatch && pathCodeMatch[1]) {
@@ -154,7 +181,7 @@ export function parseExamIdFromLocation(): { examId: string | null; examData: st
     };
   }
 
-  // 5. URL Mapping Table lookup (check full URL, pathname, or hash)
+  // 5. URL Mapping Table lookup
   const mappedFromHref = resolveMappedExamId(href);
   if (mappedFromHref) {
     return { examId: mappedFromHref, examData: null, isStudentMode: true };
@@ -171,7 +198,7 @@ export function parseExamIdFromLocation(): { examId: string | null; examData: st
   }
 
   // Check student mode flags
-  const isStudentMode = urlParams.get("mode") === "student" || urlParams.get("view") === "exam" || hashParams.get("mode") === "student";
+  const isStudentMode = urlParams.get("mode") === "student" || urlParams.get("view") === "exam" || hashParams.get("mode") === "student" || pathname.startsWith("/exam");
 
   return {
     examId: null,

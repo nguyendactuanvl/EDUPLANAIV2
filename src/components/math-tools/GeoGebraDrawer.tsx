@@ -32,35 +32,49 @@ export const GeoGebraDrawer: React.FC<GeoGebraDrawerProps> = ({ onInsertImage, o
       containerRef.current.appendChild(appletDiv);
     }
 
+    const renderApplet = () => {
+      if (!window.GGBApplet || !containerRef.current) return;
+      const width = isFullscreen ? window.innerWidth - 48 : 800;
+      const height = isFullscreen ? window.innerHeight - 180 : 500;
+
+      const params = {
+        appName: type,
+        width: width,
+        height: height,
+        showToolBar: true,
+        showAlgebraInput: true,
+        showMenuBar: true,
+        allowStyleBar: true,
+        showResetIcon: true,
+        enableLabelDrags: true,
+        enableShiftDragZoom: true,
+        enableRightClick: true,
+        playButton: true,
+        showZoomButtons: true,
+        appletOnLoad: () => {
+          setIsLoaded(true);
+        },
+      };
+
+      const applet = new window.GGBApplet(params, true);
+      applet.inject('ggb-applet-inner');
+    };
+
     if (!window.GGBApplet) {
-      console.error('GeoGebra deployggb.js library not loaded');
+      const existing = document.querySelector('script[src*="deployggb.js"]');
+      if (existing) {
+        existing.addEventListener('load', renderApplet);
+      } else {
+        const script = document.createElement('script');
+        script.src = 'https://www.geogebra.org/apps/deployggb.js';
+        script.async = true;
+        script.onload = renderApplet;
+        document.head.appendChild(script);
+      }
       return;
     }
 
-    const width = isFullscreen ? window.innerWidth - 48 : 800;
-    const height = isFullscreen ? window.innerHeight - 180 : 500;
-
-    const params = {
-      appName: type,
-      width: width,
-      height: height,
-      showToolBar: true,
-      showAlgebraInput: true,
-      showMenuBar: true,
-      allowStyleBar: true,
-      showResetIcon: true,
-      enableLabelDrags: true,
-      enableShiftDragZoom: true,
-      enableRightClick: true,
-      playButton: true,
-      showZoomButtons: true,
-      appletOnLoad: () => {
-        setIsLoaded(true);
-      },
-    };
-
-    const applet = new window.GGBApplet(params, true);
-    applet.inject('ggb-applet-inner');
+    renderApplet();
   };
 
   // Re-load on active tab changes OR fullscreen toggles

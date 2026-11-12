@@ -1,7 +1,11 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import { fileURLToPath } from 'url';
+import { defineConfig } from 'vite';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export default defineConfig(() => {
   return {
@@ -15,6 +19,7 @@ export default defineConfig(() => {
       dedupe: ['react', 'react-dom'],
     },
     optimizeDeps: {
+      entries: ['index.html'],
       include: [
         'react',
         'react-dom',
@@ -26,9 +31,14 @@ export default defineConfig(() => {
         'tailwind-merge',
       ],
     },
+    build: {
+      target: 'esnext',
+      chunkSizeWarningLimit: 3000,
+      minify: false,
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
+      // Do not modify file watching is disabled to prevent flickering during agent edits.
       hmr: false,
       ws: false,
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
@@ -36,4 +46,3 @@ export default defineConfig(() => {
     },
   };
 });
-

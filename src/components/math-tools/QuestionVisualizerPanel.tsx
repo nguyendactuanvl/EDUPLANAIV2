@@ -19,6 +19,7 @@ import {
   generateBbtSvg, 
   cleanMathText 
 } from "../../lib/bbtRenderer";
+import { sanitizeSvgOrHtmlForReact } from "../../lib/globalMath";
 import { InteractivePlot } from "./InteractivePlot";
 import { JsxGraphPlotter } from "./JsxGraphPlotter";
 import { Geometry3DViewer } from "./Geometry3DViewer";
@@ -1143,7 +1144,7 @@ export const QuestionVisualizerPanel: React.FC<QuestionVisualizerPanelProps> = (
             {/* BBT Render output */}
             <div className="w-full overflow-x-auto flex justify-center py-2 bg-white rounded-lg border border-slate-100">
               {bbtSvg ? (
-                <div dangerouslySetInnerHTML={{ __html: bbtSvg }} />
+                <div dangerouslySetInnerHTML={{ __html: sanitizeSvgOrHtmlForReact(bbtSvg) }} />
               ) : (
                 <div className="text-sm text-slate-400 py-6">Đang chuẩn bị Bảng biến thiên...</div>
               )}

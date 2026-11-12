@@ -38,7 +38,16 @@ import {
 import { MarkdownRenderer, typesetMathJax } from "../../components/MarkdownRenderer";
 import { exportHtmlToWord } from "../../lib/exportUtils";
 import { printElement } from "../../lib/print";
-import { apiFetch, API_KEY_STORAGE } from "../../lib/apiFetch";
+import { apiFetch, API_KEY_STORAGE, setCustomApiKey } from "../../lib/apiFetch";
+import { cleanDocumentContent } from "../../pages/Worksheets";
+import {
+  normalizeMathText,
+  cleanMathAndUnwrapHeadings,
+  fixBrokenLatexSyntax,
+  rescueTrappedVietnameseFromMath,
+  sanitizeLatexMathAndDelimiters
+} from "../../lib/globalMath";
+import { generateContent } from "../../services/geminiService";
 import {
   GRADUATION_SUBJECTS,
   DEFAULT_AI_MODELS,
@@ -463,16 +472,19 @@ export function GraduationReviewPlannerModule() {
     }
   };
 
-  // Automatically trigger MathJax rendering whenever preview tab is active or result changes
   useEffect(() => {
     if (activeTab === "preview" && previewContainerRef.current) {
       typesetMathJax(previewContainerRef.current);
-      const timer = setTimeout(() => {
-        if (previewContainerRef.current) {
-          typesetMathJax(previewContainerRef.current);
-        }
-      }, 150);
-      return () => clearTimeout(timer);
+      const t1 = setTimeout(() => {
+        if (previewContainerRef.current) typesetMathJax(previewContainerRef.current);
+      }, 100);
+      const t2 = setTimeout(() => {
+        if (previewContainerRef.current) typesetMathJax(previewContainerRef.current);
+      }, 400);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+      };
     }
   }, [activeTab, resultPlan]);
 
@@ -508,6 +520,9 @@ export function GraduationReviewPlannerModule() {
               rawName.startsWith("gemini-2.") ||
               rawName.startsWith("gemini-3.5") ||
               rawName.includes("2.5") ||
+              rawName.includes("3-flash") ||
+              rawName.includes("preview") ||
+              rawName.includes("latest") ||
               rawName === "gemini-pro";
             const isSpecialized =
               rawName.includes("embedding") ||
@@ -621,26 +636,35 @@ export function GraduationReviewPlannerModule() {
     let subjectFormatInstructions = "";
 
     if (isMath) {
-      subjectFormatInstructions = `QUY CHUẨN ĐỊNH DẠNG ĐỀ THI MÔN TOÁN HỌC:
-- Phiếu học tập số 2 ở Phần IV (Phụ lục) BẮT BUỘC gồm 3 phần:
-  + Phần I: Trắc nghiệm 4 lựa chọn (Từ 4 - 6 câu có 4 phương án A, B, C, D).
-  + Phần II: Trắc nghiệm Đúng/Sai (Từ 2 - 3 câu; mỗi câu gồm ngữ cảnh/giả thiết chung và 4 lệnh hỏi độc lập a, b, c, d có tính phân hóa).
-  + Phần III: Trắc nghiệm Trả lời ngắn (Từ 2 - 4 câu điền kết quả số thực/nguyên/thập phân).
-- Bảng đáp án và LỜI GIẢI CHI TIẾT TOÀN BỘ các câu trong Phiếu học tập (giải thích rõ ràng vì sao từng ý Đúng hay Sai).
-- Hoạt động 4: Hướng dẫn kỹ năng máy tính cầm tay (Casio fx-580VN X: Table, đạo hàm tại điểm, giải phương trình/hệ phương trình) và Nhận diện các bẫy thường gặp trong đề thi.`;
+      subjectFormatInstructions = `QUY CHUẨN ĐỊNH DẠNG ĐỀ THI & CHUYÊN ĐỀ MÔN TOÁN HỌC (BẮT BUỘC CHI TIẾT 100% NHƯ GIÁO ÁN MẪU CỐT CÁN):
+- Tiến trình dạy học ở Phần III BẮT BUỘC chia rõ theo từng tiết học (Ví dụ với ${periods} tiết: chia rõ ### TIẾT 1: HỆ THỐNG HÓA KIẾN THỨC VÀ CÁC DẠNG TOÁN CƠ BẢN; ### TIẾT 2: BÀI TOÁN CHỨA THAM SỐ $m$ VÀ PHÂN HÓA NÂNG CAO; ${periods >= 3 ? "### TIẾT 3: LUYỆN TẬP ĐỊNH DẠNG MỚI, THỦ THUẬT CASIO VÀ TỔNG KẾT" : ""}).
+- Hoạt động 1 (Hệ thống hóa kiến thức trọng tâm): Bắt buộc trình bày đầy đủ định nghĩa, định lý, công thức cốt lõi, chú ý dấu hiệu đặc biệt (không dùng dấu $\\cup$ khi kết luận khoảng đơn điệu, đạo hàm hàm phân thức bậc nhất trên bậc nhất $y' = \\frac{ad-bc}{(cx+d)^2}$ không có dấu $=$, phân biệt điểm cực trị $x_0$ của hàm số, giá trị cực trị $y_0$ và điểm cực trị $M(x_0; y_0)$ của đồ thị).
+- Hoạt động 2 (Phân loại dạng toán & Phân tích ví dụ mẫu): BẮT BUỘC chia thành TỐI THIỂU 4 DẠNG TOÁN TRỌNG TÂM (##### Dạng 1, ##### Dạng 2, ##### Dạng 3, ##### Dạng 4) từ Nhận biết, Thông hiểu đến Vận dụng và Vận dụng cao (bài toán chứa tham số $m$, hàm hợp hoặc toán thực tế). MỖI DẠNG BẮT BUỘC CÓ:
+  + Phương pháp nhận diện & quy trình giải nhanh.
+  + Ví dụ mẫu điển hình (có đầy đủ đề bài, bảng biến thiên $\\begin{array}...\\end{array}$ nếu có, 4 phương án A, B, C, D nằm trên các dòng riêng) và *Lời giải chi tiết* biến đổi từng bước đến đáp án cuối cùng.
+- Hoạt động 4 (Kỹ năng máy tính cầm tay Casio fx-580VN X và Nhận diện bẫy đề thi):
+  + Hướng dẫn cụ thể thao tác phím bấm Casio fx-580VN X (Ví dụ: Dò bảng TABLE bằng $[Menu] [8]$ với $Step = \\frac{End - Start}{29}$; kiểm tra đạo hàm tại điểm bằng $[SHIFT] [\\int]$ $\\left.\\frac{d}{dx}f(x)\\right|_{x=x_0}$; giải phương trình/bất phương trình bằng $[Menu] [9]$ hoặc $[Menu] [A]$).
+  + Phân tích tối thiểu 4 bẫy sai lầm phổ biến nhất của học sinh trong đề thi Tốt nghiệp THPT và cách khắc phục triệt để.
+- Phiếu học tập số 2 ở Phần IV (Phụ lục) BẮT BUỘC gồm đầy đủ 3 phần theo cấu trúc đề thi mới 2025-2027:
+  + #### PHẦN I. Câu trắc nghiệm nhiều phương án lựa chọn: BẮT BUỘC ĐỦ 6 CÂU (Từ **Câu 1 (NB):** đến **Câu 6 (VD):**; mỗi câu có 4 phương án A., B., C., D. trình bày trên các dòng riêng biệt, tuyệt đối không viết gộp chung dòng và không tự điền sẵn đáp án ngay dưới đề bài).
+  + #### PHẦN II. Câu trắc nghiệm đúng sai: BẮT BUỘC ĐỦ 2 - 3 CÂU (**Câu 1:**, **Câu 2:**...); mỗi câu gồm ngữ cảnh/giả thiết chung và ĐỦ 4 LỆNH HỎI ĐỘC LẬP (- a) ..., - b) ..., - c) ..., - d) ...) phân hóa từ Nhận biết đến Vận dụng cao (tuyệt đối không ghi sẵn (Đ)/(S) vào đề bài của học sinh).
+  + #### PHẦN III. Câu trắc nghiệm trả lời ngắn: BẮT BUỘC ĐỦ 3 - 4 CÂU (**Câu 1 (TH):** đến **Câu 3 (VDC):**; câu hỏi toán thực tế, tham số $m$, cực trị, tối ưu... điền kết quả số thực/nguyên/thập phân, không giải ngay trong phần đề).
+- Ngay sau Phiếu học tập số 2 BẮT BUỘC có mục ### 2. BẢNG ĐÁP ÁN VÀ LỜI GIẢI CHI TIẾT PHIẾU HỌC TẬP SỐ 2:
+  + Giải chi tiết TỪNG CÂU MỘT của Phần I (từ Câu 1 đến Câu 6), Phần II (giải thích tường tận vì sao từng mệnh đề a, b, c, d là ĐÚNG hay SAI), và Phần III (biến đổi chi tiết ra kết quả số cuối cùng).`;
     } else if (isKhtn) {
       subjectFormatInstructions = `QUY CHUẨN CẤU TRÚC ĐỀ THI VÀ PHIẾU HỌC TẬP MÔN ${currentSubject.name.toUpperCase()} (KHOA HỌC TỰ NHIÊN):
-- Phiếu học tập ở Phần IV (Phụ lục) BẮT BUỘC gồm 2 phần theo đúng định dạng đề thi mới của Bộ GD&ĐT:
-  + Phần I: Trắc nghiệm 4 lựa chọn (Từ 6 - 8 câu nhận biết, thông hiểu có 4 phương án A, B, C, D).
-  + Phần II: Trắc nghiệm Đúng/Sai (Từ 2 - 3 câu; mỗi câu gắn với đồ thị, sơ đồ thí nghiệm, hiện tượng hoặc bài toán thực tế, gồm 4 ý a, b, c, d độc lập có tính phân hóa).
-- Bảng đáp án và LỜI GIẢI CHI TIẾT TOÀN BỘ các câu trong Phiếu học tập (phân tích hiện tượng, cơ chế, phương trình phản ứng / công thức và giải thích tường tận vì sao từng ý Đúng hay Sai).
+- Phiếu học tập ở Phần IV (Phụ lục) BẮT BUỘC gồm 3 phần theo đúng định dạng đề thi mới của Bộ GD&ĐT:
+  + Phần I: Trắc nghiệm 4 lựa chọn (Bắt buộc đủ 6 - 8 câu nhận biết, thông hiểu có 4 phương án A, B, C, D).
+  + Phần II: Trắc nghiệm Đúng/Sai (Bắt buộc đủ 2 - 3 câu; mỗi câu gắn với đồ thị, sơ đồ thí nghiệm, hiện tượng hoặc bài toán thực tế, gồm đủ 4 ý a, b, c, d độc lập có tính phân hóa).
+  + Phần III: Trắc nghiệm Trả lời ngắn (Bắt buộc đủ 3 - 4 câu tính toán điền kết quả số).
+- Mục 2: Bảng đáp án và LỜI GIẢI CHI TIẾT TOÀN BỘ các câu trong Phiếu học tập (phân tích hiện tượng, cơ chế, phương trình phản ứng / công thức và giải thích tường tận vì sao từng ý Đúng hay Sai).
 - Hoạt động 4: Hướng dẫn kỹ năng làm bài, phân tích đồ thị, xử lý số liệu thí nghiệm và nhận diện các bẫy đề thi hay gặp.`;
     } else if (isKhxh) {
       subjectFormatInstructions = `QUY CHUẨN CẤU TRÚC ĐỀ THI VÀ PHIẾU HỌC TẬP MÔN ${currentSubject.name.toUpperCase()} (KHOA HỌC XÃ HỘI):
 - Phiếu học tập ở Phần IV (Phụ lục) BẮT BUỘC gồm 2 phần theo đúng định dạng đề thi mới của Bộ GD&ĐT:
-  + Phần I: Trắc nghiệm 4 lựa chọn (Từ 6 - 8 câu nhận biết, thông hiểu có 4 phương án A, B, C, D).
-  + Phần II: Trắc nghiệm Đúng/Sai (Từ 2 - 3 câu; khai thác tư liệu lịch sử gốc, bảng số liệu biểu đồ địa lý hoặc tình huống pháp luật/kinh tế thực tế, gồm 4 ý a, b, c, d độc lập).
-- Bảng đáp án và LỜI GIẢI CHI TIẾT TOÀN BỘ các câu trong Phiếu học tập (chỉ rõ căn cứ từ văn kiện/tư liệu, số liệu Atlat, điều khoản luật pháp và giải thích rõ từng mệnh đề a, b, c, d Đúng hay Sai).
+  + Phần I: Trắc nghiệm 4 lựa chọn (Bắt buộc đủ 6 - 8 câu nhận biết, thông hiểu có 4 phương án A, B, C, D).
+  + Phần II: Trắc nghiệm Đúng/Sai (Bắt buộc đủ 2 - 3 câu; khai thác tư liệu lịch sử gốc, bảng số liệu biểu đồ địa lý hoặc tình huống pháp luật/kinh tế thực tế, gồm đủ 4 ý a, b, c, d độc lập).
+- Mục 2: Bảng đáp án và LỜI GIẢI CHI TIẾT TOÀN BỘ các câu trong Phiếu học tập (chỉ rõ căn cứ từ văn kiện/tư liệu, số liệu Atlat, điều khoản luật pháp và giải thích rõ từng mệnh đề a, b, c, d Đúng hay Sai).
 - Hoạt động 4: Kỹ năng đọc hiểu văn bản tư liệu gốc / khai thác Atlat, bảng biểu / phân tích tình huống thực tế và bẫy ngôn từ đánh lừa.`;
     } else if (isEnglish) {
       subjectFormatInstructions = `QUY CHUẨN CẤU TRÚC ĐỀ THI VÀ PHIẾU HỌC TẬP MÔN TIẾNG ANH:
@@ -674,7 +698,7 @@ export function GraduationReviewPlannerModule() {
     }
 
     return `Bạn là chuyên gia thẩm định chương trình giáo dục phổ thông kiêm giáo viên dạy giỏi cốt cán cấp Tỉnh/Thành phố môn ${currentSubject.name}.
-Nhiệm vụ của bạn là đóng vai một GIÁO VIÊN CỐT CÁN DẠY GIỎI môn ${currentSubject.name} 12 cấp THPT để soạn một KẾ HOẠCH BÀI DẠY (GIÁO ÁN) ÔN TẬP TĂNG CƯỜNG BUỔI CHIỀU hoàn chỉnh, sâu sắc, chuẩn mực theo Công văn 5512/BGDĐT, bám sát Chương trình GDPT 2018 (sách Kết nối tri thức với cuộc sống và SGK mới) và đúng cấu trúc định dạng đề thi Tốt nghiệp THPT mới nhất của Bộ GD&ĐT để in nộp duyệt tổ chuyên môn.
+Nhiệm vụ của bạn là đóng vai một GIÁO VIÊN CỐT CÁN DẠY GIỎI môn ${currentSubject.name} 12 cấp THPT để soạn một KẾ HOẠCH BÀI DẠY (GIÁO ÁN) ÔN TẬP TĂNG CƯỜNG BUỔI CHIỀU hoàn chỉnh, đồ sộ, sâu sắc, chuẩn mực theo Công văn 5512/BGDĐT, bám sát Chương trình GDPT 2018 (sách Kết nối tri thức với cuộc sống) và đúng cấu trúc định dạng đề thi Tốt nghiệp THPT mới nhất của Bộ GD&ĐT để in nộp duyệt tổ chuyên môn.
 
 =========================================
 THÔNG TIN ĐẦU VÀO KẾ HOẠCH BÀI DẠY:
@@ -689,36 +713,83 @@ THÔNG TIN ĐẦU VÀO KẾ HOẠCH BÀI DẠY:
 - Cấu trúc đề thi tham chiếu: ${currentSubject.examNote}
 
 =========================================
-NGUYÊN TẮC THIẾT KẾ BẮT BUỘC THEO CÔNG VĂN 5512/BGDĐT:
-1. Chuẩn thể thức Công văn 5512/BGDĐT: Đủ 3 phần lớn (I. Mục tiêu; II. Thiết bị dạy học và học liệu; III. Tiến trình dạy học) và Phần IV. Phụ lục: Hệ thống phiếu học tập & Đáp án chi tiết / Rubric barem điểm.
-   Trong TỪNG HOẠT ĐỘNG của Tiến trình dạy học BẮT BUỘC có đủ 4 mục rõ ràng:
-   a) Mục tiêu
-   b) Nội dung (Phải chi tiết bảng biểu, công thức, đề bài, dẫn chứng, KHÔNG được tóm tắt sơ sài)
-   c) Sản phẩm (Bảng tóm tắt, lời giải chi tiết của học sinh)
-   d) Tổ chức thực hiện (Rõ ràng 4 bước: Bước 1: Chuyển giao nhiệm vụ -> Bước 2: Thực hiện nhiệm vụ -> Bước 3: Báo cáo, thảo luận -> Bước 4: Kết luận, nhận định).
+CẤU TRÚC & ĐỘ SÂU BẮT BUỘC THEO CÔNG VĂN 5512/BGDĐT (TUYỆT ĐỐI KHÔNG SOẠN SƠ SÀI):
+Bắt đầu bằng Quốc hiệu / Tiêu đề lớn:
+# KẾ HOẠCH BÀI DẠY ÔN THI TỐT NGHIỆP THPT NĂM HỌC 2026 – 2027
+**Môn học:** ${currentSubject.name} 12 | **Bộ sách:** Kết nối tri thức với cuộc sống  
+**Chủ đề:** **${effectiveTopicTitle.toUpperCase()}**  
+**Thời lượng:** $${periods}$ tiết ($${periods * 45}$ phút) | **Tiết PPCT:** ${effectivePeriodRange}  
+**Đối tượng áp dụng:** ${studentInfo.label}
 
-2. ĐỦ 5 HOẠT ĐỘNG TRỌNG TÂM CHO BUỔI CHIỀU TĂNG CƯỜNG:
-   - Hoạt động 1: Khởi động / Hệ thống hóa kiến thức cốt lõi (Sơ đồ tư duy, bảng so sánh hoặc câu hỏi định hướng, bảng tra nhanh định lý/quy tắc/khái niệm then chốt).
-   - Hoạt động 2: Phân loại các dạng kiến thức / dạng bài trọng tâm:
-     + Mẹo nhớ, phương pháp nhận diện nhanh từng dạng.
-     + MỖI DẠNG BẮT BUỘC CÓ: Ví dụ mẫu có phân tích chi tiết, lời giải từng bước hoàn chỉnh.
-     + ${studentTarget === "advanced" ? "TÍCH HỢP BẮT BUỘC các câu hỏi vận dụng cao, phân tích đa chiều, chuyên sâu phân hóa cho nhóm học sinh khá giỏi mục tiêu 8+ đến 10." : "Tập trung các câu hỏi nhận biết, thông hiểu và vận dụng vừa sức cho nhóm học sinh mục tiêu 6.5 - 7.5."}
-   - Hoạt động 3: Luyện tập theo Phiếu học tập định dạng đề thi mới (Tổ chức 4 bước CV 5512 cho HS làm việc nhóm xử lý Phiếu học tập rèn luyện).
-   - Hoạt động 4: Hướng dẫn kỹ năng làm bài, nhận diện bẫy đề thi và lỗi sai học sinh hay mắc.
-   - Hoạt động 5: Vận dụng và Hướng dẫn tự học ở nhà.
+1. ## I. MỤC TIÊU:
+   - ### 1. Về kiến thức (Liệt kê chi tiết 4-5 gạch đầu dòng cụ thể).
+   - ### 2. Về năng lực (Năng lực tư duy và lập luận; Năng lực mô hình hóa; Năng lực giải quyết vấn đề; Năng lực sử dụng công cụ phương tiện học tập).
+   - ### 3. Về phẩm chất (Chăm chỉ, trách nhiệm, cẩn thận, chính xác).
+
+2. ## II. THIẾT BỊ DẠY HỌC VÀ HỌC LIỆU:
+   - ### 1. Giáo viên (Giáo án CV 5512, Slide sơ đồ tư duy, Phiếu học tập số 1 - Khung lý thuyết & Ví dụ mẫu, Phiếu học tập số 2 - Bộ đề luyện tập chuẩn cấu trúc mới).
+   - ### 2. Học sinh (SGK, vở ghi, máy tính cầm tay, kiến thức chuẩn bị).
+
+3. ## III. TIẾN TRÌNH DẠY HỌC (Phân bổ rõ theo từng tiết học: ### TIẾT 1, ### TIẾT 2${periods >= 3 ? ", ### TIẾT 3" : ""}):
+   Trong TỪNG HOẠT ĐỘNG (từ Hoạt động 1 đến Hoạt động 5) BẮT BUỘC trình bày đầy đủ 4 mục:
+   **a) Mục tiêu:** (Nêu rõ mục tiêu kiến thức, kỹ năng của hoạt động)
+   **b) Nội dung:** (Viết đầy đủ bảng lý thuyết, công thức, đề bài ví dụ, nhiệm vụ học tập - TUYỆT ĐỐI KHÔNG tóm tắt 1-2 dòng)
+   **c) Sản phẩm:** (Trình bày chi tiết bảng tổng hợp kiến thức đã điền và lời giải từng bước của các ví dụ/bài tập)
+   **d) Tổ chức thực hiện:** (Trình bày rõ ràng 4 bước:
+   - Bước 1: Chuyển giao nhiệm vụ
+   - Bước 2: Thực hiện nhiệm vụ
+   - Bước 3: Báo cáo, thảo luận
+   - Bước 4: Kết luận, nhận định)
+
+   ĐỦ 5 HOẠT ĐỘNG TRỌNG TÂM:
+   - #### Hoạt động 1: Khởi động & Hệ thống hóa kiến thức trọng tâm (Có bảng tổng hợp/so sánh lý thuyết, công thức, điều kiện áp dụng và chú ý đặc biệt).
+   - #### Hoạt động 2: Phân loại dạng toán & Phân tích ví dụ mẫu:
+     + BẮT BUỘC chia thành ít nhất 4 Dạng bài trọng tâm (##### Dạng 1, ##### Dạng 2, ##### Dạng 3, ##### Dạng 4).
+     + Mỗi dạng bài BẮT BUỘC có: Phương pháp nhận diện/giải nhanh + Ví dụ mẫu đầy đủ đề bài (4 phương án A, B, C, D) + *Lời giải chi tiết* biến đổi từng bước rõ ràng.
+     + ${studentTarget === "advanced" ? "TÍCH HỢP BẮT BUỘC các dạng toán chứa tham số $m$, hàm hợp và vận dụng cao phân hóa cho nhóm lớp mục tiêu 8.0+." : "Tập trung các dạng toán nhận biết, thông hiểu và vận dụng vừa sức cho nhóm lớp mục tiêu 6.5 - 8.0."}
+   - #### Hoạt động 3: Luyện tập theo hệ thống câu hỏi định dạng đề thi mới (Tổ chức 4 bước CV 5512 cho học sinh thảo luận nhóm giải Phiếu học tập số 2).
+   - #### Hoạt động 4: Kỹ năng làm bài, thủ thuật máy tính cầm tay (Casio fx-580VN X) và Nhận diện bẫy đề thi (Nêu rõ quy trình bấm phím và ít nhất 4 bẫy sai lầm kinh điển).
+   - #### Hoạt động 5: Vận dụng và Hướng dẫn tự học ở nhà.
+
+4. ## IV. PHỤ LỤC: HỆ THỐNG PHIẾU HỌC TẬP VÀ ĐÁP ÁN CHI TIẾT:
+   - ### 1. NỘI DUNG PHIẾU HỌC TẬP SỐ 2 (RÈN LUYỆN ĐỊNH DẠNG MỚI) (Chỉ ghi đề bài cho học sinh làm, KHÔNG ghi đáp án ngay dưới câu hỏi trong phần đề)
+   - ### 2. BẢNG ĐÁP ÁN VÀ LỜI GIẢI CHI TIẾT PHIẾU HỌC TẬP SỐ 2 (Bắt buộc có lời giải chi tiết từng câu cho Phần I, Phần II và Phần III).
 
 =========================================
 ${subjectFormatInstructions}
 
 =========================================
-QUY TẮC HIỂN THỊ CÔNG THỨC TOÁN & KHOA HỌC (NGHIÊM NGẶT):
-1. TẤT CẢ công thức, ký hiệu toán học, vật lý, hóa học, biến số đơn lẻ (x, y, z, m, a, b, v, t, F, Δ, π...) BẮT BUỘC đặt trong cặp dấu đô la: $công_thức$ (nội dòng) hoặc $$công_thức$$ (khối riêng).
-2. Dùng cú pháp LaTeX chuẩn: \\frac{a}{b}, \\sqrt{...}, \\pi, \\Leftrightarrow, \\ge, \\le, \\in. Luôn dùng \\frac thay vì \\dfrac.
-3. Không viết tắt hay dùng text thường cho công thức (ví dụ: không viết "sin x = 0", phải viết "$\\sin x = 0$").
-4. Giữ nguyên vẹn font tiếng Việt UTF-8 chuẩn.
-5. Cuối kế hoạch bài dạy BẮT BUỘC có khối phê duyệt: Tổ trưởng chuyên môn duyệt và Giáo viên soạn ký tên.
+QUY TẮC HIỂN THỊ CÔNG THỨC TOÁN & KHOA HỌC (NGHIÊM NGẶT 100%):
+1. TẤT CẢ công thức, ký hiệu toán học, vật lý, hóa học, biến số đơn lẻ ($x$, $y$, $z$, $m$, $a$, $b$, $\\mathbb{R}$, $\\Delta$, $\\pi$, $f'(x)$...) BẮT BUỘC đặt trong cặp dấu đô la: $công_thức$ (nội dòng) hoặc $$công_thức$$ (khối riêng).
+2. Luôn có khoảng trắng giữa chữ tiếng Việt hoặc dấu ngoặc kép và dấu $: viết chuẩn "hàm số đồng biến trên $\\mathbb{R}$", "đạo hàm $f'(x)$ và", không viết dính chữ.
+3. Dùng cú pháp LaTeX chuẩn: \\frac{a}{b}, \\sqrt{...}, \\pi, \\Leftrightarrow, \\Rightarrow, \\ge, \\le, \\neq, \\in, \\setminus, \\{1; 2; 3\\}. Luôn dùng \\frac thay vì \\dfrac. Với tập hợp dùng \\{ và \\} bên trong $...$, ví dụ $m \\in \\{-1; 0; 1; 2\\}$.
+4. Mỗi tiêu đề Markdown (##, ###, ####, #####) BẮT BUỘC nằm trên một dòng riêng biệt có dòng trống phía trước.
+5. Cuối kế hoạch bài dạy BẮT BUỘC có mục ### PHÊ DUYỆT CỦA TỔ CHUYÊN MÔN.
 
-TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG ĐƯỢC GHI '...tương tự giáo viên hướng dẫn'. Bắt buộc viết chi tiết từng lời giải ví dụ mẫu và giải thích toàn bộ các ý a, b, c, d của câu hỏi trắc nghiệm Đúng/Sai.`;
+TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG ĐƯỢC VIẾT SƠ SÀI 1-2 CÂU MỖI PHẦN, KHÔNG ĐƯỢC GHI '...tương tự giáo viên hướng dẫn'. Bắt buộc biên soạn đầy đủ, chi tiết, dài và sâu sắc tương đương giáo án mẫu cấp Tỉnh (tối thiểu 4 ví dụ mẫu ở Hoạt động 2 và đủ 11-13 câu hỏi kèm lời giải chi tiết ở Phần IV Phụ lục).`;
+  };
+
+  const cleanGraduationPlanMarkdown = (raw: string): string => {
+    if (!raw) return "";
+    let s = raw.normalize("NFC");
+    s = fixBrokenLatexSyntax(s);
+    s = rescueTrappedVietnameseFromMath(s);
+    s = sanitizeLatexMathAndDelimiters(s);
+    s = normalizeMathText(s);
+    s = cleanMathAndUnwrapHeadings(s);
+
+    // Đảm bảo có dòng xuống hàng trước các tiêu đề Markdown bị viết dính liền
+    s = s.replace(/([^\n])\s*(#{1,5}\s+)/g, "$1\n\n$2");
+    // Tách dòng tiêu đề bị dính **** (vd: **TIÊU ĐỀ****Môn: ...**)
+    s = s.replace(/\*{4,}/g, "**\n\n**");
+    // Đảm bảo khoảng trắng sau dấu hai chấm trước chữ cái viết hoa tiếng Việt (vd: Mục tiêu:HS -> Mục tiêu: HS)
+    s = s.replace(/([a-zà-ỹ]):([A-ZÀ-Ỹ])/g, "$1: $2");
+    // Đảm bảo dấu ngoặc kép không dính sát vào dấu $ khiến trình phân tích Markdown bỏ sót công thức
+    s = s.replace(/(["“”])(\$[^$\n]+\$)(["“”])/g, "$1 $2 $3");
+    s = s.replace(/(\$[^$\n]+\$)(["”])/g, "$1 $2");
+    s = s.replace(/(["“])(\$[^$\n]+\$)/g, "$1 $2");
+
+    return s.trim();
   };
 
   // Generate Lesson Plan
@@ -733,6 +804,7 @@ TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG ĐƯỢC GHI '...tương tự giáo vi�
       if (cleanKey) {
         localStorage.setItem(API_KEY_STORAGE, cleanKey);
         localStorage.setItem("eduplan_gemini_api_key_v2", cleanKey);
+        setCustomApiKey(cleanKey);
       }
       const prompt = buildSystemPrompt();
 
@@ -756,6 +828,7 @@ TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG ĐƯỢC GHI '...tương tự giáo vi�
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          apiKey: cleanKey,
           prompt: prompt,
           model: geminiModel,
           subject: currentSubject.name,
@@ -768,26 +841,31 @@ TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG ĐƯỢC GHI '...tương tự giáo vi�
       clearTimeout(t2);
       clearTimeout(t3);
 
-      if (!response.ok) {
-        let errMsg = "Không thể tạo kế hoạch bài dạy ôn tập từ máy chủ AI.";
-        try {
-          const errData = await response.json();
-          errMsg = errData.error || errMsg;
-        } catch (e) {
-          errMsg = `Lỗi máy chủ (${response.status}): Vui lòng kiểm tra API Key hoặc thử lại.`;
+      const rawText = await response.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(rawText.trim());
+      } catch (parseErr) {
+        const serverErrorMatch = rawText.match(/SERVER_ERROR:\s*([^\n\r]+)/);
+        if (serverErrorMatch) {
+          throw new Error(serverErrorMatch[1].trim());
         }
-        throw new Error(errMsg);
+        throw new Error("Lỗi phản hồi máy chủ: " + rawText.slice(0, 150));
       }
 
-      const data = await response.json();
-      const generatedMarkdown = data.result || data.text || "";
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      const generatedMarkdown = data?.result || data?.text || "";
       if (!generatedMarkdown) {
         throw new Error("Phản hồi từ AI không có nội dung văn bản hợp lệ.");
       }
 
+      const cleanedPlan = cleanGraduationPlanMarkdown(generatedMarkdown);
       setProgressPercent(100);
       setProgressStage("Đã tạo kế hoạch bài dạy thành công!");
-      setResultPlan(generatedMarkdown);
+      setResultPlan(cleanedPlan);
       setActiveTab("preview");
       showToast(`Đã tạo xong kế hoạch ôn tập môn ${currentSubject.name} chuẩn CV 5512!`);
     } catch (err: any) {
@@ -815,6 +893,7 @@ TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG ĐƯỢC GHI '...tương tự giáo vi�
     if (!previewContainerRef.current) return;
     setIsExportingWord(true);
     try {
+      await typesetMathJax(previewContainerRef.current);
       const fileName = `KHDH_OnThi_TN_THPT_${currentSubject.shortName}_${effectiveTopicName
         .replace(/[^a-zA-Z0-9\u00C0-\u024F\u1EA0-\u1EF9]/g, "_")
         .slice(0, 35)}.docx`;
@@ -1310,7 +1389,7 @@ TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG ĐƯỢC GHI '...tương tự giáo vi�
                     ))}
                   </select>
                   <p className="text-[10px] text-slate-500 leading-tight">
-                    * Đã cập nhật các mô hình AI mới nhất (Gemini 2.5, 3.8, 3.1) và loại bỏ hoàn toàn các mô hình cũ đã hết hỗ trợ.
+                    * Đã cập nhật các mô hình AI mới nhất (Gemini 3.8 Flash, 3.1 Flash Lite, Gemini 4 Argon) và tự động chuyển dự phòng khi chạm hạn mức.
                   </p>
                 </div>
               </div>
@@ -1413,15 +1492,15 @@ TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG ĐƯỢC GHI '...tương tự giáo vi�
                     type="button"
                     onClick={handleExportWord}
                     disabled={isExportingWord}
-                    title="Xuất kế hoạch bài dạy sang file Word (.docx)"
-                    className="p-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-all text-xs font-medium flex items-center gap-1.5 shadow-md shadow-blue-600/30"
+                    title="Xuất kế hoạch bài dạy sang tệp Word (.docx) chuẩn định dạng A4 in ấn"
+                    className="p-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition-all text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-emerald-600/30 cursor-pointer"
                   >
                     {isExportingWord ? (
                       <RotateCw className="w-3.5 h-3.5 animate-spin" />
                     ) : (
-                      <Download className="w-3.5 h-3.5" />
+                      <FileText className="w-3.5 h-3.5" />
                     )}
-                    <span>Xuất Word (.docx)</span>
+                    <span>Xuất file A4 (.docx)</span>
                   </button>
 
                   <button
@@ -1441,10 +1520,10 @@ TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG ĐƯỢC GHI '...tương tự giáo vi�
                 {activeTab === "preview" ? (
                   <div
                     ref={previewContainerRef}
-                    className="bg-white text-slate-900 p-6 md:p-8 rounded-xl shadow-inner font-serif leading-relaxed text-sm md:text-base border border-slate-200"
+                    className="bg-white text-slate-900 p-6 md:p-8 rounded-xl shadow-inner font-serif leading-relaxed text-sm md:text-base border border-slate-200 tex2jax_process"
                     style={{ fontFamily: "'Times New Roman', serif" }}
                   >
-                    <MarkdownRenderer content={resultPlan} />
+                    <MarkdownRenderer key={`plan_${resultPlan.length}_${resultPlan.slice(0, 40)}`} content={resultPlan} />
                   </div>
                 ) : (
                   <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
@@ -1461,7 +1540,7 @@ TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG ĐƯỢC GHI '...tương tự giáo vi�
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                   Chuẩn 4 bước Công văn 5512: Chuyển giao → Thực hiện → Báo cáo → Kết luận.
                 </span>
-                <span className="text-[11px] text-slate-500">
+                <span className="text-[11px] text-slate-500 tex2jax_ignore">
                   Hiển thị công thức Toán bằng MathJax 3 ($...$ và $$...$$), tương thích Word MathType & OMML.
                 </span>
               </div>

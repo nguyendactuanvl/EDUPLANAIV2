@@ -929,7 +929,7 @@ export function ExerciseSolver() {
                     setSolution(prev => run1ClickMathFix(prev));
                   }}
                   className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-500 hover:to-teal-500 transition-all rounded-lg shadow-xs text-xs font-bold cursor-pointer active:scale-95"
-                  title="Tự động sửa lỗi rách dấu $, lỗi dính chữ và lỗi ký hiệu KaTeX trong lời giải"
+                  title="Tự động sửa lỗi rách dấu $, lỗi dính chữ và lỗi ký hiệu MathJax trong lời giải"
                 >
                   <Wand2 className="w-3.5 h-3.5 text-emerald-200 animate-pulse" />
                   <span>⚡ Sửa lỗi Toán 1-Click</span>
@@ -955,9 +955,11 @@ export function ExerciseSolver() {
                 <div className="flex gap-1.5">
                   <button 
                     onClick={() => handleExportWord(false)}
-                    className="flex items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-xs text-xs font-semibold"
+                    className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-all shadow-xs text-xs font-bold cursor-pointer active:scale-95"
+                    title="Xuất lời giải chi tiết sang tệp Word (.docx) chuẩn A4 in ấn"
                   >
-                    <Download className="w-3.5 h-3.5" /> Word
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Xuất file A4 (.docx)</span>
                   </button>
                   <button 
                     onClick={() => handleExportWord(true)}
@@ -1051,8 +1053,8 @@ export function ExerciseSolver() {
                 .custom-presentation { font-size: 1.5rem !important; line-height: 1.8 !important; }
                 .custom-presentation h2 { font-size: 2.5rem !important; color: #60a5fa !important; margin-bottom: 2rem !important; border-bottom: 2px solid #334155; padding-bottom: 1rem; }
                 .custom-presentation h3 { font-size: 2rem !important; color: #a7f3d0 !important; }
-                .custom-presentation .katex { font-size: 1.8rem !important; }
-                .custom-presentation .katex-display { margin: 2rem 0 !important; }
+                .custom-presentation mjx-container { font-size: 1.8rem !important; }
+                .custom-presentation mjx-container[display="true"] { margin: 2rem 0 !important; }
               `}</style>
               <ErrorBoundary><MathView content={presentationSlides[currentSlide]} /></ErrorBoundary>
             </div>

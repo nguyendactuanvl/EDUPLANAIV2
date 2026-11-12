@@ -807,10 +807,27 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
   };
 
   useEffect(() => {
+    let rawData = examRawData;
+
+    // Check window.location.hash directly if examRawData was not explicitly passed
+    if (!rawData && typeof window !== 'undefined' && window.location.hash) {
+      const hashStr = window.location.hash.startsWith('#') ? window.location.hash.substring(1) : window.location.hash;
+      const dataMatch = hashStr.match(/(?:^|[&#?])data=([^&]+)/);
+      if (dataMatch && dataMatch[1]) {
+        rawData = dataMatch[1];
+      }
+    }
+
+    // Check query params if hash was empty
+    if (!rawData && typeof window !== 'undefined' && window.location.search) {
+      const urlParams = new URLSearchParams(window.location.search);
+      rawData = urlParams.get('data') || urlParams.get('d');
+    }
+
     let loaded = false;
-    if (examRawData) {
+    if (rawData) {
       try {
-        const decompressed = LZString.decompressFromEncodedURIComponent(examRawData);
+        const decompressed = LZString.decompressFromEncodedURIComponent(rawData);
         if (decompressed) {
           const data = JSON.parse(decompressed);
           if (data && (data.examData || data.codes || data.questions)) {
@@ -822,6 +839,7 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
               setSelectedCode("101");
             }
             setLoading(false);
+            setError(null);
             loaded = true;
             return;
           }
@@ -832,7 +850,7 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
 
       if (!loaded) {
         try {
-          const decompressedBase64 = LZString.decompress(examRawData);
+          const decompressedBase64 = LZString.decompress(rawData);
           if (decompressedBase64) {
             const data = JSON.parse(decompressedBase64);
             if (data && (data.examData || data.codes || data.questions)) {
@@ -844,6 +862,7 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
                 setSelectedCode("101");
               }
               setLoading(false);
+              setError(null);
               loaded = true;
               return;
             }

@@ -15,6 +15,7 @@ import {
   parseMarkdownBbtTable 
 } from "../../lib/bbtRenderer";
 import { apiFetch } from "../../lib/apiFetch";
+import { generateContent } from "../../services/geminiService";
 
 // ============================================================================
 // TYPES & DATA STRUCTURES

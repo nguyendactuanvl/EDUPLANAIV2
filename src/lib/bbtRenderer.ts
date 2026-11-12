@@ -370,8 +370,8 @@ export function unflattenMarkdownTables(text: string): string {
   s = s.replace(/(\|[ \t]*)[ \t]*(?:\|{1,4}[ \t]*)(\$?(?:y(?![’'′\^])|f\(x\)|g\(x\))\$?)[ \t]*\|{1,3}/gi, '$1\n| $2 | ');
   s = s.replace(/(^|\n)[ \t]*\|{0,3}[ \t]*(\$?(?:y(?![’'′\^])|f\(x\)|g\(x\))\$?)[ \t]*\|{1,3}/gi, '$1| $2 | ');
 
-  // 6. Tách văn bản sau bảng nếu bị dính liền với hàng cuối:
-  s = s.replace(/(^[ \t]*\|.+?\|)[ \t]*([A-Za-zÀ-ỹĐđ#*].*)$/gm, '$1\n\n$2');
+  // 6. Tách văn bản sau bảng nếu bị dính liền với hàng cuối (chỉ tách phần text bên ngoài bảng sau dấu pipe cuối cùng):
+  s = s.replace(/(^[ \t]*\|(?:[^|\n]+\|)+)[ \t]+([A-Za-zÀ-ỹĐđ#*][^|\n]*)$/gm, '$1\n\n$2');
 
   // 7. Xử lý qua bộ collapseMultilineTableLines để chuẩn hóa từng dòng
   if (s.includes('|')) {

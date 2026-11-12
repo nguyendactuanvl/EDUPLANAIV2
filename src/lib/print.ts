@@ -1,7 +1,5 @@
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
-// @ts-ignore
-import renderMathInElement from 'katex/dist/contrib/auto-render.js';
 import { preProcessMathContent } from './utils';
 
 const colorCache = new Map<string, string>();
@@ -27,7 +25,7 @@ const getRgbaFromColor = (colorStr: string) => {
 
 /**
  * Đảm bảo toàn bộ công thức toán học (bao gồm hệ phương trình \begin{cases}, \begin{aligned}, \left[...\right.)
- * đã được biên dịch hoàn chỉnh bằng KaTeX/MathJax trước khi in hoặc xuất PDF
+ * đã được biên dịch hoàn chỉnh 100% bằng MathJax trước khi in hoặc xuất PDF
  */
 export async function ensureMathRendered(element: HTMLElement): Promise<void> {
   if (!element) return;
@@ -49,14 +47,14 @@ export async function ensureMathRendered(element: HTMLElement): Promise<void> {
     }
     if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as HTMLElement;
-      if (el.classList.contains('katex') || el.classList.contains('omml-math-node')) return;
+      if (el.tagName.toLowerCase() === 'mjx-container' || el.classList.contains('MathJax') || el.classList.contains('omml-math-node')) return;
       Array.from(node.childNodes).forEach(walkTextNodes);
     }
   };
   walkTextNodes(element);
 
-  // 2. Nếu có MathJax trên trang (global window.MathJax), gọi typesetPromise
-  if (typeof (window as any).MathJax?.typesetPromise === 'function') {
+  // 2. Bắt buộc gọi và await typesetPromise để MathJax vẽ đầy đủ 100% công thức
+  if (typeof window !== 'undefined' && (window as any).MathJax && (window as any).MathJax.typesetPromise) {
     try {
       await (window as any).MathJax.typesetPromise([element]);
     } catch (e) {
@@ -64,32 +62,22 @@ export async function ensureMathRendered(element: HTMLElement): Promise<void> {
     }
   }
 
-  // 3. Render toàn bộ công thức toán còn lại bằng KaTeX auto-render
-  try {
-    if (typeof renderMathInElement === 'function') {
-      renderMathInElement(element, {
-        delimiters: [
-          { left: '$$', right: '$$', display: true },
-          { left: '\\[', right: '\\]', display: true },
-          { left: '\\(', right: '\\)', display: false },
-          { left: '$', right: '$', display: false },
-        ],
-        ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
-        throwOnError: false,
-        errorColor: 'inherit',
-      });
-    }
-  } catch (e) {
-    console.warn('KaTeX auto-render error:', e);
-  }
-
-  // Chờ một khoảng microtask ngắn để DOM và font KaTeX hoàn tất áp dụng
+  // Chờ một khoảng microtask ngắn để DOM MathJax hoàn tất áp dụng
   await new Promise((resolve) => setTimeout(resolve, 60));
 }
 
 export const printElement = async (element: HTMLElement | null, title: string = "Tai_lieu") => {
   if (!element) return;
   
+  // Đồng bộ tiến trình In/Xuất PDF với MathJax Typeset
+  if (typeof window !== 'undefined' && (window as any).MathJax && (window as any).MathJax.typesetPromise) {
+    try {
+      await (window as any).MathJax.typesetPromise();
+    } catch (e) {
+      console.warn('MathJax typesetting error before print:', e);
+    }
+  }
+
   const clone = element.cloneNode(true) as HTMLElement;
   clone.querySelectorAll('.no-print, button, input, select, textarea').forEach(el => el.remove());
   
@@ -103,7 +91,7 @@ export const printElement = async (element: HTMLElement | null, title: string = 
   container.appendChild(clone);
   document.body.appendChild(container);
 
-  // Đảm bảo KaTeX / MathJax đã render đầy đủ trên DOM trước khi in hoặc xuất PDF
+  // Đảm bảo MathJax đã render đầy đủ trên DOM trước khi in hoặc xuất PDF
   await ensureMathRendered(clone);
 
   const cleanOklch = (el: HTMLElement) => {

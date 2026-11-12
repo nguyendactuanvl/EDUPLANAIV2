@@ -26,10 +26,18 @@ const MATH_FORMATTING_RULES = `QUY TẮC ĐỊNH DẠNG TOÁN HỌC VÀ VĂN B�
      TUYỆT ĐỐI KHÔNG viết dấu ngoặc nhọn { đơn lẻ ngoài công thức, không để dấu hệ bị tách riêng dòng so với các phương trình. Mỗi phương trình trong hệ BẮT BUỘC kết thúc bằng \\\\ để ngắt dòng đẹp.
    - KÝ HIỆU LƯỢNG TỪ MỆNH ĐỀ VỚI MỌI (\\forall), TỒN TẠI (\\exists): BẮT BUỘC bọc trọn vẹn cả mệnh đề trong cặp dấu $...$ (ví dụ: "$\\forall x \\in \\mathbb{R}, x^2 + 1 > 0$", "$\\exists x \\in \\mathbb{R}: x^2 = 2$"). TUYỆT ĐỐI KHÔNG bọc ngắt quãng hoặc để trần ngoài dấu $.
    - KÝ HIỆU ĐỒ THỊ (C), ĐƯỜNG TRÒN (C): BẮT BUỘC bọc trong cặp dấu $ như "$(C)" (ví dụ: "Cho hàm số có đồ thị $(C)$"). TUYỆT ĐỐI KHÔNG viết trần (C) để tránh xung đột làm nhảy chữ C của phương án trắc nghiệm.
+   - VỚI VECTƠ (BẮT BUỘC): Luôn dùng \\vec{AB}, \\vec{a}, \\vec{u} có đầy đủ ngoặc nhọn mở và đóng (TUYỆT ĐỐI KHÔNG viết |vec{ hay \\ vec{ hay thiếu ngoặc đóng }). MỌI công thức vectơ (kể cả trong quy tắc ba điểm, quy tắc hình bình hành, quy tắc hình hộp, quy tắc trung điểm/trọng tâm) BẮT BUỘC 100% PHẢI ĐẶT TRONG DẤU $...$ (ví dụ: $\\vec{AB} + \\vec{BC} = \\vec{AC}$, $\\vec{AB} + \\vec{AD} = \\vec{AC}$, $\\vec{OA} + \\vec{OB} = 2\\vec{OM}$). TUYỆT ĐỐI KHÔNG để biểu thức vectơ đứng trần không có $.
+   - VỚI CĂN THỨC (BẮT BUỘC): Luôn dùng \\sqrt{...} có đầy đủ ngoặc nhọn mở và đóng (ví dụ: $\\sqrt{2}$, $\\sqrt{3}$).
+   - VỚI CÁC ĐIỂM CÓ DẤU PHẨY (BẮT BUỘC): Điểm $A'$, $B'$, $C'$, $D'$ hoặc $A^\\prime, B^\\prime, C^\\prime, D^\\prime$ BẮT BUỘC phải đặt trong dấu $...$ để bảo toàn cú pháp MathJax.
    - Dấu khác (không bằng) BẮT BUỘC dùng \\neq hoặc \\ne (tuyệt đối KHÔNG viết dạng "/ =", "/=", "!=" hay "=/=").
    - Ký hiệu vô cực (vô cùng) BẮT BUỘC dùng \\infty: $-\\infty, +\\infty$. Tuyệt đối KHÔNG viết thiếu dấu gạch chéo thành -infty, +infty hay in fty. Các khoảng như $(-\\infty; -1)$, $(-1; +\\infty)$ BẮT BUỘC có \\ trước infty.
    - KÝ HIỆU TẬP HỢP DÙNG DẤU NGOẶC NHỌN: Dấu ngoặc nhọn tập hợp { } BẮT BUỘC phải thoát bằng dấu gạch chéo ngược: \\{ và \\} (ví dụ: $A = \\{x \\in \\mathbb{Z} \\mid -2 \\le x < 3\\}$, $B = \\{1; 2; 3\\}$).
    - CÁC TOÁN TỬ SO SÁNH: BẮT BUỘC viết \\le, \\ge, \\neq (ví dụ: $x \\le 3$, $|x| \\le 3$, $-2 \\le x < 3$).
+   - CẤM TIÊU ĐỀ BỌC DẤU $ HOẶC MÃ MATH: TUYỆT ĐỐI KHÔNG bọc dấu $ hoặc mã math vào các tiêu đề Phần hay tiêu đề Bài (CẤM viết "PHẦN $I$", "PHẦN $II$", "PHẦN $III$", "TRẮC $NGHIỆM$", "$PHẦN I$"). Các tiêu đề BẮT BUỘC là văn bản thuần túy như "PHẦN I: TRẮC NGHIỆM NHIỀU PHƯƠNG ÁN LỰA CHỌN"!
+   - CẤM VIẾT TIẾNG VIỆT TRONG DẤU $: TUYỆT ĐỐI KHÔNG bọc các từ hay câu tiếng Việt trong dấu $...$ (CẤM viết "$Cho cấp số cộng(u_n)$", "$Tính chất các số hạng...$"). Chỉ bọc duy nhất công thức, biến số toán học trong $...$.
+   - CẤM DẤU $ TRONG PHÂN SỐ HOẶC CĂN: TUYỆT ĐỐI KHÔNG đặt dấu $ bên trong \frac{...}{...} hay \sqrt{...} hay \vec{...}.
+   - CẤM NGOẶC NHỌN KÉP DƯỚI CHỈ SỐ: CẤM viết x_{\{\frac{n+1}{2}\}}, BẮT BUỘC viết $x_{\frac{n+1}{2}}$.
+   - KHÓA CHẶN BÌNH LUẬN NGOÀI LỀ: TUYỆT ĐỐI KHÔNG xuất các đoạn suy luận nháp, tự kiểm tra đề bài, hay các câu bình luận ngoài lề (như 'Kiểm tra lại', 'Chỉnh số liệu', 'Xem lại tính chất'). Chỉ xuất thuần túy nội dung câu hỏi và lời giải.
    - Giữ nguyên vẹn font tiếng Việt UTF-8 chuẩn.
 
 2. BẢNG BIẾN THIÊN (BBT) VÀ BẢNG XÉT DẤU:
@@ -64,6 +72,16 @@ const MATH_FORMATTING_RULES = `QUY TẮC ĐỊNH DẠNG TOÁN HỌC VÀ VĂN B�
    - Miền nghiệm BPT: Nét liền cho dấu có bằng (<=, >=), nét đứt cho dấu ngặt (<, >). Phần không thuộc miền nghiệm tô màu xám nhẹ fill=gray!25.
 
 6. TRÌNH BÀY ĐÁP ÁN, LỜI GIẢI CHI TIẾT VÀ BẢNG BIỂU:
+   - BẢNG ĐÁP ÁN NHANH:
+     + PHẦN I: Bảng Markdown 12 cột hàng Chọn: | Câu | 1 | 2 | ... | 12 | và | Chọn | A | B | ... |.
+     + PHẦN II (Đúng/Sai): BẮT BUỘC dùng bảng Markdown 5 hàng chuẩn:
+       | Câu | 1 | 2 | 3 | 4 |
+       | :---: | :---: | :---: | :---: | :---: |
+       | a | Đ | Đ | S | Đ |
+       | b | Đ | S | Đ | Đ |
+       | c | S | Đ | S | S |
+       | d | Đ | S | Đ | S |
+       TUYỆT ĐỐI KHÔNG dùng môi trường ma trận \\begin{matrix} gây lỗi vỡ khung.
    - TUYỆT ĐỐI CẤM dùng mã LaTeX \\underline{...} (ví dụ \\underline{A}, \\underline{B}, \\underline{C}, \\underline{D}). Để nhấn mạnh đáp án đúng, BẮT BUỘC dùng Markdown in đậm: **A**, **B**, **C**, **D** (hoặc [A], [B], [C], [D]).
    - TUYỆT ĐỐI CẤM dùng môi trường LaTeX \\begin{tabular}...\\end{tabular} hay \\begin{center}...\\end{center}. Mọi bảng giá trị tọa độ, bảng số liệu BẮT BUỘC dùng định dạng Markdown Table chuẩn (| x | -4 | -2 | 0 | ... |).
    - TUYỆT ĐỐI KHÔNG viết các đáp án A, B, C, D dính liền nhau trên cùng một dòng.
@@ -77,7 +95,10 @@ const MATH_FORMATTING_RULES = `QUY TẮC ĐỊNH DẠNG TOÁN HỌC VÀ VĂN B�
    - Trả lời ngắn (sa): "correctAnswer" là một con số cụ thể có độ dài tối đa 4 ký tự. Với chủ đề Tập hợp: không hỏi tìm tập hợp mà hỏi số phần tử nguyên, tính giá trị biểu thức T = a+b hoặc độ dài khoảng để đáp số luôn là một số cụ thể.
 8. ĐỐI VỚI ĐOẠN MÃ LẬP TRÌNH (Code Python, Scratch, thuật toán, câu lệnh if, for, while, print, input...):
    - TUYỆT ĐỐI KHÔNG bọc dấu $...$ hay LaTeX vào mã lập trình hoặc chuỗi string (ví dụ: TUYỆT ĐỐI KHÔNG viết print($"Pass"$), print($\text{"Pass"}$), hay $if score > 5: print("Pass")$).
-   - BẮT BUỘC đặt trong khối mã \`\`\`python ... \`\`\` hoặc bọc dấu backtick inline \`...\` (Ví dụ: \`if score > 5: print("Pass")\`).`;
+   - BẮT BUỘC đặt trong khối mã \`\`\`python ... \`\`\` hoặc bọc dấu backtick inline \`...\` (Ví dụ: \`if score > 5: print("Pass")\`).
+
+9. KHÓA CHẶN SUY LUẬN NHÁP / BÌNH LUẬN NGOÀI LỀ (BẮT BUỘC):
+   - TUYỆT ĐỐI KHÔNG xuất các đoạn suy luận nháp, tự kiểm tra đề bài, hay các câu bình luận ngoài lề (như 'Kiểm tra lại', 'Chỉnh số liệu', 'Xem lại tính chất', 'vô lý nếu...', 'đề gốc phương án...', 'Đính chính:'). Chỉ xuất thuần túy nội dung câu hỏi và lời giải.`;
 
 const app = express();
 app.use(express.json({ limit: '50mb' }));
@@ -366,7 +387,7 @@ function getSystemAiClient() {
   throw new Error("Ứng dụng quy định 100% người dùng tự nhập Gemini API Key cá nhân. Không sử dụng API Key mặc định của hệ thống.");
 }
 
-function getAiApiKey(req?: any): string {
+function getCustomAiApiKey(req?: any): string {
   const authHeader = req?.headers?.['authorization'] as string;
   let customKey = '';
   if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -379,34 +400,59 @@ function getAiApiKey(req?: any): string {
     try { customKey = decodeURIComponent(customKey); } catch (e) {}
     return customKey.replace(/[^\x20-\x7E]/g, '').trim();
   }
-
-  // Flexible environment keys: GEMINI_API_KEY or VITE_GEMINI_API_KEY
-  const envKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.VITE_GEMINI_KEY_1 || '';
-  if (isValidGeminiApiKey(envKey)) {
-    try { return decodeURIComponent(envKey).trim(); } catch (e) {}
-    return envKey.trim();
-  }
-
   return '';
 }
 
-function getAiClient(req?: any) {
-  const apiKey = getAiApiKey(req);
-  if (!apiKey) {
+function getEnvAiApiKey(): string {
+  const envKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.VITE_GEMINI_KEY_1 || '';
+  if (isValidGeminiApiKey(envKey)) {
+    try { return decodeURIComponent(envKey).replace(/[^\x20-\x7E]/g, '').trim(); } catch (e) {}
+    return envKey.trim();
+  }
+  return '';
+}
+
+function getAiApiKey(req?: any): string {
+  return getCustomAiApiKey(req) || getEnvAiApiKey();
+}
+
+function getAiClients(req?: any): { client: GoogleGenAI; isCustom: boolean }[] {
+  const customKey = getCustomAiApiKey(req);
+  const envKey = getEnvAiApiKey();
+  const clients: { client: GoogleGenAI; isCustom: boolean }[] = [];
+
+  if (customKey) {
+    clients.push({
+      client: new GoogleGenAI({
+        apiKey: customKey,
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+      }),
+      isCustom: true
+    });
+  }
+
+  if (envKey && envKey !== customKey) {
+    clients.push({
+      client: new GoogleGenAI({
+        apiKey: envKey,
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+      }),
+      isCustom: false
+    });
+  }
+
+  if (clients.length === 0) {
     const err: any = new Error("Missing Gemini API Key. Vui lòng kiểm tra biến môi trường.");
     err.status = 400;
     err.isMissingKey = true;
     throw err;
   }
 
-  return new GoogleGenAI({ 
-    apiKey,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build'
-      }
-    }
-  });
+  return clients;
+}
+
+function getAiClient(req?: any) {
+  return getAiClients(req)[0].client;
 }
 
 function handleAiError(error: any, req: any, res: any) {
@@ -485,7 +531,7 @@ async function keepAliveExecute(req: any, res: any, fn: () => Promise<any>) {
     if (!res.writableEnded && !res.closed) {
       try { res.write(' '); } catch (e) {}
     }
-  }, 2500);
+  }, 15000);
 
   try {
     const result = await fn();
@@ -527,7 +573,7 @@ async function keepAliveExecute(req: any, res: any, fn: () => Promise<any>) {
         else if (parsed?.message) rawMsg = parsed.message;
       } catch (e) {}
       const cleanMsg = rawMsg.replace(/[\r\n]+/g, ' ').replace(/"/g, "'").trim();
-      res.write(`\n\nSERVER_ERROR: ${cleanMsg || 'Máy chủ xử lý quá thời gian chờ hoặc bị gián đoạn.'}\n`);
+      res.write(JSON.stringify({ error: cleanMsg || 'Máy chủ xử lý quá thời gian chờ hoặc bị gián đoạn.' }));
       res.end();
     }
   }
@@ -712,7 +758,6 @@ export function cleanLatexMathField(str: any): string {
 
   // 2. Tách câu sau dấu chấm
   s = s.replace(/\.([A-ZÀ-Ỹ])/g, '. $1');
-  s = s.replace(/\.\s*\n(?!\n)/g, '.\n\n');
 
   // 3. Sửa lỗi SS_n -> S_n, uu_n -> u_n, và dấu gạch ngang rác
   s = s.replace(/\bSS_([a-zA-Z0-9]+|\{[^}]+\})/g, 'S_$1');
@@ -827,8 +872,14 @@ function getValidGeminiModels(requestedModel?: string): string[] {
   let primary = (requestedModel || "").replace(/^models\//, "").trim();
   if (
     !primary ||
-    primary.includes("1.5") || 
-    primary.includes("1.0") || 
+    primary.includes("1.5") ||
+    primary.includes("1.0") ||
+    primary.includes("2.0") ||
+    primary.includes("2.5") ||
+    primary.includes("3.5") ||
+    primary.includes("3-flash") ||
+    primary.includes("preview") ||
+    primary.includes("latest") ||
     primary === "gemini-pro"
   ) {
     primary = "gemini-3.8-flash";
@@ -836,9 +887,7 @@ function getValidGeminiModels(requestedModel?: string): string[] {
   const list = [
     primary,
     "gemini-3.8-flash",
-    "gemini-3.5-flash-lite",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite"
+    "gemini-3.1-flash-lite"
   ];
   return Array.from(new Set(list));
 }
@@ -858,21 +907,20 @@ function normalizeGeminiContents(rawContents: any): any[] {
 }
 
 async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
-  let client;
+  let clients: { client: GoogleGenAI; isCustom: boolean }[];
   try {
-    client = getAiClient(req);
+    clients = getAiClients(req);
   } catch (err: any) {
     if (res && !res.headersSent) {
       return handleAiError(err, req, res);
     }
     throw err;
   }
-  let isCustom = isValidGeminiApiKey((req.headers['authorization'] || req.headers['x-gemini-api-key']) as string);
+
   let customKeyFailed = false;
   const models = getValidGeminiModels(payloadOptions?.model);
-
   let primaryError: any = null;
-  const maxRetries = 2;
+  let lastFailedIsCustom = clients[0]?.isCustom || false;
 
   const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán:
 - TẤT CẢ các biến số, tham số đơn lẻ (như x, y, m, a, b, c, d, S...) BẮT BUỘC phải đặt trong cặp dấu đô la: $x$, $y$, $m$, $a$, $b$, $c$, $d$, $S$.
@@ -892,29 +940,36 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
     }
     return text;
   };
-  
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
+
+  for (const { client, isCustom } of clients) {
     for (const model of models) {
       try {
         const rawConfig = { ...(payloadOptions.config || {}) };
-        if (rawConfig.temperature === undefined) {
+        if (model.includes("3.8") || model.includes("4-") || model.includes("3.1")) {
+          delete rawConfig.temperature;
+          delete rawConfig.topP;
+          delete rawConfig.topK;
+          delete rawConfig.candidateCount;
+        } else if (rawConfig.temperature === undefined) {
           rawConfig.temperature = 0.7;
         }
+        if (model.includes("lite") || model.includes("3.8")) {
+          delete rawConfig.thinkingConfig;
+        }
 
-        const updatedPayload = { 
-          ...payloadOptions, 
+        const updatedPayload = {
+          ...payloadOptions,
           contents: normalizeGeminiContents(payloadOptions.contents),
           model,
           config: {
             maxOutputTokens: rawConfig.maxOutputTokens || 32768,
             ...rawConfig,
             systemInstruction: rawConfig.systemInstruction || defaultSystemInstruction
-          } 
+          }
         };
         const response = await client.models.generateContent(updatedPayload);
         const normText = extractTextFromResponse(response);
         if (!normText) {
-          console.warn(`[generateWithFallback] Model ${model} returned empty text, continuing fallback...`);
           continue;
         }
         return {
@@ -922,47 +977,40 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
           candidates: response.candidates ? response.candidates.map((c: any) => ({ finishReason: c.finishReason, index: c.index })) : undefined,
           customKeyFailed
         } as any;
-  
       } catch (e: any) {
         primaryError = e;
-        const errMsg = e?.message || "";
-        const isQuota = errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("quota") || e?.status === 429;
-        console.warn(`[generateWithFallback] Model ${model} error (isQuota: ${isQuota}, isCustomKey: ${isCustom}):`, errMsg);
-        // Automatic fallback on 429 / RESOURCE_EXHAUSTED: continue loop to next model (gemini-3.5-flash-lite / gemini-2.5-flash-lite)
-        await delay(300);
+        lastFailedIsCustom = isCustom;
+        if (isCustom) {
+          customKeyFailed = true;
+        }
+        await delay(200);
         continue;
       }
     }
-    
-    if (primaryError && attempt < maxRetries - 1) {
-      await delay(800 * (attempt + 1));
-    }
   }
-  
+
   if (primaryError) {
-    if (isCustom) {
+    if (lastFailedIsCustom) {
       const errMsg = primaryError?.message || "";
       if (errMsg.includes("429") || errMsg.includes("quota") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("Free Tier")) {
-        throw new Error("API Key cá nhân của bạn đã chạm ngưỡng hạn mức gọi AI của Google (Lỗi 429 Quota Exceeded). Vui lòng thử đổi API Key khác hoặc đợi Google làm mới hạn mức.");
+        throw new Error("API Key cá nhân của bạn đã chạm ngưỡng hạn mức miễn phí trong ngày của Google (Lỗi 429 Quota Exceeded). Vui lòng xóa API Key trong ô cài đặt để dùng khóa mặc định của hệ thống hoặc đổi sang API Key khác.");
       }
       throw new Error(`Lỗi từ API Key cá nhân của bạn: ${errMsg}`);
     }
     throw primaryError;
   }
-  throw new Error("429 RESOURCE_EXHAUSTED: Hệ thống đang quá tải hoặc tạm thời không khả dụng. Vui lòng sử dụng API Key cá nhân trong Cài đặt.");
+  throw new Error("429 RESOURCE_EXHAUSTED: Hệ thống đang quá tải hoặc tạm thời không khả dụng. Vui lòng thử lại sau ít phút.");
 }
 
 async function generateWithFallbackStream(req: any, res: any, payloadOptions: any) {
-  let client;
+  let clients: { client: GoogleGenAI; isCustom: boolean }[];
   try {
-    client = getAiClient(req);
+    clients = getAiClients(req);
   } catch (err: any) {
     return handleAiError(err, req, res);
   }
-  let isCustom = isValidGeminiApiKey((req.headers['authorization'] || req.headers['x-gemini-api-key']) as string);
   const models = getValidGeminiModels(payloadOptions?.model);
 
-  const config = payloadOptions.config || {};
   const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán.
 - LUÔN LUÔN sử dụng \\frac thay thế cho \\dfrac.
 - TẤT CẢ các biến số, tham số đơn lẻ (như x, y, m, a, b, c...) BẮT BUỘC bọc trong cặp dấu $...$.
@@ -971,15 +1019,19 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
   let primaryError: any = null;
   let streamStarted = false;
 
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (const { client } of clients) {
     for (const model of models) {
       try {
         const rawConfig = { ...(payloadOptions.config || {}) };
-        if (model.includes("3.8") || model.includes("4-") || model.includes("latest") || model.includes("3.1")) {
+        if (model.includes("3.8") || model.includes("4-") || model.includes("3.1")) {
           delete rawConfig.temperature;
           delete rawConfig.topP;
           delete rawConfig.topK;
           delete rawConfig.candidateCount;
+        }
+
+        if (model.includes("lite") || model.includes("3.8")) {
+          delete rawConfig.thinkingConfig;
         }
 
         const updatedPayload = {
@@ -987,7 +1039,7 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
           contents: normalizeGeminiContents(payloadOptions.contents),
           model,
           config: {
-            maxOutputTokens: 8192,
+            maxOutputTokens: 32768,
             ...rawConfig,
             systemInstruction: rawConfig.systemInstruction || defaultSystemInstruction
           }
@@ -1005,6 +1057,9 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
               streamStarted = true;
             }
             res.write(chunk.text);
+            if (typeof (res as any).flush === 'function') {
+              (res as any).flush();
+            }
           }
         }
         if (streamStarted) {
@@ -1012,26 +1067,60 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
           return;
         }
       } catch (e: any) {
+        if (e?.message?.includes("thinkingConfig") || e?.message?.includes("thinkingBudget")) {
+          try {
+            const fallbackConfig = { ...(payloadOptions.config || {}) };
+            delete fallbackConfig.thinkingConfig;
+            const fallbackPayload = {
+              ...payloadOptions,
+              contents: normalizeGeminiContents(payloadOptions.contents),
+              model,
+              config: {
+                maxOutputTokens: 32768,
+                ...fallbackConfig,
+                systemInstruction: fallbackConfig.systemInstruction || defaultSystemInstruction
+              }
+            };
+            const fallbackStream = await client.models.generateContentStream(fallbackPayload);
+            for await (const chunk of fallbackStream) {
+              if (chunk.text) {
+                if (!streamStarted) {
+                  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+                  res.setHeader('Transfer-Encoding', 'chunked');
+                  res.setHeader('X-Content-Type-Options', 'nosniff');
+                  res.setHeader('Cache-Control', 'no-cache, no-transform');
+                  res.setHeader('Access-Control-Allow-Origin', '*');
+                  streamStarted = true;
+                }
+                res.write(chunk.text);
+              }
+            }
+            if (streamStarted) {
+              res.end();
+              return;
+            }
+          } catch (err2: any) {
+            e = err2;
+          }
+        }
         primaryError = e;
-        console.warn(`[generateWithFallbackStream] Error with model ${model} (isCustomKey: ${isCustom}):`, e?.message);
         if (streamStarted) {
           res.write('\n\n⚠️ GIÁN ĐOẠN DỮ LIỆU: Quá trình truyền dữ liệu từ AI bị gián đoạn. Vui lòng bấm "Thử tạo lại".');
           res.end();
           return;
         }
-        await delay(300);
+        await delay(200);
         continue;
       }
     }
-    await delay(500 * (attempt + 1));
   }
 
   if (!streamStarted) {
     if (primaryError) {
       return handleAiError(primaryError, req, res);
     }
-    return res.status(503).json({ 
-      error: "Hệ thống AI hiện đang quá tải (Lỗi 503 Service Unavailable). Thầy cô vui lòng bấm 'Thử tạo lại' sau ít phút hoặc kiểm tra lại API Key trong Cài đặt." 
+    return res.status(503).json({
+      error: "Hệ thống AI hiện đang quá tải (Lỗi 503 Service Unavailable). Thầy cô vui lòng bấm 'Thử tạo lại' sau ít phút hoặc kiểm tra lại API Key trong Cài đặt."
     });
   }
 }
@@ -2021,20 +2110,27 @@ app.all(["/api/generate-graduation-review-plan"], async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   return keepAliveExecute(req, res, async () => {
-    const prompt = req.body.prompt || "";
-    const requestedModel = req.body.model || "gemini-3.8-flash";
+    const { prompt, model } = req.body || {};
     if (!prompt) {
       throw new Error("Không có nội dung yêu cầu tạo kế hoạch bài dạy ôn tập.");
     }
     const response = await generateWithFallback(req, {
-      contents: prompt,
-      model: requestedModel,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      model: model || "gemini-3.8-flash",
       config: {
-        maxOutputTokens: 16384,
+        temperature: 0.35,
+        maxOutputTokens: 32768,
+        systemInstruction: `Bạn là chuyên gia thẩm định chương trình giáo dục phổ thông kiêm giáo viên dạy giỏi cốt cán cấp Tỉnh/Thành phố.
+Nhiệm vụ của bạn là soạn KẾ HOẠCH BÀI DẠY (GIÁO ÁN) ÔN TẬP TĂNG CƯỜNG BUỔI CHIỀU hoàn chỉnh, đồ sộ, sâu sắc, chuẩn mực theo Công văn 5512/BGDĐT, bám sát Chương trình GDPT 2018 và đúng cấu trúc định dạng đề thi Tốt nghiệp THPT mới nhất của Bộ GD&ĐT.
+BẮT BUỘC TUÂN THỦ:
+1. Tất cả công thức toán học, biến số đơn lẻ (x, y, m, a, u, v, vector...) BẮT BUỘC đặt trong cặp dấu đô la: $công_thức$ (nội dòng) hoặc $$công_thức$$ (khối riêng). TUYỆT ĐỐI KHÔNG xuất hiện lệnh LaTeX trần trụi thiếu dấu $.
+2. Dùng cú pháp LaTeX chuẩn: \\frac{a}{b}, \\sqrt{...}, \\pi, \\Leftrightarrow, \\ge, \\le, \\in, \\vec{a}, \\vec{AB}. Luôn dùng \\frac thay vì \\dfrac.
+3. Giữ nguyên vẹn font tiếng Việt UTF-8 chuẩn.
+4. Tuyệt đối không cắt ngắn hay dùng các câu tóm tắt sơ sài. Soạn đầy đủ, chi tiết từng Tiết học (Tiết 1, Tiết 2, Tiết 3...), đủ 4 dạng toán kèm ví dụ mẫu có lời giải chi tiết ở Hoạt động 2, đủ hướng dẫn bấm máy Casio fx-580VN X và phân tích bẫy đề thi ở Hoạt động 4, và đủ toàn bộ câu hỏi + lời giải chi tiết từng câu của Phiếu học tập số 2 ở Phần IV Phụ lục.`
       }
     });
     return {
-      result: response.text || ""
+      result: (response?.text ? response.text.normalize("NFC").trim() : "") || ""
     };
   });
 });
@@ -2986,26 +3082,27 @@ ${MATH_FORMATTING_RULES}
 - Với hàm số bậc nhất tuyến tính, ghi chuẩn: $y = ax + b$ (không dùng ngoặc nhọn quanh biểu thức tuyến tính).
 
 ---
-### 5. KHU VỰC ĐÁP ÁN & LỜI GIẢI CHI TIẾT (ẨN / HIỆN KHOA HỌC)
+### 5. KHU VỰC HƯỚNG DẪN GIẢI CHI TIẾT (ẨN / HIỆN KHOA HỌC)
 ${answerPrompt}
-BẮT BUỘC đặt toàn bộ bảng đáp án nhanh và hướng dẫn giải chi tiết trong khối thẻ đóng/mở HTML <details> sau để giáo viên dễ dàng thu gọn/mở rộng khi giảng dạy:
+QUY TẮC BẮT BUỘC VỀ VỊ TRÍ KHỐI <details>: Bạn PHẢI viết XONG TOÀN BỘ ĐỀ BÀI của tất cả các phần (${numPartI > 0 ? 'PHẦN I, ' : ''}${numPartII > 0 ? 'PHẦN II, ' : ''}${numPartIII > 0 ? 'PHẦN III' : ''}${numPartIV > 0 ? ', PHẦN IV' : ''}) trước, sau đó mới mở DUY NHẤT MỘT khối thẻ <details class="solution-box"> ở cuối cùng của phiếu học tập! TUYỆT ĐỐI KHÔNG chèn thẻ <details> xen kẽ sau từng phần!
+BẮT BUỘC KHÔNG CÓ BẢNG ĐÁP ÁN NHANH (bỏ hoàn toàn bảng đáp án nhanh theo yêu cầu). Đặt toàn bộ Hướng dẫn giải chi tiết của tất cả các phần trong DUY NHẤT 1 khối thẻ đóng/mở HTML <details> ở cuối tài liệu:
 
 <details class="solution-box" style="margin-top: 25px; padding: 15px; border: 1px solid #10b981; border-radius: 8px; background-color: #f0fdf4;">
   <summary style="font-weight: bold; cursor: pointer; color: #047857; font-size: 16px;">
-    👉 BẤM ĐỂ XEM ĐÁP ÁN VÀ LỜI GIẢI CHI TIẾT
+    👉 BẤM ĐỂ XEM HƯỚNG DẪN GIẢI CHI TIẾT
   </summary>
   
-  [Chèn Bảng tổng hợp nhanh đáp án các Phần I, II, III ở đây]
-  
-  [Chèn Hướng dẫn giải chi tiết từng câu ở đây với lập luận đầy đủ, công thức LaTeX, và phương án đúng được gạch chân dạng \\underline{A} hoặc \\underline{a)}]
+  [Chèn Hướng dẫn giải chi tiết từng câu của tất cả các phần (PHẦN I, PHẦN II, PHẦN III...) ở đây với lập luận toán học đầy đủ, mọi công thức và biến số đặt trong $...$ hoặc $$...$$, hệ phương trình dùng \\begin{cases}...\\end{cases}, không chèn bảng đáp án nhanh]
 </details>
 
 BẮT BUỘC kiểm tra và SỬA LỖI CHÍNH TẢ tiếng Việt thật cẩn thận trước khi trả kết quả.`;
 
+      const isJsonRequested = req.body?.responseFormat === 'json' || req.body?.mimeType === 'application/json';
       const response = await generateWithFallback(req, {
         contents: prompt,
         config: {
-          temperature: 0.7,
+          temperature: isJsonRequested ? 0.3 : 0.7,
+          ...(isJsonRequested ? { responseMimeType: "application/json" } : {})
         }
       });
 
@@ -3058,41 +3155,52 @@ app.all("/api/generate-worksheet-stream", async (req, res) => {
 
   if (additionalNotes) exercisePrompt += `\n- Ghi chú riêng từ giáo viên: ${additionalNotes}`;
 
-  let answerPrompt = 'Cung cấp Bảng đáp án nhanh và Hướng dẫn giải chi tiết gói trong thẻ HTML <details class="solution-box"><summary>👉 BẤM ĐỂ XEM ĐÁP ÁN VÀ LỜI GIẢI CHI TIẾT</summary>...</details>.';
+  let answerPrompt = `BẮT BUỘC 100% ở cuối phiếu học tập KHÔNG ĐƯỢC CÓ BẢNG ĐÁP ÁN NHANH (bỏ hoàn toàn bảng đáp án nhanh theo yêu cầu của giáo viên). BẮT BUỘC viết xong toàn bộ đề bài của tất cả các phần (Phần I, Phần II, Phần III${numPartIV > 0 ? ', Phần IV' : ''}) trước, rồi mới đặt DUY NHẤT 1 khối HƯỚNG DẪN GIẢI CHI TIẾT cho tất cả các phần ở cuối cùng của phiếu học tập, gói trong thẻ HTML <details class="solution-box"><summary>👉 BẤM ĐỂ XEM HƯỚNG DẪN GIẢI CHI TIẾT</summary>...</details>. TUYỆT ĐỐI KHÔNG chèn <details> sau từng phần và KHÔNG ĐƯỢC BỎ SÓT PHẦN HƯỚNG DẪN GIẢI CHI TIẾT!`;
   if (answerMode === 'none') answerPrompt = 'TUYỆT ĐỐI KHÔNG kèm đáp án hay lời giải.';
-  else if (answerMode === 'summary') answerPrompt = 'Chỉ kèm bảng đáp án nhanh ở cuối.';
+  else if (answerMode === 'summary') answerPrompt = 'Ở cuối cùng của phiếu học tập (sau khi đã viết xong toàn bộ đề bài của tất cả các phần), cung cấp HƯỚNG DẪN GIẢI CHI TIẾT ngắn gọn cho tất cả các phần gói trong DUY NHẤT 1 thẻ <details class="solution-box"><summary>👉 BẤM ĐỂ XEM HƯỚNG DẪN GIẢI</summary>...</details>. KHÔNG sinh bảng đáp án nhanh.';
 
   const prompt = `Bạn là chuyên gia sư phạm bộ môn ${subject || "Toán"} Việt Nam (Chương trình GDPT 2018, SGK Kết nối tri thức với cuộc sống áp dụng từ năm học 2026-2027).
 Hãy tạo ngay PHIẾU HỌC TẬP A4 Chuẩn in ấn cho học sinh Lớp ${grade}, ${semester}, môn ${subject || "Toán"}, Chương: "${chapter}", Bài học/chủ đề: "${lesson}".
 
 YÊU CẦU QUAN TRỌNG VỀ CẤU TRÚC VÀ PHẠM VI NỘI DUNG (BẮT BUỘC 100%):
-0. PHẠM VI CHỦ ĐỀ CHÍNH XÁC (TẬP TRUNG 100%): Tất cả các câu hỏi trong phiếu BẮT BUỘC phải thuộc chính xác bài học "${lesson}" (thuộc ${chapter}, Lớp ${grade}, ${semester}). TUYỆT ĐỐI KHÔNG BỊA RA HOẶC CHÈN THÊM bất kỳ câu hỏi nào thuộc các chương học khác ngoài bài học đã chọn. (Ví dụ: Khi giáo viên chọn Chương V "Các số đặc trưng đo xu thế trung tâm", TUYỆT ĐỐI KHÔNG xuất hiện câu hỏi về Đạo hàm, Giới hạn hay Tích phân).
-1. SỐ LƯỢNG CÂU HỎI BẮT BUỘC (TỔNG ${totalCount} CÂU): Bạn PHẢI sinh đầy đủ 100% chính xác từng câu từ Câu 1 đến câu cuối cùng của từng Phần. TUYỆT ĐỐI KHÔNG ĐƯỢC TÓM TẮT THÀNH 5 HAY 8 CÂU.
-${numPartIV === 0 ? 'CẤM TUYỆT ĐỐI PHẦN IV (TỰ LUẬN): Đề bài là ĐỀ 3 PHẦN. TUYỆT ĐỐI KHÔNG có phần IV hay bài tập tự luận nào!' : ''}
+0. PHẠM VI CHỦ ĐỀ CHÍNH XÁC (TẬP TRUNG 100%): Tất cả các câu hỏi trong phiếu BẮT BUỘC phải thuộc chính xác bài học "${lesson}" (thuộc ${chapter}, Lớp ${grade}, ${semester}). TUYỆT ĐỐI KHÔNG BỊA RA HOẶC CHÈN THÊM bất kỳ câu hỏi nào thuộc các chương học khác ngoài bài học đã chọn.
+1. SỐ LƯỢNG CÂU HỎI & CÁC PHẦN BẮT BUỘC (TỔNG ${totalCount} CÂU): Bạn PHẢI sinh ĐẦY ĐỦ 100% tất cả các Phần có số câu > 0 theo đúng cấu hình của giáo viên:
+   ${numPartI > 0 ? `- PHẦN I: TRẮC NGHIỆM NHIỀU PHƯƠNG ÁN LỰA CHỌN (Bắt buộc đủ ${numPartI} câu, từ **Câu 1:** đến **Câu ${numPartI}:**)` : ''}
+   ${numPartII > 0 ? `- PHẦN II: TRẮC NGHIỆM ĐÚNG / SAI (Bắt buộc đủ ${numPartII} câu, từ **Câu 1:** đến **Câu ${numPartII}:**)` : ''}
+   ${numPartIII > 0 ? `- PHẦN III: TRẮC NGHIỆM TRẢ LỜI NGẮN (Bắt buộc đủ ${numPartIII} câu, từ **Câu 1:** đến **Câu ${numPartIII}:**) -> TUYỆT ĐỐI KHÔNG ĐƯỢC BỎ SÓT PHẦN III!` : ''}
+   ${numPartIV > 0 ? `- PHẦN IV: BÀI TẬP TỰ LUẬN RÈN LUYỆN (Bắt buộc đủ ${numPartIV} câu, từ **Câu 1:** đến **Câu ${numPartIV}:**)` : 'CẤM TUYỆT ĐỐI PHẦN IV (TỰ LUẬN): Đề bài là ĐỀ 3 PHẦN. TUYỆT ĐỐI KHÔNG có phần IV hay bài tập tự luận nào!'}
 ${!hasParametric ? 'CẤM TUYỆT ĐỐI THAM SỐ: Không chứa tham số m, không hỏi tìm m, tất cả hệ số là số thực cụ thể!' : ''}
 2. Xuất trực tiếp nội dung phiếu học tập Markdown, không viết câu chào hay mở đầu.
-3. ĐỒNG BỘ TIÊU ĐỀ: TUYỆT ĐỐI KHÔNG tự ý chèn thêm tiêu đề bài học hay header thừa ở đầu văn bản (như "# BÀI 1: GÓC LƯỢNG GIÁC" hay "# PHIẾU HỌC TẬP"), vì hệ thống đã có sẵn khung tiêu đề chuẩn chính quy bên trên. Bắt đầu ngay bằng mục Tóm tắt kiến thức / Lý thuyết trọng tâm.
-4. ĐÁNH SỐ CÂU HỎI CHUẨN ĐỀ THI:
-   - TUYỆT ĐỐI KHÔNG dùng dấu gạch đầu dòng '-' hoặc bullet '•', '*' để mở đầu các câu hỏi.
-   - TẤT CẢ các câu hỏi BẮT BUỘC phải đánh số thứ tự rõ ràng (**Câu 1:**, **Câu 2:**, ...):
+3. ĐỒNG BỘ TIÊU ĐỀ & TÓM TẮT LÝ THUYẾT:
+   - TUYỆT ĐỐI KHÔNG tự ý chèn thêm tiêu đề bài học hay header thừa ở đầu văn bản (như "# BÀI 1: ..." hay "# PHIẾU HỌC TẬP").
+   - Bắt đầu ngay bằng mục \`## TÓM TẮT KIẾN THỨC TRỌNG TÂM\`.
+   - Trong mục \`TÓM TẮT KIẾN THỨC TRỌNG TÂM\`, trình bày các mục lý thuyết bằng gạch đầu dòng \`- **Định nghĩa:** ...\`, \`- **Số hạng tổng quát:** ...\`, \`- **Tính chất:** ...\`, \`- **Tổng n số hạng đầu:** ...\`. TUYỆT ĐỐI KHÔNG đánh số "Câu 1:", "Câu 2:" trong phần Tóm tắt kiến thức trọng tâm!
+4. ĐÁNH SỐ CÂU HỎI CHUẨN ĐỀ THI (CHỈ ÁP DỤNG TỪ PHẦN I TRỞ ĐI):
+   - Từ PHẦN I, PHẦN II, PHẦN III${numPartIV > 0 ? ', PHẦN IV' : ''}: TẤT CẢ các câu hỏi BẮT BUỘC phải đánh số thứ tự rõ ràng (**Câu 1:**, **Câu 2:**, ...):
      + PHẦN I: **Câu 1:** [Đề bài] \n A. [Phương án] \n B. [Phương án] \n C. [Phương án] \n D. [Phương án] \n\n **Câu 2:** ...
      + PHẦN II: **Câu 1:** [Mệnh đề dẫn] \n a) ... \n b) ... \n c) ... \n d) ... \n\n **Câu 2:** ...
      + PHẦN III: **Câu 1:** [Đề bài] \n\n **Câu 2:** [Đề bài] ...
 ${numPartIV > 0 ? `     + PHẦN IV: **Câu 1:** [Đề bài] \\n\\n **Câu 2:** [Đề bài] ...` : `     + TUYỆT ĐỐI KHÔNG CÓ PHẦN IV / TỰ LUẬN.`}
 5. QUY TẮC CÔNG THỨC TOÁN & TÁCH CHỮ TIẾNG VIỆT KHỎI DẤU $:
-   - TUYỆT ĐỐI KHÔNG để chữ tiếng Việt bị nhốt bên trong dấu $ (Ví dụ: phải viết chuẩn 'Dãy số $(u_n)$ là một cấp số cộng $\\Rightarrow u_{n+1} = u_n + d$ ($d$: công sai).', '$u_n = u_1 + (n-1)d$ với $n \\ge 2$.', '$u_k = \\frac{u_{k-1} + u_{k+1}}{2}$ với $k \\ge 2$.').
-   - LUÔN CÓ KHOẢNG TRẮNG GIỮA TỪ TIẾNG VIỆT VÀ DẤU $: viết 'hàm số $y = f(x)$ có', 'tại điểm $x = 1$', 'A. $x = 0$', TUYỆT ĐỐI KHÔNG viết dính 'hàm số$y = f(x)$có'.
+   - TUYỆT ĐỐI KHÔNG để chữ tiếng Việt có dấu bị nhốt bên trong cặp dấu \`$...$\`. Chỉ bọc đúng biểu thức toán học trong \`$...$\`:
+     + Viết chuẩn: \`Dãy số $(u_n)$ là cấp số cộng với công sai $d$ khi và chỉ khi: $u_{n+1} = u_n + d$ với $n \\ge 1$.\`
+     + Viết chuẩn: \`Số hạng tổng quát: $u_n = u_1 + (n - 1)d$ với $n \\ge 2$.\`
+     + Viết chuẩn: \`Tính chất: $u_k = \\frac{u_{k-1} + u_{k+1}}{2}$ với $k \\ge 2$.\`
+     + Viết chuẩn: \`Tổng $n$ số hạng đầu tiên: $S_n = \\frac{n[2u_1 + (n - 1)d]}{2} = \\frac{n(u_1 + u_n)}{2}$.\`
+   - LUÔN CÓ KHOẢNG TRẮNG GIỮA TỪ TIẾNG VIỆT VÀ DẤU $: viết \`Tính tổng $S_{10}$ của $10$ số hạng đầu tiên của cấp số cộng $(u_n)$ biết rằng $u_1 = 2$ và công sai $d = 4$.\`, TUYỆT ĐỐI KHÔNG viết dính \`tổng$S_{10}$\`, \`cộng$(u_n)$thỏa mãn\`.
    - Sử dụng cú pháp LaTeX chuẩn: \\frac thay cho \\dfrac, \\ge thay cho \\geq, \\le thay cho \\leq.
 6. PHẦN II (TRẮC NGHIỆM ĐÚNG / SAI):
-   - Với từng ý a), b), c), d), bắt buộc viết câu phát biểu hoàn chỉnh, TUYỆT ĐỐI giữ nguyên vẹn chữ cái đầu tiên (ví dụ: 'a) Công thức số hạng tổng quát của cấp số cộng...', 'b) Dãy số $(u_n)$ có công sai...').
+   - Với từng ý a), b), c), d), bắt buộc viết câu phát biểu hoàn chỉnh, giữ nguyên vẹn chữ cái đầu tiên.
 7. ${exercisePrompt}
-8. ${answerPrompt}`;
+8. ${answerPrompt}
+9. KHÓA CHẶN SUY LUẬN NHÁP / BÌNH LUẬN NGOÀI LỀ:
+   - TUYỆT ĐỐI KHÔNG xuất các đoạn suy luận nháp, tự kiểm tra đề bài, hay các câu bình luận ngoài lề. Chỉ xuất thuần túy nội dung câu hỏi và lời giải.`;
 
   await generateWithFallbackStream(req, res, {
     contents: prompt,
     config: { 
       temperature: 0.7,
-      maxOutputTokens: 16384
+      maxOutputTokens: 32768
     }
   });
 });
@@ -5467,48 +5575,6 @@ Nhiệm vụ: Hãy phân tích chi tiết lỗ hổng kiến thức dẫn đến
     return res.json({ success: true, explanation });
   } catch (error: any) {
     console.error("Lỗi AI giải thích lỗi sai:", error);
-    return handleAiError(error, req, res);
-  }
-});
-
-// Endpoint sinh Kế hoạch bài dạy (Giáo án) Ôn thi Tốt nghiệp THPT chuẩn CV 5512 cho tất cả các môn
-app.post("/api/generate-graduation-review-plan", async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
-
-  if (req.method === 'OPTIONS') return res.status(200).end();
-
-  try {
-    const { prompt, model, subject, topic, periods } = req.body || {};
-    if (!prompt) {
-      return res.status(400).json({ error: "Thiếu nội dung yêu cầu soạn kế hoạch bài dạy ôn thi tốt nghiệp." });
-    }
-
-    const payload = {
-      model: model || "gemini-3.8-flash",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: {
-        temperature: 0.35,
-        systemInstruction: `Bạn là chuyên gia thẩm định chương trình giáo dục phổ thông kiêm giáo viên dạy giỏi cốt cán cấp Tỉnh/Thành phố.
-Nhiệm vụ của bạn là soạn KẾ HOẠCH BÀI DẠY (GIÁO ÁN) ÔN TẬP TĂNG CƯỜNG BUỔI CHIỀU hoàn chỉnh, sâu sắc, chuẩn mực theo Công văn 5512/BGDĐT, bám sát Chương trình GDPT 2018 và đúng cấu trúc định dạng đề thi Tốt nghiệp THPT mới nhất của Bộ GD&ĐT.
-BẮT BUỘC TUÂN THỦ:
-1. Tất cả công thức toán học, biến số đơn lẻ (x, y, m, a...) BẮT BUỘC đặt trong cặp dấu đô la: $công_thức$ (nội dòng) hoặc $$công_thức$$ (khối riêng).
-2. Dùng cú pháp LaTeX chuẩn: \\frac{a}{b}, \\sqrt{...}, \\pi, \\Leftrightarrow, \\ge, \\le, \\in. Luôn dùng \\frac thay vì \\dfrac.
-3. Giữ nguyên vẹn font tiếng Việt UTF-8 chuẩn.
-4. Tuyệt đối không cắt ngắn hay dùng các câu tóm tắt sơ sài. Soạn đầy đủ từ đầu đến cuối.`
-      }
-    };
-
-    const response = await generateWithFallback(req, payload, res);
-    const resultText = response?.text ? response.text.normalize("NFC").trim() : "";
-    if (!resultText) {
-      throw new Error("Không nhận được nội dung giáo án hợp lệ từ mô hình AI.");
-    }
-
-    return res.json({ success: true, result: resultText });
-  } catch (error: any) {
-    console.error("Lỗi AI generate-graduation-review-plan:", error);
     return handleAiError(error, req, res);
   }
 });

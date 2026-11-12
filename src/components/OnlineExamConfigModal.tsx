@@ -9,7 +9,7 @@ import { apiFetch } from '../lib/apiFetch';
 import { saveExamToCloud } from '../lib/cloudExamStore';
 import { registerExamUrlMapping } from '../lib/smartRouter';
 import { embedTikzSvgsInText } from './TikzRenderer';
-import { sanitizeExamQuestion, cleanOptionText, sanitizeAndPolishMath } from '../lib/utils';
+import { sanitizeExamQuestion, cleanOptionText, sanitizeAndPolishMath, stripExamAnswers } from '../lib/utils';
 import { 
   STANDARDIZED_EXAM_TYPES, 
   getDefaultDurationForExamType, 
@@ -233,19 +233,23 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
       registerExamUrlMapping(`/?pin=${examId}`, examId);
       registerExamUrlMapping(`/#/exam/${examId}`, examId);
 
-      // Clean short PIN url + compressed payload for instant 100% reliable loading on all devices
-      let compressed = '';
+      // Clean exam data (stripping correct answers and detailed explanations)
+      const cleanExamData = stripExamAnswers(dataToShare);
+
+      // Compress cleanExamData into URL hash string
+      let hashData = '';
       try {
-        compressed = LZString.compressToEncodedURIComponent(JSON.stringify(dataToShare));
+        hashData = LZString.compressToEncodedURIComponent(JSON.stringify(cleanExamData));
       } catch (compErr) {
         console.warn("LZString compression notice:", compErr);
       }
 
       const publicBase = window.location.origin;
-      // Clean short PIN url: only ~40 characters, compact and clean for Zalo/SMS
+      // Link dạng /exam#data=${hashData}
+      const onlineHashUrl = hashData ? `${publicBase}/exam#data=${hashData}` : `${publicBase}/?pin=${examId}`;
       const shortUrl = `${publicBase}/?pin=${examId}`;
-      const fullBackupUrl = compressed 
-        ? `${publicBase}/?pin=${examId}&d=${compressed}`
+      const fullBackupUrl = hashData 
+        ? `${publicBase}/?pin=${examId}&d=${hashData}`
         : shortUrl;
 
       // Generate QR Code with the short clean URL so QR is sharp, large blocks and scans instantly (<0.2s)
@@ -286,7 +290,7 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
       }
 
       setSharePin(examId);
-      setShareLink(shortUrl);
+      setShareLink(onlineHashUrl);
       setBackupLink(fullBackupUrl);
       setStep('success');
 

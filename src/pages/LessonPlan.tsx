@@ -2,7 +2,7 @@ import { apiFetch } from '../lib/apiFetch';
 import { useSubjects } from '../lib/subjects';
 import { exportHtmlToWord, generateDocxBlobFromElement } from '../lib/exportUtils';
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Sparkles, Save, BookOpen, Download, AlertCircle, Upload, Edit3, Eye, Presentation, TrendingUp, BarChart2, X, Box, BarChart3, Wand2, Cloud } from "lucide-react";
+import { Sparkles, Save, BookOpen, Download, FileText, AlertCircle, Upload, Edit3, Eye, Presentation, TrendingUp, BarChart2, X, Box, BarChart3, Wand2, Cloud } from "lucide-react";
 import { GoogleDriveSaveModal } from "../components/GoogleDriveSaveModal";
 import { fullPlan } from "../data/mockData";
 import { MarkdownRenderer, fixMath } from "../components/MarkdownRenderer";
@@ -836,7 +836,7 @@ export function LessonPlan() {
                 setSuggestion(prev => run1ClickMathFix(prev));
               }}
               className="px-2.5 py-1 text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-500 hover:to-teal-500 rounded-md shadow-xs flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
-              title="Tự động sửa lỗi rách dấu $, lỗi dính chữ và lỗi KaTeX trong giáo án"
+              title="Tự động sửa lỗi rách dấu $, lỗi dính chữ và lỗi MathJax trong giáo án"
             >
               <Wand2 className="h-4 w-4 text-emerald-200 animate-pulse" />
               <span>⚡ Sửa lỗi Toán 1-Click</span>
@@ -858,13 +858,13 @@ export function LessonPlan() {
             <Save className="h-5 w-5" />
           </button>
           <button 
-            className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors flex items-center gap-1"
-            title="Tải Word (Chuẩn OMML - Word máy tính)"
-            onClick={() => { if(exportRef.current) exportHtmlToWord(exportRef.current, `GiaoAn_${(activeTab === 'system' && selectedLesson ? selectedLesson.lesson : customLessonName).replace(/\s+/g, '_')}_OMML.doc`, 'omml'); }}
+            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-all flex items-center gap-1.5 text-xs font-bold shadow-xs cursor-pointer active:scale-95"
+            title="Tải kế hoạch bài dạy sang tệp Word (.docx) chuẩn A4 in ấn (OMML Equation)"
+            onClick={() => { if(exportRef.current) exportHtmlToWord(exportRef.current, `GiaoAn_${(activeTab === 'system' && selectedLesson ? selectedLesson.lesson : customLessonName).replace(/\s+/g, '_')}_A4.doc`, 'omml'); }}
             disabled={!suggestion}
           >
-            <Download className="h-5 w-5" />
-            <span className="text-xs font-medium">OMML</span>
+            <FileText className="h-4 w-4" />
+            <span>Xuất file A4 (.docx)</span>
           </button>
           <button 
             className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors flex items-center gap-1"
@@ -872,7 +872,7 @@ export function LessonPlan() {
             onClick={() => { if(exportRef.current) exportHtmlToWord(exportRef.current, `GiaoAn_${(activeTab === 'system' && selectedLesson ? selectedLesson.lesson : customLessonName).replace(/\s+/g, '_')}_MathML.doc`, 'mathml'); }}
             disabled={!suggestion}
           >
-            <Download className="h-5 w-5" />
+            <Download className="h-4 w-4" />
             <span className="text-xs font-medium">MathML</span>
           </button>
           <button 

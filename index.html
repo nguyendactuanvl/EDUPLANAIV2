@@ -32,6 +32,14 @@
       }
     </script>
     <style>
+      mjx-merror, .math-error-fallback {
+        background-color: transparent !important;
+        color: inherit !important;
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        font-family: inherit !important;
+      }
       @media print {
         body * {
           visibility: hidden;
@@ -66,15 +74,227 @@
     <!-- MathJax 3 Configuration & TeX-MML-SVG Engine -->
     <script>
       // Global Math pre-processor function available app-wide
-      window.preprocessMathText = function(text) {
+      window.preprocessMathText = function(text, isInnerMath) {
         if (!text || typeof text !== 'string') return text || '';
         var s = text;
-        // Fix double backslashes in TeX commands
+
+        // 0. Remove invalid control characters (except newline, tab, carriage return) that cause rendering failures
+        s = s.replace(/[\x00-\x08\x0B\x0E-\x1F\x7F-\x9F]/g, '');
+
+        // 0. Strip leading spaces/tabs (indented code blocks) from lines containing math or worksheet headers
+        if (!isInnerMath) {
+          s = s.replace(/^[ \t]{2,8}(?=\$\$|\$|\\begin|\\end|\\frac|\\sqrt|\\vec|\\Left|\\Right|\\iff|\\implies|\*{0,2}(?:Câu|Bài)\s*\d+|#{1,4}|PHẦN|Lời giải|Đáp án|Hệ|Ta có|Suy ra|Do đó|[a-d]\))/gm, '');
+          s = s.replace(/\${3,}/g, function(m) { return m.length % 2 === 1 ? '$' : '$$'; });
+          s = s.replace(/(?<!\$)\$\s*\$(?!\$)/g, '');
+        }
+
+        // 0.0001 Restore missing backslashes on TeX environment tags
+        s = s.replace(/(?<!\\)\b(begin|end)\s*\{/gi, '\\$1{');
+
+        // 0.001 Clean spaces and orphan tags in TeX environments (\ begin{cases}, \ end{cases}, \\ end{cases})
+        s = s.replace(/\\+\s*(begin|end)\s*\{\s*(cases|aligned|array|matrix|pmatrix|bmatrix)\*?\}/gi, '\\$1{$2}');
+        s = s.replace(/(\\end\{cases\})(?:\s*\\?\s*end\{cases\})+/gi, '$1');
+        s = s.replace(/(\\begin\{cases\})(?:\s*\\?\s*begin\{cases\})+/gi, '$1');
+        s = s.replace(/\\{2,}\s*end\s*\{\s*cases\s*\}/gi, '\\end{cases}');
+        s = s.replace(/(?:\\\\|\s)+\\end\{cases\}/gi, ' \\end{cases}');
+
+        // 0.005 Fix broken LaTeX symbols: |vec{, \ vec{, |sqrt{, |cos(
+        s = s.replace(/\|vec\s*\{/g, '\\vec{');
+        s = s.replace(/\\\s+vec\s*\{/g, '\\vec{');
+        s = s.replace(/(?<!\\)\bvec\s*\{/g, '\\vec{');
+        s = s.replace(/\|sqrt\s*\{/g, '\\sqrt{');
+        s = s.replace(/\\\s+sqrt\s*\{/g, '\\sqrt{');
+        s = s.replace(/\|cos\s*\(/g, '\\cos(');
+        s = s.replace(/\\\s+cos\s*\(/g, '\\cos(');
+        s = s.replace(/\|(sin|tan|cot|lim|ln|log)\s*\(/g, '\\$1(');
+
+        // 0.007 Gộp dấu sao bị cách rời: * * -> ** và chuẩn hóa tiêu đề quy tắc **...:**
+        if (!isInnerMath) {
+          s = s.replace(/\*\s+\*/g, '**');
+          s = s.replace(/\*\*\s+([^*]+?)\s*:\s*\*\*/g, '**$1:**');
+        }
+
+        // 0.008 Auto-close missing braces in \vec{...} before a period
+        s = s.replace(/\\vec\s*\{([A-Za-z]{1,4})\./g, '\\vec{$1}');
+
+        // Fix \vec{AC$;, \vec{CB$.$, \vec{AC ., \vec{AC'S.
+        if (!isInnerMath) {
+          s = s.replace(/\$\\vec\{([A-Za-z0-9_'\^]{1,6})\$;/g, '$\\vec{$1}$;');
+          s = s.replace(/\\vec\{([A-Za-z0-9_'\^]{1,6})\$\.\$/g, '\\vec{$1}$.');
+        }
+        s = s.replace(/\\vec\s*\{([A-Za-z0-9_'\^]+?)S\.(?=\s|[.,;!?]|$)/g, '\\vec{$1}');
+        s = s.replace(/\\vec\s*\{([A-Za-z0-9_'\^]+?)\.(?=\s|[.,;!?]|$)/g, '\\vec{$1}');
+        s = s.replace(/(\\vec\{[^{}]+\})\s*[\.S]\s*(?=\s|[=+\-]|$)/g, '$1 ');
+        if (!isInnerMath) {
+          s = s.replace(/(?<![\$\w])\$([A-Z]{2,6})\s*\\(Rightarrow|Leftrightarrow|Leftarrow)/g, '$$$1$$ \\$2');
+        }
+
+        // Chuẩn hóa quy tắc hình học tiếng Việt bị dính chữ
+        s = s.replace(/Q\s*u\s*y\s*t\s*ắ\s*c\s*h\s*ì\s*n\s*h\s*b\s*ì\s*n\s*h\s*h\s*à\s*n\s*h/gi, 'Quy tắc hình bình hành');
+        s = s.replace(/Q\s*u\s*y\s*t\s*ắ\s*c\s*h\s*ì\s*n\s*h\s*h\s*ộ\s*p/gi, 'Quy tắc hình hộp');
+        s = s.replace(/Q\s*u\s*y\s*t\s*ắ\s*c\s*b\s*a\s*đ\s*i\s*ể\s*m/gi, 'Quy tắc ba điểm');
+        s = s.replace(/Q\s*u\s*y\s*t\s*ắ\s*c\s*t\s*r\s*u\s*n\s*g\s*đ\s*i\s*ể\s*m/gi, 'Quy tắc trung điểm');
+        s = s.replace(/l\s*à\s*h\s*ì\s*n\s*h\s*b\s*ì\s*n\s*h\s*h\s*à\s*n\s*h/gi, 'là hình bình hành');
+        s = s.replace(/l\s*à\s*h\s*ì\s*n\s*h\s*h\s*ộ\s*p/gi, 'là hình hộp');
+
+        // 0.01 Fix unclosed subscripts: S_{15 = \frac{...} -> S_{15} = \frac{...}, u_{12 = u_1 -> u_{12} = u_1
+        s = s.replace(/([uSa-zA-Z])_\{(\d{1,3})\s*=\s*/g, '$1_{$2} = ');
+        s = s.replace(/([uSa-zA-Z])_\{(\d{1,3})\s*([\+\-\*\/])/g, '$1_{$2} $3 ');
+        s = s.replace(/([uSa-zA-Z])_\{(\d{1,3})\s+(\\frac|\\cdot|[a-zA-Z]{2,})/g, '$1_{$2} $3');
+
+        // 0.015 Fix broken frac syntax: {frac{ and |frac{ -> \frac{ and safe fraction auto-close
+        s = s.replace(/[\{\|]frac\s*\{/g, '\\frac{');
+        s = s.replace(/(?<!\\)\bfrac\s*\{/g, '\\frac{');
+        s = s.replace(/\\frac\s*\{\s*u_?1\s*\(\s*1\s*-\s*q\s*\^?\s*\{?n\}?\s*\)\s*\}\s*\{\s*1\s*\}\s*-\s*q\s*\}/g, '\\frac{u_1(1-q^n)}{1-q}');
+        s = s.replace(/\\frac\s*\{\s*u_?1\s*\(\s*q\s*\^?\s*\{?n\}?\s*-\s*1\s*\)\s*\}\s*\{\s*1\s*\}\s*-\s*q\s*\}/g, '\\frac{u_1(q^n-1)}{q-1}');
+        s = s.replace(/\{\s*1\s*\}\s*-\s*q\s*\}/g, '{1 - q}');
+        // Chỉ đóng ngoặc nhọn mẫu số nếu mẫu số bị bỏ dở ngay trước $ hoặc $$ hoặc cuối dòng
+        s = s.replace(/(\\frac\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*\{[^{}\n\$]+?)(?=\s*(?:\$\$?|[\r\n]|$))/g, '$1}');
+        s = s.replace(/(\\frac\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*\{(?:[^{}]|\{[^{}]*\})*\})\}/g, '$1');
+
+        // 0.016 Tự động tách dòng cho các mục Tóm tắt kiến thức / Lý thuyết (- **...:**)
+        if (!isInnerMath) {
+          s = s.replace(/([^\n])\s*(?:[-*•]|\u2022)?\s*(\*\*(?:Định\s*nghĩa|Khái\s*niệm|Số\s*hạng\s*tổng\s*quát|Tính\s*chất|Tổng\s*n\s*số\s*hạng|Quy\s*tắc|Công\s*thức|Định\s*lý|Hệ\s*thức|Chú\s*ý|Nhận\s*xét|Ví\s*dụ|Lưu\s*ý)[^*]*?:\*\*)/gi, '$1\n\n- $2');
+          s = s.replace(/([^\n])\s+[-*•]\s+(\*\*[^*]+?:\*\*)/g, '$1\n\n- $2');
+        }
+
+        // 0.018 Strip AI thoughts, internal re-checks, and comments
+        s = s.replace(/(?:\(|\[)?\s*(?:Kiểm\s*tra\s*lại(?:\s*đề)?|Xem\s*lại\s*tính\s*chất|Đính\s*chính(?:\s*:\s*Chọn\s*[A-D])?|Chỉnh\s*số\s*liệu|vô\s*lý\s*nếu\s*số\s*nguyên|đề\s*gốc\s*phương\s*án\s*[A-D]\s*là|nhưng\s*thực\s*ra\s*u_1\s*\+\s*d\s*>\s*0)[^\)\n\$]*?(?:\)|\])?/gi, '');
+        s = s.replace(/(?:^|\n)\s*(?:Kiểm\s*tra\s*:|Nếu\s*u_1\s*=\s*\d+,\s*S_\d+\$\$)[^\n]*/gi, '');
+
+        // 0.02 Fix stray backslashes in thousands separators / numbers: 100\ 000 -> 100 000, 1\ 600 -> 1 600
+        s = s.replace(/(\d{1,3})\s*\\\s*(\d{3})\b/g, '$1 $2');
+        s = s.replace(/(\d{1,3})\s*\\\s*(\d{1,3})\b/g, '$1 $2');
+
+        // 0.03 Fix 3+ backslashes: \\\ frac -> \frac, \\\ Rightarrow -> \Rightarrow, \\\ end{cases} -> \end{cases}
+        s = s.replace(/\\{3,}\s*(frac|sqrt|begin|end|Rightarrow|Leftrightarrow|Leftarrow|iff|implies|cdot|text|quad|qquad|in|notin|le|ge|leq|geq|neq|sin|cos|tan|cot|lim|ln|log|mathbb|circ|dots|cdots|ldots)\b/gi, '\\$1');
+        s = s.replace(/\\{3,}/g, '\\\\');
+
+        // 0.04 Fix missing spaces between words and numbers: có25 -> có 25, 30số -> 30 số
+        if (!isInnerMath) {
+          s = s.replace(/\b(gồm|có|và|cắt|nối)\s*(\d+)(điểm|cạnh|mặt|đỉnh|đoạn)\b/gi, '$1 $2 $3');
+          s = s.replace(/\b(\d+)(điểm|cạnh|mặt|đỉnh|đoạn|thẳng)\b/gi, '$1 $2');
+          s = s.replace(/\b(đáy\s*lớn|đáy\s*nhỏ|cạnh|mặt|tam\s*giác|tứ\s*diện)([A-Z]{2,4})\b/gi, '$1 $2');
+          s = s.replace(/\b(hình\s*thang)(với:)/gi, '$1 $2');
+          s = s.replace(/\b(song\s*song)(với:)/gi, '$1 $2');
+          s = s.replace(/\b(với|phân\s*biệt)([A-Za-z0-9_\^]+)/gi, '$1 $2');
+          s = s.replace(/\b(có|với|sau|trước|khoảng|thứ|hơn|bằng|còn|được|gồm|chạy)(\d+)\b/gi, '$1 $2');
+          s = s.replace(/\b(\d+)(số|ngày|ghế|khách|đồng|mét|lần|khúc|hàng|triệu|năm|tháng|tuần|giờ|phút|giây)\b/gi, '$1 $2');
+
+          // 0.045 Split duplicate question labels
+          s = s.replace(/(\*\*(?:Câu|Bài)\s*\d+[:\.]?\*\*)\s*[\*•-]\s*(\*\*(?:Câu|Bài)\s*\d+[:\.]?\*\*)/gi, '$1\n\n$2');
+        }
+
+        // 0.05 Clean orphan cases / endcases pile and spaces in \end{cases}
+        s = s.replace(/\\+\s*(begin|end)\s*\{\s*(cases|aligned|array|matrix|pmatrix|bmatrix)\*?\}/gi, '\\$1{$2}');
+        s = s.replace(/(\\end\{cases\})(?:\s*\\?\s*end\{cases\})+/gi, '$1');
+        s = s.replace(/(\\begin\{cases\})(?:\s*\\?\s*begin\{cases\})+/gi, '$1');
+        s = s.replace(/(?:\\\\|\s)+\\end\{cases\}/gi, '\\end{cases}');
+        s = s.replace(/\\begin\s*\{cases\*?\}\s*(Vì\s+[^\}\n]+?)\\end\s*\{cases\*?\}/gi, '$1');
+
+        // 0.1 Clean spaced out Vietnamese letters in headings and text
+        s = s.replace(/T\s*ổ\s*n\s*g\s*n\s*s\s*ố\s*h\s*ạ\s*n\s*g\s*đ\s*ầ\s*u\s*t\s*i\s*ê\s*n/gi, 'Tổng n số hạng đầu tiên');
+        s = s.replace(/c\s*ấ\s*p\s*s\s*ố\s*c\s*ộ\s*n\s*g/gi, 'cấp số cộng');
+        s = s.replace(/c\s*ô\s*n\s*g\s*s\s*a\s*i/gi, 'công sai');
+        s = s.replace(/l\s*ậ\s*p\s*t\s*h\s*à\s*n\s*h\s*c\s*ấ\s*p\s*s\s*ố\s*c\s*ộ\s*n\s*g/gi, 'lập thành cấp số cộng');
+        s = s.replace(/đ\s*ề\s*g\s*ố\s*c\s*p\s*h\s*ư\s*ơ\s*n\s*g\s*á\s*n/gi, 'đề gốc phương án');
+        s = s.replace(/K\s*i\s*ể\s*m\s*t\s*r\s*a/gi, 'Kiểm tra');
+
+        // 1. Strip raw MathJax error messages, orphan artifacts, and empty display/inline math
+        s = s.replace(/You can't use 'macro parameter character #' in math mode/gi, '');
+        s = s.replace(/Extra\s*close\s*brace\s*or\s*missing\s*open\s*brace/gi, '');
+        s = s.replace(/Math\s*output\s*error/gi, '');
+        s = s.replace(/Missing\s*\\?(?:begin|end)\{cases\}(?:\s*or\s*extra\s*\\?(?:begin|end)\{cases\})?/gi, '');
+        s = s.replace(/Missing\s*\\?\{[^{}]*\}/gi, '');
+        if (!isInnerMath) {
+          s = s.replace(/\$\$\s*[\r\n]*\s*\$\$/g, '');
+          s = s.replace(/(?<!\$)\$\s*[\r\n]*\s*\$(?!\$)/g, '');
+          s = s.replace(/(?:^|\n)\s*(?:SS|S)?0?\s*\$\.\s*/gi, '\n');
+          s = s.replace(/(?:^|\n)\s*SS0\.\s*\*{0,2}Câu\s*\d+:?\*{0,2}SS\s*/gi, '\n');
+          s = s.replace(/(?:^|\n)\s*d\$\.\s*/gi, '\n');
+        }
+
+        // 1.1. Fix erroneously escaped subscript/superscript braces (_\{20\} -> _{20}, u_\{n\} -> u_{n})
+        s = s.replace(/_\\\{([^{}\n]+?)\\\}/g, '_{$1}');
+        s = s.replace(/\^\\\{([^{}\n]+?)\\\}/g, '^{$1}');
+        s = s.replace(/_\\\{/g, '_{');
+        s = s.replace(/\^\\\{/g, '^{');
+
+        // 1.2. Clean stray open/close braces & orphan \{= without touching \frac{-1}, 10^{-3}, u_{n-1}
+        s = s.replace(/(\(?u_\d+)\s*\{\s*\+/g, '$1 + ');
+        s = s.replace(/\{\s*\\begin\s*\{cases\*?\}/gi, '\\begin{cases}');
+        s = s.replace(/\\?\{\s*=/g, ' =');
+        s = s.replace(/\\?\{\s*([0-9a-zA-Z_\-+\=]+)\s*=/g, '$1 =');
+        s = s.replace(/\\sqrt\s*\{([^{}\$\n]+)\}\s*((?:[\+\-]\s*[0-9a-zA-Z_\^\(\)]+\s*)+)\}/g, '\\sqrt{$1 $2}');
+        s = s.replace(/\\frac\s+([\+\-]?[0-9a-zA-Z_\^\(\)\+\-\s]+)\}\s*\{([^{}\$\n]+)\}/g, '\\frac{$1}{$2}');
+        s = s.replace(/\\frac\s*\{([^{}\$\n]+)\}\s+([\+\-]?[0-9a-zA-Z_\^\(\)\+\-\s]+)\}/g, '\\frac{$1}{$2}');
+
+        // 1.25. Auto-heal missing closing braces before $ or $.
+        if (!isInnerMath) {
+          s = s.replace(/(\\vec\{[A-Za-z0-9_'\^]+?)\s*\$/g, '$1}$');
+          s = s.replace(/(\\frac\{(?:[^{}]|\{[^{}]*\})+\}\{[^{}\$\n]+?)\s*\$/g, '$1}$');
+          s = s.replace(/(\\sqrt(?:\[[^\]]*\])?\{[^{}\$\n]+?)\s*\$/g, '$1}$');
+          s = s.replace(/(\\(?:text|mathrm|mathbf)\{[^{}\$\n]+?)\s*\$/g, '$1}$');
+          s = s.replace(/([uSa-zA-Z]_\{[^{}\$\n]+?)\s*\$/g, '$1}$');
+          s = s.replace(/(\^\{[^{}\$\n]+?)\s*\$/g, '$1}$');
+        }
+
+        // 1.3. Rejoin split fraction numerators and denominators split across lines
+        s = s.replace(/\\frac\s*\{([^{}\r\n]+)\s*[\r\n]+\s*\{([^{}\r\n]+)\}/gi, '\\frac{$1}{$2}');
+        s = s.replace(/\\frac\s*\{([^{}\r\n]+)\}\s*[\r\n]+\s*\{([^{}\r\n]+)\}/gi, '\\frac{$1}{$2}');
+        if (!isInnerMath) {
+          s = s.replace(/(\\frac\{[^{}]*\}\{[^{}]*\})\s*[\r\n]+\s*\\cdot\s*(\d+\s*=\s*\d+)\$\.?/gi, '$1 \\cdot $2$.');
+        }
+        s = s.replace(/(\\frac\{[^{}]*\}\{[^{}]*\})\s*[\r\n]+\s*\\cdot\s*/gi, '$1 \\cdot ');
+
+        // 1.4. Unwrap $$ accidentally enclosing markdown headings, question labels, or section titles
+        if (!isInnerMath) {
+          s = s.replace(/\$\$([\s\S]*?)\$\$/g, function(fullMatch, body) {
+            if (/(?:#{1,6}\s+|(?:\*{0,2})(?:Câu|Bài)\s*\d+[:\.]?|PHẦN\s*(?:[1-4]|I{1,3}|IV)|^\s*[-*]\s+\*\*[A-D]\.\*\*|^\s*[a-d]\))/m.test(body)) {
+              return body.replace(/\$\$/g, '');
+            }
+            return fullMatch;
+          });
+        }
+
+        // 1.5. Clean dangling \left[ \right. or \left. \right.
+        s = s.replace(/\\left\s*\[\s*\\right\s*\./gi, ' ');
+        s = s.replace(/\\left\s*\.\s*\\right\s*\./gi, ' ');
+        s = s.replace(/\\left\s*\[\s*\\right\s*\]/gi, ' ');
+
+        if (!isInnerMath) {
+          // 1.6. Rescue markdown tags and question labels trapped inside $...$
+          s = s.replace(/\$([^\$\n]*?)\s*(\(\*\*(?:Đúng|Sai)\*\*\)|\*\*Chọn\s*[A-D]\.\*\*|\*\*\s*Câu\s*\d+\s*:\s*\*\*)\s*([^\$\n]*?)\$/gi, function(_m, m1, label, m2) {
+            var res = '';
+            if (m1.trim()) res += '$' + m1.trim() + '$ ';
+            res += label + ' ';
+            if (m2.trim()) res += '$' + m2.trim() + '$';
+            return res.trim();
+          });
+
+          // 1.7. Extract Vietnamese text out of $...$
+          s = s.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)(?<!\$)\$(?!\$)/g, function(fullMatch, inner) {
+            var vietnamesePhraseRegex = /(lập\s*thành\s*cấp\s*số\s*cộng|đều\s*dương|loại\s*vì|các\s*số\s*hạng|kiểm\s*tra\s*lại|kết\s*quả|loại\s*do|nhưng\s*thực\s*ra)/i;
+            if (vietnamesePhraseRegex.test(inner)) {
+              var clean = inner;
+              clean = clean.replace(/(lập\s*thành\s*cấp\s*số\s*cộng|đều\s*dương|loại\s*vì|các\s*số\s*hạng|kiểm\s*tra\s*lại|kết\s*quả|loại\s*do|nhưng\s*thực\s*ra)/gi, '$ $1 ');
+              clean = clean.replace(/\b(với|khi|thì|do\s+đó)\b/gi, '$ $1 ');
+              if (clean !== inner) {
+                return ('$' + clean.trim()).replace(/\$\$/g, '').replace(/\$\s*\$/g, '');
+              }
+            }
+            return fullMatch;
+          });
+        }
+
+        // 2. Fix double backslashes in TeX commands
         s = s.replace(/\\{2,}([a-zA-Z]+)/g, function(_, g1) { return '\\' + g1; });
-        // Fix \backslash leq, \backslash geq, \backslash neq
+
+        // 3. Fix \backslash leq, \backslash geq, \backslash neq
         s = s.replace(/\\backslash\s*(leq|geq|neq|frac|sqrt|in|notin|cap|cup|setminus|forall|exists|mathbb|pi|alpha|beta)\b/gi, '\\$1');
         s = s.replace(/\\backslash\s*/gi, '\\');
-        // Fix \neq converted to newlines / eq / 1eq0
+
+        // 4. Fix \neq converted to newlines / eq / 1eq0
         s = s.replace(/([\r\n]+|\s*\\n\s*)\s*eq\s*(0|\d+|[a-zA-Z]+|\-|\+|\$|\\|\)|\}|\])/gi, ' \\neq $2');
         s = s.replace(/([\r\n]+|\s*\\n\s*)\s*eq\b/gi, ' \\neq ');
         s = s.replace(/(?<![\\a-zA-Z])\b1\s*eq\s*0\b/gi, '1 \\neq 0');
@@ -83,14 +303,17 @@
         s = s.replace(/(?<![\\a-zA-Z])\b([a-zA-Z0-9\)\}\]\^]+)\s*eq\s*0\b/gi, '$1 \\neq 0');
         s = s.replace(/(?<!\\)\bneq\b/g, '\\neq');
         s = s.replace(/(?<!\\)\bne\b(?=\s*0|\s*\d|\s*\$|\s*[a-zA-Z]|\s*-|\s*\\)/g, '\\neq');
-        // Fix missing spaces after comparison operators: \geq0 -> \ge 0, \leq0 -> \le 0, \geqy -> \ge y
+
+        // 5. Fix missing spaces after comparison operators: \geq0 -> \ge 0, \leq0 -> \le 0, \geqy -> \ge y
         s = s.replace(/\\(geq|leq|neq|ge|le|ne)([0-9a-zA-Z])/g, '\\$1 $2');
-        // Fix formfeed and tab characters before LaTeX commands
+
+        // 6. Fix formfeed and tab characters before LaTeX commands
         s = s.replace(/\x0crac\b/g, '\\frac');
         s = s.replace(/\x0c/g, '');
-        s = s.replace(/\text\b/g, '\\text');
-        // Fix missing backslashes for standard TeX commands
-        s = s.replace(/(?<!\\)\b(frac|sqrt|lim|sin|cos|tan|cot|ln|log|in|notin|forall|exists|le|ge|leq|geq|infty|mathbb|Rightarrow|Leftrightarrow|quad|qquad|dots|ldots|cdots|vdots|ddots|approx|pi|times|cdot|max|min|text)\b/g, '\\$1');
+        s = s.replace(/(?<!\\)\btext\b/g, '\\text');
+
+        // 7. Fix missing backslashes for standard TeX commands
+        s = s.replace(/(?<!\\)\b(frac|sqrt|lim|sin|cos|tan|cot|ln|log|in|notin|forall|exists|le|ge|leq|geq|infty|mathbb|Rightarrow|Leftrightarrow|quad|qquad|dots|ldots|cdots|vdots|ddots|approx|pi|times|cdot|max|min)\b/g, '\\$1');
         s = s.replace(/(?<=[0-9a-zA-Z\)\}\]\s])\bin\b(?=\s*[0-9a-zA-Z\(\{\[\\])/g, '\\in');
         s = s.replace(/\\dfrac\b/g, '\\frac');
         s = s.replace(/\\geq\b/g, '\\ge');
@@ -98,8 +321,77 @@
         s = s.replace(/\\ge([0-9a-zA-Z])/g, '\\ge $1');
         s = s.replace(/\\le([0-9a-zA-Z])/g, '\\le $1');
         s = s.replace(/\\neq([0-9a-zA-Z])/g, '\\neq $1');
-        // Escape set braces { and } if unescaped
-        s = s.replace(/(?<=[=:\s])\{([^{}\n]+?)\}(?!\s*\{)/g, '\\{$1\\}');
+
+        // 8. Fix incomplete fractions \frac{NUM} missing second argument {DENOM}
+        s = s.replace(/\\frac\s*\{([^{}]+)\}(?!\s*\{)(?=\s*(?:\\iff|\\Rightarrow|\\Leftrightarrow|\\Leftarrow|=|\\quad|\\qquad|\$|\\end|\n|$))/gi, function(_m, num) {
+          var trimmed = num.trim();
+          if (/\d+|u_1|u_2|u_\{|a_1|d|n/.test(trimmed)) {
+            return '\\frac{' + trimmed + '}{2}';
+          }
+          return '\\frac{' + trimmed + '}{1}';
+        });
+
+        // 9. Convert multiline { eq1 \n { eq2 systems to \begin{cases} eq1 \\ eq2 \end{cases}
+        if (!isInnerMath) {
+          s = s.replace(/(?:(?:^|\n)\s*\\?\{\s*[^{}\n]+=[^\n]+){2,}/g, function(match) {
+            var eqLines = match.trim().split('\n').map(function(l) { return l.replace(/^\s*\\?\{\s*/, '').trim(); }).filter(Boolean);
+            if (eqLines.length >= 2) {
+              return '\n\n$$\\begin{cases}\n' + eqLines.join(' \\\\\n') + '\n\\end{cases}$$\n\n';
+            }
+            return match;
+          });
+        }
+
+        // 10. Fix \begin{cases} inner $ and single backslashes \ between lines
+        // 10. Fix \begin{cases} inner $ and single backslashes \ between lines
+        s = s.replace(/\\begin\s*\{cases\*?\}[\s\S]*?\\end\s*\{cases\*?\}/gi, function(match) {
+          var clean = match.replace(/(?<!\\)\$/g, '');
+          clean = clean.replace(/(?<!\\)\\(?=\s*(?:\r?\n|$))/g, ' \\\\ ');
+          clean = clean.replace(/\s*\\{2,}\s*/g, ' \\\\ ');
+          clean = clean.replace(/\\\\(?=\s*\\end\{cases)/gi, ' ');
+          clean = clean.replace(/\\?\{\s*=/g, ' =');
+          clean = clean.replace(/\\?\{\s*([0-9a-zA-Z_\-+\=]+)\s*=/g, '$1 =');
+          return clean;
+        });
+
+        // 10.5 Auto-wrap bare \begin{cases} ... \end{cases} environments with display math ($$) if not already wrapped
+        if (!isInnerMath) {
+          s = s.replace(/(?<!\$)(?:\\begin\s*\{cases\*?\}[\s\S]*?\\end\s*\{cases\*?\}(?:\s*(?:\\Leftrightarrow|\\Leftarrow|\\Rightarrow|\\iff|\\implies|<=>|=>)\s*\\begin\s*\{cases\*?\}[\s\S]*?\\end\s*\{cases\*?\})*)(?!\$)/gi, function(match) {
+            return '\n\n$$\n' + match.trim() + '\n$$\n\n';
+          });
+          s = s.replace(/\$\$\s*(\\Leftrightarrow|\\Leftarrow|\\Rightarrow|\\iff|\\implies|<=>|=>)\s*\$\$/g, ' \\\\ $1 ');
+        } else {
+          // Extra close brace or missing open brace cleanup inside math
+          var openB = (s.match(/(?<!\\)\{/g) || []).length;
+          var closeB = (s.match(/(?<!\\)\}/g) || []).length;
+          if (closeB > openB) {
+            var diffB = closeB - openB;
+            while (diffB > 0 && /\}/.test(s)) {
+              if (s.trim().endsWith('}')) {
+                s = s.trim().replace(/\}$/, '');
+              } else {
+                s = s.replace(/\}(?![^{}]*\{)/, '');
+              }
+              diffB--;
+            }
+          } else if (openB > closeB) {
+            s = s + '}'.repeat(openB - closeB);
+          }
+        }
+
+        // 11. Fix spurious SS\begin{cases} and $S\begin{cases}
+        s = s.replace(/(?:SS|\$S|S\$|SS_)\s*\\begin\s*\{cases\*?\}/gi, '\\begin{cases}');
+        s = s.replace(/(?:SS|\$S|S\$|SS_)\s*\\end\s*\{cases\*?\}/gi, '\\end{cases}');
+
+        // 12. Balance mismatched \begin{cases} ... \end{cases}
+        if (s.indexOf('cases') !== -1) {
+          var begins = (s.match(/\\begin\s*\{cases\*?\}/gi) || []).length;
+          var ends = (s.match(/\\end\s*\{cases\*?\}/gi) || []).length;
+          if (begins > ends) {
+            s = s + '\\end{cases}'.repeat(begins - ends);
+          }
+        }
+
         return s;
       };
 
@@ -115,28 +407,29 @@
           fontCache: 'global'
         },
         options: {
-          skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'svg', 'svg-wrapper', 'code'],
+          skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'svg', 'svg-wrapper'],
           ignoreHtmlClass: 'tex2jax_ignore|svg-wrapper',
-          processHtmlClass: 'tex2jax_process',
+          processHtmlClass: 'tex2jax_process|math-view-container|markdown-body',
           renderActions: {
-            // Priority 50: Pre-process extracted LaTeX strings before MathJax compilation (priority 100)
-            preprocessMathString: [50, function(doc) {
+            addLatexAttribute: [160, function(doc) {
               if (doc && doc.math) {
-                for (var i = 0; i < doc.math.length; i++) {
-                  var m = doc.math[i];
-                  if (m && m.math) {
-                    m.math = window.preprocessMathText(m.math);
+                try {
+                  for (var m of doc.math) {
+                    if (m && m.typesetRoot) {
+                      m.typesetRoot.setAttribute('data-latex', m.math || '');
+                      m.typesetRoot.setAttribute('data-block', m.display ? '1' : '0');
+                    }
                   }
-                }
-              }
-            }, ''],
-            addLatexAttribute: [150, function(doc) {
-              if (doc && doc.math) {
-                for (var i = 0; i < doc.math.length; i++) {
-                  var m = doc.math[i];
-                  if (m && m.typesetRoot) {
-                    m.typesetRoot.setAttribute('data-latex', m.math || '');
-                    m.typesetRoot.setAttribute('data-block', m.display ? '1' : '0');
+                } catch (e) {
+                  if (typeof doc.math.toArray === 'function') {
+                    var arr = doc.math.toArray();
+                    for (var i = 0; i < arr.length; i++) {
+                      var item = arr[i];
+                      if (item && item.typesetRoot) {
+                        item.typesetRoot.setAttribute('data-latex', item.math || '');
+                        item.typesetRoot.setAttribute('data-block', item.display ? '1' : '0');
+                      }
+                    }
                   }
                 }
               }
@@ -146,7 +439,6 @@
       };
     </script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-svg.js"></script>
-    <script src="https://www.geogebra.org/apps/deployggb.js"></script>
   </head>
   <body>
     <div id="root">
@@ -159,7 +451,7 @@
           body { margin: 0; padding: 0; }
         </style>
       </div>
-</div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

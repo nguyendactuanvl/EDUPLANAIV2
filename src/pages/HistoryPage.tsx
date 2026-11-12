@@ -47,27 +47,21 @@ export function HistoryPage() {
   const handleExportWord = (item: HistoryItem) => {
         const clone = exportRef.current.cloneNode(true) as HTMLElement;
     
-    // Extract MathML from KaTeX for native Word Equation support
-    const katexElements = clone.querySelectorAll('.katex');
-    katexElements.forEach(el => {
-      const mathNode = el.querySelector('.katex-mathml math');
-      if (mathNode) {
-        const mathClone = mathNode.cloneNode(true) as Element;
-        
-        // Remove annotation tags completely
-        const annotations = mathClone.querySelectorAll('annotation');
-        annotations.forEach(a => a.remove());
-        
-        // Remove semantics tag but keep its children to avoid Word confusion
-        const semantics = mathClone.querySelector('semantics');
-        if (semantics) {
-           while (semantics.firstChild) {
-               mathClone.insertBefore(semantics.firstChild, semantics);
-           }
-           semantics.remove();
-        }
-        
-        el.parentNode?.replaceChild(mathClone, el);
+    // Extract MathML from MathJax for native Word Equation support
+    const mjxElements = clone.querySelectorAll('mjx-container');
+    mjxElements.forEach(el => {
+      const latex = el.getAttribute('data-latex');
+      const isBlock = el.getAttribute('data-block') === '1';
+      if (latex && typeof window !== 'undefined' && (window as any).MathJax && typeof (window as any).MathJax.tex2mml === 'function') {
+        try {
+          const mmlStr = (window as any).MathJax.tex2mml(latex, { display: isBlock });
+          const temp = document.createElement('div');
+          temp.innerHTML = mmlStr;
+          const mathNode = temp.querySelector('math');
+          if (mathNode) {
+            el.parentNode?.replaceChild(mathNode, el);
+          }
+        } catch (e) {}
       }
     });
     

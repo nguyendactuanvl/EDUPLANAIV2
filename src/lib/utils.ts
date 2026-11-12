@@ -1,9 +1,9 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { unflattenMarkdownTables, embedBbtSvgsInText } from './bbtRenderer';
-import { normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections, autoWrapNakedMathExpression, sanitizeSvgOrHtmlForReact, fixIncompleteFractions, balanceCasesEnvironments } from './globalMath';
+import { normalizeMathText, preprocessMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, normalizeGeometricProgressionFormulas, formatWorksheetQuestionsAndSections, autoWrapNakedMathExpression, sanitizeSvgOrHtmlForReact, fixIncompleteFractions, balanceCasesEnvironments, cleanMathAndUnwrapHeadings } from './globalMath';
 
-export { unflattenMarkdownTables, embedBbtSvgsInText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, formatWorksheetQuestionsAndSections, autoWrapNakedMathExpression, sanitizeSvgOrHtmlForReact, fixIncompleteFractions, balanceCasesEnvironments };
+export { unflattenMarkdownTables, embedBbtSvgsInText, normalizeMathText, preprocessMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, normalizeGeometricProgressionFormulas, formatWorksheetQuestionsAndSections, autoWrapNakedMathExpression, sanitizeSvgOrHtmlForReact, fixIncompleteFractions, balanceCasesEnvironments, cleanMathAndUnwrapHeadings };
 
 
 export function cn(...inputs: ClassValue[]) {
@@ -668,6 +668,48 @@ export function sanitizeLatexString(text: string): string {
   s = s.replace(/\\{3,}/g, '\\\\');
   s = s.replace(/(?<!\\)\\\s+(frac|sqrt|sin|cos|tan|cot|left|right|begin|end|text|pi|infty|mathbb|setminus|quad|mid|cap|cup|in|notin|subset|supset|subseteq|supseteq|ne|neq|le|ge|leq|geq|times|cdot|pm|lim|to|alpha|beta|gamma|theta|Delta|Omega|circ|overline|vert|parallel|perp|cases|aligned|matrix|array)\b/gi, '\\$1');
 
+  // Khôi phục các lệnh LaTeX bị rách hoặc biến dạng thành |vec{, \ vec{, |sqrt{, |cos(
+  s = s.replace(/\|vec\s*\{/g, '\\vec{');
+  s = s.replace(/\\\s+vec\s*\{/g, '\\vec{');
+  s = s.replace(/(?<!\\)\bvec\s*\{/g, '\\vec{');
+  s = s.replace(/\|sqrt\s*\{/g, '\\sqrt{');
+  s = s.replace(/\\\s+sqrt\s*\{/g, '\\sqrt{');
+  s = s.replace(/\|cos\s*\(/g, '\\cos(');
+  s = s.replace(/\\\s+cos\s*\(/g, '\\cos(');
+  s = s.replace(/\|(sin|tan|cot|lim|ln|log)\s*\(/g, '\\$1(');
+
+  // 0.007 Gộp dấu sao bị cách rời: * * -> **
+  s = s.replace(/\*\s+\*/g, '**');
+
+  // Bổ sung dấu đóng ngoặc nhọn } cho \vec{...} bị thiếu trước dấu chấm câu
+  s = s.replace(/\\vec\s*\{([A-Za-z]{1,4})\./g, '\\vec{$1}');
+
+  // Sửa lỗi \vec{AC$; hoặc \vec{CB$.$ hoặc \vec{AC . hoặc \vec{AC'S.
+  s = s.replace(/\$\\vec\{([A-Za-z0-9_'\^]{1,6})\$;/g, '$\\vec{$1}$;');
+  s = s.replace(/\\vec\{([A-Za-z0-9_'\^]{1,6})\$\.\$/g, '\\vec{$1}$.');
+  s = s.replace(/\\vec\s*\{([A-Za-z0-9_'\^]{1,6})\s*[\.S]\s*/g, '\\vec{$1} ');
+  s = s.replace(/(?<![\$\w])\$([A-Z]{2,6})\s*\\(Rightarrow|Leftrightarrow|Leftarrow)/g, '$$$1$$ \\$2');
+
+  // Khôi phục ngoặc nhọn đóng } bị thiếu ngay trước $ hoặc $.
+  s = s.replace(/(\\vec\{[A-Za-z0-9_'\^]+?)\s*\$/g, '$1}$');
+  s = s.replace(/(\\frac\{(?:[^{}]|\{[^{}]*\})+\}\{[^{}\$\n]+?)\s*\$/g, '$1}$');
+  s = s.replace(/(\\sqrt(?:\[[^\]]*\])?\{[^{}\$\n]+?)\s*\$/g, '$1}$');
+  s = s.replace(/(\\(?:text|mathrm|mathbf)\{[^{}\$\n]+?)\s*\$/g, '$1}$');
+  s = s.replace(/([uSa-zA-Z]_\{[^{}\$\n]+?)\s*\$/g, '$1}$');
+  s = s.replace(/(\^\{[^{}\$\n]+?)\s*\$/g, '$1}$');
+
+  // Chuẩn hóa quy tắc hình học tiếng Việt bị dính chữ
+  s = s.replace(/Q\s*u\s*y\s*t\s*ắ\s*c\s*h\s*ì\s*n\s*h\s*b\s*ì\s*n\s*h\s*h\s*à\s*n\s*h/gi, 'Quy tắc hình bình hành');
+  s = s.replace(/Q\s*u\s*y\s*t\s*ắ\s*c\s*h\s*ì\s*n\s*h\s*h\s*ộ\s*p/gi, 'Quy tắc hình hộp');
+  s = s.replace(/Q\s*u\s*y\s*t\s*ắ\s*c\s*b\s*a\s*đ\s*i\s*ể\s*m/gi, 'Quy tắc ba điểm');
+  s = s.replace(/Q\s*u\s*y\s*t\s*ắ\s*c\s*t\s*r\s*u\s*n\s*g\s*đ\s*i\s*ể\s*m/gi, 'Quy tắc trung điểm');
+  s = s.replace(/l\s*à\s*h\s*ì\s*n\s*h\s*b\s*ì\s*n\s*h\s*h\s*à\s*n\s*h/gi, 'là hình bình hành');
+  s = s.replace(/l\s*à\s*h\s*ì\s*n\s*h\s*h\s*ộ\s*p/gi, 'là hình hộp');
+
+  // Chuẩn hóa các điểm hình học có dấu phẩy/nháy đơn ($A'$, $B'$, $C'$, $D'$)
+  s = s.replace(/(?<![\$\w])([A-Z]{2,6}\.[A-Z0-9\']+)(?![\$\w])/g, '$$$1$$');
+  s = s.replace(/(?<![\$\w])\b([A-Z])'([,;\s\.\)\]]|$)/g, '$$$1\'$$$2');
+
   // Sửa lỗi đóng mở ngoặc nhọn bị dính nhiều backslash: "\\ \left\\\{\\" -> "\left\{", "\\ \right\\\}" -> "\right\}"
   s = s.replace(/\\+\s*left\s*\\+\s*\{/gi, '\\left\\{');
   s = s.replace(/\\+\s*right\s*\\+\s*\}/gi, '\\right\\}');
@@ -822,7 +864,7 @@ export function normalizeOcrChoicesAndFormatting(text: string): string {
  */
 export function preProcessMathContent(content: string): string {
   if (!content) return '';
-  let res = rescueCodeAndNestedText(sanitizeLatexString(content));
+  let res = cleanMathAndUnwrapHeadings(rescueCodeAndNestedText(sanitizeLatexString(content)));
   res = cleanVietnameseUnicode(res);
   res = normalizeOcrChoicesAndFormatting(res);
   // Sanitize dangling tikz code blocks that pollute Word export
@@ -830,6 +872,7 @@ export function preProcessMathContent(content: string): string {
   res = res.replace(/```tikz[\s\S]*?```/gi, '\n[Hình vẽ minh họa]\n');
   res = res.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/gi, '\n[Hình vẽ minh họa]\n');
   res = wrapNakedMathEnvironments(res);
+  res = cleanMathAndUnwrapHeadings(res);
   res = res.replace(/(?:=\s*)?undefined(?![a-zA-Z0-9_\$])/gi, '').replace(/\bundefined\b/gi, '');
   return res;
 }
@@ -1262,8 +1305,9 @@ export const polishMathText = (content: string): string => {
     .replace(/(?<!\\)\binfty\b/g, '\\infty')
     .replace(/(?<![\\a-zA-Z])([xymtabckuvwz])\s+e\s+(-?\d+)/g, '$1 \\ne $2');
 
-  // 7. Chuẩn hóa công thức Cấp số cộng và tách chữ tiếng Việt ra khỏi dấu $
+  // 7. Chuẩn hóa công thức Cấp số cộng & Cấp số nhân và tách chữ tiếng Việt ra khỏi dấu $
   text = normalizeArithmeticProgressionFormulas(text);
+  text = normalizeGeometricProgressionFormulas(text);
 
   return text;
 };
@@ -2272,6 +2316,18 @@ export function cleanOptionText(opt: any): string {
   // 4. Tự động bọc $ cho phương án là biểu thức toán học hoặc khoảng/đoạn thiếu $
   text = autoWrapNakedMathExpression(text);
 
+  // 5. Đảm bảo cân bằng số lượng $ nếu có số $ lẻ (ví dụ $19 -> $19$)
+  const dollarCount = (text.match(/(?<!\\)\$/g) || []).length;
+  if (dollarCount % 2 !== 0) {
+    if (text.startsWith('$') && !text.endsWith('$')) {
+      text = text + '$';
+    } else if (!text.startsWith('$') && text.endsWith('$')) {
+      text = '$' + text;
+    } else {
+      text = text + '$';
+    }
+  }
+
   return text;
 }
 
@@ -3122,6 +3178,177 @@ export function compareShortAnswers(userAns: string, correctAns: string): boolea
   }
   return false;
 }
+
+/**
+ * Lọc bỏ đáp án đúng và lời giải chi tiết khi tạo link online cho học sinh
+ */
+export function stripExamAnswers(examData: any): any {
+  if (!examData) return examData;
+  const clone = JSON.parse(JSON.stringify(examData));
+
+  if (Array.isArray(clone.codes)) {
+    clone.codes.forEach((codeObj: any) => {
+      if (Array.isArray(codeObj.questions)) {
+        codeObj.questions.forEach((q: any) => {
+          delete q.correctOptionIndex;
+          delete q.correctAnswer;
+          delete q.explanation;
+          delete q.solution;
+          delete q.correct;
+          if (Array.isArray(q.tfStatements)) {
+            q.tfStatements.forEach((tf: any) => {
+              delete tf.correct;
+            });
+          }
+        });
+      }
+    });
+  } else if (Array.isArray(clone.questions)) {
+    clone.questions.forEach((q: any) => {
+      delete q.correctOptionIndex;
+      delete q.correctAnswer;
+      delete q.explanation;
+      delete q.solution;
+      delete q.correct;
+      if (Array.isArray(q.tfStatements)) {
+        q.tfStatements.forEach((tf: any) => {
+          delete tf.correct;
+        });
+      }
+    });
+  }
+
+  return clone;
+}
+
+/**
+ * Chuyển đổi dữ liệu Structured JSON từ Gemini API (part1, part2, part3, part4...)
+ * thành tài liệu Markdown hoàn chỉnh, sắc nét với đầy đủ các Phần và 12 câu hỏi trắc nghiệm Phần I
+ */
+export function formatStructuredJsonToMarkdown(data: any): string {
+  if (!data || typeof data !== 'object') return typeof data === 'string' ? data : '';
+  
+  let md = '';
+
+  if (data.title) {
+    md += `# ${data.title}\n\n`;
+  }
+
+  if (Array.isArray(data.summary) && data.summary.length > 0) {
+    md += `### MỤC TIÊU & TÓM TẮT KIẾN THỨC TRỌNG TÂM\n`;
+    data.summary.forEach((item: string) => {
+      md += `- ${item}\n`;
+    });
+    md += `\n---\n\n`;
+  }
+
+  const p1 = data.part1 || data.partI || [];
+  if (Array.isArray(p1) && p1.length > 0) {
+    md += `## PHẦN I: CÂU HỎI TRẮC NGHIỆM NHIỀU PHƯƠNG ÁN LỰA CHỌN\n\n`;
+    p1.forEach((q: any, idx: number) => {
+      const qNum = q.id || idx + 1;
+      const qText = q.question || q.content || '';
+      md += `**Câu ${qNum}:** ${qText}\n`;
+      if (Array.isArray(q.options)) {
+        q.options.forEach((opt: string, oIdx: number) => {
+          const letter = String.fromCharCode(65 + oIdx);
+          const cleanOpt = opt.replace(/^[A-D][\.\:\)]\s*/i, '');
+          md += `${letter}. ${cleanOpt}\n`;
+        });
+      }
+      md += `\n`;
+    });
+    md += `---\n\n`;
+  }
+
+  const p2 = data.part2 || data.partII || [];
+  if (Array.isArray(p2) && p2.length > 0) {
+    md += `## PHẦN II: CÂU HỎI TRẮC NGHIỆM ĐÚNG / SAI\n\n`;
+    p2.forEach((q: any, idx: number) => {
+      const qNum = q.id || idx + 1;
+      const qText = q.question || q.content || '';
+      md += `**Câu ${qNum}:** ${qText}\n`;
+      if (Array.isArray(q.items)) {
+        q.items.forEach((item: any, iIdx: number) => {
+          const label = item.label || String.fromCharCode(97 + iIdx);
+          const content = item.content || item.statement || '';
+          md += `${label}) ${content}\n`;
+        });
+      } else if (Array.isArray(q.tfStatements)) {
+        q.tfStatements.forEach((item: any, iIdx: number) => {
+          const label = String.fromCharCode(97 + iIdx);
+          const content = item.statement || item.content || '';
+          md += `${label}) ${content}\n`;
+        });
+      }
+      md += `\n`;
+    });
+    md += `---\n\n`;
+  }
+
+  const p3 = data.part3 || data.partIII || [];
+  if (Array.isArray(p3) && p3.length > 0) {
+    md += `## PHẦN III: CÂU HỎI TRẮC NGHIỆM TRẢ LỜI NGẮN\n\n`;
+    p3.forEach((q: any, idx: number) => {
+      const qNum = q.id || idx + 1;
+      const qText = q.question || q.content || '';
+      md += `**Câu ${qNum}:** ${qText}\n\n`;
+    });
+    md += `---\n\n`;
+  }
+
+  const p4 = data.part4 || data.partIV || [];
+  if (Array.isArray(p4) && p4.length > 0) {
+    md += `## PHẦN IV: BÀI TẬP TỰ LUẬN RÈN LUYỆN\n\n`;
+    p4.forEach((q: any, idx: number) => {
+      const qNum = q.id || idx + 1;
+      const qText = q.question || q.content || '';
+      md += `**Câu ${qNum}:** ${qText}\n\n`;
+    });
+    md += `---\n\n`;
+  }
+
+  const hasSolutions = p1.some((q: any) => q.solution || q.correct) || 
+                       p2.some((q: any) => q.solution || q.items) || 
+                       p3.some((q: any) => q.solution || q.answer);
+
+  if (hasSolutions) {
+    md += `<details class="solution-box" style="margin-top: 25px; padding: 15px; border: 1px solid #10b981; border-radius: 8px; background-color: #f0fdf4;">\n`;
+    md += `  <summary style="font-weight: bold; cursor: pointer; color: #047857; font-size: 16px;">\n`;
+    md += `    👉 BẤM ĐỂ XEM ĐÁP ÁN VÀ LỜI GIẢI CHI TIẾT\n`;
+    md += `  </summary>\n\n`;
+    md += `### HƯỚNG DẪN GIẢI CHI TIẾT\n\n`;
+    if (p1.length > 0) {
+      md += `#### PHẦN I\n\n`;
+      p1.forEach((q: any, i: number) => {
+        md += `**Câu ${i + 1}:** ${q.solution || 'Theo công thức SGK.'}\n\n`;
+      });
+    }
+    if (p2.length > 0) {
+      md += `#### PHẦN II\n\n`;
+      p2.forEach((q: any, i: number) => {
+        md += `**Câu ${i + 1}:** ${q.solution || 'Xem xét chi tiết từng mệnh đề.'}\n\n`;
+      });
+    }
+    if (p3.length > 0) {
+      md += `#### PHẦN III\n\n`;
+      p3.forEach((q: any, i: number) => {
+        md += `**Câu ${i + 1}:** ${q.solution || 'Tính toán cho ra đáp số.'}\n\n`;
+      });
+    }
+    if (p4.length > 0) {
+      md += `#### PHẦN IV\n\n`;
+      p4.forEach((q: any, i: number) => {
+        md += `**Câu ${i + 1}:** ${q.solution || 'Lập luận chứng minh theo từng bước.'}\n\n`;
+      });
+    }
+
+    md += `</details>\n`;
+  }
+
+  return md;
+}
+
 
 
 

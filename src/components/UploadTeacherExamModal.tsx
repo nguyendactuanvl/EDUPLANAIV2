@@ -45,7 +45,7 @@ import { saveExamToCloud } from '../lib/cloudExamStore';
 import { registerExamUrlMapping } from '../lib/smartRouter';
 import { apiFetch } from '../lib/apiFetch';
 import { useSubjects } from '../lib/subjects';
-import { formatMathContent, sanitizeShortAnswerInput, validateShortAnswer, sanitizeExamQuestion } from '../lib/utils';
+import { formatMathContent, sanitizeShortAnswerInput, validateShortAnswer, sanitizeExamQuestion, stripExamAnswers } from '../lib/utils';
 import { attachCroppedFiguresToQuestions } from '../lib/cropUtils';
 import { SimilarExamsModal } from './SimilarExamsModal';
 import { QuestionEditModal } from './QuestionEditModal';
@@ -700,8 +700,16 @@ export function UploadTeacherExamModal({
       registerExamUrlMapping(`/?pin=${examId}`, examId);
       registerExamUrlMapping(`/#/exam/${examId}`, examId);
 
-      // 5. Build clean direct link
-      const finalUrl = `${window.location.origin}/?pin=${examId}`;
+      // 5. Build clean compressed direct link (/exam#data=...)
+      const cleanExamData = stripExamAnswers(payload);
+      let hashData = '';
+      try {
+        hashData = LZString.compressToEncodedURIComponent(JSON.stringify(cleanExamData));
+      } catch (e) {
+        console.warn("LZString compression error:", e);
+      }
+
+      const finalUrl = hashData ? `${window.location.origin}/exam#data=${hashData}` : `${window.location.origin}/?pin=${examId}`;
 
       setSharePin(examId);
       setShareLink(finalUrl);

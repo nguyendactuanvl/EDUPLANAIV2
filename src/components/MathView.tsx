@@ -3,9 +3,10 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
-import { normalizeMathText, rehypeSanitizeEventHandlers, cleanProps } from '../lib/globalMath';
+import { normalizeMathText, preprocessMathText, cleanMathAndUnwrapHeadings, rehypeSanitizeEventHandlers, cleanProps, sanitizeSvgOrHtmlForReact } from '../lib/globalMath';
 import { convertBbtTableToSvg, unflattenMarkdownTables } from '../lib/bbtRenderer';
 import { TikzRenderer, getTikzSvg } from './TikzRenderer';
+import { typesetMathJax } from './MarkdownRenderer';
 
 interface MathViewProps {
   content?: string | null;
@@ -24,7 +25,7 @@ interface MathViewProps {
  */
 export function preprocessMath(raw?: string | null): string {
   if (!raw) return '';
-  let s = normalizeMathText(raw);
+  let s = preprocessMathText(raw);
 
   // 1. Chuyển đổi trực tiếp các BẢNG BIẾN THIÊN (BBT) Markdown table sang <svg-wrapper>
   s = unflattenMarkdownTables(s);
@@ -67,11 +68,11 @@ const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
       const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
       const isDisplay = className.includes('math-display');
       return isDisplay ? (
-        <div className="math-display my-2.5 text-center font-serif overflow-x-auto" data-latex={cleanMath}>
+        <div key={cleanMath} className="math-display my-2.5 text-center font-serif overflow-x-auto" data-latex={cleanMath}>
           {`$$${cleanMath}$$`}
         </div>
       ) : (
-        <span className="math-inline font-serif" data-latex={cleanMath}>
+        <span key={cleanMath} className="math-inline font-serif" data-latex={cleanMath}>
           {`$${cleanMath}$`}
         </span>
       );
@@ -83,7 +84,7 @@ const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
       return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...cleanProps(props)}>{children}</code>;
     }
     const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
-    return cleanMath ? <span className="math-inline font-serif" data-latex={cleanMath}>{`$${cleanMath}$`}</span> : null;
+    return cleanMath ? <span key={cleanMath} className="math-inline font-serif" data-latex={cleanMath}>{`$${cleanMath}$`}</span> : null;
   };
 
   const decodeSafeBase64 = (base64: string): string => {
@@ -120,7 +121,7 @@ const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
         const text = String(children || '').trim();
         const cleanMath = text.replace(/^\$+|\$+$/g, '').trim();
         return (
-          <span className="math-inline font-serif" data-latex={cleanMath} {...cleanProps(props)}>
+          <span key={cleanMath} className="math-inline font-serif" data-latex={cleanMath} {...cleanProps(props)}>
             {`$${cleanMath}$`}
           </span>
         );
@@ -139,7 +140,7 @@ const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
           <div className="svg-wrapper my-3 flex flex-col items-center">
             <div
               className="bg-white p-2.5 sm:p-3.5 rounded-xl border border-slate-300 shadow-xs max-w-full overflow-x-auto"
-              dangerouslySetInnerHTML={{ __html: decoded }}
+              dangerouslySetInnerHTML={{ __html: sanitizeSvgOrHtmlForReact(decoded) }}
             />
           </div>
         );
@@ -179,7 +180,58 @@ const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
       <td className="border border-slate-300 px-3 py-1.5 text-slate-800 text-center whitespace-nowrap" {...cleanProps(props)}>
         {children}
       </td>
-    )
+    ),
+    ul: ({ node, children, ...props }: any) => {
+      const getNodePlainText = (n: any): string => {
+        if (!n) return '';
+        if (typeof n === 'string' || typeof n === 'number') return String(n);
+        if (Array.isArray(n)) return n.map(getNodePlainText).join(' ');
+        if (React.isValidElement(n)) return getNodePlainText((n.props as any)?.children);
+        return '';
+      };
+
+      const childArray = React.Children.toArray(children);
+      const isChoiceList = childArray.length >= 2 && childArray.length <= 4 && childArray.some((child: any) => {
+        const text = getNodePlainText(child?.props?.children);
+        return /^\s*(?:\*{0,2}|[-*•])*\s*[A-D][\.\)]/i.test(text) || /\b[A-D][\.\)]/.test(text);
+      });
+
+      if (isChoiceList) {
+        const fullText = getNodePlainText(children);
+        const isLong = fullText.length > 140;
+        const gridCols = isLong ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-2 lg:grid-cols-4";
+        return (
+          <ul className={`grid ${gridCols} gap-2.5 my-2.5 pl-0 list-none text-slate-900`} {...cleanProps(props)}>
+            {children}
+          </ul>
+        );
+      }
+      return <ul className="my-2.5 pl-6 list-disc space-y-1.5 text-slate-900" {...cleanProps(props)}>{children}</ul>;
+    },
+    li: ({ node, children, ...props }: any) => {
+      const getNodePlainText = (n: any): string => {
+        if (!n) return '';
+        if (typeof n === 'string' || typeof n === 'number') return String(n);
+        if (Array.isArray(n)) return n.map(getNodePlainText).join(' ');
+        if (React.isValidElement(n)) return getNodePlainText((n.props as any)?.children);
+        return '';
+      };
+
+      const text = getNodePlainText(children);
+      const isChoice = /^\s*(?:\*{0,2}|[-*•])*\s*[A-D][\.\)]/i.test(text) || /\b[A-D][\.\)]/.test(text);
+      if (isChoice) {
+        return (
+          <li className="py-1 px-1 text-slate-900 list-none m-0 [&>div]:inline [&>p]:inline" {...cleanProps(props)}>
+            {children}
+          </li>
+        );
+      }
+      return (
+        <li className="my-1 leading-relaxed text-slate-900 [&>div]:inline [&>p]:inline" {...cleanProps(props)}>
+          {children}
+        </li>
+      );
+    }
   };
 
   const inlineComponents = {
@@ -197,7 +249,7 @@ const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
           <span className="svg-wrapper my-1 inline-flex flex-col items-center align-middle">
             <span
               className="bg-white p-1.5 rounded-lg border border-slate-300 shadow-2xs max-w-full overflow-x-auto inline-block"
-              dangerouslySetInnerHTML={{ __html: decoded }}
+              dangerouslySetInnerHTML={{ __html: sanitizeSvgOrHtmlForReact(decoded) }}
             />
           </span>
         );
@@ -221,7 +273,8 @@ const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
  */
 export const MathView: React.FC<MathViewProps> = React.memo(({ content, value, tex, math, className, inline = false }) => {
   const containerRef = useRef<HTMLDivElement | HTMLSpanElement | null>(null);
-  const processed = preprocessMath(content ?? value ?? tex ?? math);
+  const rawInput = content ?? value ?? tex ?? math;
+  const processed = React.useMemo(() => preprocessMath(rawInput), [rawInput]);
   const lastProcessedRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -230,27 +283,12 @@ export const MathView: React.FC<MathViewProps> = React.memo(({ content, value, t
     if (lastProcessedRef.current === processed) return;
     lastProcessedRef.current = processed;
 
-    if (typeof window !== 'undefined' && (window as any).MathJax) {
-      const mj = (window as any).MathJax;
-      if (mj.typesetPromise) {
-        if (mj.typesetClear) {
-          try { mj.typesetClear([el]); } catch (e) {}
-        }
-        mj.typesetPromise([el]).then(() => {
-          if (el) {
-            const containers = el.querySelectorAll('mjx-container');
-            containers.forEach((mjx) => {
-              if (!mjx.hasAttribute('data-latex')) {
-                const text = mjx.getAttribute('aria-label') || mjx.querySelector('mjx-assistive-mml')?.textContent || '';
-                if (text) {
-                  mjx.setAttribute('data-latex', text.replace(/^\$+|\$+$/g, '').trim());
-                }
-              }
-            });
-          }
-        }).catch(() => {});
-      }
-    }
+    const timer = setTimeout(() => {
+      if (!containerRef.current) return;
+      typesetMathJax(containerRef.current);
+    }, 100);
+
+    return () => clearTimeout(timer);
   }, [processed]);
 
   if (inline) {
@@ -287,3 +325,5 @@ export const MathView: React.FC<MathViewProps> = React.memo(({ content, value, t
 });
 
 export default MathView;
+export { AutoMathBoundary } from './AutoMathBoundary';
+

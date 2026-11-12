@@ -2,84 +2,81 @@ import "dotenv/config";
 import path from "path";
 import fs from "fs";
 import express from "express";
-import app from "./api/index.ts";
 
 const PORT = Number(process.env.PORT) || 3000;
 
 async function startServer() {
-  try {
-    const isProduction = process.env.NODE_ENV === "production";
+  const app = express();
+  const isProduction = process.env.NODE_ENV === "production";
+  const indexPath = path.resolve(process.cwd(), "index.html");
 
-    if (!isProduction) {
-      const { createServer: createViteServer } = await import("vite");
-      const vite = await createViteServer({
-        server: { middlewareMode: true, hmr: false, ws: false },
-        appType: "spa",
-      });
-      app.use(vite.middlewares);
+  // Health check endpoint
+  app.get("/api/health", (_req, res) => {
+    res.status(200).json({ status: "ok" });
+  });
 
-      app.get("*", async (req, res, next) => {
-        if (req.path.startsWith("/api/")) {
-          return next();
-        }
-        try {
-          const indexPath = path.resolve(process.cwd(), "index.html");
-          let template = fs.readFileSync(indexPath, "utf-8");
-          template = await vite.transformIndexHtml(req.originalUrl, template);
-          res.status(200).set({ "Content-Type": "text/html" }).end(template);
-        } catch (e) {
-          next(e);
-        }
-      });
-    } else {
-      const distPath = path.join(process.cwd(), "dist");
-      app.use(
-        express.static(distPath, {
-          setHeaders: (res, filePath) => {
-            if (filePath.endsWith("index.html")) {
-              res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-              res.setHeader("Pragma", "no-cache");
-              res.setHeader("Expires", "0");
-            }
-          },
-        })
-      );
-      app.get("*", (req, res) => {
-        if (
-          req.path.match(
-            /\.(js|mjs|cjs|ts|tsx|css|json|wasm|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot|map)$/i
-          )
-        ) {
-          return res.status(404).type("text/plain").send("File not found");
-        }
-        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-        res.sendFile(path.join(distPath, "index.html"));
-      });
+  // Lazy-load API routes from ./api/index.ts
+  let apiAppInstance: any = null;
+  const getApiApp = async () => {
+    if (!apiAppInstance) {
+      const mod = await import("./api/index.ts");
+      apiAppInstance = mod.default;
     }
+    return apiAppInstance;
+  };
 
-    const server = app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on port ${PORT}`);
-      console.log(`Local: http://localhost:${PORT}`);
+  app.use(async (req, res, next) => {
+    if (req.path.startsWith("/api/") || req.path === "/api") {
+      try {
+        const apiApp = await getApiApp();
+        return apiApp(req, res, next);
+      } catch (err) {
+        return next(err);
+      }
+    }
+    return next();
+  });
+
+  if (!isProduction) {
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
+      server: {
+        middlewareMode: true,
+        hmr: false,
+        ws: false,
+      },
+      appType: "spa",
     });
 
-    server.on("error", (err: any) => {
-      console.error("Server error:", err);
-      if (err.code !== "EADDRINUSE") {
-        setTimeout(() => process.exit(1), 1000);
+    // Mount Vite dev middleware
+    app.use(vite.middlewares);
+
+    // Serve HTML for SPA routes
+    app.get("*", async (req, res, next) => {
+      const url = req.originalUrl;
+      try {
+        let template = fs.readFileSync(indexPath, "utf-8");
+        template = await vite.transformIndexHtml(url, template);
+        res.status(200).set({ "Content-Type": "text/html" }).end(template);
+      } catch (e) {
+        vite.ssrFixStacktrace(e as Error);
+        next(e);
       }
     });
-
-    process.on("unhandledRejection", (reason) => {
-      console.warn("Unhandled promise rejection in server:", reason);
+  } else {
+    const distPath = path.resolve(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (_req, res) => {
+      res.sendFile(path.resolve(distPath, "index.html"));
     });
-
-    process.on("uncaughtException", (err) => {
-      console.error("Uncaught exception in server:", err);
-    });
-  } catch (err) {
-    console.error("Failed to start server:", err);
   }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Local: http://localhost:${PORT}`);
+  });
 }
 
-startServer();
-
+startServer().catch((err) => {
+  console.error("Failed to start server:", err);
+});

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import katex from 'katex';
 import { Copy, Check, X, FileCode, Sparkles, BookOpen } from 'lucide-react';
 import { latexToWordAltEqual, latexToMathML, latexToOMML, copyFormulaForWord } from '../lib/wordEquationConverter';
+import { AutoMathBoundary } from './AutoMathBoundary';
 
 interface WordEquationModalProps {
   isOpen: boolean;
@@ -30,16 +30,6 @@ export const WordEquationModal: React.FC<WordEquationModalProps> = ({
   const cleanLatex = latexToWordAltEqual(latexInput || '\\frac{-b \\pm \\sqrt{\\Delta}}{2a}');
   const mathmlCode = latexToMathML(cleanLatex, true);
   const ommlCode = latexToOMML(cleanLatex, true);
-
-  let renderedHtml = '';
-  try {
-    renderedHtml = katex.renderToString(cleanLatex, {
-      displayMode: true,
-      throwOnError: false,
-    });
-  } catch (e) {
-    renderedHtml = '<span class="text-red-500">Lỗi hiển thị công thức</span>';
-  }
 
   const handleCopy = async (type: 'direct' | 'alt_equal' | 'mathml' | 'omml') => {
     let success = false;
@@ -111,10 +101,12 @@ export const WordEquationModal: React.FC<WordEquationModalProps> = ({
                 )}
               </button>
             </label>
-            <div 
+            <AutoMathBoundary
+              dependencies={[cleanLatex]}
               className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center overflow-x-auto min-h-[60px] flex items-center justify-center"
-              dangerouslySetInnerHTML={{ __html: renderedHtml }}
-            />
+            >
+              {`$$${cleanLatex}$$`}
+            </AutoMathBoundary>
           </div>
 
           {/* Input edit field if needed */}

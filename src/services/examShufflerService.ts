@@ -18,7 +18,6 @@ import {
   HeadingLevel,
   type ParagraphChild,
 } from 'docx';
-import katex from 'katex';
 import { mml2omml } from 'mathml2omml-plus';
 import { ImportedXmlComponent } from 'docx';
 import { wrapFractionAndNegativePowers } from '../lib/globalMath';
@@ -1893,24 +1892,21 @@ export const generateShuffledExamVariants = generateShuffledVariants;
 // -------------------------------------------------------------
 
 /**
- * Converts LaTeX formula to docx OMML component using KaTeX + mathml2omml-plus
+ * Converts LaTeX formula to docx OMML component using MathJax 3 (tex2mml) + mathml2omml-plus
  */
 function latexToOmml(latex: string): any {
   if (!latex || !latex.trim()) return new TextRun({ text: '' });
   try {
     let clean = latex.trim().replace(/^\$+|\$+$/g, '').trim();
 
-    // Chuẩn hóa ký hiệu phẩy (prime) như A', B', C', D', y', f' thành A^{\prime}, B^{\prime}, ...
-    // Tránh việc KaTeX tạo ra thẻ MathML <msubsup> với <mrow> chỉ số dưới rỗng khiến mml2omml tạo ra <m:sSubSup> có <m:sub><m:e/></m:sub> bị Word hiển thị ô vuông lấm chấm trước dấu phẩy
     clean = clean
       .replace(/([a-zA-Z0-9\)\}\]\>\xFF-\uFFFF])'{3}/g, '$1^{\\prime\\prime\\prime}')
       .replace(/([a-zA-Z0-9\)\}\]\>\xFF-\uFFFF])'{2}/g, '$1^{\\prime\\prime}')
       .replace(/([a-zA-Z0-9\)\}\]\>\xFF-\uFFFF])'/g, '$1^{\\prime}');
 
-    const mathml = katex.renderToString(clean, {
-      output: 'mathml',
-      throwOnError: false,
-    });
+    const mathml = (typeof window !== 'undefined' && (window as any).MathJax && typeof (window as any).MathJax.tex2mml === 'function')
+      ? (window as any).MathJax.tex2mml(clean, { display: false })
+      : '';
     // Extract <math> tag
     const mathMatch = mathml.match(/<math[\s\S]*?<\/math>/i);
     if (mathMatch) {
