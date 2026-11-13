@@ -10,6 +10,7 @@ import {
 import { MathSpan, MarkdownRenderer } from '../MarkdownRenderer';
 import { apiFetch } from '../../lib/apiFetch';
 import { exportHtmlToWord } from '../../lib/exportUtils';
+import { sanitizeSvgOrHtmlForReact } from '../../lib/globalMath';
 
 // ============================================================================
 // PRESETS DATA: CÂU 43, CÂU 37, CÂU 591, CÂU 592 KHỚP 100% ẢNH CỦA GIÁO VIÊN
@@ -1861,7 +1862,7 @@ export function MathImageReproducerAnd3D({ onInsertToExam }: { onInsertToExam?: 
                       : 'bg-white border-slate-300'
                   }`}
                   dangerouslySetInnerHTML={{ 
-                    __html: renderMode === 'color' ? currentItem.colorSvg : currentItem.bwSvg 
+                    __html: sanitizeSvgOrHtmlForReact(renderMode === 'color' ? currentItem.colorSvg : currentItem.bwSvg)
                   }}
                 />
               </div>

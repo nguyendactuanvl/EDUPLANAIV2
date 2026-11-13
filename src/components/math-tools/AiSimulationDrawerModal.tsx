@@ -5,6 +5,7 @@ import {
   HelpCircle, ChevronRight, Layers, Sun, Moon
 } from "lucide-react";
 import { apiFetch } from "../../lib/apiFetch";
+import { sanitizeSvgOrHtmlForReact } from "../../lib/globalMath";
 
 export interface AiSimulationDrawerModalProps {
   isOpen: boolean;
@@ -384,7 +385,7 @@ export function AiSimulationDrawerModal({
               ) : svgContent ? (
                 <div
                   className="max-w-full max-h-full flex items-center justify-center svg-simulation-render"
-                  dangerouslySetInnerHTML={{ __html: svgContent }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeSvgOrHtmlForReact(svgContent) }}
                 />
               ) : (
                 <div className="text-center p-8 text-slate-400">

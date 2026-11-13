@@ -48,7 +48,7 @@ import {
 } from './utils';
 import { convertBbtTableToSvg, autoEnrichTextWithVisuals } from './bbtRenderer';
 import { getTikzSvg } from '../components/TikzRenderer';
-import { normalizeMathText, normalizeArithmeticProgressionFormulas, preprocessMathText } from './globalMath';
+import { normalizeMathText, normalizeArithmeticProgressionFormulas, preprocessMathText, fixAndMergeMathArrows } from './globalMath';
 
 interface RunStyle {
   bold?: boolean;
@@ -640,9 +640,33 @@ function tokensToRuns(
           );
         }
       } else {
-        runs.push(
-          ...createTextRunsWithMathFont(token.content, style)
-        );
+        // Kiểm tra nếu text bắt đầu bằng nhãn phương án A, B, C, D (loại bỏ sạch dấu ** hoặc bullet dính liền)
+        const optMatch = token.content.match(/^(\s*(?:[-*•●]\s*)?(?:\*{0,3})([A-Da-d][\.\:\)])(?:\*{0,3})\s*)([\s\S]*)$/);
+        if (optMatch && !style.bold) {
+          const cleanLabel = optMatch[2].toUpperCase().trim();
+          runs.push(
+            ...createTextRunsWithMathFont(`${cleanLabel} `, {
+              ...style,
+              bold: true,
+              font: style.font || 'Times New Roman',
+              size: style.size || 24,
+            })
+          );
+          let rest = optMatch[3].replace(/^[\s\*_•●]+/, '').replace(/[\s\*_]+$/, '');
+          if (rest) {
+            runs.push(
+              ...createTextRunsWithMathFont(rest, style)
+            );
+          }
+        } else {
+          let cleanedContent = token.content
+            .replace(/(^|\n|\s+)(?:[-*•●]\s*)?(?:\*{1,3}|<b>)?\(?([A-D])\)?[\.\:\)](?:\*{1,3}|<\/b>)?\s*(?:\*{1,3}\s*)?/gi, '$1$2. ')
+            .replace(/(?<=\b[A-D][\.\:\)])\s*\*\*+/g, '')
+            .replace(/\*\*+(?=[A-D][\.\:\)])/g, '');
+          runs.push(
+            ...createTextRunsWithMathFont(cleanedContent, style)
+          );
+        }
       }
     } else {
       // Math token
@@ -676,7 +700,7 @@ function parseTextWithMath(
   // Clean \dotfill in raw text
   let safeText = text.replace(/\\dotfill\b/g, '. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .');
   safeText = stripInternalTags(safeText);
-  safeText = normalizeMathText(safeText);
+  safeText = fixAndMergeMathArrows(normalizeMathText(safeText));
 
   const tokens = tokenizeTextAndMath(safeText);
   return tokensToRuns(tokens, style, options);
@@ -1515,7 +1539,7 @@ async function parseDomToDocxChildren(
       const isChoiceList =
         items.length >= 2 &&
         items.length <= 4 &&
-        itemTexts.every((t) => /^\s*(?:[-*•]\s*)?(?:\*{0,2}|\s*)?([A-D])[\.\)]/i.test(t));
+        itemTexts.every((t) => /^\s*(?:[-*•●]\s*)?(?:\*{0,3}|\s*)?\(?([A-D])\)?[\.\:\)]/i.test(t));
 
       if (isChoiceList) {
         const optsList = items.map((li, idx) => {
@@ -1541,10 +1565,11 @@ async function parseDomToDocxChildren(
         return;
       }
 
-      // Standard list items (Kiểm tra nếu item là câu hỏi trắc nghiệm hoặc bắt đầu bằng Câu/Bài thì không chèn bullet tròn)
-      const mcRegex = /^(.*?)\s*(?:[-*]\s*)?(?:\*{0,2})A[\.\)](?:\*{0,2})\s+([\s\S]*?)(?:[-*]\s*)?(?:\*{0,2})B[\.\)](?:\*{0,2})\s+([\s\S]*?)(?:[-*]\s*)?(?:\*{0,2})(?<![a-zA-Z0-9_\$\\\(])C[\.\)](?:\*{0,2})\s+([\s\S]*?)(?:[-*]\s*)?(?:\*{0,2})(?<![a-zA-Z0-9_\$\\\(])D[\.\)](?:\*{0,2})\s+([\s\S]*)$/;
+      // Standard list items (Kiểm tra nếu item là câu hỏi trắc nghiệm hoặc bắt đầu bằng Câu/Bài/Phương án thì không chèn bullet tròn)
+      const mcRegex = /^(.*?)\s*(?:[-*•●]\s*)?(?:\*{0,3})A[\.\:\)](?:\*{0,3})\s+([\s\S]*?)(?:[-*•●]\s*)?(?:\*{0,3})B[\.\:\)](?:\*{0,3})\s+([\s\S]*?)(?:[-*•●]\s*)?(?:\*{0,3})(?<![a-zA-Z0-9_\$\\\(])C[\.\:\)](?:\*{0,3})\s+([\s\S]*?)(?:[-*•●]\s*)?(?:\*{0,3})(?<![a-zA-Z0-9_\$\\\(])D[\.\:\)](?:\*{0,3})\s+([\s\S]*)$/;
 
-      for (const li of items) {
+      for (let i = 0; i < items.length; i++) {
+        const li = items[i];
         const rawText = stripInternalTags(getNodeLatexOrText(li)).trim();
         const mcMatch = rawText.match(mcRegex);
 
@@ -1578,11 +1603,31 @@ async function parseDomToDocxChildren(
           continue;
         }
 
+        // Kiểm tra nếu 4 item liên tiếp là A., B., C., D. -> Gom thành bảng phương án ẩn (không bao giờ có bullet ●)
+        if (i + 3 < items.length) {
+          const next4 = [items[i], items[i + 1], items[i + 2], items[i + 3]];
+          const next4Texts = next4.map((it) => stripInternalTags(getNodeLatexOrText(it)).trim());
+          const is4Opts = next4Texts.every((t, idx) => {
+            const letter = String.fromCharCode(65 + idx);
+            return new RegExp(`^\\s*(?:[-*•●]\\s*)?(?:\\*{0,3})\\(?${letter}\\)?[\\.\\:\\)]`, 'i').test(t);
+          });
+          if (is4Opts) {
+            const optsList = next4.map((node, idx) => {
+              const label = `${String.fromCharCode(65 + idx)}.`;
+              return { label, node };
+            });
+            result.push(buildInvisibleChoiceTable(optsList, options));
+            i += 3;
+            continue;
+          }
+        }
+
         const isQuestionItem = /^\s*(?:\*\*)?(?:Câu|Bài)\s*\d+/i.test(rawText);
+        const isChoiceItem = /^\s*(?:[-*•●]\s*)?(?:\*{0,3}|\s*)?\(?[A-Da-d]\)?[\.\:\)]/i.test(rawText);
         const runs = parseInlineContent(li, {}, options);
         result.push(
           new Paragraph({
-            bullet: isQuestionItem ? undefined : { level: 0 },
+            bullet: (isQuestionItem || isChoiceItem) ? undefined : { level: 0 },
             spacing: { line: 288, after: isQuestionItem ? 80 : 60 },
             children: runs,
           })
@@ -2095,7 +2140,13 @@ export async function exportHtmlToWord(
         let text = node.textContent || '';
         const parent = node.parentNode;
         if (parent && !['SCRIPT', 'STYLE', 'CODE', 'PRE', 'MATH', 'ANNOTATION', 'SVG'].includes(parent.nodeName.toUpperCase())) {
-          let updated = preprocessMathText(text);
+          let updated = fixAndMergeMathArrows(normalizeMathText(text));
+          // Loại bỏ hoàn toàn dấu sao thừa xung quanh và ngay sau phương án A, B, C, D trong text node (chỉ áp dụng chữ in hoa [A-D], bảo vệ a), b), c), d))
+          updated = updated
+            .replace(/(^|\n|\s+)(?:[-*•●]\s*)?(?:\*{1,3}|<b>)?\(?([A-D])\)?[\.\:\)](?:\*{1,3}|<\/b>)?\s*(?:\*{1,3}\s*)?/g, '$1$2. ')
+            .replace(/(?<=\b[A-D][\.\:\)])\s*\*\*+/g, '')
+            .replace(/\*\*+(?=[A-D][\.\:\)])/g, '');
+          updated = fixAndMergeMathArrows(updated);
           if (updated !== text) {
             node.textContent = updated;
           }

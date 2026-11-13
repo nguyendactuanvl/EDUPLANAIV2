@@ -45,7 +45,8 @@ import {
   cleanMathAndUnwrapHeadings,
   fixBrokenLatexSyntax,
   rescueTrappedVietnameseFromMath,
-  sanitizeLatexMathAndDelimiters
+  sanitizeLatexMathAndDelimiters,
+  fixAndMergeMathArrows
 } from "../../lib/globalMath";
 import { generateContent } from "../../services/geminiService";
 import {
@@ -788,6 +789,15 @@ TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG ĐƯỢC VIẾT SƠ SÀI 1-2 CÂU MỖI
     s = s.replace(/(["“”])(\$[^$\n]+\$)(["“”])/g, "$1 $2 $3");
     s = s.replace(/(\$[^$\n]+\$)(["”])/g, "$1 $2");
     s = s.replace(/(["“])(\$[^$\n]+\$)/g, "$1 $2");
+
+    // Chuẩn hóa và làm sạch triệt để dấu sao (**) xung quanh và ngay sau nhãn phương án A, B, C, D (chỉ in hoa [A-D], bảo vệ a), b), c), d) Đúng/Sai)
+    s = s.replace(/(?:^|\n|\s+)(?:[-*•●]\s*)?(?:\*{1,3}|<b>)?\(?([A-D])\)?[\.\:](?:\*{1,3}|<\/b>)?\s*(?:\*{1,3}\s*)?/g, (m, letter) => {
+      const isNewline = m.startsWith('\n') || m.startsWith('\r\n');
+      const prefix = isNewline ? '\n' : ' ';
+      return `${prefix}${letter}. `;
+    });
+
+    s = fixAndMergeMathArrows(s);
 
     return s.trim();
   };

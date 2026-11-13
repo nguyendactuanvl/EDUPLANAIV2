@@ -1,6 +1,6 @@
 import { apiFetch, parseGeminiStreamChunk, getCustomApiKey } from '../lib/apiFetch';
 
-export const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
+export const DEFAULT_GEMINI_MODEL = "gemini-4-hydrogen";
 
 /**
  * Reads Gemini API key directly from environment variables or local storage.
@@ -21,7 +21,7 @@ export function getApiKey(): string {
 
 /**
  * Helper function for standard content generation via server-side /api/generate endpoint.
- * Uses gemini-3.8-flash by default.
+ * Uses gemini-4-hydrogen by default.
  */
 export async function generateContent(
   prompt: string | any,
@@ -76,7 +76,7 @@ export async function generateContent(
 
 /**
  * Helper function for streaming content generation via server-side /api/generate-stream endpoint.
- * Uses gemini-3.8-flash by default.
+ * Uses gemini-4-hydrogen by default.
  */
 export async function generateContentStream(
   prompt: string | any,

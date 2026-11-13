@@ -15,6 +15,7 @@ interface MathViewProps {
   math?: string | null;
   className?: string;
   inline?: boolean;
+  deferTypeset?: boolean;
 }
 
 /**
@@ -106,6 +107,7 @@ const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
   };
 
   const sharedComponents = {
+    script: () => null,
     p: ({ children, ...props }: any) => (
       <div className="my-2.5 leading-relaxed whitespace-pre-line" {...cleanProps(props)}>
         {children}
@@ -271,13 +273,14 @@ const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
  * Tự động tiền xử lý, tự động kích hoạt MathJax typesetPromise mỗi khi content thay đổi,
  * hỗ trợ render trực tiếp SVG Bảng biến thiên (BBT), Đồ thị và TikZ.
  */
-export const MathView: React.FC<MathViewProps> = React.memo(({ content, value, tex, math, className, inline = false }) => {
+export const MathView: React.FC<MathViewProps> = React.memo(({ content, value, tex, math, className, inline = false, deferTypeset = false }) => {
   const containerRef = useRef<HTMLDivElement | HTMLSpanElement | null>(null);
   const rawInput = content ?? value ?? tex ?? math;
-  const processed = React.useMemo(() => preprocessMath(rawInput), [rawInput]);
+  const processed = React.useMemo(() => (deferTypeset ? String(rawInput || '') : preprocessMath(rawInput)), [rawInput, deferTypeset]);
   const lastProcessedRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (deferTypeset) return;
     const el = containerRef.current;
     if (!el) return;
     if (lastProcessedRef.current === processed) return;
@@ -286,10 +289,10 @@ export const MathView: React.FC<MathViewProps> = React.memo(({ content, value, t
     const timer = setTimeout(() => {
       if (!containerRef.current) return;
       typesetMathJax(containerRef.current);
-    }, 100);
+    }, 60);
 
     return () => clearTimeout(timer);
-  }, [processed]);
+  }, [processed, deferTypeset]);
 
   if (inline) {
     return (

@@ -3,7 +3,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
-import { rehypeSanitizeEventHandlers, cleanProps, cleanMathAndUnwrapHeadings } from '../lib/globalMath';
+import { rehypeSanitizeEventHandlers, cleanProps, cleanMathAndUnwrapHeadings, fixAndMergeMathArrows } from '../lib/globalMath';
 import { TikzRenderer, getTikzSvg } from './TikzRenderer';
 import { ImageViewerModal } from './ImageViewerModal';
 import { convertBbtTableToSvg, unflattenMarkdownTables } from '../lib/bbtRenderer';
@@ -556,6 +556,7 @@ export const MarkdownRenderer = ({
 
   // 3.5 Triệt tiêu hoàn toàn bất kỳ rò rỉ nào của chữ "undefined" hoặc "null" lẻ loi trong tài liệu tiếng Việt
   processedContent = processedContent.replace(/(?<![a-zA-Z0-9_\$])(?:undefined|null)(?![a-zA-Z0-9_\$])/g, '');
+  processedContent = fixAndMergeMathArrows(processedContent);
 
   // 4. Auto-scanner effect with MathJax 3: whenever content updates or AI streams in new text,
   // scan the rendered DOM container with MathJax typeset and attach data-latex attributes
@@ -591,6 +592,7 @@ export const MarkdownRenderer = ({
           remarkPlugins={[remarkMath, remarkGfm]}
           rehypePlugins={[rehypeRaw, rehypeSanitizeEventHandlers]}
           components={{
+            script: () => null,
             p: ({ node, children, ...props }: any) => (
               <span className="inline" {...cleanProps(props)}>
                 {children}
@@ -655,6 +657,7 @@ export const MarkdownRenderer = ({
         remarkPlugins={[remarkMath, remarkGfm]} 
         rehypePlugins={[rehypeRaw, rehypeSanitizeEventHandlers]}
         components={{
+          script: () => null,
           p: ({ node, children, ...props }: any) => {
             const firstChild = React.Children.toArray(children)[0];
             const isQuestion = typeof firstChild === 'string' && /^\s*(?:\*\*)?(?:Câu|Bài|\d+\.)\s*\d*/i.test(firstChild);

@@ -3,7 +3,7 @@ import express from "express";
 import fs from "fs";
 import HTMLtoDOCX from "html-to-docx";
 import path from "path";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 import mammoth from 'mammoth';
 import WordExtractor from 'word-extractor';
 import LZString from 'lz-string';
@@ -508,7 +508,7 @@ function handleAiError(error: any, req: any, res: any) {
   }
 
   if (lowerMsg.includes("not found") || error?.status === 404 || lowerMsg.includes("no longer available")) {
-    return res.status(404).json({ error: "Mô hình AI trước đây không còn khả dụng trên Google AI Studio. Hệ thống đã tự động chuyển sang mô hình mới nhất (gemini-3.8-flash). Thầy/cô vui lòng bấm thử lại." });
+    return res.status(404).json({ error: "Mô hình AI trước đây không còn khả dụng trên Google AI Studio. Hệ thống đã tự động chuyển sang mô hình mới nhất (gemini-4-hydrogen). Thầy/cô vui lòng bấm thử lại." });
   }
 
   console.error("AI Error Debug:", error?.name || "Error", error?.message || String(error), error?.status);
@@ -872,6 +872,7 @@ function getValidGeminiModels(requestedModel?: string): string[] {
   let primary = (requestedModel || "").replace(/^models\//, "").trim();
   if (
     !primary ||
+    primary === "gemini-3.8-flash" ||
     primary.includes("1.5") ||
     primary.includes("1.0") ||
     primary.includes("2.0") ||
@@ -882,12 +883,13 @@ function getValidGeminiModels(requestedModel?: string): string[] {
     primary.includes("latest") ||
     primary === "gemini-pro"
   ) {
-    primary = "gemini-3.8-flash";
+    primary = "gemini-3.1-flash-lite";
   }
   const list = [
     primary,
-    "gemini-3.8-flash",
-    "gemini-3.1-flash-lite"
+    "gemini-3.1-flash-lite",
+    "gemini-4-hydrogen",
+    "gemini-3.8-flash"
   ];
   return Array.from(new Set(list));
 }
@@ -953,8 +955,10 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
         } else if (rawConfig.temperature === undefined) {
           rawConfig.temperature = 0.7;
         }
-        if (model.includes("lite") || model.includes("3.8")) {
+        if (model.includes("lite")) {
           delete rawConfig.thinkingConfig;
+        } else if (model === "gemini-4-hydrogen" && !rawConfig.thinkingConfig) {
+          rawConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
         }
 
         const updatedPayload = {
@@ -983,7 +987,9 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
         if (isCustom) {
           customKeyFailed = true;
         }
-        await delay(200);
+        if (e?.status !== 404 && !String(e?.message || "").toLowerCase().includes("not found")) {
+          await delay(150);
+        }
         continue;
       }
     }
@@ -1030,8 +1036,10 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
           delete rawConfig.candidateCount;
         }
 
-        if (model.includes("lite") || model.includes("3.8")) {
+        if (model.includes("lite")) {
           delete rawConfig.thinkingConfig;
+        } else if (model === "gemini-4-hydrogen" && !rawConfig.thinkingConfig) {
+          rawConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
         }
 
         const updatedPayload = {
@@ -1054,6 +1062,9 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
               res.setHeader('X-Content-Type-Options', 'nosniff');
               res.setHeader('Cache-Control', 'no-cache, no-transform');
               res.setHeader('Access-Control-Allow-Origin', '*');
+              if (typeof (res as any).flushHeaders === 'function') {
+                (res as any).flushHeaders();
+              }
               streamStarted = true;
             }
             res.write(chunk.text);
@@ -1067,10 +1078,16 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
           return;
         }
       } catch (e: any) {
-        if (e?.message?.includes("thinkingConfig") || e?.message?.includes("thinkingBudget")) {
+        if (e?.message?.includes("thinkingConfig") || e?.message?.includes("thinkingBudget") || e?.message?.includes("thinkingLevel")) {
           try {
             const fallbackConfig = { ...(payloadOptions.config || {}) };
             delete fallbackConfig.thinkingConfig;
+            if (model.includes("3.8") || model.includes("4-") || model.includes("3.1")) {
+              delete fallbackConfig.temperature;
+              delete fallbackConfig.topP;
+              delete fallbackConfig.topK;
+              delete fallbackConfig.candidateCount;
+            }
             const fallbackPayload = {
               ...payloadOptions,
               contents: normalizeGeminiContents(payloadOptions.contents),
@@ -1090,6 +1107,9 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
                   res.setHeader('X-Content-Type-Options', 'nosniff');
                   res.setHeader('Cache-Control', 'no-cache, no-transform');
                   res.setHeader('Access-Control-Allow-Origin', '*');
+                  if (typeof (res as any).flushHeaders === 'function') {
+                    (res as any).flushHeaders();
+                  }
                   streamStarted = true;
                 }
                 res.write(chunk.text);
@@ -1109,7 +1129,9 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
           res.end();
           return;
         }
-        await delay(200);
+        if (e?.status !== 404 && !String(e?.message || "").toLowerCase().includes("not found")) {
+          await delay(150);
+        }
         continue;
       }
     }
@@ -2116,7 +2138,7 @@ app.all(["/api/generate-graduation-review-plan"], async (req, res) => {
     }
     const response = await generateWithFallback(req, {
       contents: [{ role: "user", parts: [{ text: prompt }] }],
-      model: model || "gemini-3.8-flash",
+      model: model || "gemini-4-hydrogen",
       config: {
         temperature: 0.35,
         maxOutputTokens: 32768,
@@ -2185,7 +2207,7 @@ app.all(["/api/generate"], async (req, res) => {
     }
 
     const payload = {
-      model: model || "gemini-3.8-flash",
+      model: model || "gemini-4-hydrogen",
       contents: finalContents,
       config: {
         ...(temperature !== undefined ? { temperature } : {}),
@@ -2219,7 +2241,7 @@ app.all(["/api/generate-stream"], async (req, res) => {
     }
 
     const payload = {
-      model: model || "gemini-3.8-flash",
+      model: model || "gemini-4-hydrogen",
       contents: finalContents,
       config: {
         ...(temperature !== undefined ? { temperature } : {}),
@@ -2819,8 +2841,7 @@ ${exampleJsonQuestions.join(',\n')}
       contents: promptText,
       config: {
         responseMimeType: "application/json",
-        maxOutputTokens: 16384,
-        temperature: 0.3
+        maxOutputTokens: 16384
       }
     });
 
@@ -3155,7 +3176,7 @@ app.all("/api/generate-worksheet-stream", async (req, res) => {
 
   if (additionalNotes) exercisePrompt += `\n- Ghi chú riêng từ giáo viên: ${additionalNotes}`;
 
-  let answerPrompt = `BẮT BUỘC 100% ở cuối phiếu học tập KHÔNG ĐƯỢC CÓ BẢNG ĐÁP ÁN NHANH (bỏ hoàn toàn bảng đáp án nhanh theo yêu cầu của giáo viên). BẮT BUỘC viết xong toàn bộ đề bài của tất cả các phần (Phần I, Phần II, Phần III${numPartIV > 0 ? ', Phần IV' : ''}) trước, rồi mới đặt DUY NHẤT 1 khối HƯỚNG DẪN GIẢI CHI TIẾT cho tất cả các phần ở cuối cùng của phiếu học tập, gói trong thẻ HTML <details class="solution-box"><summary>👉 BẤM ĐỂ XEM HƯỚNG DẪN GIẢI CHI TIẾT</summary>...</details>. TUYỆT ĐỐI KHÔNG chèn <details> sau từng phần và KHÔNG ĐƯỢC BỎ SÓT PHẦN HƯỚNG DẪN GIẢI CHI TIẾT!`;
+  let answerPrompt = `BẮT BUỘC 100% ở cuối phiếu học tập KHÔNG ĐƯỢC CÓ BẢNG ĐÁP ÁN NHANH (bỏ hoàn toàn bảng đáp án nhanh theo yêu cầu của giáo viên). BẮT BUỘC viết xong toàn bộ đề bài của tất cả các phần (Phần I, Phần II, Phần III${numPartIV > 0 ? ', Phần IV' : ''}) trước, rồi mới đặt DUY NHẤT 1 khối HƯỚNG DẪN GIẢI CHI TIẾT cho tất cả các phần ở cuối cùng của phiếu học tập, gói trong thẻ HTML <details class="solution-box"><summary>👉 BẤM ĐỂ XEM HƯỚNG DẪN GIẢI CHI TIẾT</summary>...</details>. Với các câu trắc nghiệm nhận biết/thông hiểu cơ bản, trình bày lời giải súc tích 2-3 dòng tập trung vào công thức then chốt và bước biến đổi chính để tối ưu tốc độ sinh phiếu. TUYỆT ĐỐI KHÔNG chèn <details> sau từng phần và KHÔNG ĐƯỢC BỎ SÓT PHẦN HƯỚNG DẪN GIẢI CHI TIẾT!`;
   if (answerMode === 'none') answerPrompt = 'TUYỆT ĐỐI KHÔNG kèm đáp án hay lời giải.';
   else if (answerMode === 'summary') answerPrompt = 'Ở cuối cùng của phiếu học tập (sau khi đã viết xong toàn bộ đề bài của tất cả các phần), cung cấp HƯỚNG DẪN GIẢI CHI TIẾT ngắn gọn cho tất cả các phần gói trong DUY NHẤT 1 thẻ <details class="solution-box"><summary>👉 BẤM ĐỂ XEM HƯỚNG DẪN GIẢI</summary>...</details>. KHÔNG sinh bảng đáp án nhanh.';
 
@@ -3199,8 +3220,8 @@ ${numPartIV > 0 ? `     + PHẦN IV: **Câu 1:** [Đề bài] \\n\\n **Câu 2:**
   await generateWithFallbackStream(req, res, {
     contents: prompt,
     config: { 
-      temperature: 0.7,
-      maxOutputTokens: 32768
+      maxOutputTokens: 32768,
+      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
     }
   });
 });

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Sparkles, Play, Download, Copy, Check, Upload, HelpCircle, Image as ImageIcon, FileText, RefreshCw, Key } from "lucide-react";
 import { apiFetch } from "../../lib/apiFetch";
+import { sanitizeSvgOrHtmlForReact } from "../../lib/globalMath";
 
 interface PresetItem {
   title: string;
@@ -537,7 +538,7 @@ Nhiệm vụ của bạn là đọc đề bài (qua văn bản hoặc hình ản
               {svgContent ? (
                 <div 
                   className="w-full h-full flex items-center justify-center [&_svg]:max-w-full [&_svg]:max-h-full [&_svg]:h-auto [&_svg]:w-auto"
-                  dangerouslySetInnerHTML={{ __html: svgContent }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeSvgOrHtmlForReact(svgContent) }}
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center text-center space-y-3 p-8 max-w-sm">

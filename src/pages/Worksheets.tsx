@@ -1464,7 +1464,8 @@ export function Worksheets() {
       const decoder = new TextDecoder("utf-8");
       let rawAccumulated = "";
 
-      let lastRenderTime = 0;
+      let lastProgressTime = 0;
+      let lastPreviewTime = 0;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -1486,17 +1487,19 @@ export function Worksheets() {
           return;
         }
 
-        // Throttle progressive display & progress bar updates every 250ms to prevent browser freeze ("Trang không phản hồi")
         const now = Date.now();
-        if (now - lastRenderTime > 250) {
-          lastRenderTime = now;
+        if (now - lastPreviewTime > 450) {
+          lastPreviewTime = now;
           if (!rawAccumulated.trim().startsWith('{')) {
             setSuggestion(rawAccumulated);
           }
+        }
 
+        if (now - lastProgressTime > 220) {
+          lastProgressTime = now;
           // Update progress bar based on structural sections inside throttle window
           if (rawAccumulated.includes('details') || rawAccumulated.includes('ĐÁP ÁN') || rawAccumulated.includes('HƯỚNG DẪN GIẢI')) {
-            setStreamProgress({ percentage: 95, text: "Đang hoàn thiện Bảng đáp án & Hướng dẫn giải..." });
+            setStreamProgress({ percentage: 95, text: "Đang hoàn thiện Đáp án & Hướng dẫn giải..." });
           } else if (rawAccumulated.includes('PHẦN IV')) {
             setStreamProgress({ percentage: 80, text: "Đang sinh PHẦN IV: Bài tập tự luận..." });
           } else if (rawAccumulated.includes('PHẦN III')) {
@@ -1536,7 +1539,6 @@ export function Worksheets() {
 
       setSuggestion(processedResult);
       setStreamProgress({ percentage: 100, text: "Tạo phiếu học tập thành công!" });
-      setTimeout(() => triggerGlobalMathRender(), 100);
 
       // Automatically parse structured questions
       try {
@@ -1614,15 +1616,8 @@ export function Worksheets() {
       });
       setHistoryItems(getHistory().filter(item => item.type === 'PHT'));
 
-      // Non-blocking background MathJax rendering & typeset sync
-      if (typeof window !== 'undefined' && (window as any).MathJax && (window as any).MathJax.typesetPromise) {
-        try {
-          await (window as any).MathJax.typesetPromise();
-        } catch (e) {}
-      }
-      triggerGlobalMathRender();
-
-      setTimeout(() => setStreamProgress(null), 1200);
+      // MathView renders and typesets scoped MathJax asynchronously once isLoading finishes
+      setTimeout(() => setStreamProgress(null), 900);
 
     } catch (err: any) {
       console.error(err);
@@ -1744,6 +1739,16 @@ export function Worksheets() {
     if (!suggestion) {
       return { mainDocContent: "", solutionDocContent: "" };
     }
+    // During streaming, skip the heavy multi-pass regex cleaner and render lightly until stream finishes
+    if (isLoading) {
+      const openDetailsIdx = suggestion.search(/<details(?:\s+class=["']solution-box["'])?[^>]*>/i);
+      const mainStream = openDetailsIdx !== -1 ? suggestion.substring(0, openDetailsIdx).trim() : suggestion;
+      const solStream = openDetailsIdx !== -1
+        ? suggestion.substring(openDetailsIdx).replace(/<details[^>]*>|<summary[\s\S]*?<\/summary>|<\/details>/gi, "").trim()
+        : "";
+      return { mainDocContent: mainStream, solutionDocContent: solStream };
+    }
+
     const SOLUTION_DELIMITER_REGEX = /(?:(?:^|\n)\s*---+\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN|LỜI GIẢI|HƯỚNG DẪN GIẢI|BẢNG ĐÁP ÁN)[^\n]*(?:---+)?\s*(?:\n|$)|(?:^|\n)\s*(?:#{1,4}|\*{2,3})?\s*(?:(?:PHẦN|Phần)\s*(?:[1-5]|I{1,3}|IV|V)\s*[:.]?\s*)?(?:[1-5]|I{1,3}|IV|V)?\.?\s*(?:HƯỚNG DẪN CHẤM|ĐÁP ÁN\s*(?:VÀ|&)?\s*HƯỚNG DẪN GIẢI|LỜI GIẢI CHI TIẾT|HƯỚNG DẪN GIẢI CHI TIẾT|BẢNG ĐÁP ÁN)\b[^\n]*(?:\n|$))/i;
 
     let mainPart = suggestion;
@@ -1793,10 +1798,17 @@ export function Worksheets() {
       solPart = "";
     }
 
-    const cleanedMain = cleanDocumentContent(mainPart, customLessonName, isLoading, false);
-    const cleanedSol = solPart ? cleanDocumentContent(solPart, customLessonName, isLoading, true) : "";
+    const cleanedMain = cleanDocumentContent(mainPart, customLessonName, false, false);
+    const cleanedSol = solPart ? cleanDocumentContent(solPart, customLessonName, false, true) : "";
     return { mainDocContent: cleanedMain, solutionDocContent: cleanedSol };
   }, [suggestion, includeDetailedSolution, customLessonName, isLoading]);
+
+  const infographicSplit = useMemo(() => {
+    if (layoutStyle !== 'infographic' || !mainDocContent) {
+      return { left: "", right: "" };
+    }
+    return splitContent(mainDocContent);
+  }, [layoutStyle, mainDocContent]);
 
   return (
     <div className="flex flex-col lg:flex-row min-h-full bg-slate-50 lg:overflow-hidden">
@@ -4025,6 +4037,7 @@ export function Worksheets() {
                       {/* Preview Canvas Container Styled by LayoutStyle */}
                       <div 
                         ref={exportRef}
+                        data-math-streaming={isLoading ? "true" : undefined}
                         style={{
                           fontFamily: layoutStyle === 'a4_print' 
                             ? "'Times New Roman', 'Tinos', 'Liberation Serif', 'Be Vietnam Pro', Georgia, serif" 
@@ -4169,7 +4182,7 @@ export function Worksheets() {
 
                               {/* Left Content prose rendering */}
                               <div className="p-5 prose prose-blue prose-sm max-w-none [&_h2]:bg-blue-50/80 [&_h2]:text-blue-950 [&_h2]:p-3 [&_h2]:rounded-xl [&_h2]:border-l-4 [&_h2]:border-blue-600 [&_h2]:text-[12px] [&_h2]:font-black [&_h2]:mt-5 [&_h2]:mb-3 [&_blockquote]:bg-amber-50/80 [&_blockquote]:border-l-4 [&_blockquote]:border-amber-400 [&_blockquote]:p-3.5 [&_blockquote]:rounded-r-xl [&_blockquote]:text-amber-950 [&_blockquote]:text-[11px] [&_blockquote]:font-semibold [&_blockquote]:not-italic [&_table]:border-collapse [&_th]:border [&_th]:border-slate-300 [&_td]:border [&_td]:border-slate-300 leading-relaxed font-sans">
-                                <MathView content={splitContent(mainDocContent).left} />
+                                <MathView content={infographicSplit.left} deferTypeset={isLoading} />
                               </div>
                             </div>
 
@@ -4208,7 +4221,7 @@ export function Worksheets() {
 
                               {/* Right Content prose rendering */}
                               <div className="p-5 prose prose-indigo prose-sm max-w-none [&_h2]:bg-indigo-50/80 [&_h2]:text-indigo-950 [&_h2]:p-3 [&_h2]:rounded-xl [&_h2]:border-l-4 [&_h2]:border-indigo-600 [&_h2]:text-[12px] [&_h2]:font-black [&_h2]:mt-5 [&_h2]:mb-3 [&_blockquote]:bg-rose-50/80 [&_blockquote]:border-l-4 [&_blockquote]:border-rose-400 [&_blockquote]:p-3.5 [&_blockquote]:rounded-r-xl [&_blockquote]:text-rose-950 [&_blockquote]:text-[11px] [&_blockquote]:font-semibold [&_blockquote]:not-italic [&_table]:border-collapse [&_th]:border [&_th]:border-slate-300 [&_td]:border [&_td]:border-slate-300 leading-relaxed font-sans">
-                                <MathView content={splitContent(mainDocContent).right} />
+                                <MathView content={infographicSplit.right} deferTypeset={isLoading} />
                               </div>
                             </div>
 
@@ -4230,7 +4243,7 @@ export function Worksheets() {
                           layoutStyle === 'mindmap' && "prose-emerald [&_h2]:bg-emerald-50 [&_h2]:text-emerald-950 [&_h2]:p-3.5 [&_h2]:rounded-xl [&_h2]:border-l-4 [&_h2]:border-emerald-600 [&_h2]:font-bold [&_blockquote]:bg-teal-50 [&_blockquote]:border-l-4 [&_blockquote]:border-teal-500 [&_blockquote]:p-4 [&_blockquote]:rounded-r-xl"
                         )}>
                           <ErrorBoundary>
-                            <MathView content={mainDocContent} />
+                            <MathView content={mainDocContent} deferTypeset={isLoading} />
                           </ErrorBoundary>
                         </div>
                       )}
@@ -4260,7 +4273,7 @@ export function Worksheets() {
                                 <span>💡 Đáp án & Hướng dẫn giải chi tiết:</span>
                               </div>
                               <ErrorBoundary>
-                                <MathView content={solutionDocContent} />
+                                <MathView content={solutionDocContent} deferTypeset={isLoading} />
                               </ErrorBoundary>
                             </div>
                           </div>

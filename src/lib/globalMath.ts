@@ -13,7 +13,15 @@
 export function sanitizeSvgOrHtmlForReact(html: string): string {
   if (!html || typeof html !== 'string') return '';
   return html
+    .replace(/<script[^>]*type=["']text\/tikz["'][^>]*>([\s\S]*?)<\/script>/gi, (_m, inner) => {
+      const trimmed = (inner || '').trim();
+      if (!trimmed) return '';
+      return trimmed.includes('\\begin{tikzpicture}') ? trimmed : `\\begin{tikzpicture}\n${trimmed}\n\\end{tikzpicture}`;
+    })
+    .replace(/<script[^>]*type=["']math\/tex;\s*mode=display["'][^>]*>([\s\S]*?)<\/script>/gi, (_m, inner) => `$$${(inner || '').trim()}$$`)
+    .replace(/<script[^>]*type=["']math\/tex["'][^>]*>([\s\S]*?)<\/script>/gi, (_m, inner) => `$${(inner || '').trim()}$`)
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
     .replace(/<script[^>]*>/gi, '')
     .replace(/<\/script>/gi, '');
 }
@@ -388,10 +396,20 @@ export function cleanSectionTitles(text: string): string {
   if (!text || typeof text !== 'string') return text || '';
   let s = text;
 
-  // Clean dollar math tags and asterisks inside section headers:
-  // e.g. **PHẦN $III$: TRẮC $NGHI$ ỆM TRẢ LỜI NGẮN$ -> PHẦN III: TRẮC NGHIỆM TRẢ LỜI NGẮN
+  // Tách riêng nếu tiêu đề PHẦN bị dính với Câu hỏi trên cùng 1 dòng:
+  s = s.replace(/(PHẦN\s*(?:[1-4]|I{1,4}|IV)\b[^:\n]*:?[^\n]*?)(?=\s+(?:\*{0,2}(?:Câu|Bài)\s*\d+))/gi, '$1\n\n');
+
+  // Clean dollar math tags and asterisks inside section headers ONLY:
   s = s.replace(/(?:^|\n)[ \t]*(?:\*{1,3}|#{1,4}|<[^>]+>)*[ \t]*(PHẦN\s*(?:[1-4]|I{1,4}|IV)\b[^\n]*)/gi, (_fullMatch, header) => {
-    let clean = header.replace(/[\$\*]/g, '').trim();
+    // Nếu có Câu hỏi lọt vào header do dính dòng, tách ra để bảo vệ công thức toán
+    const qMatch = header.match(/^(.*?)(\s+(?:\*{0,2}(?:Câu|Bài)\s*\d+[\s\S]*))$/i);
+    let title = header;
+    let rest = '';
+    if (qMatch) {
+      title = qMatch[1];
+      rest = '\n\n' + qMatch[2].trim();
+    }
+    let clean = title.replace(/[\$\*]/g, '').trim();
     clean = clean.replace(/TRẮC\s*NGHI\s*ỆM/gi, 'TRẮC NGHIỆM');
     clean = clean.replace(/NGHI\s*ỆM/gi, 'NGHIỆM');
     clean = clean.replace(/NHI\s*ỀU/gi, 'NHIỀU');
@@ -399,10 +417,10 @@ export function cleanSectionTitles(text: string): string {
     clean = clean.replace(/ĐÚNG\s*[\/\-]?\s*SAI/gi, 'ĐÚNG / SAI');
     clean = clean.replace(/NHIỀU\s*PHƯƠNG\s*ÁN\s*LỰA\s*CHỌN/gi, 'NHIỀU PHƯƠNG ÁN LỰA CHỌN');
     clean = clean.replace(/LỰA\s*CHỌN\s*A,?\s*B,?\s*C,?\s*D/gi, 'LỰA CHỌN A, B, C, D');
-    return `\n\n### ${clean}`;
+    return `\n\n### ${clean}${rest}`;
   });
 
-  return s;
+  return fixAndMergeMathArrows(s);
 }
 
 export function fixBrokenLatexSyntax(text: string): string {
@@ -611,7 +629,7 @@ export function formatQuickAnswerTables(text: string): string {
  */
 export function cleanMathAndUnwrapHeadings(text: string): string {
   if (!text || typeof text !== 'string') return text || '';
-  let s = text;
+  let s = sanitizeSvgOrHtmlForReact(text);
 
   // 0. Gỡ bỏ lề khoảng trắng / tab (indented code block) cho các dòng chứa công thức toán hoặc tiêu đề
   s = s.replace(/^[ \t]{2,8}(?=\$\$|\$|\\begin|\\end|\\frac|\\sqrt|\\vec|\\Left|\\Right|\\iff|\\implies|\*{0,2}(?:Câu|Bài)\s*\d+|#{1,4}|PHẦN|Lời giải|Đáp án|Hệ|Ta có|Suy ra|Do đó|[a-d]\))/gm, '');
@@ -672,7 +690,7 @@ export function cleanMathAndUnwrapHeadings(text: string): string {
   s = s.replace(/\\vec\s*\{([A-Za-z0-9_'\^]+?)S\.(?=\s|[.,;!?]|$)/g, '\\vec{$1}');
   s = s.replace(/\\vec\s*\{([A-Za-z0-9_'\^]+?)\.(?=\s|[.,;!?]|$)/g, '\\vec{$1}');
   s = s.replace(/(\\vec\{[^{}]+\})\s*[\.S]\s*(?=\s|[=+\-]|$)/g, '$1 ');
-  s = s.replace(/(?<![\$\w])\$([A-Z]{2,6})\s*\\(Rightarrow|Leftrightarrow|Leftarrow)/g, '$$$1$$ \\$2');
+  s = s.replace(/(?<![\$\w])\$([A-Z]{2,6})\s*\\(Rightarrow|Leftrightarrow|Leftarrow)/g, '$$$1 \\$2$$');
 
   // Chuẩn hóa quy tắc hình học tiếng Việt bị dính chữ
   s = s.replace(/Q\s*u\s*y\s*t\s*ắ\s*c\s*h\s*ì\s*n\s*h\s*b\s*ì\s*n\s*h\s*h\s*à\s*n\s*h/gi, 'Quy tắc hình bình hành');
@@ -782,8 +800,7 @@ export function cleanMathAndUnwrapHeadings(text: string): string {
 
   // Gộp các khối display math liên tiếp ngăn cách bởi mũi tên tương đương thành một khối thống nhất
   s = s.replace(/\$\$\s*(\\Leftrightarrow|\\Leftarrow|\\Rightarrow|\\iff|\\implies|<=>|=>)\s*\$\$/g, ' \\\\ $1 ');
-  // Bảo toàn nguyên vẹn $...$ cho các mũi tên suy luận TeX và bọc $ nếu trần
-  s = s.replace(/(?<![\$\w\\])(\\(?:Rightarrow|Leftarrow|Leftrightarrow|iff|implies))(?![a-zA-Z\$])/g, '$$$1$$');
+  s = fixAndMergeMathArrows(s);
 
   // Sửa lỗi rách mẫu số cấp số nhân: \frac{u_1(1-q^n)}{1} - q} -> \frac{u_1(1-q^n)}{1-q}
   s = s.replace(/\\frac\s*\{\s*u_?1\s*\(\s*1\s*-\s*q\s*\^?\s*\{?n\}?\s*\)\s*\}\s*\{\s*1\s*\}\s*-\s*q\s*\}/g, '\\frac{u_1(1-q^n)}{1-q}');
@@ -824,6 +841,77 @@ export function cleanMathAndUnwrapHeadings(text: string): string {
     }
     return fullMatch;
   });
+
+  return fixAndMergeMathArrows(s);
+}
+
+export function fixAndMergeMathArrows(text: string): string {
+  if (!text || typeof text !== 'string') return text || '';
+  let s = text;
+
+  // 1. Chuẩn hóa các biến thể viết hoa hoặc double backslash
+  s = s.replace(/\\RightArrow\b/g, '\\Rightarrow');
+  s = s.replace(/\\LeftArrow\b/g, '\\Leftarrow');
+  s = s.replace(/\\{2,}(Leftarrow|Rightarrow|Leftrightarrow|iff|implies)\b/gi, '\\$1');
+
+  // 2. Gộp các khối math cạnh nhau được nối bởi mũi tên suy luận / tương đương thành một khối thống nhất:
+  // $A$ $\Rightarrow$ $B$ -> $A \Rightarrow B$
+  // $A$ \Rightarrow $B$ -> $A \Rightarrow B$
+  // $A$ \Leftrightarrow $B$ -> $A \Leftrightarrow B$
+  let prev = '';
+  while (prev !== s) {
+    prev = s;
+    s = s.replace(/\$([^\$\n]+?)\$\s*(?:\\(Rightarrow|Leftrightarrow|Leftarrow|iff|implies)|\$\s*\\(Rightarrow|Leftrightarrow|Leftarrow|iff|implies)\s*\$|<=>|=>)\s*\$([^\$\n]+?)\$/g, (_m, a, arrow1, arrow2, b) => {
+      const arr = arrow1 || arrow2;
+      const cleanArrow = arr ? `\\${arr}` : (_m.includes('<=>') ? '\\Leftrightarrow' : '\\Rightarrow');
+      return `$${a.trim()} ${cleanArrow} ${b.trim()}$`;
+    });
+  }
+
+  // 3. Bọc chuỗi biến đổi suy ra / tương đương trần chưa có $
+  s = s.replace(/((?:^|[:.?!]|\s)(?:Ta có|Suy ra|Do đó|Khi đó|Vậy|Đúng\.|Sai\.|Đúng|Sai)[:\s]*)([a-zA-Z0-9_\{\}\(\)\[\]\+\-\*\/\^\=\s\.\,\;\\|]+?\\(?:Rightarrow|Leftrightarrow|Leftarrow|iff|implies)[a-zA-Z0-9_\{\}\(\)\[\]\+\-\*\/\^\=\s\.\,\;\\|]+?)(?=(?:\.\s+[A-ZÀ-Ỹ]|\.\s*$|\.\s*\n|\s*\((?:là|với|điều)|Đáp\s*số|\n|$))/gi, (_m, lead, math) => {
+    let clean = math.trim().replace(/\$+$/, '').replace(/^\$+/, '');
+    if (!clean || clean.includes('$')) return _m;
+    return `${lead}$${clean}$`;
+  });
+
+  // 4. Nếu mũi tên đứng cạnh biểu thức toán chưa bọc $ (vd: \Rightarrow 46 = 10 + 9d)
+  s = s.replace(/(?:\\(Rightarrow|Leftrightarrow|Leftarrow|iff|implies)|=>|<=>)\s*([0-9a-zA-Z_\{\}\(\)\[\]\+\-\*\/\^\=]+(?:\s*[=+\-\*\/]\s*[0-9a-zA-Z_\{\}\(\)\[\]\+\-\*\/\^\=]+)+)(?=(?:\.\s+[A-ZÀ-Ỹ]|\.\s*$|\.\s*\n|\s*\((?:là|với|điều)|Đáp\s*số|\\|;|,|\n|$))/g, (_m, arrow, expr) => {
+    const cleanArrow = arrow ? `\\${arrow}` : (_m.includes('<=>') ? '\\Leftrightarrow' : '\\Rightarrow');
+    let cleanExpr = expr.trim();
+    if (cleanExpr.includes('$')) return _m;
+    return `$${cleanArrow} ${cleanExpr}$`;
+  });
+
+  // 5. Nếu còn bất kỳ mũi tên suy luận trần nào hoàn toàn đứng một mình NGOÀI $: bọc $\Rightarrow$
+  const parts = s.split(/(\$\$[\s\S]*?\$\$|\$[^\$\n]+?\$)/g);
+  for (let i = 0; i < parts.length; i += 2) {
+    if (parts[i]) {
+      parts[i] = parts[i].replace(/(?<![\$\\\w])(\\RightArrow|\\Rightarrow|\\Leftrightarrow|\\Leftarrow|\\iff|\\implies)(?![\$\w])/g, '$$$1$$');
+    }
+  }
+  s = parts.join('');
+
+  // 6. Gộp lại các khối math liền kề sau khi đã bọc:
+  prev = '';
+  while (prev !== s) {
+    prev = s;
+    s = s.replace(/\$([^\$\n]+?)\$\s*\$\s*\\(Rightarrow|Leftrightarrow|Leftarrow|iff|implies)\s*\$\s*\$([^\$\n]+?)\$/g, (_m, a, arrow, b) => {
+      return `$${a.trim()} \\${arrow} ${b.trim()}$`;
+    });
+    s = s.replace(/\$([^\$\n]+?)\$\s*(?:\\(Rightarrow|Leftrightarrow|Leftarrow|iff|implies))\s*\$([^\$\n]+?)\$/g, (_m, a, arrow, b) => {
+      return `$${a.trim()} \\${arrow} ${b.trim()}$`;
+    });
+    s = s.replace(/\$([^\$\n]+?)\$\s*\$([^\$\n]+?)\$/g, (_m, a, b) => {
+      if (a.endsWith('\\Rightarrow') || a.endsWith('\\Leftrightarrow') || b.startsWith('\\Rightarrow') || b.startsWith('\\Leftrightarrow')) {
+        return `$${a.trim()} ${b.trim()}$`;
+      }
+      return _m;
+    });
+  }
+
+  // 7. Bọc số trong "Đáp số: 4." hoặc "Đáp án: 4." thành "Đáp số: $4$."
+  s = s.replace(/(\b(?:Đáp\s*số|Đáp\s*án)\s*:\s*)([+\-]?(?:\d+(?:[.,]\d+)?|\b[a-zA-Z]\b))(?!\$)(?=[.,;!?\s]|$)/gi, '$1$$$2$$');
 
   return s;
 }
@@ -876,8 +964,8 @@ export function sanitizeLatexMathAndDelimiters(raw: string): string {
   s = s.replace(/\\RightArrow\b/g, '\\Rightarrow');
   s = s.replace(/\\LeftArrow\b/g, '\\Leftarrow');
   s = s.replace(/\\{2,}(Leftarrow|Rightarrow|Leftrightarrow|iff|implies)\b/gi, '\\$1');
-  // Đảm bảo mũi tên suy luận trần nằm ngoài math được bọc trong $...$
-  s = s.replace(/(?<=[a-zA-ZÀ-ỹ0-9\)\]\.\:,])\s*(\\Leftarrow|\\Rightarrow|\\Leftrightarrow|\\iff|\\implies)\s*(?=[a-zA-ZÀ-ỹ0-9\(\[\\])/g, ' $$$1$$ ');
+  // Chuẩn hóa và gộp các mũi tên suy luận / tương đương thành công thức LaTeX hoàn chỉnh
+  s = fixAndMergeMathArrows(s);
   s = s.replace(/\${3,}/g, (m) => m.length % 2 === 1 ? '$' : '$$');
   s = s.replace(/(?<!\$)\$\s*\$(?!\$)/g, '');
 
@@ -919,6 +1007,14 @@ export function sanitizeLatexMathAndDelimiters(raw: string): string {
         return `\x02MATH${mathTokens.length - 1}\x03`;
       };
 
+      // d. Bọc chuỗi biến đổi suy ra / tương đương: e.g. u_{10} = u_1 + 9d \Rightarrow 46 = 10 + 9d \Rightarrow 9d = 36 \Rightarrow d = 4
+      p = p.replace(/(?<![\$\\\w])([uSa-zA-Z0-9_\{\}\(\)\[\]\+\-\*\/\^\=\s]+?\s*\\(?:Rightarrow|Leftarrow|Leftrightarrow|iff|implies)\s*[uSa-zA-Z0-9_\{\}\(\)\[\]\+\-\*\/\^\=\s\\\(\)]+?)(?=[,;.!?]|\s+(?:được|là|tính|theo|bằng|với|khi|thì|tại|trong|ta|Phát\s+biểu|Đáp|\(Đúng\)|\(Sai\)|\n)|$)/g, (match) => {
+        let clean = match.trim();
+        if (clean.includes('$')) return match;
+        if (/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(clean.replace(/\\text\{[^{}]*\}/g, ''))) return match;
+        return saveMath(`$${clean}$`);
+      });
+
       // Auto-wrap standalone \Rightarrow or \Leftrightarrow or \to lines
       p = p.replace(/(?<![\$\w])(\\RightArrow|\\Rightarrow|\\Leftrightarrow|\\Leftarrow|\\iff|\\implies|\\to\b|\\rightarrow\b)(?![\$\w])/g, (m) => saveMath(`$${m}$`));
 
@@ -953,14 +1049,6 @@ export function sanitizeLatexMathAndDelimiters(raw: string): string {
         return saveMath(`$${clean}$`);
       });
 
-      // d. Bọc chuỗi biến đổi suy ra / tương đương: e.g. u_1 = -1, u_3 = 7 \Rightarrow u_1 + 2d = 7 \Rightarrow d = 4
-      p = p.replace(/(?<![\$\\\w])([uSa-zA-Z0-9_\{\}\(\)\+\-\*\/\^\=\s\.]+\s*\\(?:Rightarrow|Leftarrow|Leftrightarrow|iff|implies)\s*[uSa-zA-Z0-9_\{\}\(\)\+\-\*\/\^\=\s\.\\\(\)]+)(?=[,;!?]|\s+(?:được|là|tính|theo|bằng|với|khi|thì|tại|trong|ta|Phát\s+biểu|\(Đúng\)|\(Sai\)|\n)|$)/g, (match) => {
-        let clean = match.trim();
-        if (clean.includes('$')) return match;
-        if (/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(clean.replace(/\\text\{[^{}]*\}/g, ''))) return match;
-        return saveMath(`$${clean}$`);
-      });
-
       // e. Bọc biểu thức cấp số cộng / cấp số nhân / dãy số (u_n = ..., S_n = ...) không bị ngắt ở dấu ba chấm
       p = p.replace(/(?<![\$\\\w])\b([uS]_(?:[a-zA-Z0-9]+|\{[^}]+\})\s*=\s*(?:\\(?:dots|cdots|ldots)|\.\.\.|[0-9a-zA-Z\(\)\[\]\{\}\+\-\*\/\^\_\s]|\\frac\{[^{}]*\}\{[^{}]*\})+?)(?=[,;!?]|\s+(?:được|là|tính|theo|bằng|với|khi|thì|tại|trong|ta(?:\s+được)?|đáp\s+án|công|sai|số|[A-D][\.\:\)])|\n|$)(?!\$)/g, (match) => {
         let clean = match.trim();
@@ -987,8 +1075,9 @@ export function sanitizeLatexMathAndDelimiters(raw: string): string {
   }
   s = parts.join('');
 
-  // 5. Gộp các khối $$ liền kề nhau được nối bởi dấu tương đương / suy ra / bằng
-  s = s.replace(/\$\$\s*(\\Leftrightarrow|\\Rightarrow|\\Leftarrow|=|\\iff)\s*\$\$/g, ' $1 ');
+  // 5. Gộp các khối $$ hoặc $ liền kề nhau được nối bởi dấu tương đương / suy ra
+  s = s.replace(/\$\$\s*(\\Leftrightarrow|\\Rightarrow|\\Leftarrow|=|\\iff)\s*\$\$/g, ' \\\\ $1 ');
+  s = fixAndMergeMathArrows(s);
 
   // 6. Triệt tiêu 100% lỗi lồng dấu $ bên trong khối $$...$$ hoặc $...$
   s = s.replace(/(\$\$[\s\S]*?\$\$)/g, (match) => {
@@ -1231,7 +1320,7 @@ export function normalizeMathText(text: any): string {
   t = wrapFractionAndNegativePowers(t);
   t = fixIncompleteFractions(t);
   t = balanceCasesEnvironments(t);
-  return t;
+  return fixAndMergeMathArrows(t);
 }
 
 export function fixIncompleteFractions(text: string): string {
@@ -1484,7 +1573,7 @@ export function wrapNakedMathInDocument(text: string): string {
     parts[i] = s;
   }
   let res = parts.join('');
-  res = res.replace(/\$\$\s*(\\Leftrightarrow|\\Rightarrow|\\Leftarrow|=|\\iff)\s*\$\$/g, ' $1 ');
+  res = fixAndMergeMathArrows(res);
 
   return cleanMathAndUnwrapHeadings(res);
 }
@@ -1639,7 +1728,15 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
     mathSplitParts[i] = seg;
   }
   text = mathSplitParts.join('');
-  text = text.replace(/([A-D]\.)(?=[^\s])/g, "$1 ");
+  text = fixAndMergeMathArrows(text);
+  // 1.1 Làm sạch triệt để dấu sao (**) xung quanh và ngay sau nhãn phương án A, B, C, D (chỉ in hoa [A-D], tuyệt đối không đụng vào a), b), c), d) Đúng/Sai)
+  // Loại bỏ các trường hợp như: "**A.** ** 11", "A. ** 11", "A.** 11", "● A.** 11", "- **A.** ** 11"
+  text = text.replace(/(?:^|\n|\s+)(?:[-*•●]\s*)?(?:\*{1,3}|<b>)?\(?([A-D])\)?[\.\:](?:\*{1,3}|<\/b>)?\s*(?:\*{1,3}\s*)?/g, (m, letter) => {
+    const isNewline = m.startsWith('\n') || m.startsWith('\r\n');
+    const prefix = isNewline ? '\n' : ' ';
+    return `${prefix}${letter}. `;
+  });
+  text = text.replace(/(?<!\*)([A-D]\.)(?=[^\s\*])/g, "$1 ");
 
   // 2. Duyệt từng dòng và đánh số câu hỏi cho từng Phần I, II, III, IV
   const lines = text.split("\n");
@@ -1714,14 +1811,24 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
         }
         qIndex++;
 
+        const cleanOpt = (s: string) => {
+          if (!s) return '';
+          return s
+            .replace(/^[\s\-*•●_]+/, '')
+            .replace(/[\s\*_]+$/, '')
+            .replace(/^\*+\s*/, '')
+            .replace(/\s*\*+$/, '')
+            .trim();
+        };
+
         // Kiểm tra xem A. B. C. D. có nằm chung dòng không
-        const mcMatch = stemLine.match(/^(.*?)(?:\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?A[\.\):]\s*([\s\S]*?)(?:\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?B[\.\):]\s*([\s\S]*?)(?:\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?C[\.\):]\s*([\s\S]*?)(?:\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?D[\.\):]\s*([\s\S]*)$/i);
+        const mcMatch = stemLine.match(/^(.*?)(?:\s+)(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?A[\.\):](?:\*{0,2}|<\/b>)?\s*([\s\S]*?)(?:\s+)(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?B[\.\):](?:\*{0,2}|<\/b>)?\s*([\s\S]*?)(?:\s+)(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?C[\.\):](?:\*{0,2}|<\/b>)?\s*([\s\S]*?)(?:\s+)(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?D[\.\):](?:\*{0,2}|<\/b>)?\s*([\s\S]*)$/i);
         if (mcMatch) {
           const stem = mcMatch[1].trim();
-          const optA = mcMatch[2].trim();
-          const optB = mcMatch[3].trim();
-          const optC = mcMatch[4].trim();
-          const optD = mcMatch[5].trim();
+          const optA = cleanOpt(mcMatch[2]);
+          const optB = cleanOpt(mcMatch[3]);
+          const optC = cleanOpt(mcMatch[4]);
+          const optD = cleanOpt(mcMatch[5]);
           result.push(stem);
           result.push("");
           result.push(`- **A.** ${optA}`);
@@ -1734,18 +1841,18 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
 
         // Kiểm tra nếu stemLine bị dính phương án A ở đuôi (ví dụ: "... là A. 15." hoặc "... bằng A. u_5 = 48.")
         // trong khi các phương án B, C, D nằm ở các dòng tiếp theo
-        const trailingAMatch = stemLine.match(/^(.*?)\s+(?:[-*]\s*)?(?:\*{0,2}|<b>)?A[\.\):]\s*([^\n]+)$/i);
+        const trailingAMatch = stemLine.match(/^(.*?)\s+(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?A[\.\):](?:\*{0,2}|<\/b>)?\s*([^\n]+)$/i);
         if (trailingAMatch) {
           let hasNextB = false;
           for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
-            if (/^\s*(?:[-*]\s*)?(?:\*{0,2}|<b>)?B[\.\):]/i.test(lines[j].trim())) {
+            if (/^\s*(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?B[\.\):]/i.test(lines[j].trim())) {
               hasNextB = true;
               break;
             }
           }
           if (hasNextB) {
             const cleanStem = trailingAMatch[1].trim();
-            const optA = trailingAMatch[2].trim();
+            const optA = cleanOpt(trailingAMatch[2]);
             result.push(cleanStem);
             result.push("");
             result.push(`- **A.** ${optA}`);
@@ -1758,10 +1865,19 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
       }
 
       // Chuẩn hóa các dòng phương án độc lập A., B., C., D. thành danh sách Markdown (- **A.** ...) để hiển thị dạng lưới 2/4 cột và xuất bảng Word chuẩn
-      const singleOptMatch = trimmed.match(/^(?:[-*]\s*)?(?:\*{0,2}|<b>)?([A-D])[\.\):](?:\*{0,2}|<\/b>)?\s+([\s\S]+)$/);
+      const cleanOpt = (s: string) => {
+        if (!s) return '';
+        return s
+          .replace(/^[\s\-*•●_]+/, '')
+          .replace(/[\s\*_]+$/, '')
+          .replace(/^\*+\s*/, '')
+          .replace(/\s*\*+$/, '')
+          .trim();
+      };
+      const singleOptMatch = trimmed.match(/^(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?([A-D])[\.\):](?:\*{0,2}|<\/b>)?\s*([\s\S]+)$/);
       if (singleOptMatch) {
         const optLetter = singleOptMatch[1].toUpperCase();
-        const optBody = singleOptMatch[2].trim();
+        const optBody = cleanOpt(singleOptMatch[2]);
         if (optLetter === 'A' && result.length > 0 && result[result.length - 1].trim() !== '' && !result[result.length - 1].trim().startsWith('- **')) {
           result.push("");
         }
@@ -1851,10 +1967,12 @@ export function wrapUnenclosedLatexMath(text: string): string {
   s = s.replace(/\bChoC\b/g, 'Cho $C$');
   s = s.replace(/\bChoO\b/g, 'Cho $O$');
 
-  // 2. Strip stray asterisks or bullets before option letters: '* A.', '*A.', '• *A.', '- *A.' -> 'A.'
-  s = s.replace(/(?:^|\n|\s+)(?:[-*•]\s*)?\*+\s*([A-D][\.\:\)])/g, (m, opt) => {
-    const prefix = m.startsWith('\n') ? '\n' : ' ';
-    return `${prefix}${opt}`;
+  // 2. Strip stray asterisks, bullets or closing asterisks around option letters: '* A.', '*A.', '• *A.', '- *A.', 'A.**', '● A.**', '**A.**' -> 'A.'
+  // Chỉ khớp chữ cái in hoa [A-D], bảo vệ tuyệt đối các ý a), b), c), d) Đúng/Sai
+  s = s.replace(/(?:^|\n|\s+)(?:[-*•●]\s*)?(?:\*{1,3}|<b>)?\(?([A-D])\)?[\.\:](?:\*{1,3}|<\/b>)?\s*(?:\*{1,3}\s*)?/g, (m, letter) => {
+    const isNewline = m.startsWith('\n') || m.startsWith('\r\n');
+    const prefix = isNewline ? '\n' : ' ';
+    return `${prefix}${letter}. `;
   });
 
   // 3. Automatically wrap un-enclosed LaTeX expressions in solution/explanation text
@@ -1895,6 +2013,7 @@ export function wrapUnenclosedLatexMath(text: string): string {
 export function preprocessMathText(text: any): string {
   if (text === null || text === undefined) return '';
   let str = String(text);
+  str = fixAndMergeMathArrows(str);
   str = wrapUnenclosedLatexMath(str);
   str = cleanSectionTitles(str);
   str = fixSystemOfEquationsAndCases(str);
@@ -1905,8 +2024,10 @@ export function preprocessMathText(text: any): string {
   str = normalizeMathText(str);
   str = cleanMathAndUnwrapHeadings(str);
   str = formatWorksheetQuestionsAndSections(str);
+  str = fixAndMergeMathArrows(str);
   str = formatQuickAnswerTables(str);
   str = cleanSectionTitles(str);
+  str = fixAndMergeMathArrows(str);
   return str;
 }
 
@@ -1969,6 +2090,18 @@ export function setupGlobalMathObserver() {
   const observer = new MutationObserver((mutations) => {
     let shouldRender = false;
     for (const mutation of mutations) {
+      const targetEl = mutation.target.nodeType === Node.ELEMENT_NODE
+        ? (mutation.target as HTMLElement)
+        : mutation.target.parentElement;
+      if (
+        targetEl &&
+        (targetEl.closest('.math-view-container') ||
+          targetEl.closest('.markdown-body') ||
+          targetEl.closest('[data-math-streaming="true"]'))
+      ) {
+        continue;
+      }
+
       if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
         for (let i = 0; i < mutation.addedNodes.length; i++) {
           const node = mutation.addedNodes[i];
@@ -1976,7 +2109,7 @@ export function setupGlobalMathObserver() {
             const el = node as HTMLElement;
             const tag = el.tagName ? el.tagName.toUpperCase() : '';
 
-            // Skip MathJax internal SVG/MJX elements and form inputs
+            // Skip MathJax internal SVG/MJX elements, form inputs, and self-typesetting components
             if (
               tag.startsWith('MJX') ||
               tag === 'SVG' ||
@@ -1986,7 +2119,12 @@ export function setupGlobalMathObserver() {
               tag === 'TEXT' ||
               ['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT', 'PRE', 'CODE'].includes(tag) ||
               el.classList.contains('MathJax') ||
-              el.closest('mjx-container')
+              el.classList.contains('math-view-container') ||
+              el.classList.contains('markdown-body') ||
+              el.closest('mjx-container') ||
+              el.closest('.math-view-container') ||
+              el.closest('.markdown-body') ||
+              el.closest('[data-math-streaming="true"]')
             ) {
               continue;
             }
@@ -2004,6 +2142,9 @@ export function setupGlobalMathObserver() {
           parent &&
           (parent.tagName.toUpperCase().startsWith('MJX') ||
             parent.closest('mjx-container') ||
+            parent.closest('.math-view-container') ||
+            parent.closest('.markdown-body') ||
+            parent.closest('[data-math-streaming="true"]') ||
             parent.classList.contains('MathJax'))
         ) {
           continue;
@@ -2052,6 +2193,17 @@ export function setupGlobalMathObserver() {
 export function rehypeSanitizeEventHandlers() {
   return (tree: any) => {
     function visit(node: any) {
+      if (node && node.children && Array.isArray(node.children)) {
+        node.children = node.children.filter((child: any) => {
+          if (child && child.type === 'element' && typeof child.tagName === 'string') {
+            const tag = child.tagName.toLowerCase();
+            if (tag === 'script' || tag === 'noscript') {
+              return false;
+            }
+          }
+          return true;
+        });
+      }
       if (node && node.type === 'element' && node.properties) {
         for (const key of Object.keys(node.properties)) {
           if (

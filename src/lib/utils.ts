@@ -2286,22 +2286,22 @@ export function cleanOptionText(opt: any): string {
   // Dọn dẹp thẻ HTML thực sự (bắt buộc bắt đầu bằng chữ cái [a-zA-Z], bảo vệ tuyệt đối dấu bất đẳng thức như < 0, < y...)
   text = text.replace(/<\/?(?:[a-zA-Z][a-zA-Z0-9]*)\b[^>]*>/g, "");
 
-  // 1. Loại bỏ triệt để mọi nhãn phương án ở đầu (kể cả lặp nhãn như A. C., B. D., - A., **A.**, etc.)
+  // 1. Loại bỏ triệt để mọi nhãn phương án ở đầu (kể cả lặp nhãn như A. C., B. D., - A., **A.**, ● A.**, etc.)
   // Bảo vệ tuyệt đối tên tập hợp hoặc biến toán học (như A \cap B, A \cup B, A \setminus B, A =, B =, A \subset B)
-  while (/^[\s\-*•]*\(?(?:\*{0,2})([A-Da-d])(?:\*{0,2})\)?[\.\:\)](?:\*{0,2})\s*/.test(text)) {
-    const isMathStart = /^[\s\-*•]*([A-Da-d])\s*(?:\\(?:cap|cup|setminus|subset|supset|subseteq|supseteq|in|notin)|=|[+*\/<>]|\()/i.test(text);
+  while (/^[\s\-*•●]*\(?(?:\*{0,3})([A-Da-d])(?:\*{0,3})\)?[\.\:\)](?:\*{0,3})\s*/.test(text)) {
+    const isMathStart = /^[\s\-*•●]*([A-Da-d])\s*(?:\\(?:cap|cup|setminus|subset|supset|subseteq|supseteq|in|notin)|=|[+*\/<>]|\()/i.test(text);
     if (isMathStart) {
       // Nếu có tiền tố nhãn phương án trước biểu thức toán (vd: "A. A \cap B"), chỉ bóc nhãn "A. " một lần
-      text = text.replace(/^[\s\-*•]*\(?(?:\*{0,2})[A-Da-d](?:\*{0,2})\)?[\.\:\)](?:\*{0,2})\s+(?=[A-Da-d]\s*(?:\\|=|[+*\/<>]))/i, '').trim();
+      text = text.replace(/^[\s\-*•●]*\(?(?:\*{0,3})[A-Da-d](?:\*{0,3})\)?[\.\:\)](?:\*{0,3})\s+(?=[A-Da-d]\s*(?:\\|=|[+*\/<>]))/i, '').trim();
       break;
     }
-    text = text.replace(/^[\s\-*•]*\(?(?:\*{0,2})([A-Da-d])(?:\*{0,2})\)?[\.\:\)](?:\*{0,2})\s*/, '').trim();
+    text = text.replace(/^[\s\-*•●]*\(?(?:\*{0,3})([A-Da-d])(?:\*{0,3})\)?[\.\:\)](?:\*{0,3})\s*/, '').trim();
   }
 
   // 2. Loại bỏ hoàn toàn dấu sao (*) hoặc gạch dưới (_) đánh dấu phương án đúng ở đầu hoặc cuối phương án
   // Kể cả khi dấu sao nằm ngay trong hoặc ngoài cặp dấu $...$ (vd: *[-2; 3]*, *$[-2; 3]*$, * $[-2; 3] *)
   text = text
-    .replace(/^[\s\*_]+/, '')
+    .replace(/^[\s\*_•●]+/, '')
     .replace(/[\s\*_]+$/, '')
     .replace(/^\$\s*\*+/, '$')
     .replace(/\*+\s*\$$/, '$')

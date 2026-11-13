@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useLayoutEffect } from 'react';
 import { parseTkzTabToBbtData, generateBbtSvg, convertBbtTableToSvg } from '../lib/bbtRenderer';
+import { sanitizeSvgOrHtmlForReact } from '../lib/globalMath';
 
 // Global cache for TikZ SVGs
 const tikzCache = new Map<string, string>();
@@ -1034,7 +1035,7 @@ export const TikzTableWrapper = ({ children, svgContent, code }: { children?: Re
                         )}
                     </button>
                 )}
-                <span className="tikzjax-instance w-full flex justify-center" dangerouslySetInnerHTML={{ __html: svgContent }} />
+                <span className="tikzjax-instance w-full flex justify-center" dangerouslySetInnerHTML={{ __html: sanitizeSvgOrHtmlForReact(svgContent) }} />
             </span>
         );
     }
