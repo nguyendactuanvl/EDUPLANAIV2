@@ -83,6 +83,18 @@ export function convertBacktickMathToDollars(text: string): string {
 export function autoWrapNakedMathExpression(text: string): string {
   if (!text) return '';
   let t = text.trim();
+  if (!t) return '';
+
+  // Tuyệt đối KHÔNG bọc nhãn phương án (A., B., C., D., a), b)...), dấu câu, gạch ngang, năm học (2026 - 2027), Đ/S
+  if (
+    /^(?:[-*•●]\s*)?(?:\*{0,3})?\(?[A-Da-d]\)?[\.\:\)](?:\*{0,3})?$/.test(t) ||
+    /^[ĐS]$/.test(t) ||
+    /^[\s\-–—.,:;!?\/\\•●*()\[\]{}]+$/.test(t) ||
+    /^\d{4}\s*[-–—]\s*\d{4}$/.test(t) ||
+    /^\d{1,2}\s*[\/.\-]\s*\d{1,2}\s*[\/.\-]\s*\d{2,4}$/.test(t)
+  ) {
+    return t;
+  }
 
   // Balance odd dollar count first if present (e.g. '$19' -> '$19$')
   const dollarCount = (t.match(/(?<!\\)\$/g) || []).length;
@@ -102,7 +114,10 @@ export function autoWrapNakedMathExpression(text: string): string {
   const hasVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(withoutConj);
   const isSentential = hasVietnamese && (t.length > 80 || t.split(/\s+/).length > 12);
 
-  if (!hasVietnamese && !isSentential) {
+  // Không bọc văn bản chữ ASCII thuần (như THPT, EDUPLAN AI, STT) nếu không có số, toán tử hoặc ký hiệu toán
+  const hasAnyMathSignal = /[\d\^_\\=<>+\-*/|{}\[\]]|\((?:[^()]+)\)/.test(t);
+
+  if (!hasVietnamese && !isSentential && hasAnyMathSignal) {
     if (/\s+(?:và|hoặc|hay)\s+/i.test(t)) {
       const parts = t.split(/(\s+(?:và|hoặc|hay)\s+)/i);
       return parts.map(p => {
@@ -123,8 +138,13 @@ export function autoWrapNakedMathExpression(text: string): string {
 }
 
 export function fixUnbalancedLeftRight(mathStr: string): string {
-  if (!mathStr || (!mathStr.includes('\\left') && !mathStr.includes('\\right'))) return mathStr;
+  if (!mathStr) return mathStr;
   let s = mathStr;
+  // Heal previously corrupted \le ft -> \left and \right \right. -> \right]
+  s = s.replace(/\\le\s+ft\b/g, '\\left');
+  s = s.replace(/\\right\s+\\right\.\$\s*[\r\n]*\s*\]\$/g, '\\right]$');
+  s = s.replace(/\\right\s+\\right\./g, '\\right]');
+  if (!s.includes('\\left') && !s.includes('\\right')) return s;
 
   // 0. Sửa các ngoặc đơn giản \left( SCD \right) -> (SCD), \left[ a; b \right] -> [a; b] không chứa phân số phức tạp
   s = s.replace(/\\left\s*\(([a-zA-Z0-9\s,;._\+\-\*\/]+?)\\right\s*\)/g, '($1)');
@@ -177,8 +197,12 @@ export function fixTrigAndMathSyntax(text: string): string {
   // 1. Cân bằng \left và \right phòng chống lỗi KaTeX/MathJax "Missing \left or extra \right"
   s = fixUnbalancedLeftRight(s);
 
-  // 2. Sửa các lệnh lượng giác/logarit/giới hạn/lượng giác ngược dính chữ (vd: \sinA -> \sin A, \cosB -> \cos B)
-  s = s.replace(/\\(sin|cos|tan|cot|lim|ln|log|arcsin|arccos|arctan)(?!h\b)([A-Za-z])(?![a-zA-Z0-9])/g, (_m, fn, arg) => `\\${fn} ${arg}`);
+  // 2. Sửa các lệnh lượng giác/logarit/giới hạn/lượng giác ngược dính chữ hoặc dính số (vd: \sinA -> \sin A, \cosB -> \cos B, cos60 -> \cos 60, \cos 30 -> \cos 30)
+  s = s.replace(/(?<![\\a-zA-Z])(arcsin|arccos|arctan|sin|cos|tan|cot)(?=\d)/g, '\\$1 ');
+  s = s.replace(/(\$\$[\s\S]*?\$\$|\$[^$\n]+\$)/g, (mathSeg) =>
+    mathSeg.replace(/(?<![\\a-zA-Z])(arcsin|arccos|arctan|sin|cos|tan|cot)(?![a-zA-Z])(?=\s*(?:\d|[A-Za-z]\b|\\|\(|\{|\^))/g, '\\$1')
+  );
+  s = s.replace(/\\(sin|cos|tan|cot|lim|ln|log|arcsin|arccos|arctan)(?!h\b)([A-Za-z0-9])(?![a-zA-Z])/g, (_m, fn, arg) => `\\${fn} ${arg}`);
 
   // 3. Chuẩn hóa khoảng cách quanh dấu $$ và dọn dẹp số lượng $ thừa
   s = s.replace(/\${3,}/g, (m) => m.length % 2 === 1 ? '$' : '$$');
@@ -303,14 +327,36 @@ export function fixSystemOfEquationsAndCases(text: string): string {
   s = s.replace(/\\begin\s*\{cases\*?\}\s*2\}/gi, '');
   s = s.replace(/(?:\\end\s*\{cases\*?\}\s*){2,}/gi, '\\end{cases}');
 
-  // 2. Standardize genuine \begin{cases} ... \end{cases} blocks:
-  // - Clean inner stray dollar signs
-  // - Ensure line breaks inside cases use \\
+  // 1.5. Auto-close any unclosed \begin{cases} blocks truncated before the next option (A./B./C./D.), next \begin{cases}, blank line, or EOF
+  s = s.replace(
+    /(\$\$?|\n|^)?([ \t]*)(\\begin\s*\{cases\*?\})([\s\S]*?)(?=(?:\r?\n\s*\r?\n|\r?\n[ \t]*(?:[-*•]\s*)?(?:\*{0,2})?[A-D][\.\:\)]|\r?\n[ \t]*\*{0,2}(?:Câu|Bài)\s*\d+|\\begin\s*\{cases\*?\}|\\end\s*\{cases\*?\}|#{1,4}\s|$))/gi,
+    (fullMatch, preDollar, indent, beginCmd, body, offset, str) => {
+      const after = str.slice(offset + fullMatch.length);
+      if (/^\s*\\end\s*\{cases\*?\}/i.test(after)) {
+        return fullMatch;
+      }
+      const cleanBody = body
+        .replace(/(?<!\\)\$/g, '')
+        .replace(/(?<!\\)\\(?=\s*(?:\r?\n|$))/g, ' \\\\ ')
+        .trim();
+      const lines = cleanBody.split(/(?:\\\\|\n+)/).map((l: string) => l.trim()).filter(Boolean);
+      const wrappedCases = lines.length >= 1
+        ? `\\begin{cases} ${lines.join(' \\\\ ')} \\end{cases}`
+        : `${beginCmd} ${cleanBody} \\end{cases}`;
+      return `${preDollar && preDollar !== '$' && preDollar !== '$$' ? preDollar : ''}${indent}$${wrappedCases}$`;
+    }
+  );
+
+  // 2. Standardize genuine \begin{cases} ... \end{cases} blocks onto a clean single line
+  // so inline $...$ options and line-based sanitizers never split or break them:
   s = s.replace(/\\begin\s*\{cases\*?\}\s*([\s\S]*?)\s*\\end\s*\{cases\*?\}/gi, (fullMatch, body) => {
-    const cleanBody = body.replace(/(?<!\\)\$/g, '').trim();
-    let lines = cleanBody.split(/(?:\\\\|\n+)/).map(l => l.trim()).filter(Boolean);
+    let cleanBody = body
+      .replace(/(?<!\\)\$/g, '')
+      .replace(/(?<!\\)\\(?=\s*(?:\r?\n|$))/g, ' \\\\ ')
+      .trim();
+    const lines = cleanBody.split(/(?:\\\\|\n+)/).map((l: string) => l.trim()).filter(Boolean);
     if (lines.length >= 1) {
-      return `\\begin{cases}\n${lines.join(' \\\\\n')}\n\\end{cases}`;
+      return `\\begin{cases} ${lines.join(' \\\\ ')} \\end{cases}`;
     }
     return fullMatch;
   });
@@ -320,18 +366,19 @@ export function fixSystemOfEquationsAndCases(text: string): string {
     if (/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹ]/i.test(body) && !body.includes('=')) {
       return fullMatch;
     }
-    const cleanBody = body.replace(/(?<!\\)\$/g, '').trim();
-    let lines = cleanBody.split(/(?:\\\\|\n+)/).map(l => l.trim()).filter(Boolean);
-    if (lines.length >= 2 && lines.every(l => /[=<>\le\ge\neq]/.test(l))) {
-      return `\\begin{cases}\n${lines.join(' \\\\\n')}\n\\end{cases}`;
+    let cleanBody = body
+      .replace(/(?<!\\)\$/g, '')
+      .replace(/(?<!\\)\\(?=\s*(?:\r?\n|$))/g, ' \\\\ ')
+      .trim();
+    const lines = cleanBody.split(/(?:\\\\|\n+)/).map((l: string) => l.trim()).filter(Boolean);
+    if (lines.length >= 2 && lines.every((l: string) => /[=<>]|\\le|\\ge|\\neq/.test(l))) {
+      return `\\begin{cases} ${lines.join(' \\\\ ')} \\end{cases}`;
     }
     return fullMatch;
   });
 
-  // 4. Clean stray dollars or orphan \end{cases}
-  s = s.replace(/(\\end\{cases\})\s*\$+/gi, '$1');
+  // 4. Deduplicate repeated \end{cases} without deleting valid closing delimiters or single-line \end{cases}
   s = s.replace(/(\\end\{cases\})\s*\\end\{cases\}/gi, '$1');
-  s = s.replace(/^[ \t]*\\end\{cases\}[ \t]*$/gm, '');
 
   return s;
 }
@@ -396,18 +443,33 @@ export function cleanSectionTitles(text: string): string {
   if (!text || typeof text !== 'string') return text || '';
   let s = text;
 
-  // Tách riêng nếu tiêu đề PHẦN bị dính với Câu hỏi trên cùng 1 dòng:
-  s = s.replace(/(PHẦN\s*(?:[1-4]|I{1,4}|IV)\b[^:\n]*:?[^\n]*?)(?=\s+(?:\*{0,2}(?:Câu|Bài)\s*\d+))/gi, '$1\n\n');
+  // Tách riêng nếu tiêu đề PHẦN bị dính với Câu hỏi, mệnh đề a), hoặc mục đánh số (vd: PHẦN III: 1. Với n=4...) trên cùng 1 dòng:
+  s = s.replace(/(PHẦN\s*(?:[1-4]|I{1,4}|IV)\b[^:\n]*:?)(?=[ \t]+(?:\*{0,2}(?:Câu|Bài)\s*\d+|\d+[\.\)](?:\s+(?![A-D]\b)|\s*$)|(?:[-*]\s*)?\*{0,2}[a-d]\)\s+))/gi, '$1\n\n');
+
+  // Nếu tiêu đề ngắn "PHẦN II:", "PHẦN III:", "PHẦN IV:" bị dính trực tiếp với công thức hoặc nội dung câu 1 (không phải tên tiêu đề phần):
+  s = s.replace(/(PHẦN\s*(?:[2-4]|II|III|IV)\s*:)[ \t]+(?!(?:TRẮC\s*NGHIỆM|CÂU\s*HỎI|BÀI\s*TẬP|TỰ\s*LUẬN|ĐÚNG|TRẢ\s*LỜI|NHIỀU|LỰA\s*CHỌN|PHẦN|MỖI|HƯỚNG\s*DẪN|ĐÁP\s*ÁN|LỜI\s*GIẢI)\b)(\S)/gi, '$1\n\n$2');
 
   // Clean dollar math tags and asterisks inside section headers ONLY:
   s = s.replace(/(?:^|\n)[ \t]*(?:\*{1,3}|#{1,4}|<[^>]+>)*[ \t]*(PHẦN\s*(?:[1-4]|I{1,4}|IV)\b[^\n]*)/gi, (_fullMatch, header) => {
-    // Nếu có Câu hỏi lọt vào header do dính dòng, tách ra để bảo vệ công thức toán
-    const qMatch = header.match(/^(.*?)(\s+(?:\*{0,2}(?:Câu|Bài)\s*\d+[\s\S]*))$/i);
+    // Nếu là dòng đáp án nhanh kiểu "PHẦN I: 1.C, 2.B, 3.C..." thì giữ nguyên phần đáp án, không xóa dấu
+    const quickAnsMatch = header.match(/^(PHẦN\s*(?:I|1)\s*:?)\s*(\d+\s*[\.\):-]?\s*[A-D]\b[\s\S]*)$/i);
+    if (quickAnsMatch) {
+      return `\n\n### ${quickAnsMatch[1].replace(/[\$\*]/g, '').trim()} ${quickAnsMatch[2].trim()}`;
+    }
+
+    // Nếu có Câu hỏi, mệnh đề a), hoặc mục 1. 2. lọt vào header do dính dòng, tách ra để bảo vệ công thức toán và Câu 1
+    const qMatch = header.match(/^(.*?)(\s+(?:\*{0,2}(?:Câu|Bài)\s*\d+|\d+[\.\)](?:\s+(?![A-D]\b)|\s*$)|(?:[-*]\s*)?\*{0,2}[a-d]\)\s+)[\s\S]*)$/i);
     let title = header;
     let rest = '';
     if (qMatch) {
       title = qMatch[1];
       rest = '\n\n' + qMatch[2].trim();
+    } else {
+      const partColonMatch = header.match(/^(PHẦN\s*(?:[2-4]|II|III|IV)\s*:)\s+(?!(?:TRẮC\s*NGHIỆM|CÂU\s*HỎI|BÀI\s*TẬP|TỰ\s*LUẬN|ĐÚNG|TRẢ\s*LỜI|NHIỀU|LỰA\s*CHỌN|PHẦN|MỖI|HƯỚNG\s*DẪN|ĐÁP\s*ÁN|LỜI\s*GIẢI)\b)([\s\S]+)$/i);
+      if (partColonMatch) {
+        title = partColonMatch[1];
+        rest = '\n\n' + partColonMatch[2].trim();
+      }
     }
     let clean = title.replace(/[\$\*]/g, '').trim();
     clean = clean.replace(/TRẮC\s*NGHI\s*ỆM/gi, 'TRẮC NGHIỆM');
@@ -436,9 +498,10 @@ export function fixBrokenLatexSyntax(text: string): string {
   s = s.replace(/_\{\s*\{(\\frac\{[^{}]*\}\{[^{}]*\})\s*\}\}/g, '_{$1}');
   s = s.replace(/_\{\s*\{(\\frac\{[^{}]*\}\{[^{}]*\})\s*([\+\-\*\/])\s*([a-zA-Z0-9_]+)\s*\}\}/g, '_{$1 $2 $3}');
   s = s.replace(/_\{\s*\{(\\frac\{[^{}]*\}\{[^{}]*\})\}/g, '_{$1}');
-  s = s.replace(/_\{\s*\{/g, '_{');
-  s = s.replace(/(\\frac\{[^{}]*\}\{[^{}]*\})\}\}/g, '$1}');
   s = s.replace(/_\{\s*\\text\{/g, '_{\\text{');
+
+  // 1.55. Heal nested fractions missing closing brace of numerator before denominator: \frac{3 - \frac{2}{n}{4 + \frac{5}{n}} -> \frac{3 - \frac{2}{n}}{4 + \frac{5}{n}}
+  s = s.replace(/\\frac\s*\{([^{}\n\$]+?\\frac\s*\{[^{}]+\}\s*\{[^{}]+\})\s*\{/g, '\\frac{$1}{');
 
   // 1.6 Fix dollar signs trapped inside \frac{...}{...}, \sqrt{...}, \vec{...}
   s = s.replace(/\\frac\{([^{}]*)\$([^{}]*)\}\{([^{}]*)\}/g, '\\frac{$1$2}{$3}');
@@ -607,7 +670,7 @@ export function formatQuickAnswerTables(text: string): string {
       }
 
       if (numbers.length >= 1) {
-        const cleanNums = numbers.slice(0, 6);
+        const cleanNums = numbers.slice(0, 6).map(n => n.replace(/^['"]+|['"]+$/g, ''));
         const headers = '| Câu | ' + cleanNums.map((_, i) => `${i + 1}`).join(' | ') + ' |';
         const aligns = '| :---: | ' + cleanNums.map(() => ':---:').join(' | ') + ' |';
         const ansRow = '| Đáp án | ' + cleanNums.map(n => `**${n}**`).join(' | ') + ' |';
@@ -631,12 +694,20 @@ export function cleanMathAndUnwrapHeadings(text: string): string {
   if (!text || typeof text !== 'string') return text || '';
   let s = sanitizeSvgOrHtmlForReact(text);
 
-  // 0. Gỡ bỏ lề khoảng trắng / tab (indented code block) cho các dòng chứa công thức toán hoặc tiêu đề
-  s = s.replace(/^[ \t]{2,8}(?=\$\$|\$|\\begin|\\end|\\frac|\\sqrt|\\vec|\\Left|\\Right|\\iff|\\implies|\*{0,2}(?:Câu|Bài)\s*\d+|#{1,4}|PHẦN|Lời giải|Đáp án|Hệ|Ta có|Suy ra|Do đó|[a-d]\))/gm, '');
+  // 0. Gỡ bỏ thụt lề 4+ khoảng trắng / tab (gây indented <pre><code> trong CommonMark) ngoài các khối ```fenced```
+  const fencedBlocks: string[] = [];
+  s = s.replace(/```[\s\S]*?```/g, (m) => {
+    fencedBlocks.push(m);
+    return `\uE000FENCE_${fencedBlocks.length - 1}\uE001`;
+  });
+  s = s.replace(/^[ \t]{4,}(?=[-*+•]\s|\d+\.\s)/gm, '  ');
+  s = s.replace(/^[ \t]{2,8}(?![-*+•]\s|\d+\.\s)/gm, '');
+  s = s.replace(/\uE000FENCE_(\d+)\uE001/g, (_m, idx) => fencedBlocks[Number(idx)] || '');
 
-  // 0.0005 Chuẩn hóa dấu đô la thừa (vd: $$$ -> $, $$$$ -> $$) và dọn các cặp $ rỗng
+  // 0.0005 Chuẩn hóa dấu đô la thừa (vd: $$$ -> $, $$$$ -> $$); tuyệt đối KHÔNG xóa $\n$ hay $ $ giữa 2 công thức
   s = s.replace(/\${3,}/g, (m) => m.length % 2 === 1 ? '$' : '$$');
-  s = s.replace(/(?<!\$)\$\s*\$(?!\$)/g, '');
+  s = s.replace(/^[ \t]*\$\$[ \t]*\$\$[ \t]*$/gm, '');
+  s = s.replace(/(?<!\$)\$\$[ \t]+\$\$(?!\$)/g, '');
 
   // 0.001 Dọn dẹp khoảng trắng rác trong lệnh TeX (\ begin{cases}, \ end{cases}, \\ end{cases}, endcases, begincases)
   s = s.replace(/(?<!\\)\b(endcases|begincases)\b/gi, '\\$1');
@@ -678,8 +749,16 @@ export function cleanMathAndUnwrapHeadings(text: string): string {
   s = s.replace(/\*\*\s+([^*]+?)\s*:\s*\*\*/g, '**$1:**');
 
   // Chuẩn hóa tên hình học có dấu chấm (ví dụ ABCD.A'B'C'D' hoặc S.ABCD -> $ABCD.A'B'C'D'$, $S.ABCD$)
-  // TUYỆT ĐỐI KHÔNG bọc chữ tiếng Việt in hoa (như NGHIỆM, NHIỀU, PHẦN, III, SAI)
-  s = s.replace(/(?<![\$\wÀ-ỹ])([A-Z]{1,4}\.\s*[A-Z0-9\']{2,8})(?![\$\wÀ-ỹ])/g, (m) => '$' + m.replace(/\.\s+/, '.') + '$');
+  // CHỈ chạy ngoài các cặp $...$/$$...$$, KHÔNG có khoảng trắng sau dấu chấm, và BẮT BUỘC có ít nhất 1 chữ cái in hoa sau dấu chấm (tránh match nhầm "A. 90^\circ")
+  const geomDotParts = s.split(/(\$\$[\s\S]*?\$\$|\$[^\$\n]*?\$)/g);
+  for (let gi = 0; gi < geomDotParts.length; gi += 2) {
+    if (!geomDotParts[gi]) continue;
+    geomDotParts[gi] = geomDotParts[gi].replace(
+      /(?<![\$\wÀ-ỹ])([A-Z]{1,6}\.(?=[A-Z0-9']*[A-Z])[A-Z0-9']{2,16})(?![\$\wÀ-ỹ])/g,
+      '$$$1$$'
+    );
+  }
+  s = geomDotParts.join('');
 
   // 0.008 Bổ sung dấu đóng ngoặc nhọn } cho \vec{...} bị thiếu dấu } trước dấu chấm câu
   s = s.replace(/\\vec\s*\{([A-Za-z]{1,4})\./g, '\\vec{$1}');
@@ -700,9 +779,13 @@ export function cleanMathAndUnwrapHeadings(text: string): string {
   s = s.replace(/l\s*à\s*h\s*ì\s*n\s*h\s*b\s*ì\s*n\s*h\s*h\s*à\s*n\s*h/gi, 'là hình bình hành');
   s = s.replace(/l\s*à\s*h\s*ì\s*n\s*h\s*h\s*ộ\s*p/gi, 'là hình hộp');
 
-  // 0.009 Chuẩn hóa các điểm hình học có dấu phẩy/nháy đơn ($A'$, $B'$, $C'$, $D'$)
-  s = s.replace(/(?<![\$\wÀ-ỹ])([A-Z]{1,6}\.[A-Z0-9\']+)(?![\$\wÀ-ỹ])/g, '$$$1$$');
-  s = s.replace(/(?<![\$\wÀ-ỹ])\b([A-Z])'([,;\s\.\)\]]|$)/g, '$$$1\'$$$2');
+  // 0.009 Chuẩn hóa các điểm hình học có dấu phẩy/nháy đơn ($A'$, $B'$, $C'$, $D'$), chỉ chạy ngoài $...$/$$...$$
+  const primeParts = s.split(/(\$\$[\s\S]*?\$\$|\$[^\$\n]*?\$)/g);
+  for (let pi = 0; pi < primeParts.length; pi += 2) {
+    if (!primeParts[pi]) continue;
+    primeParts[pi] = primeParts[pi].replace(/(?<![\$\wÀ-ỹ])\b([A-Z])'(?!\s*[A-Z]'?\s*(?:=|<|>|\\le|\\ge))([,;\s\.\)\]]|$)/g, '$$$1\'$$$2');
+  }
+  s = primeParts.join('');
 
   // 0.01 Sửa lỗi thiếu ngoặc đóng chỉ số dưới: S_{15 = \frac{...} -> S_{15} = \frac{...}, u_{12 = u_1 -> u_{12} = u_1
   s = s.replace(/([uSa-zA-Z])_\{(\d{1,3})\s*=\s*/g, '$1_{$2} = ');
@@ -710,20 +793,41 @@ export function cleanMathAndUnwrapHeadings(text: string): string {
   s = s.replace(/([uSa-zA-Z])_\{(\d{1,3})\s+(\\frac|\\cdot|[a-zA-Z]{2,})/g, '$1_{$2} $3');
 
   // 0.015 Vá lỗi rách cú pháp phân số \frac:
-  // a) Tự động sửa {frac{ và |frac{ và frac{ thành \frac{
+  // a) Tự động sửa {frac{a}{b}} -> \frac{a}{b}, {frac{ và |frac{ và frac{ thành \frac{
+  s = s.replace(/\{frac\s*(\{(?:[^{}]|\{[^{}]*\})*\}\s*\{(?:[^{}]|\{[^{}]*\})*\})\}/g, '\\frac$1');
   s = s.replace(/[\{\|]frac\s*\{/g, '\\frac{');
   s = s.replace(/(?<!\\)\bfrac\s*\{/g, '\\frac{');
-  // b) Tự động bù dấu đóng ngoặc } cho phân số nếu cuối biểu thức bị thiếu ngay trước $ hoặc $$ hoặc cuối dòng
-  s = s.replace(/(\\frac\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*\{[^{}\n\$]+?)(?=\s*(?:\$\$?|[\r\n]|$))/g, '$1}');
-  // c) Dọn sạch dấu } thừa do {frac{...}{...}} -> \frac{...}{...}}
-  s = s.replace(/(\\frac\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*\{(?:[^{}]|\{[^{}]*\})*\})\}/g, '$1');
+  // b) Khôi phục dấu } bị mất ở tử số của phân số phức hợp: \frac{3 - \frac{2}{n}{4 + \frac{5}{n}} -> \frac{3 - \frac{2}{n}}{4 + \frac{5}{n}}
+  s = s.replace(/\\frac\s*\{([^{}\n\$]+?\\frac\s*\{[^{}]+\}\s*\{[^{}]+\})\s*\{/g, '\\frac{$1}{');
+  // c) Tự động bù dấu đóng ngoặc } cho phân số nếu cuối biểu thức bị thiếu ngay trước $ hoặc $$ hoặc cuối dòng (chỉ khi tổng số { lớn hơn })
+  s = s.replace(/(\\frac\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*\{[^{}\n\$]+?)(?=\s*(?:\$\$?|[\r\n]|$))/g, (m) => {
+    const opens = (m.match(/\{/g) || []).length;
+    const closes = (m.match(/\}/g) || []).length;
+    return opens > closes ? m + '}'.repeat(opens - closes) : m;
+  });
 
-  // 0.016 Tự động tách dòng cho các mục Tóm tắt kiến thức / Lý thuyết (- **...:**)
-  s = s.replace(/([^\n])\s*(?:[-*•–—]|\u2022)?\s*(\*\*\s*(?:Định\s*nghĩa|Khái\s*niệm|Số\s*hạng\s*tổng\s*quát|Tính\s*chất|Tổng\s*n\s*số\s*hạng|Quy\s*tắc|Công\s*thức|Định\s*lý|Hệ\s*thức|Chú\s*ý|Nhận\s*xét|Ví\s*dụ|Lưu\s*ý)[^*:]*?:\s*\*\*)/gi, '$1\n\n- $2');
-  s = s.replace(/([^\n])\s+[-*•–—]\s*(\*\*[^*:]+?:\s*\*\*)/g, '$1\n\n- $2');
-  s = s.replace(/([^\n])\s*(?:[-*•–—]|\u2022)\s*(\*\*\s*[^:*]+?:\s*\*\*)/g, '$1\n\n- $2');
+  // 0.016 Tự động tách dòng cho các mục Tóm tắt kiến thức / Lý thuyết (- **...:**) khi bị dính trên cùng 1 dòng
+  // Lưu ý: chỉ dùng [ \t]* (không nuốt \n) và không khớp ký tự đầu dòng là dấu gạch đầu dòng '-' để không tạo dòng trống thừa
+  s = s.replace(/([^\n\-*•–—\u2022\s])[ \t]*(?:[-*•–—]|\u2022)?[ \t]*(\*\*\s*(?:Định\s*nghĩa|Khái\s*niệm|Số\s*hạng\s*tổng\s*quát|Tính\s*chất|Tổng\s*\$?n\$?\s*số\s*hạng|Quy\s*tắc|Công\s*thức|Định\s*lý|Hệ\s*thức|Chú\s*ý|Nhận\s*xét|Ví\s*dụ|Lưu\s*ý)[^*:]*?:\s*\*\*)/gi, '$1\n- $2');
+  s = s.replace(/([^\n\-*•–—\u2022\s])[ \t]+[-*•–—][ \t]*(\*\*[^*:]+?:\s*\*\*)/g, '$1\n- $2');
+  s = s.replace(/([^\n\-*•–—\u2022\s])[ \t]*(?:[-*•–—]|\u2022)[ \t]*(\*\*\s*[^:*]+?:\s*\*\*)/g, '$1\n- $2');
+  // Xóa các dòng chỉ có dấu bullet trống mồ côi đứng trước dòng bullet kế tiếp
+  s = s.replace(/^[ \t]*[-*•●][ \t]*\r?\n+(?=[ \t]*[-*•●]\s)/gm, '');
+  // Khôi phục công thức $q \n \neq 1$ bị ngắt dòng nhầm bên trong dấu $
+  s = s.replace(/\\n\s+\\neq\b/g, '\\neq');
+  s = s.replace(/\$([^$\n]*?)[ \t]*[\r\n]+[ \t]*(\\(?:neq|ne|le|ge|leq|geq)\b[^$\n]*?)\$/g, '$$$1 $2$$');
+  // Sửa lỗi chính tả tiêu đề TRỌNG TẮM -> TRỌNG TÂM
+  s = s.replace(/TRỌNG\s*T(?:Ắ|Ằ|Ẳ|Ẵ|Ặ|Ă|Ấ|Ầ|Ẩ|Ẫ|Ậ)M/gi, 'TRỌNG TÂM');
+  s = s.replace(/trọng\s*t(?:ắ|ằ|ẳ|ẵ|ặ|ă)m/g, 'trọng tâm');
 
-  // 0.018 Loại bỏ các đoạn suy luận nháp, tự kiểm tra đề bài, hay câu bình luận ngoài lề của AI:
+  // 0.018 Loại bỏ các đoạn suy luận nháp, tự kiểm tra đề bài, câu "xin lỗi, đáp án đúng là..." và tự động đồng bộ lại Đúng/Sai:
+  s = s.replace(/^([ \t]*(?:[-*]\s*)?\*{0,2}[a-d]\)\s*)(Đúng|Sai|Đ|S)(?=\s|\()([^\n]*?),\s*(?:xin\s*lỗi|nhầm|đính\s*chính|sửa\s*lại|thực\s*ra)[^\)\n]*?(?:ý\s*[a-d]\s+|mệnh\s*đề\s+|phát\s*biểu\s+)(sai|đúng)[^\)\n]*(?=\))/gim, (_m, prefix, oldVerdict, exprPart, trueVerdict) => {
+    const isShort = oldVerdict.length === 1;
+    const isCorrectedTrue = /^đúng$/i.test(trueVerdict);
+    const finalVerdict = isShort ? (isCorrectedTrue ? 'Đ' : 'S') : (isCorrectedTrue ? 'Đúng' : 'Sai');
+    return `${prefix}${finalVerdict}${exprPart}`;
+  });
+  s = s.replace(/,\s*(?:xin\s*lỗi|đính\s*chính|nhầm\s*lẫn|sửa\s*lại)[^\)\n\$]*(?=\))/gi, '');
   s = s.replace(/(?:\(|\[)?\s*(?:Kiểm\s*tra\s*lại(?:\s*đề)?|Xem\s*lại\s*tính\s*chất|Đính\s*chính(?:\s*:\s*Chọn\s*[A-D])?|Chỉnh\s*số\s*liệu|vô\s*lý\s*nếu\s*số\s*nguyên|đề\s*gốc\s*phương\s*án\s*[A-D]\s*là|nhưng\s*thực\s*ra\s*u_1\s*\+\s*d\s*>\s*0)[^\)\n\$]*?(?:\)|\])?/gi, '');
   s = s.replace(/(?:^|\n)\s*(?:Kiểm\s*tra\s*:|Nếu\s*u_1\s*=\s*\d+,\s*S_\d+\$\$)[^\n]*/gi, '');
 
@@ -745,8 +849,28 @@ export function cleanMathAndUnwrapHeadings(text: string): string {
   s = s.replace(/\b(có|với|sau|trước|khoảng|thứ|hơn|bằng|còn|được|gồm|chạy)(\d+)\b/gi, '$1 $2');
   s = s.replace(/\b(\d+)(số|ngày|ghế|khách|đồng|mét|lần|khúc|hàng|triệu|năm|tháng|tuần|giờ|phút|giây)\b/gi, '$1 $2');
 
-  // 0.045 Tách các nhãn câu bị dính chùm: **Câu 6:** * **Câu 7:**
+  // 0.045 Tách các nhãn câu bị dính chùm:
+  // - **Câu 6:** * **Câu 7:**
+  // - **Đáp số: 200****Câu 2.** hoặc **...****Câu 2:**
+  // - ... kết thúc câu (., !, ?, $, **) ngay trước **Câu 2.** / **Bài 2.** (chỉ ngoài $...$/$$...$$ và ngoài dòng bảng |...|)
   s = s.replace(/(\*\*(?:Câu|Bài)\s*\d+[:\.]?\*\*)\s*[\*•-]\s*(\*\*(?:Câu|Bài)\s*\d+[:\.]?\*\*)/gi, '$1\n\n$2');
+  const qSplitParts = s.split(/(\$\$[\s\S]*?\$\$|\$[^\$\n]*?\$)/g);
+  for (let qi = 0; qi < qSplitParts.length; qi += 2) {
+    if (!qSplitParts[qi]) continue;
+    qSplitParts[qi] = qSplitParts[qi]
+      .split('\n')
+      .map((line) => {
+        if (/^[ \t]*\|/.test(line)) {
+          return line.replace(/(?<=\|[ \t]*)'(-?\d+(?:[.,]\d+)?)'(?=[ \t]*\|)/g, '$1');
+        }
+        let l = line.replace(/\*{3,4}[ \t]*((?:Câu|Bài)\s*\d+[ \t]*[:\.])/gi, '**\n\n**$1');
+        l = l.replace(/([^\n*])\*{2}[ \t]*\*{2}[ \t]*((?:Câu|Bài)\s*\d+[ \t]*[:\.])/gi, '$1**\n\n**$2');
+        l = l.replace(/([.!?)\]$])[ \t]*(\*{1,2}(?:Câu|Bài)\s*\d+[ \t]*[:\.]\*{0,2})/gi, '$1\n\n$2');
+        return l;
+      })
+      .join('\n');
+  }
+  s = qSplitParts.join('');
 
   // 0.05 Dọn dẹp cases / endcases / begincases mồ côi hoặc dính khoảng trắng (\ end{cases}, \\ end{cases})
   s = s.replace(/\\+\s*(begin|end)\s*\{\s*(cases|aligned|array|matrix|pmatrix|bmatrix)\*?\}/gi, '\\$1{$2}');
@@ -766,23 +890,32 @@ export function cleanMathAndUnwrapHeadings(text: string): string {
   s = s.replace(/đ\s*ề\s*g\s*ố\s*c\s*p\s*h\s*ư\s*ơ\s*n\s*g\s*á\s*n/gi, 'đề gốc phương án');
   s = s.replace(/K\s*i\s*ể\s*m\s*t\s*r\s*a/gi, 'Kiểm tra');
 
-  // 1. Loại bỏ các khối math rỗng $$$$, $$ $$, $ $
-  s = s.replace(/\$\$\s*[\r\n]*\s*\$\$/g, '');
-  s = s.replace(/(?<!\$)\$\s*[\r\n]*\s*\$(?!\$)/g, '');
+  // 1. Loại bỏ các khối math rỗng trên cùng dòng (KHÔNG xóa xuống dòng giữa hai công thức)
+  s = s.replace(/^[ \t]*\$\$[ \t\r\n]*\$\$[ \t]*$/gm, '');
   s = s.replace(/You can't use 'macro parameter character #' in math mode/gi, '');
   s = s.replace(/Extra\s*close\s*brace\s*or\s*missing\s*open\s*brace/gi, '');
   s = s.replace(/Math\s*output\s*error/gi, '');
 
-  // 2. Tự động giải phóng các khối $$ vô tình bọc các tiêu đề Markdown, tiêu đề phần, hoặc tiêu đề câu
+  // 2. Tự động giải phóng các khối $$ vô tình bọc các tiêu đề Markdown, tiêu đề phần, câu hỏi, hoặc đoạn văn tiếng Việt nhiều dòng
   s = s.replace(/\$\$([\s\S]*?)\$\$/g, (fullMatch, body) => {
-    if (/(?:#{1,6}\s+|(?:\*{0,2})(?:Câu|Bài)\s*\d+[:\.]?|PHẦN\s*(?:[1-4]|I{1,3}|IV)|^\s*[-*]\s+\*\*[A-D]\.\*\*|^\s*[a-d]\))/m.test(body)) {
+    const strippedText = body.replace(/\\text\{[^{}]*\}/g, '');
+    const vnLetters = (strippedText.match(/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/gi) || []).length;
+    if (
+      /(?:#{1,6}\s+|(?:\*{0,2})(?:Câu|Bài)\s*\d+[:\.]?|PHẦN\s*(?:[1-4]|I{1,3}|IV)|^\s*[-*]\s+\*\*[A-D]\.\*\*|^\s*[a-d]\)|\n\s*\n)/m.test(body) ||
+      vnLetters > 20
+    ) {
       return body.replace(/\$\$/g, '');
     }
     return fullMatch;
   });
 
-  // 3. Chuẩn hóa hệ phương trình \begin{cases} ... \end{cases}:
-  // a) Loại bỏ dấu $ lồng bên trong cases trước
+  // 2.5 Gỡ $$ mồ côi đứng đầu dòng văn bản tiếng Việt nếu tổng số $$ bị lẻ hoặc không có $$ đóng trên dòng
+  const allDoubleDollars = s.match(/\$\$/g) || [];
+  if (allDoubleDollars.length % 2 !== 0) {
+    s = s.replace(/^[ \t]*\$\$(?=[ \t]*(?:Trong\s+đó|Với|Khi|Từ|Để|Gọi|Xét|Ta\s+có|Phương\s+pháp|Các\s+trường|Mô\s+hình|[A-ZÀ-Ỹ][a-zà-ỹ]+\s+[a-zà-ỹ]+))/gm, '');
+  }
+
+  // 3. Chuẩn hóa hệ phương trình \begin{cases} ... \end{cases} thành 1 dòng chuẩn
   s = s.replace(/\\begin\s*\{cases\*?\}[\s\S]*?\\end\s*\{cases\*?\}/gi, (match) => {
     let clean = match.replace(/(?<!\\)\$/g, '');
     clean = clean.replace(/(?<!\\)\\(?=\s*(?:\r?\n|$))/g, ' \\\\ ');
@@ -791,12 +924,30 @@ export function cleanMathAndUnwrapHeadings(text: string): string {
     clean = clean.replace(/\\\\(?=\s*\\end\{cases)/gi, ' ');
     clean = clean.replace(/\\?\{\s*=/g, ' =');
     clean = clean.replace(/\\?\{\s*([0-9a-zA-Z_\-+\=]+)\s*=/g, '$1 =');
+    const innerMatch = clean.match(/\\begin\s*\{cases\*?\}([\s\S]*?)\\end\s*\{cases\*?\}/i);
+    if (innerMatch) {
+      const rows = innerMatch[1].split(/(?:\\\\|\n+)/).map((l: string) => l.trim()).filter(Boolean);
+      if (rows.length >= 1) {
+        return `\\begin{cases} ${rows.join(' \\\\ ')} \\end{cases}`;
+      }
+    }
     return clean;
   });
-  // b) Bọc $$ nếu \begin{cases} đứng trần ngoài math (kể cả chuỗi hệ phương trình tương đương nối bằng \Leftrightarrow, \iff...)
-  s = s.replace(/(?<!\$)(?:\\begin\s*\{cases\*?\}[\s\S]*?\\end\s*\{cases\*?\}(?:\s*(?:\\Leftrightarrow|\\Leftarrow|\\Rightarrow|\\iff|\\implies|<=>|=>)\s*\\begin\s*\{cases\*?\}[\s\S]*?\\end\s*\{cases\*?\})*)(?!\$)/gi, (match) => {
-    return `\n\n$$\n${match.trim()}\n$$\n\n`;
-  });
+  // b) Bọc $ hoặc $$ nếu \begin{cases} đứng trần ngoài math: chỉ quét các đoạn NGOÀI $...$ / $$...$$
+  const caseParts = s.split(/(\$\$[\s\S]*?\$\$|\$[^\$\n]*?\$)/g);
+  for (let i = 0; i < caseParts.length; i += 2) {
+    if (caseParts[i] && caseParts[i].includes('\\begin')) {
+      caseParts[i] = caseParts[i].replace(/(?<!\$)(?:\\begin\s*\{cases\*?\}[\s\S]*?\\end\s*\{cases\*?\}(?:\s*(?:\\Leftrightarrow|\\Leftarrow|\\Rightarrow|\\iff|\\implies|<=>|=>)\s*\\begin\s*\{cases\*?\}[\s\S]*?\\end\s*\{cases\*?\})*)(?!\$)/gi, (match, offset) => {
+        const lineStart = caseParts[i].lastIndexOf('\n', offset - 1) + 1;
+        const beforeOnLine = caseParts[i].slice(lineStart, offset).trim();
+        if (beforeOnLine.length > 0) {
+          return `$${match.trim()}$`;
+        }
+        return `\n\n$$\n${match.trim()}\n$$\n\n`;
+      });
+    }
+  }
+  s = caseParts.join('');
 
   // Gộp các khối display math liên tiếp ngăn cách bởi mũi tên tương đương thành một khối thống nhất
   s = s.replace(/\$\$\s*(\\Leftrightarrow|\\Leftarrow|\\Rightarrow|\\iff|\\implies|<=>|=>)\s*\$\$/g, ' \\\\ $1 ');
@@ -815,13 +966,12 @@ export function cleanMathAndUnwrapHeadings(text: string): string {
   s = s.replace(/\\left\s*\.\s*\\right\s*\./gi, ' ');
   s = s.replace(/\\left\s*\[\s*\\right\s*\]/gi, ' ');
 
-  // 4.1 Khôi phục ngoặc nhọn đóng } bị thiếu ngay trước $ hoặc $. (vd: \vec{AC$, \vec{CA$., \frac{...}{2$, \sqrt{3$, \text{ J$)
+  // 4.1 Khôi phục ngoặc nhọn đóng } bị thiếu ngay trước $ cho \vec{... và chữa lành lỗi rách ngoặc S_{\Delta} ABC} -> S_{\Delta ABC}, 8^} 2} -> 8^2}
   s = s.replace(/(\\vec\{[A-Za-z0-9_'\^]+?)\s*\$/g, '$1}$');
-  s = s.replace(/(\\frac\{(?:[^{}]|\{[^{}]*\})+\}\{[^{}\$\n]+?)\s*\$/g, '$1}$');
-  s = s.replace(/(\\sqrt(?:\[[^\]]*\])?\{[^{}\$\n]+?)\s*\$/g, '$1}$');
-  s = s.replace(/(\\(?:text|mathrm|mathbf)\{[^{}\$\n]+?)\s*\$/g, '$1}$');
-  s = s.replace(/([uSa-zA-Z]_\{[^{}\$\n]+?)\s*\$/g, '$1}$');
-  s = s.replace(/(\^\{[^{}\$\n]+?)\s*\$/g, '$1}$');
+  s = s.replace(/\\le\s+ft\b/g, '\\left');
+  s = s.replace(/([SV]_\{\\Delta)\}\s*([A-Z]+)\}/g, '$1 $2}');
+  s = s.replace(/([SV]_\{[^{}]+)\}\s*([A-Z']{2,6})\}/g, '$1 $2}');
+  s = s.replace(/\^\}\s*(\d+)\}/g, '^$1}');
 
   // 4.2 Khắc phục lỗi rách ngoặc trong \sqrt{...} và \frac{...}{...} (ví dụ: \sqrt{1} + 9 + 4} -> \sqrt{1 + 9 + 4}, \frac -1+5}{2} -> \frac{-1+5}{2})
   s = s.replace(/\\sqrt\s*\{([^{}\$\n]+)\}\s*((?:[\+\-]\s*[0-9a-zA-Z_\^\(\)]+\s*)+)\}/g, '\\sqrt{$1 $2}');
@@ -845,8 +995,47 @@ export function cleanMathAndUnwrapHeadings(text: string): string {
   return fixAndMergeMathArrows(s);
 }
 
+const GM_LATEX_CMD_ATOM = `\\\\[a-zA-Z]+(?:\\[[^\\]]*\\])?(?:\\{(?:[^{}]|\\{[^{}]*\\})*\\}){0,3}`;
+const GM_NON_SPACE_MATH_ATOM = `(?:${GM_LATEX_CMD_ATOM}|[0-9a-zA-Z_{}()\\[\\]+\\-*/^=><,.'|]+)+`;
+const GM_ARROW_EXPR_REGEX = new RegExp(
+  `(?:\\\\(Rightarrow|Leftrightarrow|Leftarrow|iff|implies)|=>|<=>)\\s*(${GM_NON_SPACE_MATH_ATOM}(?:\\s+(?!\\\\(?:Rightarrow|Leftrightarrow|Leftarrow|iff|implies)\\b|=>|<=>|[A-ZÀ-Ỹ][a-zà-ỹ]{2,}|Đáp\\b|Kết\\b|Với\\b|Trong\\b)${GM_NON_SPACE_MATH_ATOM}){0,16})`,
+  'g'
+);
+
+const GM_BRACE3 = `\\{(?:[^{}]|\\{(?:[^{}]|\\{[^{}]*\\})*\\})*\\}`;
+const GM_D_ATOM = `(?:\\\\[a-zA-Z]+(?:\\[[^\\]]*\\])?(?:\\{(?:[^{}]|\\{[^{}]*\\})*\\}){0,3}|[0-9a-zA-Z_{}()\\[\\]+\\-*/^=><,.'|]+)+`;
+const GM_D_ARROW = `\\\\(?:Rightarrow|Leftarrow|Leftrightarrow|iff|implies)`;
+const GM_D_CHAIN_REGEX = new RegExp(
+  `(?<![\\$\\\\\\wÀ-ỹ])(${GM_D_ATOM}(?:\\s+${GM_D_ATOM}){0,12}\\s*${GM_D_ARROW}(?:\\s*${GM_D_ATOM}(?:\\s+(?!${GM_D_ARROW}|[A-ZÀ-Ỹ][a-zà-ỹ]{2,}|được\\b|là\\b|tính\\b|theo\\b|bằng\\b|với\\b|khi\\b|thì\\b|tại\\b|trong\\b|ta\\b|Đáp\\b|Kết\\b)${GM_D_ATOM}){0,12}){1,6})`,
+  'g'
+);
+
+const GM_NORM_TERM = `(?:\\\\left\\s*)?(?:\\||\\\\vert)\\s*(?:\\\\left\\s*\\[[^\\]\\n\\$]+\\\\right\\s*\\]|\\[[^\\]\\n\\$]+\\]|\\\\(?:vec|overrightarrow)\\s*${GM_BRACE3}|[A-Za-z0-9_']+)\\s*(?:\\\\right\\s*)?(?:\\||\\\\vert)(?:\\^\\s*(?:${GM_BRACE3}|[0-9]+))?`;
+const GM_CROSS_TERM = `(?:\\\\left\\s*)?\\[\\s*\\\\(?:vec|overrightarrow)\\s*${GM_BRACE3}\\s*[,;]\\s*\\\\(?:vec|overrightarrow)\\s*${GM_BRACE3}\\s*(?:\\\\right\\s*)?\\]`;
+const GM_TEX_CMD_TERM = `(?:[0-9]+\\s*)?\\\\(?:frac\\s*${GM_BRACE3}\\s*${GM_BRACE3}|sqrt(?:\\[[^\\]]*\\])?\\s*${GM_BRACE3}|(?:vec|overrightarrow|widehat)\\s*${GM_BRACE3}|(?:sin|cos|tan|cot|arcsin|arccos|arctan|ln|log)\\s*(?:\\^\\s*(?:${GM_BRACE3}|[0-9]+))?(?:\\s*\\([^()\\n\\$]*\\)|\\s*\\\\(?:varphi|phi|alpha|beta|gamma|theta|pi|widehat\\s*${GM_BRACE3})\\b|\\s*[A-Za-z0-9]+)?|(?:cdot|times|le|ge|leq|geq|neq|ne|approx|pi|infty|alpha|beta|gamma|varphi|phi|theta|Delta|Sigma|pm|mp|circ|perp|parallel)\\b)`;
+const GM_PAREN_TERM = `\\((?!\\s*[A-D]\\.\\s)[^()\\n\\$]*\\)(?:[\\^_](?:${GM_BRACE3}|[A-Za-z0-9]+))?`;
+const GM_ID_TERM = `[A-Za-z0-9_']+(?:,[0-9]+)?(?:[\\^_](?:${GM_BRACE3}|\\\\circ\\b|[A-Za-z0-9]+)){1,4}|[A-Za-z0-9_']+(?:,[0-9]+)?`;
+const GM_TEX_ATOM = `(?:${GM_NORM_TERM}|${GM_CROSS_TERM}|${GM_TEX_CMD_TERM}|${GM_PAREN_TERM}|${GM_ID_TERM})`;
+const GM_TEX_BIN_OP = `(?:\\s*(?:=|\\\\le|\\\\ge|\\\\neq|\\\\ne|\\\\approx|<=|>=|<|>|\\+|\\-|\\*|/|\\\\cdot|\\\\times|\\\\perp|\\\\parallel)\\s*)`;
+const GM_VN_STOP_WORDS = `(?:Với|Kết|Đáp|Tìm|Cho|Biết|Tính|Gọi|Vậy|Nên|Suy|Do|Khi|Từ|Theo|Trong|và|với|khi|thì|tại|trong|ta|được|là|nếu|theo|cùng|hay|hoặc|cho|tìm|tính|biết|bằng)\\b`;
+const GM_VN_ACCENTED_WORD = `[a-zA-ZÀ-ỹ]*[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ][a-zA-ZÀ-ỹ]*`;
+const GM_FULL_EQ_SIGNAL = /\\(?:frac|sqrt|cdot|times|vec|overrightarrow|widehat|le|ge|leq|geq|neq|ne|pi|infty|alpha|beta|varphi|phi|theta|cos|sin|tan|cot|circ|pm|mp|perp|parallel)|[\^_]/;
+const GM_FULL_EQ_REGEX = new RegExp(`(?<![\\$\\\\\\wÀ-ỹ])(?!\\d+\\.\\s)(${GM_TEX_ATOM}(?:${GM_TEX_BIN_OP}${GM_TEX_ATOM}|\\s+(?!${GM_VN_STOP_WORDS}|${GM_VN_ACCENTED_WORD})${GM_TEX_ATOM}){0,16})(?=[;!?\\)]|\\.\\s|\\.$|,\\s|\\s+(?:${GM_VN_STOP_WORDS}|${GM_VN_ACCENTED_WORD})|\\n|$)`, 'g');
+
+const GM_FRAC_BRACE3_REGEX = new RegExp(`(?<!\\$)\\\\frac${GM_BRACE3}${GM_BRACE3}(?!\\$)`, 'g');
+const GM_SQRT_BRACE3_REGEX = new RegExp(`(?<!\\$)\\\\sqrt(?:\\[[^\\]]*\\])?${GM_BRACE3}(?!\\$)`, 'g');
+
+const GM_VEC_ATOM = `(?:(?:\\\\left\\s*)?(?:\\||\\\\vert)\\s*(?:\\\\left\\s*\\[[^\\]\\n\\$]+\\\\right\\s*\\]|\\[[^\\]\\n\\$]+\\]|\\\\(?:vec|overrightarrow)\\{[^{}]+\\})\\s*(?:\\\\right\\s*)?(?:\\||\\\\vert)|(?:\\\\left\\s*)?\\[\\s*\\\\(?:vec|overrightarrow)\\{[^{}]+\\}\\s*[,;]\\s*\\\\(?:vec|overrightarrow)\\{[^{}]+\\}\\s*(?:\\\\right\\s*)?\\]|\\\\(?:vec|overrightarrow)\\{[^{}]+\\}|\\\\cdot|\\\\times|\\\\frac${GM_BRACE3}${GM_BRACE3}|\\\\sqrt${GM_BRACE3}|[0-9a-zA-Z()+\\-=.,;'/^_\\{\\}]+)+`;
+const GM_VEC_EXPR_REGEX = new RegExp(`(?<![\\$\\\\\\w])(${GM_VEC_ATOM}(?:\\s+(?!với\\b|khi\\b|thì\\b|tại\\b|trong\\b|ta\\b|được\\b|là\\b|nếu\\b|theo\\b|và\\b|bằng\\b|cùng\\b|đồng\\b|vuông\\b)${GM_VEC_ATOM}){0,16})(?=[;!?]|\\.\\s|\\.$|\\s+(?:với|khi|thì|tại|trong|ta|được|là|nếu|theo|và|bằng|cùng|đồng|vuông)|\\n|$)`, 'g');
+
+const GM_SEQ_ATOM = `(?:\\\\(?:dots|cdots|ldots|frac\\{[^{}]*\\}\\{[^{}]*\\})|[0-9a-zA-Z()\\[\\]{}+\\-*/^_.]+)+`;
+const GM_SEQ_REGEX = new RegExp(`(?<![\\$\\\\\\w])\\b([uS]_(?:[a-zA-Z0-9]+|\\{[^}]+\\})\\s*=\\s*${GM_SEQ_ATOM}(?:\\s+(?!được\\b|là\\b|tính\\b|theo\\b|bằng\\b|với\\b|khi\\b|thì\\b|tại\\b|trong\\b|ta\\b|đáp\\b|công\\b|sai\\b|số\\b|[A-D][.:)])${GM_SEQ_ATOM}){0,16})(?=[,;!?]|\\s+(?:được|là|tính|theo|bằng|với|khi|thì|tại|trong|ta(?:\\s+được)?|đáp\\s+án|công|sai|số|[A-D][\\.:\\)])|\\n|$)(?!\\$)`, 'g');
+
 export function fixAndMergeMathArrows(text: string): string {
   if (!text || typeof text !== 'string') return text || '';
+  if (!/(?:\\(?:RightArrow|LeftArrow|Leftarrow|Rightarrow|Leftrightarrow|iff|implies)|=>|<=>|Đáp\s*số|Đáp\s*án)/i.test(text)) {
+    return text;
+  }
   let s = text;
 
   // 1. Chuẩn hóa các biến thể viết hoa hoặc double backslash
@@ -859,7 +1048,8 @@ export function fixAndMergeMathArrows(text: string): string {
   // $A$ \Rightarrow $B$ -> $A \Rightarrow B$
   // $A$ \Leftrightarrow $B$ -> $A \Leftrightarrow B$
   let prev = '';
-  while (prev !== s) {
+  let mergeIter1 = 0;
+  while (prev !== s && mergeIter1++ < 20) {
     prev = s;
     s = s.replace(/\$([^\$\n]+?)\$\s*(?:\\(Rightarrow|Leftrightarrow|Leftarrow|iff|implies)|\$\s*\\(Rightarrow|Leftrightarrow|Leftarrow|iff|implies)\s*\$|<=>|=>)\s*\$([^\$\n]+?)\$/g, (_m, a, arrow1, arrow2, b) => {
       const arr = arrow1 || arrow2;
@@ -868,20 +1058,33 @@ export function fixAndMergeMathArrows(text: string): string {
     });
   }
 
-  // 3. Bọc chuỗi biến đổi suy ra / tương đương trần chưa có $
-  s = s.replace(/((?:^|[:.?!]|\s)(?:Ta có|Suy ra|Do đó|Khi đó|Vậy|Đúng\.|Sai\.|Đúng|Sai)[:\s]*)([a-zA-Z0-9_\{\}\(\)\[\]\+\-\*\/\^\=\s\.\,\;\\|]+?\\(?:Rightarrow|Leftrightarrow|Leftarrow|iff|implies)[a-zA-Z0-9_\{\}\(\)\[\]\+\-\*\/\^\=\s\.\,\;\\|]+?)(?=(?:\.\s+[A-ZÀ-Ỹ]|\.\s*$|\.\s*\n|\s*\((?:là|với|điều)|Đáp\s*số|\n|$))/gi, (_m, lead, math) => {
-    let clean = math.trim().replace(/\$+$/, '').replace(/^\$+/, '');
-    if (!clean || clean.includes('$')) return _m;
-    return `${lead}$${clean}$`;
-  });
-
-  // 4. Nếu mũi tên đứng cạnh biểu thức toán chưa bọc $ (vd: \Rightarrow 46 = 10 + 9d)
-  s = s.replace(/(?:\\(Rightarrow|Leftrightarrow|Leftarrow|iff|implies)|=>|<=>)\s*([0-9a-zA-Z_\{\}\(\)\[\]\+\-\*\/\^\=]+(?:\s*[=+\-\*\/]\s*[0-9a-zA-Z_\{\}\(\)\[\]\+\-\*\/\^\=]+)+)(?=(?:\.\s+[A-ZÀ-Ỹ]|\.\s*$|\.\s*\n|\s*\((?:là|với|điều)|Đáp\s*số|\\|;|,|\n|$))/g, (_m, arrow, expr) => {
-    const cleanArrow = arrow ? `\\${arrow}` : (_m.includes('<=>') ? '\\Leftrightarrow' : '\\Rightarrow');
-    let cleanExpr = expr.trim();
-    if (cleanExpr.includes('$')) return _m;
-    return `$${cleanArrow} ${cleanExpr}$`;
-  });
+  // 3 & 4. Chỉ bọc suy diễn / mũi tên ở các đoạn NGOÀI $...$ / $$...$$ (không bao giờ cắt ngang công thức đã bọc $...$)
+  const arrowExprRegex = GM_ARROW_EXPR_REGEX;
+  const segs34 = s.split(/(\$\$[\s\S]*?\$\$|\$[^\$\n]+?\$)/g);
+  for (let i = 0; i < segs34.length; i += 2) {
+    if (!segs34[i]) continue;
+    let seg = segs34[i];
+    // 3. Bọc chuỗi biến đổi suy ra / tương đương trần chưa có $
+    seg = seg.replace(/((?:^|[:.?!]|\s)(?:Ta có|Suy ra|Do đó|Khi đó|Vậy|Đúng\.|Sai\.|Đúng|Sai)[:\s]*)([a-zA-Z0-9_\{\}\(\)\[\]\+\-\*\/\^\=\s\.\,\;\\|]+?\\(?:Rightarrow|Leftrightarrow|Leftarrow|iff|implies)[a-zA-Z0-9_\{\}\(\)\[\]\+\-\*\/\^\=\s\.\,\;\\|]+?)(?=(?:\.\s+[A-ZÀ-Ỹ]|\.\s*$|\.\s*\n|\s*\((?:là|với|điều)|Đáp\s*số|\n|$))/gi, (_m, lead, math) => {
+      let clean = math.trim().replace(/\$+$/, '').replace(/^\$+/, '');
+      if (!clean || clean.includes('$')) return _m;
+      return `${lead}$${clean}$`;
+    });
+    // 4. Nếu mũi tên đứng cạnh biểu thức toán chưa bọc $
+    seg = seg.replace(arrowExprRegex, (_m, arrow, expr) => {
+      const cleanArrow = arrow ? `\\${arrow}` : (_m.includes('<=>') ? '\\Leftrightarrow' : '\\Rightarrow');
+      let cleanExpr = (expr || '').trim();
+      const hasTrailingDot = cleanExpr.endsWith('.');
+      cleanExpr = cleanExpr.replace(/\.+$/, '');
+      if (!cleanExpr || cleanExpr.includes('$')) return _m;
+      if (/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(cleanExpr.replace(/\\text\{[^{}]*\}/g, ''))) {
+        return _m;
+      }
+      return `$${cleanArrow} ${cleanExpr}$${hasTrailingDot ? '.' : ''}`;
+    });
+    segs34[i] = seg;
+  }
+  s = segs34.join('');
 
   // 5. Nếu còn bất kỳ mũi tên suy luận trần nào hoàn toàn đứng một mình NGOÀI $: bọc $\Rightarrow$
   const parts = s.split(/(\$\$[\s\S]*?\$\$|\$[^\$\n]+?\$)/g);
@@ -892,18 +1095,22 @@ export function fixAndMergeMathArrows(text: string): string {
   }
   s = parts.join('');
 
-  // 6. Gộp lại các khối math liền kề sau khi đã bọc:
+  // 6. Gộp lại các khối math liền kề trên CÙNG DÒNG (chỉ dùng [ \t]*, không nuốt \n):
   prev = '';
-  while (prev !== s) {
+  let mergeIter2 = 0;
+  while (prev !== s && mergeIter2++ < 20) {
     prev = s;
-    s = s.replace(/\$([^\$\n]+?)\$\s*\$\s*\\(Rightarrow|Leftrightarrow|Leftarrow|iff|implies)\s*\$\s*\$([^\$\n]+?)\$/g, (_m, a, arrow, b) => {
+    s = s.replace(/(?<!\$)\$([^\$\n]+?)\$(?!\$)[ \t]*(?<!\$)\$[ \t]*\\(Rightarrow|Leftrightarrow|Leftarrow|iff|implies)[ \t]*\$(?!\$)[ \t]*(?<!\$)\$([^\$\n]+?)\$(?!\$)/g, (_m, a, arrow, b) => {
       return `$${a.trim()} \\${arrow} ${b.trim()}$`;
     });
-    s = s.replace(/\$([^\$\n]+?)\$\s*(?:\\(Rightarrow|Leftrightarrow|Leftarrow|iff|implies))\s*\$([^\$\n]+?)\$/g, (_m, a, arrow, b) => {
+    s = s.replace(/(?<!\$)\$([^\$\n]+?)\$(?!\$)[ \t]*\\(Rightarrow|Leftrightarrow|Leftarrow|iff|implies)[ \t]*(?<!\$)\$([^\$\n]+?)\$(?!\$)/g, (_m, a, arrow, b) => {
       return `$${a.trim()} \\${arrow} ${b.trim()}$`;
     });
-    s = s.replace(/\$([^\$\n]+?)\$\s*\$([^\$\n]+?)\$/g, (_m, a, b) => {
-      if (a.endsWith('\\Rightarrow') || a.endsWith('\\Leftrightarrow') || b.startsWith('\\Rightarrow') || b.startsWith('\\Leftrightarrow')) {
+    s = s.replace(/(?<!\$)\$([^\$\n]+?)\$(?!\$)[ \t]*(?<!\$)\$([^\$\n]+?)\$(?!\$)/g, (_m, a, b) => {
+      if (
+        /\\(?:Rightarrow|Leftrightarrow|Leftarrow|iff|implies)\s*$/.test(a) ||
+        /^\s*\\(?:Rightarrow|Leftrightarrow|Leftarrow|iff|implies)\b/.test(b)
+      ) {
         return `$${a.trim()} ${b.trim()}$`;
       }
       return _m;
@@ -928,28 +1135,19 @@ export function sanitizeLatexMathAndDelimiters(raw: string): string {
   let s = cleanMathAndUnwrapHeadings(String(raw));
 
   // 1. Xử lý triệt để ký tự escaped literal \n hoặc \\n bị in thô trên giao diện
-  // Bảo vệ các lệnh TeX bắt đầu bằng \n
-  s = s.replace(/\\neq\b/g, '___TEX_NEQ___');
-  s = s.replace(/\\notin\b/g, '___TEX_NOTIN___');
-  s = s.replace(/\\nexists\b/g, '___TEX_NEXISTS___');
-  s = s.replace(/\\nearrow\b/g, '___TEX_NEARROW___');
-  s = s.replace(/\\nabla\b/g, '___TEX_NABLA___');
-  s = s.replace(/\\nu\b/g, '___TEX_NU___');
+  // Tuyệt đối KHÔNG biến các lệnh TeX bắt đầu bằng \n (\ne, \neq, \notin, \nexists, \nearrow, \nabla, \nu, \natural...) thành xuống dòng!
+  s = s.replace(/\\\\n(?![a-zA-Z])/g, '\n');
+  s = s.replace(/\\n(?![a-zA-Z])/g, '\n');
+  // Chữa lành trường hợp \ne đã bị tách thành xuống dòng + e trước đó (vd: \vec{a} \n e \vec{0})
+  s = s.replace(/(\\(?:vec|overrightarrow)\{[^{}]+\}|[a-zA-Z0-9\)\}\]])[ \t]*[\r\n]+[ \t]*e[ \t]+(\\(?:vec|overrightarrow)\{[^{}]+\}|0\b)/g, '$1 \\neq $2');
 
-  // Đổi các literal \n hoặc \\n thành ký tự xuống dòng thực tế
-  s = s.replace(/\\\\n/g, '\n');
-  s = s.replace(/\\n/g, '\n');
-
-  // Khôi phục lại các lệnh TeX
-  s = s.replace(/___TEX_NEQ___/g, '\\neq');
-  s = s.replace(/___TEX_NOTIN___/g, '\\notin');
-  s = s.replace(/___TEX_NEXISTS___/g, '\\nexists');
-  s = s.replace(/___TEX_NEARROW___/g, '\\nearrow');
-  s = s.replace(/___TEX_NABLA___/g, '\\nabla');
-  s = s.replace(/___TEX_NU___/g, '\\nu');
-
-  // 2. Tách các câu văn dính liền sau dấu chấm
-  s = s.replace(/\.([A-ZÀ-Ỹ])/g, '. $1');
+  // 2. Tách các câu văn dính liền sau dấu chấm (chỉ chạy ngoài $...$/$$...$$ và không phá tên hình học như S.ABCD)
+  const dotParts = s.split(/(\$\$[\s\S]*?\$\$|\$[^\$\n]*?\$)/g);
+  for (let di = 0; di < dotParts.length; di += 2) {
+    if (!dotParts[di]) continue;
+    dotParts[di] = dotParts[di].replace(/([a-zà-ỹ\)\]\$])\.([A-ZÀ-Ỹ])/g, '$1. $2');
+  }
+  s = dotParts.join('');
 
   // 3. Loại bỏ ký tự rác hoặc dấu gạch ngang dính liền vào công thức (--- hoặc SS_n = -)
   s = s.replace(/\bSS_([a-zA-Z0-9]+|\{[^}]+\})/g, 'S_$1');
@@ -967,7 +1165,6 @@ export function sanitizeLatexMathAndDelimiters(raw: string): string {
   // Chuẩn hóa và gộp các mũi tên suy luận / tương đương thành công thức LaTeX hoàn chỉnh
   s = fixAndMergeMathArrows(s);
   s = s.replace(/\${3,}/g, (m) => m.length % 2 === 1 ? '$' : '$$');
-  s = s.replace(/(?<!\$)\$\s*\$(?!\$)/g, '');
 
   // Clean orphan artifacts and MathJax raw error strings
   s = s.replace(/You can't use 'macro parameter character #' in math mode/gi, '');
@@ -975,12 +1172,31 @@ export function sanitizeLatexMathAndDelimiters(raw: string): string {
   s = s.replace(/(?:^|\n)\s*SS0\.\s*\*{0,2}Câu\s*\d+:?\*{0,2}SS\s*/gi, '\n');
   s = s.replace(/(?:^|\n)\s*d\$\.\s*/gi, '\n');
 
-  // Đảm bảo các tiêu đề câu hỏi **Câu X:** trong lời giải được ngắt dòng riêng biệt
-  s = s.replace(/([^\n])\s*(\*{0,2}Câu\s*\d+[:\.]?\*{0,2})/gi, '$1\n\n$2');
+  // Đảm bảo các tiêu đề câu hỏi **Câu X:** trong lời giải được ngắt dòng riêng biệt (KHÔNG cắt trong bảng Markdown |...| và KHÔNG cắt sau dấu bullet •/-/*)
+  s = s.split('\n').map((line) => {
+    if (/^\s*\|/.test(line)) return line;
+    return line.replace(/([^\n\-*•●+])\s+(\*{0,2}Câu\s*\d+[:\.]?\*{0,2})/gi, '$1\n\n$2');
+  }).join('\n');
 
-  // 3.5. Giải phóng các khối $$ vô tình bọc trần toàn bộ câu hỏi hoặc nhiều tiêu đề/mục nhỏ
+  // 3.4. Giải cứu thẻ <br/> nếu bị nhốt bên trong cặp dấu $...$
+  s = s.replace(/(?<!\$)\$(?!\$)([^\$\n]*?<br\s*\/?>[^\$\n]*?)(?<!\$)\$(?!\$)/gi, (_m, inner) => {
+    return inner
+      .split(/<br\s*\/?>/i)
+      .map((seg: string) => {
+        const cleanSeg = seg.trim();
+        if (!cleanSeg) return '';
+        if (/^[A-ZÀ-Ỹa-zà-ỹ\s:,;.]+$/.test(cleanSeg)) return cleanSeg;
+        return `$${cleanSeg}$`;
+      })
+      .filter(Boolean)
+      .join(' <br/> ');
+  });
+
+  // 3.5. Giải phóng các khối $$ vô tình bọc trần toàn bộ câu hỏi hoặc nhiều tiêu đề/mục nhỏ hoặc văn bản tiếng Việt
   s = s.replace(/\$\$([\s\S]*?)\$\$/g, (fullMatch, body) => {
-    if (/(?:\*\*(?:Câu|Bài)\s*\d+:?\*\*|#{1,4}\s*PHẦN|^\s*[-*]\s+[a-d]\)|^\s*[a-d]\))/m.test(body)) {
+    const stripped = body.replace(/\\text\{[^{}]*\}/g, '');
+    const vnCount = (stripped.match(/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/gi) || []).length;
+    if (/(?:\*\*(?:Câu|Bài)\s*\d+:?\*\*|#{1,4}\s*PHẦN|^\s*[-*]\s+[a-d]\)|^\s*[a-d]\)|\n\s*\n)/m.test(body) || vnCount > 20) {
       return body.replace(/\$\$/g, '');
     }
     return fullMatch;
@@ -990,7 +1206,7 @@ export function sanitizeLatexMathAndDelimiters(raw: string): string {
   s = s.replace(/(?:(?:^|\n)\s*\\?\{\s*[^{}\n]+=[^\n]+){2,}/g, (match) => {
     const eqLines = match.trim().split('\n').map(l => l.replace(/^\s*\\?\{\s*/, '').trim()).filter(Boolean);
     if (eqLines.length >= 2) {
-      return `\n\n$$\\begin{cases}\n${eqLines.join(' \\\\\n')}\n\\end{cases}$$\n\n`;
+      return `\n\n$$\\begin{cases} ${eqLines.join(' \\\\ ')} \\end{cases}$$\n\n`;
     }
     return match;
   });
@@ -1007,67 +1223,122 @@ export function sanitizeLatexMathAndDelimiters(raw: string): string {
         return `\x02MATH${mathTokens.length - 1}\x03`;
       };
 
-      // d. Bọc chuỗi biến đổi suy ra / tương đương: e.g. u_{10} = u_1 + 9d \Rightarrow 46 = 10 + 9d \Rightarrow 9d = 36 \Rightarrow d = 4
-      p = p.replace(/(?<![\$\\\w])([uSa-zA-Z0-9_\{\}\(\)\[\]\+\-\*\/\^\=\s]+?\s*\\(?:Rightarrow|Leftarrow|Leftrightarrow|iff|implies)\s*[uSa-zA-Z0-9_\{\}\(\)\[\]\+\-\*\/\^\=\s\\\(\)]+?)(?=[,;.!?]|\s+(?:được|là|tính|theo|bằng|với|khi|thì|tại|trong|ta|Phát\s+biểu|Đáp|\(Đúng\)|\(Sai\)|\n)|$)/g, (match) => {
-        let clean = match.trim();
-        if (clean.includes('$')) return match;
-        if (/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(clean.replace(/\\text\{[^{}]*\}/g, ''))) return match;
-        return saveMath(`$${clean}$`);
-      });
+      // Bảo vệ toàn bộ thẻ HTML (<br/>, <strong>, <b>, <em>, <u>...) để TUYỆT ĐỐI không bị nhận nhầm là toán tử < và >
+      p = p.replace(/<(?:br\s*\/?|\/?(?:strong|b|i|em|u|sub|sup|span|div|p)\b[^>\n]*)>/gi, (m) => saveMath(m));
+
+      // d. Bọc chuỗi biến đổi suy ra / tương đương (sử dụng regex precompiled có giới hạn lặp tránh ReDoS)
+      if (/\\(?:Rightarrow|Leftarrow|Leftrightarrow|iff|implies)/.test(p)) {
+        p = p.replace(GM_D_CHAIN_REGEX, (match) => {
+          let clean = match.trim().replace(/\.+$/, '');
+          if (!clean || clean.includes('$')) return match;
+          if (/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(clean.replace(/\\text\{[^{}]*\}/g, ''))) return match;
+          return saveMath(`$${clean}$`);
+        });
+      }
 
       // Auto-wrap standalone \Rightarrow or \Leftrightarrow or \to lines
-      p = p.replace(/(?<![\$\w])(\\RightArrow|\\Rightarrow|\\Leftrightarrow|\\Leftarrow|\\iff|\\implies|\\to\b|\\rightarrow\b)(?![\$\w])/g, (m) => saveMath(`$${m}$`));
+      if (/\\(?:RightArrow|Rightarrow|Leftrightarrow|Leftarrow|iff|implies|to|rightarrow)/.test(p)) {
+        p = p.replace(/(?<![\$\w])(\\RightArrow|\\Rightarrow|\\Leftrightarrow|\\Leftarrow|\\iff|\\implies|\\to\b|\\rightarrow\b)(?![\$\w])/g, (m) => saveMath(`$${m}$`));
+      }
 
       // a. Bọc chuỗi cases liên tiếp hoặc đơn lẻ
-      p = p.replace(/(?<!\$)(?:(?:\\begin\s*\{cases\*?\}[\s\S]*?\\end\s*\{cases\*?\})(?:\s*\\(?:Leftrightarrow|Rightarrow|Leftarrow|iff|implies)\s*\\begin\s*\{cases\*?\}[\s\S]*?\\end\s*\{cases\*?\})+)(?!\$)/g, (m) => saveMath(`\n\n$$\n${m.trim()}\n$$\n\n`));
-      p = p.replace(/(?<!\$)(?:\\begin\s*\{(?:cases|aligned|matrix|pmatrix|bmatrix)\*?\}[\s\S]*?\\end\s*\{(?:cases|aligned|matrix|pmatrix|bmatrix)\*?\})(?!\$)/g, (m) => saveMath(`\n\n$$\n${m.trim()}\n$$\n\n`));
+      if (p.includes('\\begin')) {
+        p = p.replace(/(?<!\$)(?:(?:\\begin\s*\{cases\*?\}[\s\S]*?\\end\s*\{cases\*?\})(?:\s*\\(?:Leftrightarrow|Rightarrow|Leftarrow|iff|implies)\s*\\begin\s*\{cases\*?\}[\s\S]*?\\end\s*\{cases\*?\})+)(?!\$)/g, (m) => saveMath(`\n\n$$\n${m.trim()}\n$$\n\n`));
+        p = p.replace(/(?<!\$)(?:\\begin\s*\{(?:cases|aligned|matrix|pmatrix|bmatrix)\*?\}[\s\S]*?\\end\s*\{(?:cases|aligned|matrix|pmatrix|bmatrix)\*?\})(?!\$)/g, (m, offset) => {
+          const lineStart = p.lastIndexOf('\n', offset - 1) + 1;
+          const beforeOnLine = p.slice(lineStart, offset).trim();
+          if (beforeOnLine.length > 0) {
+            return saveMath(`$${m.trim()}$`);
+          }
+          return saveMath(`\n\n$$\n${m.trim()}\n$$\n\n`);
+        });
+      }
 
       // b. Bọc Tích phân, Đạo hàm, Giới hạn, Tổng, Tích
-      p = p.replace(/(?<![\$\\\w])(\\int(?:_\{[^{}]*\}|\^\{[^{}]*\}|_[a-zA-Z0-9\-+\\infty]+|\^[a-zA-Z0-9\-+\\infty]+)*[\s\S]*?(?:d[x t u s \theta]|\\mathrm\{d\}[x t u s]))/g, (match) => {
-        if (match.includes('$')) return match;
-        return saveMath(`$${match.trim()}$`);
-      });
+      if (p.includes('\\int')) {
+        p = p.replace(/(?<![\$\\\w])(\\int(?:_\{[^{}]*\}|\^\{[^{}]*\}|_[a-zA-Z0-9\-+\\infty]+|\^[a-zA-Z0-9\-+\\infty]+)*[^\n$]*?(?:d[xtus\theta]|\\mathrm\{d\}[xtus]))/g, (match) => {
+          if (match.includes('$')) return match;
+          return saveMath(`$${match.trim()}$`);
+        });
+      }
       p = p.replace(/(?<![\$\\\w])(\\frac\{d[a-zA-Z]?\}\{d[a-zA-Z]\}|\\frac\{\\partial[^{}]*\}\{\\partial[^{}]*\}|[a-zA-Z]\s*'\s*\([a-zA-Z0-9]+\)|[a-zA-Z]\s*''\s*\([a-zA-Z0-9]+\)|[yfg]\s*''?)(?![a-zA-Z0-9\$\}])/g, (match) => {
         if (match.includes('$')) return match;
         return saveMath(`$${match.trim()}$`);
       });
-      p = p.replace(/(?<![\$\\\w])(\\(?:lim|sum|prod)(?:_\{[^{}]*\}|\^\{[^{}]*\}|_[a-zA-Z0-9\-+\\infty]+|\^[a-zA-Z0-9\-+\\infty]+)+[\s\S]*?)(?=[,;!?]|\s+(?:được|là|tính|theo|bằng|với|khi|thì|tại|trong|ta|\n)|$)/g, (match) => {
-        if (match.includes('$')) return match;
-        return saveMath(`$${match.trim()}$`);
-      });
+      if (/\\(?:lim|sum|prod)\b/.test(p)) {
+        p = p.replace(/(?<![\$\\\w])(\\(?:lim|sum|prod)(?:_\{[^{}]*\}|\^\{[^{}]*\}|_[a-zA-Z0-9\-+\\infty]+|\^[a-zA-Z0-9\-+\\infty]+)+[^\n,$;!?]*?)(?=[,;!?]|\s+(?:được|là|tính|theo|bằng|với|khi|thì|tại|trong|ta)|\n|$)/g, (match) => {
+          if (match.includes('$')) return match;
+          return saveMath(`$${match.trim()}$`);
+        });
+      }
 
-      // c. Bọc biểu thức chứa \frac{...}{...} hoặc \sqrt{...}
-      p = p.replace(/(?<!\$)\\frac\{[^{}]*\}\{[^{}]*\}(?!\$)/g, (match) => saveMath(`$${match}$`));
-      p = p.replace(/(?<!\$)\\sqrt(?:\[[^\]]*\])?\{[^{}]*\}(?!\$)/g, (match) => saveMath(`$${match}$`));
+      // b5. Bọc trọn vẹn phương trình / biểu thức toán dài chưa có $ chứa \frac, \sqrt, \cdot, \times, |\vec{...}|, lượng giác, góc độ, ^, _
+      if (GM_FULL_EQ_SIGNAL.test(p)) {
+        p = p.replace(GM_FULL_EQ_REGEX, (match) => {
+          const clean = match.trim().replace(/\.+$/, '');
+          if (!clean || clean.includes('$') || clean.includes('\x02MATH')) return match;
+          if (/\b[A-D]\.\s/.test(clean)) return match;
+          if (!GM_FULL_EQ_SIGNAL.test(clean)) return match;
+          if (/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(clean.replace(/\\text\{[^{}]*\}/g, ''))) {
+            return match;
+          }
+          const trailingDot = match.endsWith('.') ? '.' : '';
+          return saveMath(`$${clean}$`) + trailingDot;
+        });
+      }
 
-      // c1. Bọc biểu thức chứa vector (\vec{...}):
-      // e.g. \vec{AB} + \vec{BC} = \vec{AC}, \vec{AB} + \vec{AD} + \vec{AA'} = \vec{AC'}, 2\vec{OM}, \vec{0}
-      p = p.replace(/(?<![\$\\\w])((?:[0-9]*\s*\\vec\{[^{}]+\}|[0-9a-zA-Z\(\)\+\-\=\s\.,'^\/]|\\cdot|\\frac\{[^{}]*\}\{[^{}]*\})*\\vec\{[^{}]+\}(?:[0-9a-zA-Z\(\)\+\-\=\s\.,'^\/]|\\vec\{[^{}]+\}|\\cdot|\\frac\{[^{}]*\}\{[^{}]*\})*?)(?=[;!?]|\s+(?:với|khi|thì|tại|trong|ta|được|là|nếu|theo)|\n|$)/g, (match) => {
-        let clean = match.trim().replace(/\.+$/, "");
-        if (!clean || clean.includes('$')) return match;
-        if (/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(clean.replace(/\\text\{[^{}]*\}/g, ''))) return match;
+      // Bọc phương trình so sánh đơn giản có 2 vế như n=4, x>0, B'(x, 0) đứng trần
+      p = p.replace(/(?<![\$\\\wÀ-ỹ])([a-zA-Z]\s*'\s*\([a-zA-Z0-9,\s]+\)|[a-zA-Z]\s*(?:=|>|<)\s*-?\d+(?:[.,]\d+)?)(?=[,.;:!?\s\)]|$)/g, (match) => {
+        const clean = match.trim();
+        if (clean.includes('$') || clean.includes('\x02MATH')) return match;
         return saveMath(`$${clean}$`);
       });
+
+      // c. Bọc biểu thức chứa \frac{...}{...} hoặc \sqrt{...} còn sót (hỗ trợ 3 tầng ngoặc nhọn lồng nhau)
+      if (p.includes('\\frac')) {
+        p = p.replace(GM_FRAC_BRACE3_REGEX, (match) => saveMath(`$${match}$`));
+      }
+      if (p.includes('\\sqrt')) {
+        p = p.replace(GM_SQRT_BRACE3_REGEX, (match) => saveMath(`$${match}$`));
+      }
+
+      // c1. Bọc biểu thức chứa vector (\vec{...} hoặc \overrightarrow{...}) kể cả tích có hướng \left[\vec{a}, \vec{b}\right] và độ dài |\vec{AB}| = ...
+      if (p.includes('\\vec{') || p.includes('\\overrightarrow{')) {
+        p = p.replace(GM_VEC_EXPR_REGEX, (match) => {
+          if (!match.includes('\\vec{') && !match.includes('\\overrightarrow{')) return match;
+          let clean = match.trim().replace(/\.+$/, "");
+          if (!clean || clean.includes('$')) return match;
+          if (/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(clean.replace(/\\text\{[^{}]*\}/g, ''))) return match;
+          return saveMath(`$${clean}$`);
+        });
+      }
 
       // e. Bọc biểu thức cấp số cộng / cấp số nhân / dãy số (u_n = ..., S_n = ...) không bị ngắt ở dấu ba chấm
-      p = p.replace(/(?<![\$\\\w])\b([uS]_(?:[a-zA-Z0-9]+|\{[^}]+\})\s*=\s*(?:\\(?:dots|cdots|ldots)|\.\.\.|[0-9a-zA-Z\(\)\[\]\{\}\+\-\*\/\^\_\s]|\\frac\{[^{}]*\}\{[^{}]*\})+?)(?=[,;!?]|\s+(?:được|là|tính|theo|bằng|với|khi|thì|tại|trong|ta(?:\s+được)?|đáp\s+án|công|sai|số|[A-D][\.\:\)])|\n|$)(?!\$)/g, (match) => {
-        let clean = match.trim();
-        if (clean.includes('$')) return match;
-        return saveMath(`$${clean}$`);
-      });
+      if (/[uS]_/.test(p)) {
+        p = p.replace(GM_SEQ_REGEX, (match) => {
+          let clean = match.trim();
+          if (clean.includes('$')) return match;
+          return saveMath(`$${clean}$`);
+        });
+      }
 
       // f. Bọc các biến dãy số đơn lẻ u_1, u_2, (u_n), S_n hoặc có chỉ số ngoặc nhọn u_{10}, S_{10}, u_{n+1} ngoài công thức
       p = p.replace(/(?<![\$\\\w])(\(?[uS]_(?:[0-9a-zA-Z]+|\{[^{}]+\})\)?)(?![\$\w\{\}\+\-])/g, (match) => saveMath(`$${match}$`));
 
-      // g. Bọc các hệ thức so sánh / tập hợp: x \in \mathbb{R}, a \le b, x \ge 0, a \ne b
-      p = p.replace(/(?<![\$\\\w])\b([a-zA-Z0-9_]+\s*(?:\\in|\\notin|\\le|\\ge|\\ne|\\subset)\s*[^,\n\.\;]+)(?!\$)/g, (match) => saveMath(`$${match.trim()}$`));
+      // g. Bọc các hệ thức so sánh / tập hợp: x \in \mathbb{R}, a \le b, x \ge 0, a \ne b (dừng trước thẻ HTML, dấu ngoặc tiếng Việt hoặc chữ có dấu)
+      p = p.replace(/(?<![\$\\\w])\b([a-zA-Z0-9_']+(?:\([a-zA-Z0-9_']+\))?\s*(?:\\in|\\notin|\\le|\\ge|\\ne|\\subset)\s*[^,\n\.\;<(\x02àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]+)(?!\$)/g, (match) => saveMath(`$${match.trim()}$`));
 
-      // h. Bọc các ký hiệu toán đơn lẻ bị trần: \infty, \pi, \alpha, \beta, \Delta
-      p = p.replace(/(?<![\$\\\w])\\(?:alpha|beta|gamma|delta|pi|theta|sigma|omega|Delta|Sigma|infty|pm|mp)\b(?!\$)/g, (match) => saveMath(`$${match}$`));
+      // h. Bọc các ký hiệu toán đơn lẻ bị trần: \infty, \pi, \alpha, \beta, \varphi, \phi, \theta, \Delta, \circ (TUYỆT ĐỐI không bọc khi đang nằm trong ngoặc nhọn {...} như S_{\Delta ABC})
+      p = p.replace(/(?<![\$\\\w\{])\\(?:alpha|beta|gamma|delta|pi|theta|varphi|phi|sigma|omega|Delta|Sigma|infty|pm|mp|circ)\b(?![\$\}])/g, (match, offset) => {
+        const before = p.slice(Math.max(0, offset - 15), offset);
+        if (/\{[^{}]*$/.test(before)) return match;
+        return saveMath(`$${match}$`);
+      });
 
-      // Khôi phục tất cả các khối toán đã được bọc an toàn (giải nén triệt để nếu có lồng nhau)
-      while (p.includes('\x02MATH')) {
-        p = p.replace(/\x02MATH(\d+)\x03/g, (_, idx) => mathTokens[Number(idx)]);
+      // Khôi phục tất cả các khối toán đã được bọc an toàn (giải nén triệt để nếu có lồng nhau, giới hạn số vòng lặp)
+      let mathUnpackIter = 0;
+      while (/\x02MATH\d+\x03/.test(p) && mathUnpackIter++ < 10) {
+        p = p.replace(/\x02MATH(\d+)\x03/g, (_, idx) => mathTokens[Number(idx)] ?? '');
       }
 
       parts[i] = p;
@@ -1089,12 +1360,35 @@ export function sanitizeLatexMathAndDelimiters(raw: string): string {
     return `$${inner.replace(/(?<!\\)\$/g, '')}$`;
   });
 
+  // 7. Trên các dòng bảng Markdown (| ... |), thay thế ký tự | nằm trong $...$ (như |\vec{a}|, \left|...\right|) bằng \vert để remark-gfm KHÔNG cắt đôi ô bảng tại dấu trị tuyệt đối / độ dài vectơ!
+  s = s.split('\n').map((line) => {
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      return line.replace(/\$[^\$\n]+\$/g, (mathChunk) => {
+        return mathChunk
+          .replace(/\\left\s*\|/g, '\\left\\vert ')
+          .replace(/\\right\s*\|/g, '\\right\\vert ')
+          .replace(/\\\|/g, '\\Vert ')
+          .replace(/\|/g, '\\vert ');
+      });
+    }
+    return line;
+  }).join('\n');
+
   return s;
 }
 
 export function normalizeMathText(text: any): string {
   if (text === null || text === undefined) return '';
   if (typeof text !== 'string') text = String(text);
+  if (!text) return '';
+
+  // Fast-path: pure Vietnamese prose without math delimiters, operators, symbols, or LaTeX keywords
+  if (
+    !/[\\$\{\}\^_=<>\|*~/+\-×÷≤≥≠≈→⇒⇔√παβγθφωσΔΩ∞°∈∉∪∩∅\[\]()\r\n]/.test(text) &&
+    !/\b(?:frac|dfrac|sqrt|sin|cos|tan|cot|lim|ln|log|vec|cdot|times|ge|le|ne|neq|iff|Delta|pi|alpha|beta|gamma|theta|phi|omega|begin|end|underline|textbf|mathbb|overline|left|right|forall|exists|setminus|emptyset|varnothing|mid|circ|vdots|nearrow|searrow|undefined|null)\b|TẮM|dưóin|SS_|uu_|Đáp\s*(?:số|án)|You can't|Extra\s*close|Missing\s*\\/i.test(text)
+  ) {
+    return text.normalize('NFC');
+  }
 
   // 0. Sửa lỗi `_\{` và `^\{` bị escape nhầm làm hỏng chỉ số dưới/trên TeX (S_{20}, u_n, S_n)
   text = text.replace(/_\\\{([^{}\n]+?)\\\}/g, '_{$1}');
@@ -1161,7 +1455,8 @@ export function normalizeMathText(text: any): string {
   t = t.replace(/\\{3,}/g, '\\\\');
 
   // Loại bỏ triệt để các thuộc tính sự kiện inline HTML nguy hiểm (onclick, onmouseover...) gây lỗi React event listener string
-  while (/(<\w+[^>]*?)\s+on[a-zA-Z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/i.test(t)) {
+  let evtIter = 0;
+  while (/(<\w+[^>]*?)\s+on[a-zA-Z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/i.test(t) && evtIter++ < 20) {
     t = t.replace(/(<\w+[^>]*?)\s+on[a-zA-Z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '$1');
   }
 
@@ -1327,6 +1622,9 @@ export function fixIncompleteFractions(text: string): string {
   if (!text || !text.includes('\\frac')) return text;
   let s = text;
 
+  // Khôi phục dấu } bị mất ở tử số của phân số phức hợp: \frac{3 - \frac{2}{n}{4 + \frac{5}{n}} -> \frac{3 - \frac{2}{n}}{4 + \frac{5}{n}}
+  s = s.replace(/\\frac\s*\{([^{}\n\$]+?\\frac\s*\{[^{}]+\}\s*\{[^{}]+\})\s*\{/g, '\\frac{$1}{');
+
   // Sửa lỗi \frac{NUM} thiếu mẫu số thứ 2 {DENOMINATOR} trước \iff, \Rightarrow, \Leftrightarrow, $, $$, \end, =, +, -, hoặc ngắt dòng
   s = s.replace(/\\frac\s*\{([^{}]+)\}(?!\s*\{)(?=\s*(?:\\iff|\\Rightarrow|\\Leftrightarrow|\\Leftarrow|=|\$|\\end|\n|$))/gi, (_match, num) => {
     const trimmedNum = num.trim();
@@ -1340,8 +1638,17 @@ export function fixIncompleteFractions(text: string): string {
   s = s.replace(/(\\frac\{[^{}]*\}\{[^{}]*\})\s*[\r\n]+\s*\}?\s*0?\$\./gi, '$1$.');
   s = s.replace(/(\\frac\{[^{}]*\}\{[^{}]*\})\s*[\r\n]+\s*\}?\s*(?=[0-9A-ZÀ-Ỹa-zà-ỹ])/g, '$1 ');
 
-  // Tự động bổ sung dấu $ đóng cho phân số \frac{...}{...} mở bằng $ nhưng thiếu $ đóng
-  s = s.replace(/(\$[^\$\n]*?\\frac\{[^{}]*\}\{[^{}]*\})(?!\$)(?=\s*(?:\n|\.|\*\*|\\Rightarrow|\\quad|\\qquad|[A-ZÀ-Ỹ]|$))/g, '$1$');
+  // Chữa lành trường hợp bị chèn thừa dấu $ hoặc $$ trước \Rightarrow trên cùng 1 dòng toán học
+  s = s.replace(/(\$[^\$\n]+?)\$\$?\s*(\\(?:Rightarrow|Leftrightarrow|Leftarrow)\b[^\$\n]+?\$)/g, '$1 $2');
+
+  // Chỉ bổ sung dấu $ đóng ở cuối dòng nếu dòng đó có số lượng dấu $ lẻ
+  s = s.split('\n').map((line) => {
+    const dollars = (line.match(/(?<!\\)\$/g) || []).length;
+    if (dollars % 2 === 1 && /\$[^\$\n]*\\frac\{[^{}]*\}\{[^{}]*\}[^{}\$\n]*$/.test(line)) {
+      return line.replace(/(\\frac\{[^{}]*\}\{[^{}]*\}[0-9a-zA-Z\+\-\*\/\=\(\)\s]*)(?=\s*(?:\.\s*(?:Chọn|\*\*)|\.?$))/, '$1$');
+    }
+    return line;
+  }).join('\n');
 
   return s;
 }
@@ -1386,17 +1693,21 @@ export function balanceCasesEnvironments(text: string): string {
     return `${delimiter}${fixedInner}${delimiter}`;
   });
 
-  // Nếu \begin{cases} nằm ngoài $...$ hoặc $$...$$, bọc tự động vào $$...$$
-  s = s.replace(/(?<!\$)(?:\\begin\s*\{cases\*?\}[\s\S]*?\\end\s*\{cases\*?\})(?!\$)/gi, (match) => {
-    return `\n\n$$\n${match.trim()}\n$$\n\n`;
-  });
-
-  if (s.includes('cases') && !s.includes('$$')) {
-    s = balanceBlock(s);
-    if (s.includes('\\begin{cases}') && !s.includes('$$')) {
-      s = s.replace(/(\\begin\s*\{cases\*?\}[\s\S]*?\\end\s*\{cases\*?\})/gi, '\n\n$$\n$1\n$$\n\n');
+  // Chỉ bọc \begin{cases}...\end{cases} ở các đoạn NGOÀI $...$ / $$...$$ (tránh tuyệt đối bọc chồng lên $...$ sẵn có)
+  const caseWrapParts = s.split(/(\$\$[\s\S]*?\$\$|\$[^\$\n]*?\$)/g);
+  for (let i = 0; i < caseWrapParts.length; i += 2) {
+    if (caseWrapParts[i] && caseWrapParts[i].includes('\\begin')) {
+      caseWrapParts[i] = caseWrapParts[i].replace(/(?<!\$)(?:\\begin\s*\{cases\*?\}[\s\S]*?\\end\s*\{cases\*?\})(?!\$)/gi, (match, offset) => {
+        const lineStart = caseWrapParts[i].lastIndexOf('\n', offset - 1) + 1;
+        const beforeOnLine = caseWrapParts[i].slice(lineStart, offset).trim();
+        if (beforeOnLine.length > 0) {
+          return `$${match.trim()}$`;
+        }
+        return `\n\n$$\n${match.trim()}\n$$\n\n`;
+      });
     }
   }
+  s = caseWrapParts.join('');
 
   return s;
 }
@@ -1418,6 +1729,37 @@ export function rescueTrappedVietnameseFromMath(text: string): string {
   s = s.replace(/\$\s*\(\s*u_n\s*\)\s*(biết\s*rằng|thỏa\s*mãn|có\s*số\s*hạng\s*đầu)\s*:?\s*([^\$\n]+?)\$/gi, (_m, phrase, rest) => {
     const hasColon = _m.includes(':');
     return `$(u_n)$ ${phrase}${hasColon ? ':' : ''} $${rest.trim()}$`;
+  });
+
+  // 0.5. Tách thẻ <br/>, cụm "(hoặc ...)", "(với ...)", "(thỏa mãn)", "(loại)", "trên khoảng", "Lưu ý:" nếu bị nhốt trong $...$
+  s = s.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)(?<!\$)\$(?!\$)/g, (fullMatch, inner) => {
+    let cur = inner;
+    // Giải phóng \text{...} chứa tiếng Việt có dấu ở cấp ngoài (trừ chỉ số dưới _{ \text{CĐ} })
+    cur = cur.replace(/(?<!_\s*\{?\s*)\\text\{\s*([^}]*?[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ][^}]*?)\s*\}/gi, ' $1 ');
+
+    if (
+      /<br\s*\/?>/i.test(cur) ||
+      /\(\s*(?:hoặc|với|hay|thỏa\s*mãn|nhận|loại|không\s*xác\s*định|luôn\s*đúng|vô\s*nghiệm)\b/i.test(cur) ||
+      /\b(?:trên\s+khoảng|trên\s+đoạn|trên\s+nửa\s+khoảng|trên\s+tập|tại\s+hữu\s+hạn|Lưu\s+ý)\b/i.test(cur)
+    ) {
+      let splitOut = cur
+        // Tách <br/>
+        .replace(/<br\s*\/?>/gi, '$ <br/> $')
+        // Tách (hoặc \le 0), (với a \ne 0)
+        .replace(/\(\s*(hoặc|với|hay)\s+([^()$\n]+?)\)/gi, '$$ ($1 $$$2$$) $$')
+        // Tách (thỏa mãn), (loại), (không xác định)
+        .replace(/\(\s*(thỏa\s*mãn|nhận|loại|không\s*xác\s*định|luôn\s*đúng|vô\s*nghiệm)\s*\)/gi, '$$ ($1) $$')
+        // Tách "trên khoảng", "trên đoạn", "trên nửa khoảng", "trên tập"
+        .replace(/\s+(trên\s+khoảng|trên\s+đoạn|trên\s+nửa\s+khoảng|trên\s+tập|với\s+mọi)\s+/gi, '$$ $1 $$')
+        // Tách "Lưu ý: ..."
+        .replace(/\s*(Lưu\s+ý\s*:[\s\S]*)$/i, '$$ $1');
+      let rebuilt = `$${splitOut}$`
+        .replace(/\$\s*\$/g, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+      return rebuilt;
+    }
+    return fullMatch;
   });
 
   // 1. Tách câu dẫn tiếng Việt dính liền công thức trong $: ví dụ "$... ta được:$" hoặc "$Cho cấp số cộng (u_n)...$"
@@ -1460,32 +1802,52 @@ export function rescueTrappedVietnameseFromMath(text: string): string {
     return fullMatch;
   });
 
-  // 2. Xử lý dòng chứa số lẻ dấu single $ (unclosed math dollar)
+  // 2. Xử lý dòng chứa $...$$ inline sai cú pháp hoặc số lẻ dấu single $ (unclosed math dollar)
   const lines = s.split('\n');
   for (let idx = 0; idx < lines.length; idx++) {
     let line = lines[idx];
-    if (line.includes('$$')) continue;
-    const dollars = (line.match(/(?<!\\)\$/g) || []).length;
+    if (!line.includes('$')) continue;
+
+    // 2a. Nếu một dòng không phải display block $$...$$ mà lại dính lỗi $expr$$ (mở 1 $, đóng 2 $$) -> sửa thành $expr$
+    const ddCount = (line.match(/\$\$/g) || []).length;
+    if (ddCount % 2 !== 0 && !/^\s*\$\$/.test(line)) {
+      line = line.replace(/(?<!\$)\$([^$\n]{1,120}?)\$\$(?!\$)/g, '$$$1$$');
+    }
+
+    // 2b. Tạm che các cặp $$...$$ hợp lệ trên dòng để kiểm tra dấu $ đơn lẻ còn lại
+    const dMasks: string[] = [];
+    let masked = line.replace(/\$\$[^\n]*?\$\$/g, (m) => {
+      dMasks.push(m);
+      return `\uE000DM${dMasks.length - 1}\uE001`;
+    });
+
+    // Nếu vẫn còn dấu $$ lẻ mồ côi trên dòng văn bản -> gỡ bỏ hoặc chuyển thành $
+    if (masked.includes('$$')) {
+      masked = masked.replace(/(?<!\$)\$([^$\n]{1,120}?)\$\$(?!\$)/g, '$$$1$$');
+      masked = masked.replace(/\$\$/g, '');
+    }
+
+    const dollars = (masked.match(/(?<!\\)\$/g) || []).length;
     if (dollars % 2 !== 0) {
-      const trimmed = line.trim();
-      if (trimmed.includes('$')) {
-        const lastDollarIndex = line.lastIndexOf('$');
-        const afterDollar = line.slice(lastDollarIndex + 1);
-        const beforeDollar = line.slice(0, lastDollarIndex);
-        // Nếu dấu $ lẻ nằm ngay đầu câu tiếng Việt (ví dụ: "**Câu 2:** $Số hạng tổng quát...") -> xóa dấu $ thừa đó
-        if (!beforeDollar.includes('$') && /^\s*[A-ZÀ-Ỹa-zà-ỹ]{2,}\s+[a-zA-ZÀ-ỹ]{2,}/.test(afterDollar)) {
-          line = beforeDollar + afterDollar;
-          lines[idx] = line;
-        } else if (/[\\=_\^\+\-\/]|u_\d|S_\d|\d+/.test(afterDollar)) {
-          if (line.endsWith('.')) {
-            line = line.slice(0, -1) + '$.';
-          } else {
-            line = line + '$';
-          }
-          lines[idx] = line;
+      const lastDollarIndex = masked.lastIndexOf('$');
+      const afterDollar = masked.slice(lastDollarIndex + 1);
+      const beforeDollar = masked.slice(0, lastDollarIndex);
+      // Nếu dấu $ lẻ nằm ngay đầu câu tiếng Việt (ví dụ: "**Câu 2:** $Số hạng tổng quát...") -> xóa dấu $ thừa đó
+      if (!beforeDollar.includes('$') && /^\s*[A-ZÀ-Ỹa-zà-ỹ]{2,}\s+[a-zA-ZÀ-ỹ]{2,}/.test(afterDollar)) {
+        masked = beforeDollar + afterDollar;
+      } else if (/[\\=_\^\+\-\/]|u_\d|S_\d|\d+/.test(afterDollar)) {
+        if (masked.endsWith('.')) {
+          masked = masked.slice(0, -1) + '$.';
+        } else {
+          masked = masked + '$';
         }
+      } else {
+        // Dấu $ lẻ mồ côi không chứa biểu thức toán nào theo sau -> xóa bỏ để không nuốt xuống dòng tiếp theo hay ký tự #
+        masked = beforeDollar + afterDollar;
       }
     }
+
+    lines[idx] = masked.replace(/\uE000DM(\d+)\uE001/g, (_m, k) => dMasks[Number(k)] || '');
   }
   s = lines.join('\n');
 
@@ -1549,8 +1911,10 @@ export function wrapNakedMathInDocument(text: string): string {
         let cleanMath = strippedOfMarkdown
           .replace(/\\geq\b/g, '\\ge ')
           .replace(/\\leq\b/g, '\\le ')
-          .replace(/\\ge([0-9a-zA-Z])/g, '\\ge $1')
-          .replace(/\\le([0-9a-zA-Z])/g, '\\le $1')
+          .replace(/\\ge([0-9])/g, '\\ge $1')
+          .replace(/\\le([0-9])/g, '\\le $1')
+          .replace(/\\ge([xyzmnabckXYZMNABCK])(?![a-zA-Z])/g, '\\ge $1')
+          .replace(/\\le([xyzmnabckXYZMNABCK])(?![a-zA-Z])/g, '\\le $1')
           .replace(/\\neq([0-9a-zA-Z])/g, '\\neq $1');
         return `${prefix}${label} $${cleanMath}$`;
       }
@@ -1565,10 +1929,17 @@ export function wrapNakedMathInDocument(text: string): string {
       return `$${clean}$`;
     });
 
-    // 4.5. Tự động bọc display $$...$$ cho các môi trường toán trần trụi: \begin{cases}...\end{cases}, f(x) = \begin{cases}...\end{cases}
-    s = s.replace(/(?<!\$)(?:([a-zA-Z]\s*(?:\([a-zA-Z0-9,\s]+\))?\s*=\s*)?(\\begin\s*\{(?:cases|aligned|matrix|pmatrix|bmatrix)\*?\}[\s\S]*?\\end\s*\{(?:cases|aligned|matrix|pmatrix|bmatrix)\*?\}))(?!\$)/g, (_m, prefix, env) => {
-      return `\n\n$$\n${(prefix || '')}${env}\n$$\n\n`;
-    });
+    // 4.5. Tự động bọc $ hoặc $$ cho các môi trường toán trần trụi: \begin{cases}...\end{cases}, f(x) = \begin{cases}...\end{cases}
+    if (s.includes('\\begin')) {
+      s = s.replace(/(?<!\$)(?:([a-zA-Z]\s*(?:\([a-zA-Z0-9,\s]+\))?\s*=\s*)?(\\begin\s*\{(?:cases|aligned|matrix|pmatrix|bmatrix)\*?\}[\s\S]*?\\end\s*\{(?:cases|aligned|matrix|pmatrix|bmatrix)\*?\}))(?!\$)/gi, (_m, prefix, env, offset) => {
+        const lineStart = s.lastIndexOf('\n', offset - 1) + 1;
+        const beforeOnLine = s.slice(lineStart, offset).trim();
+        if (beforeOnLine.length > 0) {
+          return `$${(prefix || '')}${env.trim()}$`;
+        }
+        return `\n\n$$\n${(prefix || '')}${env.trim()}\n$$\n\n`;
+      });
+    }
 
     parts[i] = s;
   }
@@ -1665,7 +2036,10 @@ export function normalizeGeometricProgressionFormulas(text: string): string {
     '$u_k^2 = u_{k-1} \\cdot u_{k+1}$ với $k \\ge 2$'
   );
 
-  // 4. Tổng n số hạng đầu tiên
+  // 4. Tổng n số hạng đầu tiên (kể cả chữa lành trường hợp bị rách dấu $ từ dữ liệu lịch sử cũ)
+  t = t.replace(/công\s*bội\s*\$?q\s*[\r\n\s]*\$*\\neq\s*1\$*\s*\.\s*\$*T\s*ổ\s*n\s*g\s*\$?n\$?\s*s\s*ố\s*h\s*ạ\s*n\s*g\s*đ\s*ầ\s*u\s*t\s*i\s*ê\s*n\s*l\s*à\$*\s*\$*S_?n\s*=\s*\\(?:d)?frac\{u_?1\(1-q\^n\)\}\{1-q\}\$*[\s\r\n.]*Nếu\s*\$*q\s*=\s*1\$*\s*\$*thì\$*\s*\$*S_?n\$*\s*=\s*\$*n\s*\\cdot\s*u_?1\$*\s*\.?/gi,
+    'công bội $q \\neq 1$. Tổng $n$ số hạng đầu tiên là $S_n = \\frac{u_1(1-q^n)}{1-q}$. Nếu $q = 1$ thì $S_n = n \\cdot u_1$.'
+  );
   t = t.replace(/(?:\$)?\s*S_?n\s*=\s*\\(?:d)?frac\{\s*u_?1\s*\(1\s*-\s*q\s*\^?\s*\{?n\}?\)\s*\}\{\s*1\s*-\s*q\s*\}(?:\$)?/gi,
     '$S_n = \\frac{u_1(1-q^n)}{1-q}$'
   );
@@ -1688,20 +2062,21 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
   if (!markdown) return "";
   let text = markdown;
 
-  // 0. Tự động ngắt dòng cho các mục Tóm tắt kiến thức / Lý thuyết (- **...:**)
-  text = text.replace(/([^\n])\s*(?:[-*•]|\u2022)?\s*(\*\*(?:Định\s*nghĩa|Khái\s*niệm|Số\s*hạng\s*tổng\s*quát|Tính\s*chất|Tổng\s*n\s*số\s*hạng|Quy\s*tắc|Công\s*thức|Định\s*lý|Hệ\s*thức|Chú\s*ý|Nhận\s*xét|Ví\s*dụ|Lưu\s*ý)[^*]*?:\*\*)/gi, '$1\n\n- $2');
-  text = text.replace(/([^\n])\s+[-*•]\s+(\*\*[^*]+?:\*\*)/g, '$1\n\n- $2');
+  // 0. Tự động ngắt dòng cho các mục Tóm tắt kiến thức / Lý thuyết (- **...:**) khi bị dính trên cùng 1 dòng
+  text = text.replace(/([^\n\-*•–—\u2022\s])[ \t]*(?:[-*•]|\u2022)?[ \t]*(\*\*(?:Định\s*nghĩa|Khái\s*niệm|Số\s*hạng\s*tổng\s*quát|Tính\s*chất|Tổng\s*\$?n\$?\s*số\s*hạng|Quy\s*tắc|Công\s*thức|Định\s*lý|Hệ\s*thức|Chú\s*ý|Nhận\s*xét|Ví\s*dụ|Lưu\s*ý)[^*]*?:\*\*)/gi, '$1\n- $2');
+  text = text.replace(/([^\n\-*•–—\u2022\s])[ \t]+[-*•][ \t]+(\*\*[^*]+?:\*\*)/g, '$1\n- $2');
 
   // 1. Tách chữ tiếng Việt dính liền với công thức $ bằng cách chia mảng token (tránh tuyệt đối ghép nhầm dấu $ đóng với dấu $ mở kế tiếp)
   text = text.replace(/([a-zA-ZÀ-ỹ]{2,})(\([uS]_\{?[a-zA-Z0-9+\-]+\}?\))/g, '$1 $$$2$$');
   text = text.replace(/(\([uS]_\{?[a-zA-Z0-9+\-]+\}?\))([a-zA-ZÀ-ỹ]{2,})/g, '$$$1$$ $2');
   text = text.replace(/([a-zA-ZÀ-ỹ]{2,})([uS]_\{[a-zA-Z0-9+\-]+\})/g, '$1 $$$2$$');
 
-  // Tách chữ cái/số tiếng Việt đứng trước dấu $ (ví dụ "Số$q$" -> "Số $q$", "bội$q$" -> "bội $q$", "Nếu$(u_n)$" -> "Nếu $(u_n)$")
-  text = text.replace(/([a-zA-ZÀ-ỹ0-9:;,!?])\$(?!\$)/g, '$1 $');
-  text = text.replace(/(?<!\$)\$([a-zA-ZÀ-ỹ0-9])/g, '$ $1');
-  // Tách dấu hai chấm dính chữ (ví dụ "Định nghĩa:Cấp" -> "Định nghĩa: Cấp")
-  text = text.replace(/(:\s*)([a-zA-ZÀ-ỹ0-9])/g, ': $2');
+  // Tách dấu hai chấm dính chữ trên cùng 1 dòng (ví dụ "Định nghĩa:Cấp" -> "Định nghĩa: Cấp", tuyệt đối KHÔNG nuốt ký tự xuống dòng \n)
+  text = text.replace(/:[ \t]*([a-zA-ZÀ-ỹ0-9])/g, ': $1');
+
+  // Tách riêng nếu tiêu đề PHẦN bị dính liền với Câu 1, mệnh đề a), hoặc công thức câu 1 trên cùng 1 dòng
+  text = text.replace(/(PHẦN\s*(?:[1-4]|I{1,4}|IV)\b[^:\n]*:?)[ \t]+(?=(?:[-*]\s*)?(?:\*{0,2}(?:Câu|Bài)\s*\d+|\d+[\.\)](?:\s+(?![A-D]\b)|\s*$)|\*{0,2}[a-d]\)\s+))/gi, '$1\n');
+  text = text.replace(/(PHẦN\s*(?:[2-4]|II|III|IV)\s*:)[ \t]+(?!(?:TRẮC\s*NGHIỆM|CÂU\s*HỎI|BÀI\s*TẬP|TỰ\s*LUẬN|ĐÚNG|TRẢ\s*LỜI|NHIỀU|LỰA\s*CHỌN|PHẦN|MỖI|HƯỚNG\s*DẪN|ĐÁP\s*ÁN|LỜI\s*GIẢI)\b)(\S)/gi, '$1\n$2');
 
   const mathSplitParts = text.split(/(\$\$[\s\S]*?\$\$|\$[^\$\n]+?\$)/g);
   for (let i = 0; i < mathSplitParts.length; i++) {
@@ -1729,20 +2104,21 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
   }
   text = mathSplitParts.join('');
   text = fixAndMergeMathArrows(text);
-  // 1.1 Làm sạch triệt để dấu sao (**) xung quanh và ngay sau nhãn phương án A, B, C, D (chỉ in hoa [A-D], tuyệt đối không đụng vào a), b), c), d) Đúng/Sai)
-  // Loại bỏ các trường hợp như: "**A.** ** 11", "A. ** 11", "A.** 11", "● A.** 11", "- **A.** ** 11"
-  text = text.replace(/(?:^|\n|\s+)(?:[-*•●]\s*)?(?:\*{1,3}|<b>)?\(?([A-D])\)?[\.\:](?:\*{1,3}|<\/b>)?\s*(?:\*{1,3}\s*)?/g, (m, letter) => {
-    const isNewline = m.startsWith('\n') || m.startsWith('\r\n');
-    const prefix = isNewline ? '\n' : ' ';
-    return `${prefix}${letter}. `;
-  });
-  text = text.replace(/(?<!\*)([A-D]\.)(?=[^\s\*])/g, "$1 ");
+  // 1.1 Chỉ chuẩn hóa dấu sao quanh nhãn phương án [A-D] đứng đầu dòng nếu văn bản thực sự có PHẦN I, tuyệt đối không làm hỏng "(A. 90°, B. 0°, ...)" giữa câu
+  if (/PHẦN\s*(?:I\b|1\b)/i.test(text)) {
+    text = text.replace(/(^|\n)[ \t]*(?:[-*•●]\s*)?(?:\*{1,3}|<b>)?(?:\(([A-D])\)|([A-D]))[\.\:](?:\*{1,3}|<\/b>)?[ \t]*(?:\*{1,3}[ \t]*)?/g, (_m, nl, l1, l2) => {
+      const letter = l1 || l2;
+      return `${nl}${letter}. `;
+    });
+    text = text.replace(/(^|\n)[ \t]*([A-D]\.)(?=[^\s\*])/gm, "$1$2 ");
+  }
 
   // 2. Duyệt từng dòng và đánh số câu hỏi cho từng Phần I, II, III, IV
   const lines = text.split("\n");
   const result: string[] = [];
   let currentPart = 0; // 0 = Tóm tắt lý thuyết / ngoài bài tập; 1, 2, 3, 4 = Phần I, II, III, IV
   let qIndex = 0;
+  let hasOpenQuestionInPart2 = false;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -1751,6 +2127,7 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
     // 0. Kiểm tra nếu là tiêu đề TÓM TẮT KIẾN THỨC / LÝ THUYẾT TRỌNG TÂM -> giữ currentPart = 0
     if (/^(?:#{1,4}|\*{2,3}|[I1]\.)?\s*(?:TÓM\s*TẮT|KIẾN\s*THỨC\s*TRỌNG\s*TÂM|LÝ\s*THUYẾT\s*TRỌNG\s*TÂM)/i.test(trimmed)) {
       currentPart = 0;
+      hasOpenQuestionInPart2 = false;
       result.push(line);
       continue;
     }
@@ -1764,6 +2141,7 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
       } else if (/ĐÚNG\s*[\/\-]?\s*SAI|PHẦN\s*(?:II\b|2\b)|B\.\s*TRẮC/i.test(trimmed)) {
         currentPart = 2;
         qIndex = 1;
+        hasOpenQuestionInPart2 = false;
       } else if (/TRẢ\s*LỜI\s*NGẮN|ĐIỀN\s*SỐ|PHẦN\s*(?:III\b|3\b)/i.test(trimmed)) {
         currentPart = 3;
         qIndex = 1;
@@ -1778,6 +2156,7 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
     // Nếu gặp tiêu đề kết thúc các phần bài tập (ví dụ Đáp án, Lời giải, Bảng đáp án, details)
     if (/^(?:#{1,4}|\*{2,3})?\s*(?:HƯỚNG DẪN|ĐÁP ÁN|LỜI GIẢI|BẢNG ĐÁP ÁN|<details)/i.test(trimmed)) {
       currentPart = 0;
+      hasOpenQuestionInPart2 = false;
       result.push(line);
       continue;
     }
@@ -1796,6 +2175,12 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
     }
 
     if (currentPart === 1) {
+      // Bỏ qua nếu là dòng đáp án nhanh kiểu "1.C, 2.B, 3.C..."
+      if (/^(?:Câu\s*)?1\s*[\.\):-]?\s*[A-D]\s*[,;-]\s*(?:Câu\s*)?2\s*[\.\):-]?\s*[A-D]/i.test(trimmed)) {
+        result.push(line);
+        continue;
+      }
+
       // PHẦN I: Trắc nghiệm lựa chọn A, B, C, D
       const isQuestionStart =
         /^(?:[-*]\s+|\*{0,2}Câu\s*\d+[:\.]?\*{0,2}|\d+[\.\)]\s+)/i.test(trimmed) ||
@@ -1874,6 +2259,68 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
           .replace(/\s*\*+$/, '')
           .trim();
       };
+
+      // Nếu 1 dòng bắt đầu bằng A./B./C. nhưng lại dính tiếp nhiều phương án phía sau (vd: "B. ... C. ... D. ..." hoặc "C. ... D. ...")
+      // Tách an toàn ngoài vùng $...$ để mọi câu hỏi luôn đủ 4 item tách biệt -> xuất bảng 4 cột / 2x2 chuẩn
+      if (/^(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?[A-D][\.\):](?:\*{0,2}|<\/b>)?\s+[\s\S]+/.test(trimmed)) {
+        const splitOptsOutsideMath = (lineStr: string): { letter: string; body: string }[] => {
+          const found: { idx: number; markerLen: number; letter: string }[] = [];
+          let inDollar = false;
+          let inDoubleDollar = false;
+          for (let k = 0; k < lineStr.length; k++) {
+            const ch = lineStr[k];
+            if (ch === '\\') { k++; continue; }
+            if (ch === '$') {
+              if (lineStr[k + 1] === '$') {
+                inDoubleDollar = !inDoubleDollar;
+                k++;
+              } else if (!inDoubleDollar) {
+                inDollar = !inDollar;
+              }
+              continue;
+            }
+            if (inDollar || inDoubleDollar) continue;
+            if (k === 0 || /\s/.test(lineStr[k - 1])) {
+              const sub = lineStr.slice(k);
+              const m = sub.match(/^(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?([A-D])[\.\):](?:\*{0,2}|<\/b>)?\s+/);
+              if (m) {
+                const letter = m[1].toUpperCase();
+                // Đảm bảo thứ tự chữ cái tăng dần (A -> B -> C -> D) để tránh tách nhầm chữ cái giữa câu
+                if (found.length === 0 || letter.charCodeAt(0) === found[found.length - 1].letter.charCodeAt(0) + 1) {
+                  found.push({ idx: k, markerLen: m[0].length, letter });
+                  k += m[0].length - 1;
+                }
+              }
+            }
+          }
+          if (found.length < 2) return [];
+          const items: { letter: string; body: string }[] = [];
+          for (let j = 0; j < found.length; j++) {
+            const start = found[j].idx + found[j].markerLen;
+            const end = j + 1 < found.length ? found[j + 1].idx : lineStr.length;
+            items.push({
+              letter: found[j].letter,
+              body: cleanOpt(lineStr.slice(start, end)),
+            });
+          }
+          return items;
+        };
+
+        const multiOpts = splitOptsOutsideMath(trimmed);
+        if (multiOpts.length >= 2) {
+          if (multiOpts[0].letter === 'A' && result.length > 0 && result[result.length - 1].trim() !== '' && !result[result.length - 1].trim().startsWith('- **')) {
+            result.push("");
+          }
+          for (const opt of multiOpts) {
+            result.push(`- **${opt.letter}.** ${opt.body}`);
+          }
+          if (multiOpts[multiOpts.length - 1].letter === 'D') {
+            result.push("");
+          }
+          continue;
+        }
+      }
+
       const singleOptMatch = trimmed.match(/^(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?([A-D])[\.\):](?:\*{0,2}|<\/b>)?\s*([\s\S]+)$/);
       if (singleOptMatch) {
         const optLetter = singleOptMatch[1].toUpperCase();
@@ -1891,20 +2338,30 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
 
     if (currentPart === 2) {
       // PHẦN II: Trắc nghiệm Đúng/Sai
-      // Các ý a), b), c), d) giữ nguyên vẹn
-      if (/^[a-d]\)[\s\S]*/i.test(trimmed)) {
+      // Các ý a), b), c), d) giữ nguyên vẹn; nếu gặp ý a) mà chưa có dòng "**Câu X:**" phía trước (do AI bỏ sót chữ Câu 1:) thì tự động chèn "**Câu X:**"
+      if (/^(?:[-*]\s*)?\*{0,2}[a-d]\)[\s\S]*/i.test(trimmed)) {
+        if (/^(?:[-*]\s*)?\*{0,2}a\)/i.test(trimmed) && !hasOpenQuestionInPart2) {
+          result.push(`**Câu ${qIndex}:**`);
+          qIndex++;
+          hasOpenQuestionInPart2 = true;
+        }
+        if (/^(?:[-*]\s*)?\*{0,2}d\)/i.test(trimmed) || /\bd\)\s*(?:Đ|S|Đúng|Sai)\b/i.test(trimmed)) {
+          hasOpenQuestionInPart2 = false;
+        }
         result.push(line);
         continue;
       }
-      // Dòng đề dẫn câu hỏi
-      if (trimmed && !trimmed.startsWith("#")) {
+      // Dòng đề dẫn câu hỏi hoặc tiêu đề Câu X:
+      if (trimmed && !trimmed.startsWith("#") && !trimmed.startsWith("<")) {
         let stemLine = trimmed.replace(/^[-*]\s+/, "");
-        if (/^(?:\*{0,2}Câu\s*\d+[:\.]?\*{0,2}|\d+[\.\)])\s*/i.test(stemLine)) {
-          stemLine = stemLine.replace(/^(?:\*{0,2}Câu\s*\d+[:\.]?\*{0,2}|\d+[\.\)])\s*/i, `**Câu ${qIndex}:** `);
+        if (/^(?:\*{0,2}(?:Câu|Bài)\s*\d+[:\.]?\*{0,2}|\d+[\.\)])\s*/i.test(stemLine)) {
+          stemLine = stemLine.replace(/^(?:\*{0,2}(?:Câu|Bài)\s*\d+[:\.]?\*{0,2}|\d+[\.\)])\s*/i, `**Câu ${qIndex}:** `).trimEnd();
           qIndex++;
-        } else if (/^(?:Cho|Xét|Trong|Giả sử|Biết)\b/i.test(stemLine) || qIndex === 1) {
+          hasOpenQuestionInPart2 = !/\bd\)\s*(?:Đ|S|Đúng|Sai)\b/i.test(stemLine);
+        } else if (!hasOpenQuestionInPart2 && (/^(?:Cho|Xét|Trong|Giả sử|Biết)\b/i.test(stemLine) || qIndex === 1)) {
           stemLine = `**Câu ${qIndex}:** ` + stemLine;
           qIndex++;
+          hasOpenQuestionInPart2 = !/\bd\)\s*(?:Đ|S|Đúng|Sai)\b/i.test(stemLine);
         }
         result.push(stemLine);
         continue;
@@ -1913,7 +2370,7 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
 
     if (currentPart === 3 || currentPart === 4) {
       // PHẦN III & IV: Trắc nghiệm trả lời ngắn & Tự luận
-      if (/^(?:[-*]\s+|\*{0,2}(?:Câu|Bài)\s*\d+[:\.]?\*{0,2}|\d+[\.\)]\s+)/i.test(trimmed)) {
+      if (/^(?:[-*]\s+|\*{0,2}(?:Câu|Bài)\s*\d+[:\.]?\*{0,2}|\d+[\.\)](?:\s+|$))/i.test(trimmed)) {
         let stemLine = trimmed.replace(/^[-*]\s+/, "");
         if (/^(?:\*{0,2}(?:Câu|Bài)\s*\d+[:\.]?\*{0,2}|\d+[\.\)])\s*/i.test(stemLine)) {
           stemLine = stemLine.replace(/^(?:\*{0,2}(?:Câu|Bài)\s*\d+[:\.]?\*{0,2}|\d+[\.\)])\s*/i, `**Câu ${qIndex}:** `);
@@ -1923,6 +2380,11 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
         qIndex++;
         result.push(stemLine);
         continue;
+      } else if (qIndex === 1 && trimmed && !/^(?:#|<|\||---|\*{2,3}\s*(?:PHẦN|HƯỚNG|ĐÁP|LỜI))/i.test(trimmed)) {
+        // Trường hợp câu 1 ngay sau PHẦN III / PHẦN IV bị AI bỏ sót nhãn "Câu 1:" (ví dụ mở đầu trực tiếp bằng công thức "$u_{10} = ...$")
+        result.push(`**Câu ${qIndex}:** ${trimmed}`);
+        qIndex++;
+        continue;
       }
     }
 
@@ -1930,6 +2392,132 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
   }
 
   return result.join("\n");
+}
+
+/**
+ * Chuẩn hóa định dạng khu vực Đáp án & Hướng dẫn giải chi tiết trong Phiếu học tập:
+ * - Tách các tiêu đề PHẦN I, II, III, IV ra dòng riêng với dòng trống ngăn cách.
+ * - Đảm bảo mỗi "Câu 1:", "Câu 2:", ... (kể cả khi bị AI viết dính liền "Câu 1: ACâu 2: B" hoặc chỉ cách nhau 1 dấu xuống dòng)
+ *   luôn nằm trên một đoạn (paragraph) tách biệt hoàn toàn với dòng trống ngăn cách.
+ * - Trong PHẦN II (Đúng/Sai), tách riêng các ý a), b), c), d) thành từng đoạn rõ ràng.
+ */
+export function formatWorksheetSolutionSections(markdown: string): string {
+  if (!markdown || typeof markdown !== 'string') return markdown || '';
+
+  // Bảo vệ các khối không được chỉnh sửa ($$...$$, $...$, <summary>...</summary>, <svg>...</svg>)
+  const protectedBlocks: string[] = [];
+  const protect = (src: string, regex: RegExp) =>
+    src.replace(regex, (m) => {
+      const idx = protectedBlocks.push(m) - 1;
+      return `___SOL_PROTECTED_${idx}___`;
+    });
+
+  let s = markdown;
+  s = protect(s, /<svg[\s\S]*?<\/svg>/gi);
+  s = protect(s, /<summary[\s\S]*?<\/summary>/gi);
+  s = protect(s, /\$\$[\s\S]*?\$\$/g);
+  s = protect(s, /\\begin\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}[\s\S]*?\\end\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}/g);
+  s = protect(s, /\$[^$\n]+\$/g);
+
+  // 1. Tách tiêu đề PHẦN I/II/III/IV bị dính vào cuối dòng trước
+  s = s.replace(/([^\n])\s*(#{1,4}\s*PHẦN\s+(?:I{1,3}|IV|[1-4])\b[^\n]*)/gi, '$1\n\n$2');
+  s = s.replace(/([^\n])\s*(\*{2,3}\s*PHẦN\s+(?:I{1,3}|IV|[1-4])\b[^\n]*\*{2,3})/gi, '$1\n\n$2');
+
+  // 2. Xử lý từng dòng (bỏ qua dòng bảng Markdown "|...|")
+  const lines = s.split('\n');
+  const processedLines: string[] = [];
+  let inPartII = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (/^(?:#{1,4}|\*{2,3})?\s*PHẦN\s+(?:I{1,3}|IV|[1-4])\b/i.test(trimmed)) {
+      inPartII = /PHẦN\s*(?:II\b|2\b)(?!\s*I)/i.test(trimmed);
+      if (processedLines.length > 0 && processedLines[processedLines.length - 1].trim() !== '') {
+        processedLines.push('');
+      }
+      processedLines.push(trimmed);
+      processedLines.push('');
+      continue;
+    }
+
+    if (/^\|.*\|$/.test(trimmed) || /^<details\b|^<\/details>/i.test(trimmed)) {
+      processedLines.push(line);
+      continue;
+    }
+
+    // Tách trường hợp các câu giải bị dính trên cùng 1 dòng:
+    // Vd: "**Câu 1:** A **Câu 2:** B" hoặc "Câu 1: ACâu 2: B" hoặc "... 200.Câu 2:" hoặc "... ).Câu 2:"
+    // Không tách nếu ngay trước "Câu N:" là giới từ tham chiếu tiếng Việt (từ, theo, ở, tại, xem, như, của, trong, với, sau, trước, giống)
+    let expanded = line.replace(
+      /([^\s\n*])([ \t]*)(\*{0,2}(?:Câu|Bài)\s+\d+\s*:)/g,
+      (full, prevCh, _sp, qLabel, offset, whole) => {
+        const beforeContext = whole.slice(Math.max(0, offset - 14), offset + 1);
+        if (/(?:^|\s)(?:từ|theo|ở|tại|xem|như|của|trong|với|sau|trước|giống|giữa|về|sang|tới|đến)\s*$/i.test(beforeContext)) {
+          return full;
+        }
+        if (/[a-zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/.test(prevCh)) {
+          return full;
+        }
+        return `${prevCh}\n\n${qLabel}`;
+      }
+    );
+
+    // Trường hợp kết thúc cụm in đậm rồi sang câu mới cách nhau bởi dấu cách: "**Đáp số: 200.** **Câu 2:**"
+    expanded = expanded.replace(
+      /(\*{2})([ \t]+)(\*{0,2}(?:Câu|Bài)\s+\d+\s*:)/g,
+      (full, prevBold, _sp, qLabel, offset, whole) => {
+        const beforeContext = whole.slice(Math.max(0, offset - 16), offset);
+        if (/(?:^|\s)(?:từ|theo|ở|tại|xem|như|của|trong|với|sau|trước|giống|giữa|về)\s*$/i.test(beforeContext)) {
+          return full;
+        }
+        return `${prevBold}\n\n${qLabel}`;
+      }
+    );
+
+    const subLines = expanded.split('\n');
+    for (const sub of subLines) {
+      const subTrim = sub.trim();
+      if (!subTrim) {
+        if (processedLines.length > 0 && processedLines[processedLines.length - 1] !== '') {
+          processedLines.push('');
+        }
+        continue;
+      }
+
+      if (/^(?:[-*•●]\s*)?\*{0,2}(?:Câu|Bài)\s+\d+\s*[:.]/i.test(subTrim)) {
+        const cleanedQ = subTrim
+          .replace(/^[-*•●]\s*/, '')
+          .replace(/^(?:\*{0,2})((?:Câu|Bài)\s+\d+\s*[:.])(?:\*{0,2})\s*/i, '**$1** ');
+        if (processedLines.length > 0 && processedLines[processedLines.length - 1] !== '') {
+          processedLines.push('');
+        }
+        processedLines.push(cleanedQ);
+        continue;
+      }
+
+      if (inPartII && /^(?:[-*•●]\s*)?\*{0,2}[a-d]\)(?:\*{0,2})\s+/i.test(subTrim)) {
+        const cleanedSubItem = subTrim.replace(/^[-*•●]\s*/, '');
+        if (processedLines.length > 0 && processedLines[processedLines.length - 1] !== '') {
+          processedLines.push('');
+        }
+        processedLines.push(cleanedSubItem);
+        continue;
+      }
+
+      processedLines.push(sub);
+    }
+  }
+
+  let res = processedLines.join('\n').replace(/\n{3,}/g, '\n\n');
+
+  for (let pass = 0; pass < 3; pass++) {
+    if (!res.includes('___SOL_PROTECTED_')) break;
+    res = res.replace(/___SOL_PROTECTED_(\d+)___/g, (_, idx) => protectedBlocks[Number(idx)] ?? '');
+  }
+
+  return res.trim();
 }
 
 let mathRenderTimer: any = null;
@@ -1967,44 +2555,12 @@ export function wrapUnenclosedLatexMath(text: string): string {
   s = s.replace(/\bChoC\b/g, 'Cho $C$');
   s = s.replace(/\bChoO\b/g, 'Cho $O$');
 
-  // 2. Strip stray asterisks, bullets or closing asterisks around option letters: '* A.', '*A.', '• *A.', '- *A.', 'A.**', '● A.**', '**A.**' -> 'A.'
-  // Chỉ khớp chữ cái in hoa [A-D], bảo vệ tuyệt đối các ý a), b), c), d) Đúng/Sai
-  s = s.replace(/(?:^|\n|\s+)(?:[-*•●]\s*)?(?:\*{1,3}|<b>)?\(?([A-D])\)?[\.\:](?:\*{1,3}|<\/b>)?\s*(?:\*{1,3}\s*)?/g, (m, letter) => {
-    const isNewline = m.startsWith('\n') || m.startsWith('\r\n');
-    const prefix = isNewline ? '\n' : ' ';
-    return `${prefix}${letter}. `;
-  });
-
-  // 3. Automatically wrap un-enclosed LaTeX expressions in solution/explanation text
-  if (/(?<!\\)\\(?:vec|perp|Leftrightarrow|Rightarrow|Leftarrow|iff|implies|frac|sqrt|neq|ge|le|geq|leq|cdot)\b/.test(s)) {
-    const lines = s.split('\n');
-    const processedLines = lines.map(line => {
-      if (line.includes('$$') || line.trim().startsWith('#') || line.trim().startsWith('|')) {
-        return line;
-      }
-      if (/(?<!\\)\\(?:vec|perp|Leftrightarrow|Rightarrow|Leftarrow|iff|implies|frac|sqrt|neq|ge|le|geq|leq|cdot)\b/.test(line)) {
-        const parts = line.split(/(\$[^\$\n]+?\$)/g);
-        for (let i = 0; i < parts.length; i += 2) {
-          let seg = parts[i];
-          if (!seg) continue;
-          if (/(?<!\\)\\(?:vec|perp|Leftrightarrow|Rightarrow|Leftarrow|iff|implies|frac|sqrt|neq|ge|le|geq|leq|cdot)\b/.test(seg)) {
-            seg = seg.replace(/((?:Giải|Ví dụ|Ta có|Suy ra|Do đó|Kỹ năng Casio|Bẫy đề thi|Bẫy|Lưu ý)[:\s]*)?([\s\S]+?)(?=\s*(?:\*\*?Chọn\s*[A-D]\b|Chọn\s*[A-D]\b|\.|$))/gi, (fullMatch, lead, mathPart) => {
-              const leadStr = lead || '';
-              const trimmedMath = (mathPart || '').trim();
-              if (trimmedMath && /(?<!\\)\\(?:vec|perp|Leftrightarrow|Rightarrow|Leftarrow|iff|implies|frac|sqrt|neq|ge|le|geq|leq|cdot)\b/.test(trimmedMath)) {
-                const cleanMath = trimmedMath.replace(/^\$+|\$+$/g, '').trim();
-                return `${leadStr}$${cleanMath}$`;
-              }
-              return fullMatch;
-            });
-            parts[i] = seg;
-          }
-        }
-        return parts.join('');
-      }
-      return line;
+  // 2. Strip stray asterisks around line-start option letters only when inside an explicit PHẦN I / Câu trắc nghiệm block (never strip '(' in inline '(A. 90°, B. 0°)')
+  if (/PHẦN\s*(?:I\b|1\b)/i.test(s)) {
+    s = s.replace(/(^|\n)[ \t]*(?:[-*•●]\s*)?(?:\*{1,3}|<b>)?(?:\(([A-D])\)|([A-D]))[\.\:](?:\*{1,3}|<\/b>)?[ \t]*(?:\*{1,3}[ \t]*)?/g, (_m, nl, l1, l2) => {
+      const letter = l1 || l2;
+      return `${nl}${letter}. `;
     });
-    s = processedLines.join('\n');
   }
 
   return s;

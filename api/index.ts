@@ -8,6 +8,7 @@ import mammoth from 'mammoth';
 import WordExtractor from 'word-extractor';
 import LZString from 'lz-string';
 import * as XLSX from 'xlsx';
+import zlib from 'zlib';
 
 
 
@@ -662,8 +663,13 @@ function sanitizeJsonString(str: string): string {
           } else {
             // Đây là ngắt dòng LaTeX (\\ trong cases/aligned/matrix) hoặc ký tự thoát khác
             if (nextChar === "\"") {
-              result += "\\\"";
-              i += slashCount + 1;
+              if (slashCount % 2 === 1) {
+                result += "\\\"";
+                i += slashCount + 1;
+              } else {
+                result += "\\\\".repeat(slashCount / 2);
+                i += slashCount;
+              }
             } else if (nextChar === "/") {
               result += "/";
               i += slashCount + 1;
@@ -744,17 +750,9 @@ export function cleanLatexMathField(str: any): string {
   if (str === null || str === undefined) return '';
   let s = String(str);
 
-  // 1. Unescape escaped literal \n
-  s = s.replace(/\\neq\b/g, '___TEX_NEQ___');
-  s = s.replace(/\\notin\b/g, '___TEX_NOTIN___');
-  s = s.replace(/\\nexists\b/g, '___TEX_NEXISTS___');
-  s = s.replace(/\\nearrow\b/g, '___TEX_NEARROW___');
-  s = s.replace(/\\\\n/g, '\n');
-  s = s.replace(/\\n/g, '\n');
-  s = s.replace(/___TEX_NEQ___/g, '\\neq');
-  s = s.replace(/___TEX_NOTIN___/g, '\\notin');
-  s = s.replace(/___TEX_NEXISTS___/g, '\\nexists');
-  s = s.replace(/___TEX_NEARROW___/g, '\\nearrow');
+  // 1. Unescape escaped literal \n without corrupting \ne, \neq, \notin, \nexists, \nearrow, \nabla, \nu, \natural
+  s = s.replace(/\\\\n(?![a-zA-Z])/g, '\n');
+  s = s.replace(/\\n(?![a-zA-Z])/g, '\n');
 
   // 2. Tách câu sau dấu chấm
   s = s.replace(/\.([A-ZÀ-Ỹ])/g, '. $1');
@@ -883,13 +881,12 @@ function getValidGeminiModels(requestedModel?: string): string[] {
     primary.includes("latest") ||
     primary === "gemini-pro"
   ) {
-    primary = "gemini-3.1-flash-lite";
+    primary = "gemini-4-hydrogen";
   }
   const list = [
     primary,
-    "gemini-3.1-flash-lite",
     "gemini-4-hydrogen",
-    "gemini-3.8-flash"
+    "gemini-3.1-flash-lite"
   ];
   return Array.from(new Set(list));
 }
@@ -920,7 +917,9 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
   }
 
   let customKeyFailed = false;
-  const models = getValidGeminiModels(payloadOptions?.model);
+  const models: string[] = Array.isArray(payloadOptions?.preferredModels) && payloadOptions.preferredModels.length > 0
+    ? Array.from(new Set<string>(payloadOptions.preferredModels.map((m: any) => String(m || "").replace(/^models\//, "").trim()).filter((m: string) => m.length > 0)))
+    : getValidGeminiModels(payloadOptions?.model);
   let primaryError: any = null;
   let lastFailedIsCustom = clients[0]?.isCustom || false;
 
@@ -961,17 +960,35 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
           rawConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
         }
 
-        const updatedPayload = {
+        const requestedMaxTokens = rawConfig.maxOutputTokens || 32768;
+        const basePayload = {
           ...payloadOptions,
           contents: normalizeGeminiContents(payloadOptions.contents),
           model,
           config: {
-            maxOutputTokens: rawConfig.maxOutputTokens || 32768,
             ...rawConfig,
+            maxOutputTokens: requestedMaxTokens,
             systemInstruction: rawConfig.systemInstruction || defaultSystemInstruction
           }
         };
-        const response = await client.models.generateContent(updatedPayload);
+        delete (basePayload as any).preferredModels;
+
+        let response: any;
+        try {
+          response = await client.models.generateContent(basePayload);
+        } catch (tokenErr: any) {
+          const errStr = String(tokenErr?.message || "");
+          if (/thinkingConfig|thinkingBudget|thinkingLevel/i.test(errStr)) {
+            const noThinkConfig = { ...basePayload.config };
+            delete (noThinkConfig as any).thinkingConfig;
+            response = await client.models.generateContent({ ...basePayload, config: noThinkConfig });
+          } else if (requestedMaxTokens > 32768 && /maxOutputTokens|token|invalid|argument/i.test(errStr)) {
+            basePayload.config.maxOutputTokens = 32768;
+            response = await client.models.generateContent(basePayload);
+          } else {
+            throw tokenErr;
+          }
+        }
         const normText = extractTextFromResponse(response);
         if (!normText) {
           continue;
@@ -1553,8 +1570,7 @@ ${exampleBlocks.join(',\n')}
         }
       ],
       config: {
-        responseMimeType: "application/json",
-        temperature: 0.3
+        responseMimeType: "application/json"
       }
     });
 
@@ -1893,7 +1909,7 @@ ${exampleBlocks.join(',\n')}
           subtopic: (item as any).subtopic || 'Chủ đề trọng tâm',
           isRealWorld: j === 1,
           content: item.content,
-          tfStatements: item.tfStatements,
+          tfStatements: (item as any).tfStatements || (item as any).statements || [],
           solution: item.sol,
           explanation: item.sol
         });
@@ -2132,27 +2148,127 @@ app.all(["/api/generate-graduation-review-plan"], async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   return keepAliveExecute(req, res, async () => {
-    const { prompt, model } = req.body || {};
+    const { prompt, model, periods = 3, topic = "", subject = "Toán học" } = req.body || {};
     if (!prompt) {
       throw new Error("Không có nội dung yêu cầu tạo kế hoạch bài dạy ôn tập.");
     }
+    const safePeriods = Math.max(1, Number(periods) || 3);
+    const totalMinutes = safePeriods * 45;
+    const periodListStr = Array.from({ length: safePeriods }, (_, idx) => `Tiết ${idx + 1}`).join(", ");
+    const isExamPracticeTopic = /Luyện đề|Kiểm tra giữa kỳ/i.test(String(topic || ""));
+    const isLiterature = /Ngữ văn/i.test(String(subject || ""));
+
+    const systemInstruction8b = `Bạn là Chuyên gia thẩm định chương trình GDPT 2018 kiêm Giáo viên dạy giỏi cốt cán cấp Tỉnh/Thành phố môn ${subject}.
+Nhiệm vụ của bạn là biên soạn KẾ HOẠCH BÀI DẠY (GIÁO ÁN) ÔN THI TỐT NGHIỆP THPT LỚP 12 CHUẨN CÔNG VĂN 5512/BGDĐT cực kỳ chi tiết, đầy đủ 100% nội dung thực chiến để giáo viên dùng dạy ngay trên lớp và in phát trực tiếp Phiếu học tập cho học sinh.
+
+BẮT BUỘC TUÂN THỦ NGHIÊM NGẶT 4 QUY TẮC CỐT LÕI SAU:
+
+1. QUY TẮC CHỐNG TÓM TẮT (ANTI-LAZINESS - CẤM TUYỆT ĐỐI):
+- TUYỆT ĐỐI CẤM viết các câu mô tả đại ý, tóm tắt hoặc viết tắt trong ngoặc đơn như: "(Các câu hỏi từ 1 đến 8 tập trung vào...)", "(Giải thích chi tiết: Áp dụng quy tắc...)", "(Tương tự các câu trên)", "(Học sinh giải tương tự)", "...".
+- BẮT BUỘC sinh đầy đủ 100% từng định lý, từng phương pháp giải, từng ví dụ minh họa kèm lời giải chi tiết, toàn bộ từng câu hỏi trong Phiếu học tập (Mục IV) và lời giải chi tiết từng bước cho mọi câu (Mục V).
+
+2. CHUẨN HÓA CẤU TRÚC CÔNG VĂN 5512 & PHÂN BỔ THỜI GIAN (${safePeriods} TIẾT = ${totalMinutes} PHÚT):
+- Bảng tổng hợp Tiến trình dạy học ở đầu Mục III BẮT BUỘC phải chia đủ số tiết người dùng đã chọn (${safePeriods} tiết = ${totalMinutes} phút, thể hiện rõ đủ ${periodListStr} với tổng thời lượng các hoạt động cộng lại đúng bằng ${totalMinutes} phút).
+- Tất cả 4 Hoạt động (Hoạt động 1: Khởi động; Hoạt động 2: Hình thành kiến thức / Hệ thống hóa kiến thức trọng tâm; Hoạt động 3: Luyện tập theo dạng bài; Hoạt động 4: Vận dụng / Nhận diện bẫy đề thi) ĐỀU PHẢI CÓ ĐỦ 4 TIỂU MỤC tách dòng riêng:
+  + **a) Mục tiêu:**
+  + **b) Nội dung:**
+  + **c) Sản phẩm:** (Giải chi tiết tình huống khởi động, bảng hệ thống kiến thức hoàn chỉnh, lời giải chi tiết từng bước của các ví dụ minh họa).
+  + **d) Tổ chức thực hiện:** (Trình bày đầy đủ, rõ ràng 4 bước: **Bước 1: Chuyển giao nhiệm vụ** -> **Bước 2: Thực hiện nhiệm vụ** -> **Bước 3: Báo cáo, thảo luận** -> **Bước 4: Kết luận, nhận định**).
+- Ở Hoạt động 3 (Luyện tập theo dạng bài): Mỗi dạng bài BẮT BUỘC phải có: **Phương pháp giải tổng quát** + **Ít nhất 1 - 2 Ví dụ minh họa** có đề bài cụ thể, rõ ràng và **Lời giải chi tiết từng bước**.
+
+3. CHI TIẾT HÓA PHIẾU HỌC TẬP & ĐÁP ÁN (MỤC IV & MỤC V):
+- **Mục IV (Phiếu học tập tự luyện):** Phải soạn đầy đủ từng câu hỏi cụ thể (đề bài rõ ràng, đủ 4 phương án A, B, C, D trên 4 dòng riêng cho Phần I; đủ 4 ý a), b), c), d) trên 4 dòng riêng cho Phần II; câu hỏi tính toán điền số thực rõ ràng cho Phần III${isExamPracticeTopic ? "; riêng bài Luyện đề/Kiểm tra phải đủ 22 câu: 12 câu Phần I + 4 câu Phần II + 6 câu Phần III" : ""}) bám sát đúng mức độ mục tiêu học sinh đã chọn. Không lộ đáp án ở Mục IV.
+- **Mục V (Bảng đáp án và hướng dẫn giải chi tiết):**
+  + **5.1. Bảng đáp án nhanh:** Kẻ bảng tổng hợp đáp án nhanh cho toàn bộ các câu hỏi của Phần I, Phần II (Đúng/Sai cho từng ý a, b, c, d), Phần III (đáp số từng câu).
+  + **5.2. Lời giải chi tiết từng bước:** Giải chi tiết từng bước cho TOÀN BỘ 100% các câu hỏi ở Mục IV (giải thích từng câu Phần I; chứng minh rõ vì sao từng ý a, b, c, d ở Phần II là Đúng hay Sai; trình bày đầy đủ các bước giải và kết quả làm tròn cho các câu Vận dụng / VDC ở Phần III).
+
+4. QUY TẮC ĐỊNH DẠNG MARKDOWN & LATEX CHUẨN MỰC (KHÔNG LỖI HIỂN THỊ):
+- Dùng cú pháp in đậm chuẩn \`**text**\` (không để khoảng trắng sát bên trong dấu \`**\`, không để dấu \`***\` hay \`****\`, luôn có khoảng trắng sau \`**Nhãn:**\`). Không đặt dấu gạch đầu dòng \`-\` hoặc \`+\` trước tiêu đề \`#\`, \`##\`, \`###\`, \`####\`.
+- TẤT CẢ công thức, ký hiệu toán học, biến số đơn lẻ ($x$, $y$, $z$, $m$, $a$, $b$, $f'(x)$, $\\Delta$, $\\mathbb{R}$...) BẮT BUỘC bọc trong cặp dấu \`$ ... $\` (nội dòng) hoặc \`$$ ... $$\` (khối riêng). Luôn dùng \`\\frac\` thay vì \`\\dfrac\`.
+- TUYỆT ĐỐI KHÔNG chèn các từ tiếng Việt có dấu (như "Lưu ý", "với", "hoặc", "và", "trên khoảng", "thỏa mãn", "loại") hoặc thẻ \`<br/>\` vào bên trong cặp dấu \`$ ... $\` hay \`$$ ... $$\`!
+  + Ví dụ ĐÚNG: \`$f'(x) \\ge 0$ (hoặc $f'(x) \\le 0$) trên khoảng $(a; b)$\`, \`$\\Delta' \\le 0$ (với $a \\ne 0$)\`, \`$x = 1$ (thỏa mãn)\`.
+  + Ví dụ SAI (CẤM VIẾT): \`$f'(x) \\ge 0 (hoặc \\le 0) trên khoảng (a; b)$\`, \`$\\Delta' \\le 0 (với a \\ne 0)$\`, \`$a > 0 <br/> Lưu ý: ...$\`.`;
+
+    const requestedClean = String(model || "gemini-4-hydrogen").replace(/^models\//, "").trim();
+    const preferredModels = Array.from(new Set([
+      ...(requestedClean && !requestedClean.includes("1.5") && !requestedClean.includes("2.0") && !requestedClean.includes("2.5") ? [requestedClean] : []),
+      "gemini-4-hydrogen",
+      "gemini-3.8-flash",
+      "gemini-3.1-flash-lite"
+    ]));
+
     const response = await generateWithFallback(req, {
       contents: [{ role: "user", parts: [{ text: prompt }] }],
-      model: model || "gemini-4-hydrogen",
+      model: preferredModels[0],
+      preferredModels,
       config: {
-        temperature: 0.35,
-        maxOutputTokens: 32768,
-        systemInstruction: `Bạn là chuyên gia thẩm định chương trình giáo dục phổ thông kiêm giáo viên dạy giỏi cốt cán cấp Tỉnh/Thành phố.
-Nhiệm vụ của bạn là soạn KẾ HOẠCH BÀI DẠY (GIÁO ÁN) ÔN TẬP TĂNG CƯỜNG BUỔI CHIỀU hoàn chỉnh, đồ sộ, sâu sắc, chuẩn mực theo Công văn 5512/BGDĐT, bám sát Chương trình GDPT 2018 và đúng cấu trúc định dạng đề thi Tốt nghiệp THPT mới nhất của Bộ GD&ĐT.
-BẮT BUỘC TUÂN THỦ:
-1. Tất cả công thức toán học, biến số đơn lẻ (x, y, m, a, u, v, vector...) BẮT BUỘC đặt trong cặp dấu đô la: $công_thức$ (nội dòng) hoặc $$công_thức$$ (khối riêng). TUYỆT ĐỐI KHÔNG xuất hiện lệnh LaTeX trần trụi thiếu dấu $.
-2. Dùng cú pháp LaTeX chuẩn: \\frac{a}{b}, \\sqrt{...}, \\pi, \\Leftrightarrow, \\ge, \\le, \\in, \\vec{a}, \\vec{AB}. Luôn dùng \\frac thay vì \\dfrac.
-3. Giữ nguyên vẹn font tiếng Việt UTF-8 chuẩn.
-4. Tuyệt đối không cắt ngắn hay dùng các câu tóm tắt sơ sài. Soạn đầy đủ, chi tiết từng Tiết học (Tiết 1, Tiết 2, Tiết 3...), đủ 4 dạng toán kèm ví dụ mẫu có lời giải chi tiết ở Hoạt động 2, đủ hướng dẫn bấm máy Casio fx-580VN X và phân tích bẫy đề thi ở Hoạt động 4, và đủ toàn bộ câu hỏi + lời giải chi tiết từng câu của Phiếu học tập số 2 ở Phần IV Phụ lục.`
+        maxOutputTokens: 65536,
+        systemInstruction: systemInstruction8b
       }
     });
+
+    let finalMarkdown = (response?.text ? response.text.normalize("NFC").trim() : "") || "";
+
+    // Kiểm tra chống tóm tắt (Anti-Laziness) & Tự động hoàn thiện Mục IV, V nếu AI viết tắt hoặc bị ngắt giữa chừng
+    if (finalMarkdown && !isLiterature) {
+      const hasLazySummary =
+        /\(\s*(?:Các\s+câu\s+(?:hỏi\s+)?từ\s+\d+\s+đến\s+\d+|Giải\s+thích\s+chi\s+tiết\s*:|Tương\s+tự\s+các\s+câu|HS\s+tự\s+giải\s+tương\s+tự|Các\s+câu\s+còn\s+lại)[^)]*\)/i.test(finalMarkdown) ||
+        /\.\.\.\s*\((?:Giải\s+chi\s+tiết|Các\s+câu\s+hỏi)/i.test(finalMarkdown);
+
+      const sec4Index = finalMarkdown.search(/##\s*IV\b/i);
+      const sec5Index = finalMarkdown.search(/##\s*V\b/i);
+      const sec4Text = sec4Index !== -1 ? finalMarkdown.slice(sec4Index, sec5Index !== -1 ? sec5Index : undefined) : "";
+      const sec5Text = sec5Index !== -1 ? finalMarkdown.slice(sec5Index) : "";
+      const sec4QuestionCount = (sec4Text.match(/(?:^|\n)\s*(?:\*{0,2})Câu\s+\d+/gi) || []).length;
+      const sec5SolutionCount = (sec5Text.match(/(?:^|\n|\|)\s*(?:[-*•●]\s*)?(?:\*{0,2})Câu\s+\d+/gi) || []).length;
+      const minExpectedQuestions = isExamPracticeTopic ? 18 : (safePeriods >= 3 ? 12 : 9);
+
+      if (hasLazySummary || sec4Index === -1 || sec5Index === -1 || sec4QuestionCount < minExpectedQuestions || sec5SolutionCount < Math.max(6, sec4QuestionCount - 2)) {
+        try {
+          const expandPrompt = `Dựa trên Kế hoạch bài dạy môn ${subject} - Chủ đề: "${topic}" (${safePeriods} tiết = ${totalMinutes} phút), hãy biên soạn ĐẦY ĐỦ 100%, CHI TIẾT TUYỆT ĐỐI hai mục cuối là **Mục IV (PHIẾU HỌC TẬP TỰ LUYỆN)** và **Mục V (BẢNG ĐÁP ÁN VÀ HƯỚNG DẪN GIẢI CHI TIẾT)** để ghép hoàn chỉnh vào giáo án.
+
+YÊU CẦU BẮT BUỘC (TUYỆT ĐỐI CẤM VIẾT TẮT HAY TÓM TẮT TRONG NGOẶC ĐƠN):
+1. Bắt đầu ngay bằng tiêu đề: \`## IV. PHIẾU HỌC TẬP TỰ LUYỆN: ${String(topic || "").toUpperCase()}\`
+   - Dòng thông tin: \`*Họ và tên học sinh: .................................................... Lớp: 12..... Điểm: .......... / 10*\`
+   - \`### PHẦN I. CÂU TRẮC NGHIỆM NHIỀU PHƯƠNG ÁN LỰA CHỌN\`: Viết ĐẦY ĐỦ từng câu từ **Câu 1** đến **Câu ${isExamPracticeTopic ? 12 : (safePeriods >= 3 ? 8 : 6)}**. Mỗi câu có đề bài tường minh và đủ 4 phương án \`A.\`, \`B.\`, \`C.\`, \`D.\` trên 4 dòng riêng biệt. CẤM viết "(Các câu từ... tập trung vào...)".
+   - \`### PHẦN II. CÂU TRẮC NGHIỆM ĐÚNG / SAI\`: Viết ĐẦY ĐỦ từng câu từ **Câu 1** đến **Câu ${isExamPracticeTopic ? 4 : 3}**. Mỗi câu có dẫn nhập rõ ràng và đủ 4 mệnh đề \`a)\`, \`b)\`, \`c)\`, \`d)\` trên 4 dòng riêng biệt.
+   - \`### PHẦN III. CÂU TRẮC NGHIỆM TRẢ LỜI NGẮN\`: Viết ĐẦY ĐỦ từng câu từ **Câu 1** đến **Câu ${isExamPracticeTopic ? 6 : 4}** (bài toán tính toán, tham số $m$, cực trị/tối ưu thực tế có kết quả là số cụ thể).
+2. Tiếp theo là \`## V. BẢNG ĐÁP ÁN VÀ HƯỚNG DẪN GIẢI CHI TIẾT\`:
+   - \`### 1. Bảng đáp án nhanh\`: Kẻ bảng Markdown tổng hợp đáp án nhanh cho toàn bộ các câu của Phần I, Phần II (Đúng/Sai cho từng ý a, b, c, d), và Phần III (đáp số từng câu).
+   - \`### 2. Lời giải chi tiết từng bước\`:
+     + **Phần I:** Giải chi tiết từng bước cho TẤT CẢ các câu từ Câu 1 đến hết Phần I.
+     + **Phần II:** Giải thích tường minh vì sao từng ý \`a)\`, \`b)\`, \`c)\`, \`d)\` của mỗi câu là **ĐÚNG** hay **SAI** kèm phép biến đổi.
+     + **Phần III:** Trình bày lời giải từng bước từ lập hàm/công thức đến kết quả số cuối cùng cho TẤT CẢ các câu.
+3. Cuối cùng là mục \`### PHÊ DUYỆT CỦA TỔ CHUYÊN MÔN\`.
+4. Tuân thủ nghiêm ngặt LaTeX: bọc công thức trong \`$ ... $\` hoặc \`$$ ... $$\`, dùng \`\\frac\`, TUYỆT ĐỐI KHÔNG đặt chữ tiếng Việt có dấu ("với", "hoặc", "trên khoảng", "Lưu ý") hay \`<br/>\` vào bên trong dấu \`$\`.`;
+
+          const expandRes = await generateWithFallback(req, {
+            contents: [{ role: "user", parts: [{ text: expandPrompt }] }],
+            model: preferredModels[0],
+            preferredModels,
+            config: {
+              maxOutputTokens: 65536,
+              systemInstruction: systemInstruction8b
+            }
+          });
+          const expandedText = (expandRes?.text ? expandRes.text.normalize("NFC").trim() : "") || "";
+          const expandedSec4Idx = expandedText.search(/##\s*IV\b/i);
+          if (expandedSec4Idx !== -1 && expandedText.length > 1200) {
+            const cleanExpanded = expandedText.slice(expandedSec4Idx).trim();
+            if (sec4Index !== -1) {
+              finalMarkdown = finalMarkdown.slice(0, sec4Index).trim() + "\n\n" + cleanExpanded;
+            } else {
+              finalMarkdown = finalMarkdown.trim() + "\n\n" + cleanExpanded;
+            }
+          }
+        } catch (expandErr) {
+          console.warn("Auto-expand Mục IV & V warning:", expandErr);
+        }
+      }
+    }
+
     return {
-      result: (response?.text ? response.text.normalize("NFC").trim() : "") || ""
+      result: finalMarkdown
     };
   });
 });
@@ -2711,6 +2827,7 @@ app.all("/api/generate-interactive-worksheet", async (req, res) => {
       subject, 
       grade, 
       type,
+      semester = 'semester_1',
       numPartI = 12,
       numPartII = 4,
       numPartIII = 6,
@@ -2719,6 +2836,16 @@ app.all("/api/generate-interactive-worksheet", async (req, res) => {
       hasParametric = true,
       additionalNotes = ''
     } = req.body || {};
+
+    const isSpecialTopic = semester === 'special_topic' || (typeof semester === 'string' && semester.toLowerCase().includes('chuyên đề'));
+    const specialTopicDirective = isSpecialTopic
+      ? `\nĐẶC THÙ CHUYÊN ĐỀ HỌC TẬP TOÁN (CHƯƠNG TRÌNH GDPT 2018 - KẾT NỐI TRI THỨC):
+- Đây là Phiếu học tập thuộc Chuyên đề học tập môn Toán chương trình GDPT 2018 (bộ sách Kết nối tri thức với cuộc sống).
+- Yêu cầu: 
+  (1) Phần tóm tắt kiến thức phải trình bày rõ các định nghĩa, công thức tính toán hoặc quy trình/thuật toán giải từng bước; 
+  (2) Hệ thống bài tập phải tăng cường mạnh tính ứng dụng thực tiễn, mô hình hóa toán học (bài toán kinh tế, tài chính, tối ưu hóa, đồ thị, kỹ thuật) bám sát đúng tinh thần sách Chuyên đề; 
+  (3) Với các bài toán liên quan đến hình học/đồ thị/miền nghiệm, cần mô tả chi tiết dữ kiện tọa độ, đỉnh, cạnh để học sinh dễ dàng vẽ hình và giải quyết.\n`
+      : '';
 
     const p1 = typeof numPartI !== 'undefined' ? Number(numPartI) : 12;
     const p2 = typeof numPartII !== 'undefined' ? Number(numPartII) : 4;
@@ -2807,6 +2934,7 @@ app.all("/api/generate-interactive-worksheet", async (req, res) => {
 
     const promptText = `Bạn là một giáo viên xuất sắc môn ${subject || "Toán"} (chuẩn Chương trình GDPT 2018, bộ sách giáo khoa Kết nối tri thức với cuộc sống áp dụng từ năm học 2026-2027). Hãy tạo một Phiếu bài tập (Worksheet) tương tác thật chuyên nghiệp cho học sinh Lớp ${grade}, môn ${subject || "Toán"}, bài học/chủ đề: "${lesson}". Hình thức: ${type || "Kết hợp trắc nghiệm, đúng/sai, trả lời ngắn, tự luận"}.
        
+    ${specialTopicDirective}
     RÀNG BUỘC PHẠM VI NỘI DUNG VÀ CHỦ ĐỀ (BẮT BUỘC 100%):
     - TẤT CẢ CÁC CÂU HỎI trong phiếu bài tập BẮT BUỘC phải tập trung chính xác và 100% nằm trong phạm vi kiến thức, bài học/chủ đề: "${lesson}".
     - TUYỆT ĐỐI KHÔNG BỊA RA HOẶC TỰ Ý CHÈN THÊM bất kỳ câu hỏi nào thuộc bài học khác, chương học khác hay khối lớp khác ngoài chủ đề "${lesson}".
@@ -3051,13 +3179,24 @@ YÊU CẦU PHONG CÁCH: A4 CHUẨN IN ẤN (Đen trắng / Tiết kiệm mực -
       } else if (answerMode === 'summary') {
         answerPrompt = 'Ở cuối tài liệu, hãy cung cấp bảng đáp số/đáp án ngắn gọn (dạng bảng đáp án trắc nghiệm và kết số tự luận), phân cách bằng tiêu đề "--- BẢNG ĐÁP ÁN NHANH ---".';
       } else {
-        answerPrompt = 'Ở cuối tài liệu, hãy cung cấp phần Hướng dẫn giải súc tích từng câu, phân cách bằng tiêu đề "--- HƯỚNG DẪN CHẤM / ĐÁP ÁN CHI TIẾT ---". Với các câu trắc nghiệm nhận biết/thông hiểu cơ bản (như tính $u_n$, công thức cơ bản), chỉ cần trình bày lời giải ngắn gọn trong 2-3 dòng tập trung vào công thức then chốt và bước biến đổi chính, viết bằng công thức LaTeX chuẩn.';
+        answerPrompt = 'Ở cuối tài liệu, hãy cung cấp phần Hướng dẫn giải súc tích từng câu, phân cách bằng tiêu đề "--- HƯỚNG DẪN CHẤM / ĐÁP ÁN CHI TIẾT ---". BẮT BUỘC đặt mỗi **Câu 1:**, **Câu 2:**, ... trên một đoạn riêng có dòng trống (Enter 2 lần) ngăn cách (tuyệt đối KHÔNG viết dính nhiều câu trên cùng 1 dòng). Với các câu trắc nghiệm nhận biết/thông hiểu cơ bản (như tính $u_n$, công thức cơ bản), chỉ cần trình bày lời giải ngắn gọn trong 2-3 dòng tập trung vào công thức then chốt và bước biến đổi chính, viết bằng công thức LaTeX chuẩn.';
       }
+
+      const isSpecialTopic = semester === 'special_topic' || (typeof semester === 'string' && semester.toLowerCase().includes('chuyên đề'));
+      const specialTopicDirective = isSpecialTopic
+        ? `\nĐẶC THÙ CHUYÊN ĐỀ HỌC TẬP TOÁN (CHƯƠNG TRÌNH GDPT 2018 - KẾT NỐI TRI THỨC):
+- Đây là Phiếu học tập thuộc Chuyên đề học tập môn Toán chương trình GDPT 2018 (bộ sách Kết nối tri thức với cuộc sống).
+- Yêu cầu: 
+  (1) Phần tóm tắt kiến thức phải trình bày rõ các định nghĩa, công thức tính toán hoặc quy trình/thuật toán giải từng bước; 
+  (2) Hệ thống bài tập phải tăng cường mạnh tính ứng dụng thực tiễn, mô hình hóa toán học (bài toán kinh tế, tài chính, tối ưu hóa, đồ thị, kỹ thuật) bám sát đúng tinh thần sách Chuyên đề; 
+  (3) Với các bài toán liên quan đến hình học/đồ thị/miền nghiệm, cần mô tả chi tiết dữ kiện tọa độ, đỉnh, cạnh để học sinh dễ dàng vẽ hình và giải quyết.\n`
+        : '';
 
       const prompt = `Bạn là chuyên gia sư phạm bộ môn ${subject || "Toán"} hàng đầu Việt Nam, nắm vững 100% Chương trình GDPT 2018 và bộ sách giáo khoa "Kết nối tri thức với cuộc sống" (KNTT) áp dụng từ năm học 2026-2027.
 Nhiệm vụ của bạn là nhận thông tin cấu hình và tạo ra một "PHIẾU HỌC TẬP" hoàn chỉnh, khoa học, thẩm mỹ cao và chuẩn mực sư phạm cho học sinh Lớp ${grade}, ${semester}, môn ${subject || "Toán"}, Chương: "${chapter}", Bài học/chủ đề: "${lesson}".
 
 ---
+${specialTopicDirective}
 ### 1. RÀNG BUỘC PHẠM VI NỘI DUNG VÀ CHUYÊN MÔN SGK KNTT 2026-2027 (BẮT BUỘC 100%)
 - PHẠM VI CHỦ ĐỀ CHÍNH XÁC (TẬP TRUNG 100%): TẤT CẢ các câu hỏi trong phiếu học tập BẮT BUỘC phải thuộc chính xác bài học "${lesson}" (thuộc ${chapter}, Lớp ${grade}, ${semester}).
 - KHÔNG BỊA LỆCH CHỦ ĐỀ: TUYỆT ĐỐI KHÔNG tự ý bịa ra hoặc chèn thêm bất kỳ câu hỏi nào thuộc các chương học khác hay khối lớp khác ngoài chủ đề "${lesson}". (Ví dụ: Khi giáo viên chọn Chương V "Các số đặc trưng đo xu thế trung tâm", TUYỆT ĐỐI KHÔNG xuất hiện câu hỏi về Đạo hàm, Giới hạn hay Tích phân).
@@ -3176,13 +3315,43 @@ app.all("/api/generate-worksheet-stream", async (req, res) => {
 
   if (additionalNotes) exercisePrompt += `\n- Ghi chú riêng từ giáo viên: ${additionalNotes}`;
 
-  let answerPrompt = `BẮT BUỘC 100% ở cuối phiếu học tập KHÔNG ĐƯỢC CÓ BẢNG ĐÁP ÁN NHANH (bỏ hoàn toàn bảng đáp án nhanh theo yêu cầu của giáo viên). BẮT BUỘC viết xong toàn bộ đề bài của tất cả các phần (Phần I, Phần II, Phần III${numPartIV > 0 ? ', Phần IV' : ''}) trước, rồi mới đặt DUY NHẤT 1 khối HƯỚNG DẪN GIẢI CHI TIẾT cho tất cả các phần ở cuối cùng của phiếu học tập, gói trong thẻ HTML <details class="solution-box"><summary>👉 BẤM ĐỂ XEM HƯỚNG DẪN GIẢI CHI TIẾT</summary>...</details>. Với các câu trắc nghiệm nhận biết/thông hiểu cơ bản, trình bày lời giải súc tích 2-3 dòng tập trung vào công thức then chốt và bước biến đổi chính để tối ưu tốc độ sinh phiếu. TUYỆT ĐỐI KHÔNG chèn <details> sau từng phần và KHÔNG ĐƯỢC BỎ SÓT PHẦN HƯỚNG DẪN GIẢI CHI TIẾT!`;
+  let answerPrompt = `BẮT BUỘC 100% ở cuối phiếu học tập KHÔNG ĐƯỢC CÓ BẢNG ĐÁP ÁN NHANH (bỏ hoàn toàn bảng đáp án nhanh theo yêu cầu của giáo viên). BẮT BUỘC viết xong toàn bộ đề bài của tất cả các phần (Phần I, Phần II, Phần III${numPartIV > 0 ? ', Phần IV' : ''}) trước, rồi mới đặt DUY NHẤT 1 khối HƯỚNG DẪN GIẢI CHI TIẾT cho tất cả các phần ở cuối cùng của phiếu học tập, gói trong thẻ HTML <details class="solution-box"><summary>👉 BẤM ĐỂ XEM HƯỚNG DẪN GIẢI CHI TIẾT</summary>...</details>.
+QUY TẮC ĐÁNH SỐ TRONG PHẦN HƯỚNG DẪN GIẢI CHI TIẾT (BẮT BUỘC 100%):
+- Tiêu đề mỗi phần (\`### PHẦN I\`, \`### PHẦN II\`, \`### PHẦN III\`${numPartIV > 0 ? ', `### PHẦN IV`' : ''}) PHẢI nằm trên 1 dòng riêng biệt.
+- Ngay dưới mỗi tiêu đề phần, BẮT BUỘC đánh số đầy đủ từ **Câu 1:** đến hết câu cuối cùng của phần đó (tuyệt đối KHÔNG được bỏ sót chữ **Câu 1:** ở câu đầu tiên của PHẦN II hay PHẦN III, KHÔNG viết dính Câu 1 lên cùng dòng với tiêu đề PHẦN, và BẮT BUỘC có 1 dòng trống (\\n\\n) trước MỖI **Câu 1:**, **Câu 2:**, ... để mỗi câu luôn là một đoạn riêng biệt, KHÔNG bao giờ viết dồn "Câu 1: ... Câu 2: ..." trên cùng một dòng hoặc sát nhau không có dòng trống):
+  + Dưới \`### PHẦN I\`: Trình bày lần lượt **Câu 1:** ... rồi xuống 2 dòng (dòng trống), tiếp tục **Câu 2:** ... đến **Câu ${numPartI}:** ... (đủ ${numPartI} câu).
+  + Dưới \`### PHẦN II\`: Trình bày lần lượt trên từng đoạn mới có dòng trống ngăn cách:
+    **Câu 1:**
+
+    a) ...
+
+    b) ...
+
+    c) ...
+
+    d) ...
+
+    **Câu 2:** ... cho đến đủ **Câu ${numPartII}:** (đủ ${numPartII} câu).
+  + Dưới \`### PHẦN III\`: Trình bày lần lượt mỗi câu 1 đoạn riêng cách nhau bởi 1 dòng trống bắt đầu bằng **Câu 1:** ..., **Câu 2:** ..., cho đến đủ **Câu ${numPartIII}:** (đủ ${numPartIII} câu).
+${numPartIV > 0 ? `  + Dưới \`### PHẦN IV\`: Trình bày lần lượt mỗi câu 1 đoạn riêng bắt đầu bằng **Câu 1:** ... đến **Câu ${numPartIV}:** (đủ ${numPartIV} câu).` : ''}
+TUYỆT ĐỐI KHÔNG chèn <details> sau từng phần và KHÔNG ĐƯỢC BỎ SÓT PHẦN HƯỚNG DẪN GIẢI CHI TIẾT!`;
   if (answerMode === 'none') answerPrompt = 'TUYỆT ĐỐI KHÔNG kèm đáp án hay lời giải.';
-  else if (answerMode === 'summary') answerPrompt = 'Ở cuối cùng của phiếu học tập (sau khi đã viết xong toàn bộ đề bài của tất cả các phần), cung cấp HƯỚNG DẪN GIẢI CHI TIẾT ngắn gọn cho tất cả các phần gói trong DUY NHẤT 1 thẻ <details class="solution-box"><summary>👉 BẤM ĐỂ XEM HƯỚNG DẪN GIẢI</summary>...</details>. KHÔNG sinh bảng đáp án nhanh.';
+  else if (answerMode === 'summary') answerPrompt = `Ở cuối cùng của phiếu học tập (sau khi đã viết xong toàn bộ đề bài của tất cả các phần), cung cấp HƯỚNG DẪN GIẢI CHI TIẾT ngắn gọn cho tất cả các phần gói trong DUY NHẤT 1 thẻ <details class="solution-box"><summary>👉 BẤM ĐỂ XEM HƯỚNG DẪN GIẢI</summary>...</details>. Trong đó mỗi phần (\`### PHẦN I\`, \`### PHẦN II\`, \`### PHẦN III\`${numPartIV > 0 ? ', `### PHẦN IV`' : ''}) và MỖI **Câu 1:**, **Câu 2:**, ... phải có dòng trống ngăn cách riêng biệt (PHẦN II đủ ${numPartII} câu từ **Câu 1:** đến **Câu ${numPartII}:**, PHẦN III đủ ${numPartIII} câu từ **Câu 1:** đến **Câu ${numPartIII}:**).`;
+
+  const isSpecialTopic = semester === 'special_topic' || (typeof semester === 'string' && semester.toLowerCase().includes('chuyên đề'));
+  const specialTopicDirective = isSpecialTopic
+    ? `\nĐẶC THÙ CHUYÊN ĐỀ HỌC TẬP TOÁN (CHƯƠNG TRÌNH GDPT 2018 - KẾT NỐI TRI THỨC):
+- Đây là Phiếu học tập thuộc Chuyên đề học tập môn Toán chương trình GDPT 2018 (bộ sách Kết nối tri thức với cuộc sống).
+- Yêu cầu: 
+  (1) Phần tóm tắt kiến thức phải trình bày rõ các định nghĩa, công thức tính toán hoặc quy trình/thuật toán giải từng bước; 
+  (2) Hệ thống bài tập phải tăng cường mạnh tính ứng dụng thực tiễn, mô hình hóa toán học (bài toán kinh tế, tài chính, tối ưu hóa, đồ thị, kỹ thuật) bám sát đúng tinh thần sách Chuyên đề; 
+  (3) Với các bài toán liên quan đến hình học/đồ thị/miền nghiệm, cần mô tả chi tiết dữ kiện tọa độ, đỉnh, cạnh để học sinh dễ dàng vẽ hình và giải quyết.\n`
+    : '';
 
   const prompt = `Bạn là chuyên gia sư phạm bộ môn ${subject || "Toán"} Việt Nam (Chương trình GDPT 2018, SGK Kết nối tri thức với cuộc sống áp dụng từ năm học 2026-2027).
 Hãy tạo ngay PHIẾU HỌC TẬP A4 Chuẩn in ấn cho học sinh Lớp ${grade}, ${semester}, môn ${subject || "Toán"}, Chương: "${chapter}", Bài học/chủ đề: "${lesson}".
 
+${specialTopicDirective}
 YÊU CẦU QUAN TRỌNG VỀ CẤU TRÚC VÀ PHẠM VI NỘI DUNG (BẮT BUỘC 100%):
 0. PHẠM VI CHỦ ĐỀ CHÍNH XÁC (TẬP TRUNG 100%): Tất cả các câu hỏi trong phiếu BẮT BUỘC phải thuộc chính xác bài học "${lesson}" (thuộc ${chapter}, Lớp ${grade}, ${semester}). TUYỆT ĐỐI KHÔNG BỊA RA HOẶC CHÈN THÊM bất kỳ câu hỏi nào thuộc các chương học khác ngoài bài học đã chọn.
 1. SỐ LƯỢNG CÂU HỎI & CÁC PHẦN BẮT BUỘC (TỔNG ${totalCount} CÂU): Bạn PHẢI sinh ĐẦY ĐỦ 100% tất cả các Phần có số câu > 0 theo đúng cấu hình của giáo viên:
@@ -3212,10 +3381,11 @@ ${numPartIV > 0 ? `     + PHẦN IV: **Câu 1:** [Đề bài] \\n\\n **Câu 2:**
    - Sử dụng cú pháp LaTeX chuẩn: \\frac thay cho \\dfrac, \\ge thay cho \\geq, \\le thay cho \\leq.
 6. PHẦN II (TRẮC NGHIỆM ĐÚNG / SAI):
    - Với từng ý a), b), c), d), bắt buộc viết câu phát biểu hoàn chỉnh, giữ nguyên vẹn chữ cái đầu tiên.
+   - Với phân số phức hợp (phân số có chứa phân số ở tử hoặc mẫu), BẮT BUỘC đóng đủ ngoặc nhọn \`}\` của tử số trước khi mở \`{\` của mẫu số (ví dụ viết chuẩn: \`$u_n = \\frac{3 - \\frac{2}{n}}{4 + \\frac{5}{n}}$\`, tuyệt đối KHÔNG viết thiếu dấu \`}\` thành \`\\frac{3 - \\frac{2}{n}{4 + \\frac{5}{n}}\`).
 7. ${exercisePrompt}
 8. ${answerPrompt}
-9. KHÓA CHẶN SUY LUẬN NHÁP / BÌNH LUẬN NGOÀI LỀ:
-   - TUYỆT ĐỐI KHÔNG xuất các đoạn suy luận nháp, tự kiểm tra đề bài, hay các câu bình luận ngoài lề. Chỉ xuất thuần túy nội dung câu hỏi và lời giải.`;
+9. KHÓA CHẶN SUY LUẬN NHÁP / TỰ ĐÍNH CHÍNH / BÌNH LUẬN NGOÀI LỀ:
+   - TUYỆT ĐỐI KHÔNG xuất các đoạn suy luận nháp, tự kiểm tra đề bài, hay tự đính chính giữa chừng kiểu "(..., xin lỗi, đáp án đúng là 45, ý d sai)". Trước khi ghi chữ Đúng hoặc Sai ở đầu mỗi ý a), b), c), d), hãy tính nhẩm kết quả trước rồi mới ghi chính xác Đúng hoặc Sai khớp 100% với phép tính giải thích!`;
 
   await generateWithFallbackStream(req, res, {
     contents: prompt,
@@ -3761,7 +3931,7 @@ Tuyệt đối chỉ trả về JSON hợp lệ, không kèm bất kỳ lời d�
 });
 
 const KV_STORE_ID = 'jaku8xjm';
-const CHUNK_SIZE = 800; // immanuel.co limit is 1024, so 800 is extremely safe and fast
+const CHUNK_SIZE = 160; // Safe under IIS 260-char total URL path limit across all key lengths
 
 function strToHex(str: string): string {
   let hex = '';
@@ -3780,12 +3950,13 @@ function hexToStr(hex: string): string {
 }
 
 function isServerValidExamPayload(data: any): boolean {
-  if (!data || typeof data !== 'object') return false;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
   if (data.deleted === true) return false;
   return Boolean(
     data.examData ||
     data.codes ||
     data.codeVersions ||
+    data.codeVersionsPdfs ||
     data.part1Keys ||
     data.pdfBase64 ||
     data.examTitle ||
@@ -3796,30 +3967,99 @@ function isServerValidExamPayload(data: any): boolean {
   );
 }
 
+async function postServerKVValue(url: string, retries = 3): Promise<boolean> {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        body: '',
+        headers: { 'Content-Length': '0' }
+      });
+      if (res.ok) {
+        return true;
+      }
+    } catch (e) {}
+    if (attempt < retries - 1) {
+      await new Promise(r => setTimeout(r, 200 * (attempt + 1)));
+    }
+  }
+  return false;
+}
+
+function encodeServerKVPayload(data: any): string {
+  const jsonStr = JSON.stringify(data);
+  try {
+    const gz = zlib.gzipSync(Buffer.from(jsonStr, 'utf8'));
+    return 'GZ1_' + gz.toString('base64url');
+  } catch (e) {
+    return strToHex(LZString.compressToEncodedURIComponent(jsonStr));
+  }
+}
+
+function decodeServerKVPayload(raw: string): any {
+  if (!raw) return null;
+  if (raw.startsWith('GZ1_')) {
+    try {
+      const buf = Buffer.from(raw.slice(4), 'base64url');
+      const jsonStr = zlib.gunzipSync(buf).toString('utf8');
+      const parsed = JSON.parse(jsonStr);
+      if (isServerValidExamPayload(parsed)) return parsed;
+    } catch (e) {}
+  }
+
+  let decompressed: string | null = null;
+  try {
+    const restored = hexToStr(raw);
+    decompressed = LZString.decompressFromEncodedURIComponent(restored) ||
+                   LZString.decompressFromUTF16(restored) ||
+                   LZString.decompress(restored);
+  } catch (e) {}
+
+  if (!decompressed) {
+    try {
+      decompressed = LZString.decompressFromEncodedURIComponent(raw) ||
+                     LZString.decompressFromUTF16(raw) ||
+                     LZString.decompress(raw);
+    } catch (e) {}
+  }
+
+  if (decompressed) {
+    try {
+      const parsed = JSON.parse(decompressed);
+      if (isServerValidExamPayload(parsed)) return parsed;
+    } catch (e) {}
+  }
+  return null;
+}
+
 async function saveToCloudKV(cleanId: string, data: any): Promise<boolean> {
   try {
-    const jsonStr = JSON.stringify(data);
-    const compressed = LZString.compressToEncodedURIComponent(jsonStr);
-    const hexPayload = strToHex(compressed);
-    const count = Math.ceil(hexPayload.length / CHUNK_SIZE);
+    const encodedPayload = encodeServerKVPayload(data);
+    const count = Math.ceil(encodedPayload.length / CHUNK_SIZE);
+    if (count <= 0) return false;
 
-    // Save count
-    await fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${cleanId}_C/${count}`, {
-      method: 'POST'
-    });
-
-    // Save all chunks in parallel
-    const chunkPromises: Promise<any>[] = [];
-    for (let i = 0; i < count; i++) {
-      const chunk = hexPayload.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-      chunkPromises.push(
-        fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${cleanId}__${i}/${chunk}`, {
-          method: 'POST'
-        })
-      );
+    const BATCH_SIZE = 6;
+    let allOk = true;
+    for (let start = 0; start < count; start += BATCH_SIZE) {
+      const batch: Promise<boolean>[] = [];
+      const end = Math.min(start + BATCH_SIZE, count);
+      for (let i = start; i < end; i++) {
+        const chunk = encodedPayload.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+        batch.push(
+          postServerKVValue(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${encodeURIComponent(cleanId)}__${i}/${encodeURIComponent(chunk)}`)
+        );
+      }
+      const results = await Promise.all(batch);
+      if (results.some(ok => !ok)) {
+        allOk = false;
+      }
     }
-    await Promise.all(chunkPromises);
-    return true;
+
+    if (!allOk) return false;
+
+    // Save count after all chunks succeed so readers never observe partial uploads
+    const countOk = await postServerKVValue(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/${KV_STORE_ID}/${encodeURIComponent(cleanId)}_C/${count}`);
+    return countOk;
   } catch (err) {
     return false;
   }
@@ -3852,70 +4092,39 @@ async function safeFetchServerKVValue(url: string): Promise<string> {
 }
 
 async function loadFromCloudKV(cleanId: string): Promise<any> {
-  // 1. Try Distributed Cloud KV with safe chunking
+  // 1. Try Distributed Cloud KV with batched chunking
   try {
-    const countVal = await safeFetchServerKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}_C`);
+    const countVal = await safeFetchServerKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${encodeURIComponent(cleanId)}_C`);
     const readCount = parseInt(countVal, 10);
     if (!isNaN(readCount) && readCount > 0 && readCount < 5000) {
-      const chunkPromises: Promise<string>[] = [];
-      for (let i = 0; i < readCount; i++) {
-        chunkPromises.push(
-          safeFetchServerKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}__${i}`)
-            .then(val => val || safeFetchServerKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}_${i}`))
-        );
+      const chunks: string[] = new Array(readCount).fill('');
+      const BATCH_SIZE = 8;
+      for (let start = 0; start < readCount; start += BATCH_SIZE) {
+        const end = Math.min(start + BATCH_SIZE, readCount);
+        const batch: Promise<void>[] = [];
+        for (let i = start; i < end; i++) {
+          batch.push(
+            safeFetchServerKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${encodeURIComponent(cleanId)}__${i}`)
+              .then(val => val || safeFetchServerKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${encodeURIComponent(cleanId)}_${i}`))
+              .then(val => { chunks[i] = val; })
+          );
+        }
+        await Promise.all(batch);
       }
-      const chunks = await Promise.all(chunkPromises);
-      const reconstructed = chunks.join('');
-      if (reconstructed) {
-        let decompressed: string | null = null;
-        try {
-          const restored = hexToStr(reconstructed);
-          decompressed = LZString.decompressFromEncodedURIComponent(restored) ||
-                         LZString.decompressFromUTF16(restored) ||
-                         LZString.decompress(restored);
-        } catch (e) {}
-
-        if (!decompressed) {
-          try {
-            decompressed = LZString.decompressFromEncodedURIComponent(reconstructed) ||
-                           LZString.decompressFromUTF16(reconstructed) ||
-                           LZString.decompress(reconstructed);
-          } catch (e) {}
-        }
-
-        if (decompressed) {
-          try {
-            const parsed = JSON.parse(decompressed);
-            if (isServerValidExamPayload(parsed)) {
-              return parsed;
-            }
-          } catch (e) {
-            // Silent fallback on corrupted or invalid cache entry
-          }
-        }
+      if (chunks.every(c => typeof c === 'string' && c.length > 0)) {
+        const reconstructed = chunks.join('');
+        const parsed = decodeServerKVPayload(reconstructed);
+        if (parsed) return parsed;
       }
     }
-  } catch (kvErr) {
-    // Suppress noise for invalid/corrupted cloud kv chunks
-  }
+  } catch (kvErr) {}
 
   // 2. Try legacy single-key Cloud KV
   try {
-    const val = await safeFetchServerKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${cleanId}`);
+    const val = await safeFetchServerKVValue(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/${KV_STORE_ID}/${encodeURIComponent(cleanId)}`);
     if (val && typeof val === 'string') {
-      let decomp: string | null = null;
-      try {
-        decomp = LZString.decompressFromEncodedURIComponent(val) || LZString.decompressFromUTF16(val) || LZString.decompress(val) || val;
-      } catch (e) {}
-
-      if (decomp) {
-        try {
-          const parsed = JSON.parse(decomp);
-          if (isServerValidExamPayload(parsed)) {
-            return parsed;
-          }
-        } catch (e) {}
-      }
+      const parsed = decodeServerKVPayload(val);
+      if (parsed) return parsed;
     }
   } catch (e) {}
 
@@ -3940,6 +4149,14 @@ app.all("/api/exams/share", async (req, res) => {
 
     const body = req.body || {};
     const pdfBase64 = body.pdfBase64 || "";
+    const codeVersionsPdfs: Record<string, string> = {};
+    if (Array.isArray(body.codeVersions)) {
+      body.codeVersions.forEach((v: any, idx: number) => {
+        if (v && v.pdfBase64) {
+          codeVersionsPdfs[String(v.code || idx)] = v.pdfBase64;
+        }
+      });
+    }
 
     // Load existing metadata to preserve submissions and sheet settings if omitted in body
     let existing = sharedExamsStore.get(cleanId) 
@@ -3963,9 +4180,18 @@ app.all("/api/exams/share", async (req, res) => {
     const linkedSheetUrl = body.linkedSheetUrl || existing?.linkedSheetUrl || "";
     const scriptUrl = body.scriptUrl || existing?.scriptUrl || "";
 
-    const metadata = { 
+    const strippedCodeVersions = Array.isArray(body.codeVersions)
+      ? body.codeVersions.map((v: any) => {
+          if (!v || typeof v !== 'object') return v;
+          const { pdfBase64: _drop, ...rest } = v;
+          return rest;
+        })
+      : existing?.codeVersions;
+
+    const metadata: any = { 
       ...existing,
-      ...body, 
+      ...body,
+      ...(strippedCodeVersions ? { codeVersions: strippedCodeVersions } : {}),
       submissions,
       linkedSheetId,
       linkedSheetUrl,
@@ -3975,13 +4201,14 @@ app.all("/api/exams/share", async (req, res) => {
     delete metadata.pdfBase64;
 
     sharedExamsStore.set(cleanId, metadata);
-    sharedExamsStore.set(examId, metadata);
-    sharedExamsStore.set(examId.toLowerCase(), metadata);
 
-    if (pdfBase64) {
-      sharedExamsStore.set(`${cleanId}_PDF`, { pdfBase64 });
-      sharedExamsStore.set(`${examId}_PDF`, { pdfBase64 });
-      sharedExamsStore.set(`${examId.toLowerCase()}_PDF`, { pdfBase64 });
+    const hasPdfData = Boolean(pdfBase64 || Object.keys(codeVersionsPdfs).length > 0);
+    if (hasPdfData) {
+      const pdfBundle = {
+        ...(pdfBase64 ? { pdfBase64 } : {}),
+        ...(Object.keys(codeVersionsPdfs).length > 0 ? { codeVersionsPdfs } : {})
+      };
+      sharedExamsStore.set(`${cleanId}_PDF`, pdfBundle);
     }
 
     saveExamsToDisk();
@@ -3990,8 +4217,11 @@ app.all("/api/exams/share", async (req, res) => {
     await saveToCloudKV(cleanId, metadata);
 
     // Persist PDF only if provided and non-empty
-    if (pdfBase64) {
-      await saveToCloudKV(`${cleanId}_PDF`, { pdfBase64 });
+    if (hasPdfData) {
+      const pdfBundle = sharedExamsStore.get(`${cleanId}_PDF`);
+      if (pdfBundle) {
+        await saveToCloudKV(`${cleanId}_PDF`, pdfBundle);
+      }
     }
 
     res.json({ examId: cleanId, submissionsCount: submissions.length });
@@ -4009,7 +4239,6 @@ app.get("/api/exams/:id", async (req, res) => {
     metadata = await loadFromCloudKV(rawId);
     if (metadata) {
       sharedExamsStore.set(rawId, metadata);
-      sharedExamsStore.set(rawId.toUpperCase(), metadata);
       saveExamsToDisk();
     }
   }
@@ -4032,7 +4261,6 @@ app.get("/api/exams/:id", async (req, res) => {
     metadata = await loadFromCloudKV(rawId);
     if (metadata) {
       sharedExamsStore.set(rawId, metadata);
-      sharedExamsStore.set(rawId.toUpperCase(), metadata);
       saveExamsToDisk();
     }
   }
@@ -4043,10 +4271,9 @@ app.get("/api/exams/:id", async (req, res) => {
       const webhookRes = await fetch(`https://script.google.com/macros/s/AKfycbwYHVplKQAUoUVBo6QbjSBnO_TB71eUXeeP2MmQ42nQIVJiUjvmLrrJwvCC-lsCXc7k/exec?action=getExam&examId=${encodeURIComponent(rawId)}`);
       if (webhookRes.ok) {
         const webhookData = await webhookRes.json();
-        if (webhookData && (webhookData.examTitle || webhookData.codeVersions || webhookData.part1Keys || webhookData.examData || webhookData.codes)) {
+        if (webhookData && !Array.isArray(webhookData) && (webhookData.examTitle || webhookData.codeVersions || webhookData.part1Keys || webhookData.examData || webhookData.codes)) {
           metadata = webhookData;
           sharedExamsStore.set(rawId, metadata);
-          sharedExamsStore.set(rawId.toUpperCase(), metadata);
           saveExamsToDisk();
         }
       }
@@ -4055,7 +4282,7 @@ app.get("/api/exams/:id", async (req, res) => {
     }
   }
 
-  if (metadata) {
+  if (metadata && metadata.deleted !== true) {
     // Also retrieve PDF base64
     let pdfData = sharedExamsStore.get(`${rawId}_PDF`)
       || sharedExamsStore.get(`${rawId.toLowerCase()}_PDF`)
@@ -4065,14 +4292,21 @@ app.get("/api/exams/:id", async (req, res) => {
       pdfData = await loadFromCloudKV(`${rawId}_PDF`);
       if (pdfData) {
         sharedExamsStore.set(`${rawId}_PDF`, pdfData);
-        sharedExamsStore.set(`${rawId.toUpperCase()}_PDF`, pdfData);
         saveExamsToDisk();
       }
     }
 
+    const hydratedCodeVersions = Array.isArray(metadata.codeVersions)
+      ? metadata.codeVersions.map((v: any, idx: number) => {
+          const pdfFromBundle = pdfData?.codeVersionsPdfs?.[String(v.code || idx)] || pdfData?.pdfBase64 || "";
+          return v.pdfBase64 ? v : (pdfFromBundle ? { ...v, pdfBase64: pdfFromBundle } : v);
+        })
+      : metadata.codeVersions;
+
     const merged = {
       ...metadata,
-      pdfBase64: pdfData?.pdfBase64 || ""
+      ...(hydratedCodeVersions ? { codeVersions: hydratedCodeVersions } : {}),
+      pdfBase64: pdfData?.pdfBase64 || metadata.pdfBase64 || ""
     };
 
     // Ensure we do not cache the response on the client or proxies so the teacher gets fresh submissions immediately
@@ -4604,8 +4838,7 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT 1 ĐỐI TƯỢNG JSON VỚI ĐỊNH DẠNG:
       const response = await generateWithFallback(req, {
         contents: [{ role: "user", parts: [{ text: promptText }] }],
         config: {
-          responseMimeType: "application/json",
-          temperature: 0.3
+          responseMimeType: "application/json"
         }
       });
 
@@ -5358,88 +5591,6 @@ app.post("/api/science-solve", async (req, res) => {
   }
 });
 
-// Endpoint EduPlan AI MathOCR: Nhận dạng ảnh/PDF công thức Toán, hình vẽ & bảng biểu chuyển sang LaTeX
-app.post("/api/math-ocr", async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-  if (req.method === 'OPTIONS') return res.status(200).end();
-
-  try {
-    const { imageBase64, mimeType = 'image/png', mode = 'full_doc', promptHint = '' } = req.body || {};
-
-    if (!imageBase64) {
-      return res.status(400).json({ error: "Không tìm thấy dữ liệu hình ảnh để thực hiện Math OCR." });
-    }
-
-    const cleanData = typeof imageBase64 === 'string' ? imageBase64.replace(/^data:image\/\w+;base64,/, '').trim() : '';
-
-    if (!cleanData) {
-      return res.status(400).json({ error: "Dữ liệu hình ảnh không hợp lệ." });
-    }
-
-    const systemInstruction = `You are an expert Math OCR tool equivalent to Mathpix Snip. Convert all text, formulas, equations, geometric figures, and tables in the image into precise LaTeX format.
-
-CRITICAL FORMATTING RULES FOR MATHTYPE & WORD:
-1. DELIMITERS:
-   - Inline math MUST be enclosed in single dollar signs ($...$).
-   - Standalone / display equations MUST be enclosed in double dollar signs ($$...$$).
-2. VARIABLES & GEOMETRY:
-   - Ensure variables, points, angles, and vectors are clearly delimited (e.g., $x$, $y$, $\\vec{AB}$, $\\widehat{ABC}$, $\\Delta ABC$, $S_{ABCD}$).
-   - For multi-character variables or sub/superscripts, group correctly using \${...}\$ so MathType in Word converts them smoothly with Alt + \\ (Toggle TeX).
-3. TABLES & MATRICES:
-   - Format all tables or matrices using LaTeX array/tabular environment: \\begin{array}{...} ... \\end{array} or \\begin{tabular}{...} ... \\end{tabular}.
-4. CLEANUP:
-   - Do NOT output markdown code block backticks (\`\`\`latex ... \`\`\`), conversational intros, or trailing explanations.
-   - Output ONLY the clean, ready-to-use LaTeX document/content.
-   - Remove spurious OCR noise, garbage characters, or unsupported TeX commands.`;
-
-    const userTextPrompt = promptHint 
-      ? `Gợi ý/Nhiệm vụ cụ thể: ${promptHint}. Trích xuất toàn bộ công thức toán, văn bản và bảng biểu từ ảnh này thành mã LaTeX chuẩn.`
-      : "Extract all math formulas, text, equations, and tables from this image into clean, precise LaTeX format.";
-
-    const response = await generateWithFallback(req, {
-      contents: [{
-        role: "user",
-        parts: [
-          {
-            inlineData: {
-              data: cleanData,
-              mimeType: mimeType || 'image/png'
-            }
-          },
-          { text: userTextPrompt }
-        ]
-      }],
-      config: {
-        systemInstruction,
-        temperature: 0.1
-      }
-    });
-
-    if (!response || !response.text) {
-      throw new Error("Không nhận được kết quả nhận dạng từ AI Math OCR.");
-    }
-
-    let latexOutput = response.text.trim();
-    if (latexOutput.startsWith("```")) {
-      latexOutput = latexOutput.replace(/^```[a-zA-Z]*\n?/, '').replace(/\n?```$/, '').trim();
-    }
-
-    return res.json({
-      success: true,
-      latex: latexOutput,
-      mode,
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error: any) {
-    console.error("Lỗi Math OCR:", error);
-    return handleAiError(error, req, res);
-  }
-});
-
 // Endpoint Dịch thuật Chuyên ngành GDPT (Tiếng Việt ⇆ Tiếng Anh academic)
 app.post("/api/translate-academic", async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -5596,6 +5747,915 @@ Nhiệm vụ: Hãy phân tích chi tiết lỗ hổng kiến thức dẫn đến
     return res.json({ success: true, explanation });
   } catch (error: any) {
     console.error("Lỗi AI giải thích lỗi sai:", error);
+    return handleAiError(error, req, res);
+  }
+});
+
+// ============================================================================
+// MODULE: TẠO ĐỀ TƯƠNG TỰ TỪ ĐỀ GỐC BẤT KỲ (ĐỀ ĐẲNG CẤU - 2-STEP PIPELINE)
+// ============================================================================
+
+const ISOMORPHIC_PRESET_GUIDES: Record<string, { name: string; rules: string }> = {
+  periodic_7991: {
+    name: "Đề Kiểm tra định kỳ (15p / Giữa kỳ / Cuối kỳ) - Chuẩn Công văn 7991/BGDĐT",
+    rules: `- Tuân thủ nghiêm ngặt cấu trúc Ma trận và Bản đặc tả theo Công văn 7991/BGDĐT (thường gồm 4 phần: Phần I ABCD + Phần II Đúng/Sai + Phần III Trả lời ngắn + Phần IV Tự luận, hoặc theo đúng cấu trúc đề gốc người dùng đưa lên).
+- Giữ đúng 100% tỷ lệ 4 mức độ nhận thức: Nhận biết (NB) - Thông hiểu (TH) - Vận dụng (VD) - Vận dụng cao (VDC) như đề gốc.
+- Bám sát tuyệt đối phạm vi kiến thức trọng tâm của chương/học kỳ trong đề gốc, TUYỆT ĐỐI KHÔNG dùng kiến thức vượt chương hoặc vượt học kỳ chưa học.
+- Thang điểm 10, chia điểm chi tiết từng phần và từng câu/ý nhỏ.`
+  },
+  grade10_entrance: {
+    name: "Đề Tuyển sinh vào lớp 10 THPT - Chuẩn GDPT 2018",
+    rules: `- Chuẩn kiến thức THCS (trọng tâm lớp 9 - Chương trình GDPT 2018), thang điểm 10,0, thời gian 90 hoặc 120 phút đúng theo đề gốc.
+- Giữ nguyên cấu trúc từng câu/bài của đề gốc (ví dụ chuẩn Sở GD&ĐT: Tính giá trị & Rút gọn căn thức, Phương trình/Hệ PT & Định lý Vi-ét, Bảng tần số ghép nhóm & Xác suất cổ điển, Hàm số bậc nhất/Thực tế, Giải bài toán bằng cách lập PT, Hình học phẳng đường tròn 3 ý, Hình học không gian trực quan Nón/Trụ/Cầu).
+- Hướng dẫn chấm tự luận BẮT BUỘC kẻ bảng 3 cột chuẩn Sở GD&ĐT, chia nhỏ thang điểm chi tiết đến từng bước 0,25 điểm (có 0,25 điểm riêng cho vẽ hình đúng chuẩn ở câu Hình học).`
+  },
+  thpt_graduation: {
+    name: "Đề Thi Tốt nghiệp THPT - Chuẩn cấu trúc 3 phần mới của Bộ GD&ĐT",
+    rules: `- Chuẩn cấu trúc định dạng đề thi Tốt nghiệp THPT của Bộ GD&ĐT (90 phút, thang 10,0 điểm) gồm 3 phần:
+  + PHẦN I. 12 câu trắc nghiệm nhiều phương án lựa chọn (3,0 điểm - 4 phương án A, B, C, D).
+  + PHẦN II. 4 câu trắc nghiệm Đúng/Sai (4,0 điểm - Mỗi câu có 4 mệnh đề a, b, c, d phân hóa từ Nhận biết -> Thông hiểu -> Vận dụng -> Vận dụng cao).
+  + PHẦN III. 6 câu trắc nghiệm Trả lời ngắn (3,0 điểm - Kết quả là số nguyên hoặc số thập phân gọn, tối đa 4 ký tự để tô phiếu OMR).
+- Bảng đáp án nhanh đầy đủ cho cả 3 phần + Lời giải chi tiết từng bước cho toàn bộ 22 câu và giải thích rõ vì sao từng ý a, b, c, d ở Phần II là Đúng hay Sai.`
+  },
+  gifted_student: {
+    name: "Đề Thi Học sinh giỏi (THCS / THPT) - Phân hóa chuyên sâu",
+    rules: `- Tư duy toán học / học thuật phân hóa sâu, lập luận và chứng minh chặt chẽ (Giải tích, Đại số, Mũ-Lôgarit, Tổ hợp, Xác suất nâng cao / Xích Markov, Số học, Hình học không gian & tối ưu hóa thực tế).
+- Giữ nguyên cấu trúc và thang điểm của đề gốc (ví dụ: dạng kết hợp A. Trắc nghiệm khách quan 10,0đ [12+4+6] + B. Tự luận 10,0đ [5 bài] = 20,0đ trong 150 phút, hoặc 100% Tự luận 20đ / 10đ tùy đúng đề gốc người dùng đưa lên).
+- Hướng dẫn chấm kẻ bảng 3 cột chi tiết từng bước biến đổi cho phần Tự luận và giải thích tường minh từng câu Trắc nghiệm (nếu có), chia điểm chi tiết đến 0,25 - 0,5 điểm.`
+  }
+};
+
+// GIAI ĐOẠN 1: TRÍCH XUẤT MA TRẬN & ĐẶC TẢ ĐỀ GỐC (BLUEPRINT EXTRACTION)
+app.post("/api/isomorphic-exam/extract-blueprint", async (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Gemini-Api-Key");
+
+  if (req.method === "OPTIONS") return res.status(200).end();
+
+  try {
+    const {
+      rawText = "",
+      files = [],
+      presetId = "periodic_7991",
+      customNotes = "",
+      isCustomSource = false
+    } = req.body || {};
+    const presetInfo = ISOMORPHIC_PRESET_GUIDES[presetId] || ISOMORPHIC_PRESET_GUIDES.periodic_7991;
+
+    if (!String(rawText).trim() && (!Array.isArray(files) || files.length === 0)) {
+      return res.status(400).json({ error: "Vui lòng tải lên tệp đề gốc (PDF/Word/Ảnh) hoặc dán nội dung đề gốc." });
+    }
+
+    const parts: any[] = [];
+
+    if (Array.isArray(files) && files.length > 0) {
+      for (const file of files) {
+        if (!file || !file.data) continue;
+        const base64Data = String(file.data).includes(",") ? String(file.data).split(",")[1] : String(file.data);
+        const mimeType = file.type || (String(file.name || "").toLowerCase().endsWith(".pdf") ? "application/pdf" : "image/png");
+
+        parts.push({
+          inlineData: {
+            mimeType,
+            data: base64Data
+          }
+        });
+      }
+    }
+
+    const combinedSourceText = String(rawText || "").trim();
+    const hasUploadedFiles = Array.isArray(files) && files.length > 0;
+    const customPriorityDirective =
+      isCustomSource || hasUploadedFiles || String(customNotes || "").trim()
+        ? `\nNGUYÊN TẮC TỐI THƯỢNG KHI NGƯỜI DÙNG ĐƯA ĐỀ GỐC LÊN:
+- PHẢI BÁM SÁT 100% ĐỀ GỐC NGƯỜI DÙNG ĐÃ CUNG CẤP (giữ trung thực tuyệt đối tên kỳ thi, môn học, khối lớp, thời gian, tổng thang điểm, từng phần thi, số lượng câu hỏi, số ý nhỏ a/b/c/d, điểm số và kiến thức của từng câu trong đề gốc).
+- TUYỆT ĐỐI KHÔNG tự ý thay đổi cấu trúc, khối lớp hay tổng điểm theo mẫu Preset nếu đề gốc thực tế khác với Preset!
+${String(customNotes || "").trim() ? `- YÊU CẦU BỔ SUNG CỦA NGƯỜI DÙNG (BẮT BUỘC GHI NHẬN VÀ TÍCH HỢP VÀO BLUEPRINT): "${String(customNotes).trim()}"` : ""}`
+        : "";
+
+    const extractionPrompt = `Bạn là Chuyên gia Đo lường và Đánh giá trong Giáo dục (Bộ GD&ĐT).
+Nhiệm vụ GIAI ĐOẠN 1 (BLUEPRINT EXTRACTION): Phân tích sâu toàn bộ đề thi gốc được cung cấp (từ tệp đính kèm và/hoặc văn bản). Chế độ tham chiếu hiện tại: "${presetInfo.name}".
+${customPriorityDirective}
+
+YÊU CẦU BẮT BUỘC:
+1. Quét và liệt kê ĐẦY ĐỦ 100% TẤT CẢ các câu hỏi và từng ý nhỏ (a, b, c, d hoặc 1, 2, 3...) từ đầu đến cuối đề gốc. TUYỆT ĐỐI KHÔNG gộp câu, KHÔNG tóm tắt đại ý, KHÔNG bỏ sót bất kỳ câu hay ý nhỏ nào.
+2. Mọi công thức toán học trong các trường văn bản của JSON phải viết đúng chuẩn LaTeX bọc trong $...$ (ví dụ: $y = ax^2 + bx + c$, $\\Delta > 0$). KHÔNG đặt từ tiếng Việt có dấu bên trong cặp dấu $...$. Luôn dùng \\frac thay cho \\dfrac.
+3. Nếu câu gốc có bảng số liệu, bảng biến thiên (BBT), hình vẽ hình học hoặc đồ thị hàm số, phải mô tả thật chi tiết trong trường "visual_description" và đánh dấu đúng "requires_svg": true (nếu là hình học/đồ thị/hình minh họa) hoặc "requires_table": true (nếu là bảng số liệu/bảng biến thiên).
+
+${combinedSourceText ? `NỘI DUNG VĂN BẢN ĐỀ GỐC:\n"""\n${combinedSourceText}\n"""\n` : ""}
+
+BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ THEO ĐÚNG CẤU TRÚC SAU:
+{
+  "metadata": {
+    "exam_title": "Tên kỳ thi / bài kiểm tra trích từ đề gốc",
+    "grade": "Khối lớp (VD: Lớp 9, Lớp 10, Lớp 11, Lớp 12)",
+    "subject": "Môn học (VD: Toán học)",
+    "duration": "Thời gian làm bài (VD: 90 phút, 150 phút)",
+    "total_points": 10,
+    "exam_format": "100% Trắc nghiệm | 100% Tự luận | Kết hợp Trắc nghiệm + Tự luận",
+    "preset_id": "${presetId}",
+    "preset_name": "${presetInfo.name}"
+  },
+  "sections": [
+    {
+      "section_id": "PHẦN I",
+      "title": "Tên phần thi (VD: PHẦN I. TRẮC NGHIỆM NHIỀU LỰA CHỌN)",
+      "format_type": "multiple_choice | true_false | short_answer | essay",
+      "question_count": 12,
+      "total_points": 3.0,
+      "description": "Mô tả quy tắc chấm điểm của phần này"
+    }
+  ],
+  "cognitive_ratio": {
+    "nhan_biet_percent": 40,
+    "thong_hieu_percent": 30,
+    "van_dung_percent": 20,
+    "van_dung_cao_percent": 10,
+    "nhan_biet_points": 4.0,
+    "thong_hieu_points": 3.0,
+    "van_dung_points": 2.0,
+    "van_dung_cao_points": 1.0
+  },
+  "items": [
+    {
+      "id": "Phần I - Câu 1 (hoặc Câu 1a, Câu 2b...)",
+      "section": "PHẦN I",
+      "question_type": "multiple_choice | true_false | short_answer | essay",
+      "points": 0.25,
+      "topic": "Tên Chương / Chuyên đề kiến thức",
+      "subtopic": "Đơn vị kiến thức cụ thể",
+      "cognitive_level": "Nhận biết | Thông hiểu | Vận dụng | Vận dụng cao",
+      "original_summary": "Tóm tắt đề bài và số liệu của câu gốc (có công thức $...$)",
+      "core_technique": "Kỹ thuật giải cốt lõi, công thức đặc trưng và bẫy tư duy của câu gốc",
+      "real_world_context": "Bối cảnh thực tế trong câu gốc (nếu không có thì để chuỗi rỗng)",
+      "visual_description": "Mô tả chi tiết bảng số liệu, bảng biến thiên hoặc hình vẽ hình học/đồ thị trong câu gốc (nếu không có thì để chuỗi rỗng)",
+      "requires_svg": false,
+      "requires_table": false
+    }
+  ]
+}`;
+
+    parts.push({ text: extractionPrompt });
+
+    const response = await generateWithFallback(req, {
+      preferredModels: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
+      contents: [{ role: "user", parts }],
+      config: {
+        responseMimeType: "application/json",
+        maxOutputTokens: 65536
+      }
+    });
+
+    const rawJsonText = response?.text?.trim() || "{}";
+    const parsedBlueprint = safeJsonParse(rawJsonText);
+
+    if (!parsedBlueprint || !Array.isArray(parsedBlueprint.items) || parsedBlueprint.items.length === 0) {
+      return res.status(422).json({
+        error: "Không thể trích xuất danh sách câu hỏi từ đề gốc. Vui lòng kiểm tra lại tệp hoặc dán văn bản đề gốc rõ nét hơn.",
+        rawResponse: rawJsonText.slice(0, 500)
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      blueprint: parsedBlueprint,
+      modelUsed: response?.modelUsed || "gemini-4-hydrogen"
+    });
+  } catch (error: any) {
+    console.error("[Isomorphic Blueprint Extraction Error]:", error);
+    return handleAiError(error, req, res);
+  }
+});
+
+// GIAI ĐOẠN 2: SINH ĐỀ ĐẲNG CẤU & HƯỚNG DẪN CHẤM CHI TIẾT (MULTI-PASS VERIFIED ISOMORPHIC GENERATION)
+app.post("/api/isomorphic-exam/generate-exam", async (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Gemini-Api-Key");
+
+  if (req.method === "OPTIONS") return res.status(200).end();
+
+  try {
+    const {
+      blueprint,
+      presetId = "periodic_7991",
+      examCode = "101",
+      schoolName = "SỞ GIÁO DỤC VÀ ĐÀO TẠO",
+      schoolSubName = "TRƯỜNG THPT / THCS CHUYÊN ĐỀ",
+      customNotes = "",
+      isCustomSource = false
+    } = req.body || {};
+
+    if (!blueprint || !Array.isArray(blueprint.items) || blueprint.items.length === 0) {
+      return res.status(400).json({ error: "Thiếu dữ liệu Ma trận & Bản đặc tả (Blueprint) từ Giai đoạn 1." });
+    }
+
+    const presetInfo = ISOMORPHIC_PRESET_GUIDES[presetId] || ISOMORPHIC_PRESET_GUIDES.periodic_7991;
+    const totalItems = blueprint.items.length;
+    const sectionsList: any[] = Array.isArray(blueprint.sections) ? blueprint.sections : [];
+
+    const stripCodeFenceWrapper = (txt: string): string => {
+      let clean = String(txt || "").trim();
+      const fenceMatch = clean.match(/^```(?:markdown|md|text)?\s*\n([\s\S]*?)\n```$/i);
+      if (fenceMatch) clean = fenceMatch[1].trim();
+      return clean;
+    };
+
+    const normalizeServerLatex = (raw: string): string => {
+      if (!raw) return "";
+      let s = stripCodeFenceWrapper(raw);
+      const fixInner = (inner: string) => {
+        let f = inner.replace(/\\dfrac\b/g, "\\frac");
+        const tv: string[] = [];
+        f = f.replace(/\\(?:text|mathrm|textbf|textit)\s*\{[^{}]*\}/g, (m) => {
+          const i = tv.length;
+          tv.push(m);
+          return `@@SRV_TX_${i}@@`;
+        });
+        f = f.replace(
+          /(?<![\\a-zA-Z])(arcsin|arccos|arctan|sin|cos|tan|cot|log|ln|lim)(?!h\b)(?=\s*[\(\[_^0-9a-zA-Z\\])/g,
+          "\\$1"
+        );
+        return f.replace(/@@SRV_TX_(\d+)@@/g, (_m, i) => tv[Number(i)] || "");
+      };
+      s = s.replace(/\$\$([\s\S]*?)\$\$/g, (_m, body) => `$$${fixInner(body)}$$`);
+      s = s.replace(/(?<!\$)\$(?!\$)([^$\n]+?)(?<!\$)\$(?!\$)/g, (_m, body) => `$${fixInner(body)}$`);
+      return s;
+    };
+
+    // Group blueprint items per section so AI sees an unmistakable checklist
+    const groupItemsBySection = () => {
+      const usedIndices = new Set<number>();
+      const grouped = sectionsList.map((sec: any, sIdx: number) => {
+        const secId = String(sec.section_id || `PHẦN ${sIdx + 1}`).trim();
+        const secItems: any[] = [];
+        blueprint.items.forEach((it: any, iIdx: number) => {
+          if (usedIndices.has(iIdx)) return;
+          const itSec = String(it.section || "").trim();
+          const itId = String(it.id || "").trim();
+          const secNorm = secId.toLowerCase().replace(/\s+/g, " ");
+          const itSecNorm = itSec.toLowerCase().replace(/\s+/g, " ");
+          const matchesSection =
+            itSecNorm === secNorm ||
+            itSecNorm.includes(secNorm) ||
+            secNorm.includes(itSecNorm) ||
+            itId.toLowerCase().includes(secNorm) ||
+            (sec.format_type === it.question_type &&
+              sectionsList.filter((x: any) => x.format_type === sec.format_type).length === 1);
+          if (matchesSection) {
+            usedIndices.add(iIdx);
+            secItems.push(it);
+          }
+        });
+        return { section: sec, items: secItems };
+      });
+      // Assign any unmatched items to the last matching format or last section
+      blueprint.items.forEach((it: any, iIdx: number) => {
+        if (!usedIndices.has(iIdx) && grouped.length > 0) {
+          const target =
+            grouped.find((g) => g.section.format_type === it.question_type) ||
+            grouped[grouped.length - 1];
+          target.items.push(it);
+        }
+      });
+      return grouped;
+    };
+
+    const groupedSections = groupItemsBySection();
+
+    const formatSectionChecklist = (groups: Array<{ section: any; items: any[] }>) =>
+      groups
+        .map((g) => {
+          const sec = g.section;
+          const itemsDesc = g.items
+            .map(
+              (it: any, idx: number) =>
+                `  - Mục ${idx + 1} [${it.id} | ${it.points}đ | Mức độ: ${it.cognitive_level} | Loại: ${it.question_type}]: Chủ đề "${it.topic}" (${it.subtopic || ""}). Kỹ thuật gốc: ${it.core_technique}.${it.real_world_context ? ` Bối cảnh gốc: ${it.real_world_context}.` : ""}${it.requires_table ? " [BẮT BUỘC CÓ BẢNG MARKDOWN ĐA DÒNG]" : ""}${it.requires_svg ? " [BẮT BUỘC CÓ HÌNH <svg>]" : ""}`
+            )
+            .join("\n");
+          return `### ${sec.title || sec.section_id} (Mã phần: "${sec.section_id}" | Loại: ${sec.format_type} | Số câu bắt buộc: ${sec.question_count || g.items.length} câu | Tổng điểm: ${sec.total_points}đ)\n${sec.description ? `Mô tả: ${sec.description}\n` : ""}${itemsDesc}`;
+        })
+        .join("\n\n");
+
+    const sharedSystemRules = `Bạn là Chuyên gia Ra đề thi & Thẩm định Ma trận Đề thi cấp Quốc gia (Bộ GD&ĐT).
+TUÂN THỦ NGHIÊM NGẶT CÁC QUY TẮC BẤT BIẾN SAU:
+1. BÁM SÁT 100% JSON BLUEPRINT ĐỀ GỐC VÀ YÊU CẦU NGƯỜI DÙNG:
+- ${isCustomSource ? "NGƯỜI DÙNG ĐÃ TẢI LÊN / NHẬP ĐỀ GỐC RIÊNG: Bắt buộc bám 100% môn học, khối lớp, tên kỳ thi, thời gian, tổng điểm, từng phần thi và số câu trong JSON Blueprint." : `Bám sát 100% JSON Blueprint và quy chuẩn chế độ "${presetInfo.name}".`}
+${customNotes ? `- YÊU CẦU BẮT BUỘC CỦA NGƯỜI DÙNG: "${customNotes}"` : ""}
+
+2. ĐẲNG CẤU 100% & CHÍNH XÁC TOÁN HỌC:
+- Giữ nguyên cấu trúc các phần, số lượng câu (${totalItems} mục/ý), số ý nhỏ (a, b, c, d), phân bổ điểm và mức độ nhận thức.
+- Thay đổi HOÀN TOÀN số liệu, hàm số, phương trình, bối cảnh thực tế nhưng giữ đúng kỹ thuật giải ("core_technique"). Tự kiểm tra tính đúng đắn để nghiệm đẹp, đáp án chính xác 100%.
+
+3. CHỐNG TÓM TẮT TUYỆT ĐỐI (ZERO LAZINESS):
+- TUYỆT ĐỐI CẤM viết tóm tắt, cấm viết "(Các câu hỏi về... tương đương đề gốc)", cấm viết gợi ý vắn tắt kiểu "(a) Tính cạnh chóp. (b) Bài toán trải phẳng...". MỌI câu hỏi từ Câu 1 đến câu cuối cùng PHẢI là đề bài hoàn chỉnh, đầy đủ dữ kiện sẵn sàng in phát cho thí sinh làm bài!
+
+4. CHUẨN ĐỊNH DẠNG MARKDOWN & LATEX 100%:
+- Tất cả công thức, hàm số, biến đơn lẻ ($x$, $y$, $m$, $t$, $S$...) BẮT BUỘC đặt trong $...$ hoặc $$...$$.
+- BẮT BUỘC dùng lệnh LaTeX chuẩn có dấu gạch chéo: \\log, \\ln, \\sin, \\cos, \\tan, \\cot, \\lim, \\frac{a}{b} (LUÔN dùng \\frac thay cho \\dfrac, KHÔNG viết $log$, $ln$, hay $2/3$ thô trong câu toán học trừ khi cần thiết, dùng $\\frac{2}{3}$).
+- TUYỆT ĐỐI KHÔNG đặt chữ tiếng Việt có dấu hoặc thẻ <br/> bên trong cặp dấu $...$.
+- BẢNG MARKDOWN: Mọi bảng (bảng số liệu ghép nhóm, bảng tần số, BBT, bảng ma trận, bảng HDC) BẮT BUỘC có 1 dòng trống phía trước và 1 dòng trống phía sau, và MỖI HÀNG CỦA BẢNG PHẢI NẰM TRÊN 1 DÒNG RIÊNG BIỆT (TUYỆT ĐỐI KHÔNG viết cả bảng trên cùng 1 dòng với câu dẫn!).`;
+
+    // =========================================================================
+    // PASS 2A: SINH DUY NHẤT ĐỀ THI HOÀN CHỈNH (DEDICATED FULL EXAM GENERATION)
+    // =========================================================================
+    const examTitleMeta = blueprint?.metadata?.exam_title || presetInfo.name;
+    const subjectMeta = blueprint?.metadata?.subject || "Toán học";
+    const gradeMeta = blueprint?.metadata?.grade || "";
+    const durationMeta = blueprint?.metadata?.duration || "90 phút";
+    const totalPointsMeta = blueprint?.metadata?.total_points || 10;
+
+    const pass2AExamPrompt = `Hãy biên soạn **DUY NHẤT PHẦN ĐỀ THI HOÀN CHỈNH** (KHÔNG viết Ma trận, KHÔNG viết Đáp án/Hướng dẫn chấm ở bước này) cho bộ Đề đẳng cấu **Mã đề: ${examCode}**.
+
+THÔNG TIN HÀNH CHÍNH ĐỀ THI:
+- Đơn vị chủ quản: ${schoolName}
+- Trường / Sở / Hội đồng thi: ${schoolSubName}
+- Kỳ thi: ${examTitleMeta}
+- Môn: ${subjectMeta} ${gradeMeta ? `- ${gradeMeta}` : ""} | Thời gian làm bài: ${durationMeta} | Tổng điểm: ${totalPointsMeta}
+- Mã đề: ${examCode}
+
+QUY TẮC TRÌNH BÀY BẮT BUỘC ĐỂ XUẤT WORD/PDF ĐẸP 100%:
+1. **TIÊU ĐỀ ĐẦU TRANG (HEADER)**: BẮT BUỘC trình bày bằng **Bảng 2 cột Markdown** chuẩn đề thi Việt Nam để không bao giờ bị dính chữ vào nhau:
+| **${schoolName}** | **${examTitleMeta.toUpperCase()}** |
+| :---: | :---: |
+| **${schoolSubName}** | **Môn: ${subjectMeta.toUpperCase()}${gradeMeta ? ` (${gradeMeta})` : ""} – MÃ ĐỀ: ${examCode}** |
+| *(Đề thi gồm đầy đủ các phần theo cấu trúc)* | *Thời gian làm bài: ${durationMeta} (không kể thời gian giao đề)* |
+
+2. **ĐÁNH SỐ CÂU HỎI RÕ RÀNG — CẤM DÙNG DANH SÁCH \`1.\` HOẶC GẠCH ĐẦU DÒNG \`-\`**:
+- Mọi câu hỏi BẮT BUỘC bắt đầu ở đầu đoạn mới bằng chữ in đậm tường minh: \`**Câu 1.**\`, \`**Câu 2.**\`, ... (hoặc \`**Bài 1 ($2,0$ điểm).**\` ở phần tự luận).
+- TUYỆT ĐỐI KHÔNG dùng danh sách tự động Markdown \`1.\`, \`2.\` hoặc \`-\`, \`•\` trước đầu câu hỏi!
+- Ở Phần I (Trắc nghiệm 4 lựa chọn): ngay sau đề bài câu hỏi, xuống dòng viết rõ 4 phương án \`A. ...   B. ...   C. ...   D. ...\` (hoặc mỗi phương án một dòng bắt đầu bằng \`A. \`, \`B. \`, \`C. \`, \`D. \`).
+- Ở Phần II (Đúng / Sai): mỗi câu phải có đầy đủ dẫn nhập + ĐÚNG 4 ý \`a)\`, \`b)\`, \`c)\`, \`d)\` trên 4 dòng riêng biệt.
+- Ở Phần III (Trả lời ngắn): mỗi câu phải có đầy đủ đề bài toán học hoàn chỉnh, số liệu mới hoàn toàn, kết quả tính ra số gọn gàng.
+- Ở Phần Tự luận (PHẦN IV / B. TỰ LUẬN): MỖI BÀI/CÂU PHẢI VIẾT ĐẦY ĐỦ ĐỀ BÀI CHI TIẾT, ĐỦ GIẢ THIẾT VÀ YÊU CẦU TỪNG Ý (a), (b), kèm thang điểm từng câu/ý. NGHIÊM CẤM viết tóm tắt đại ý!
+
+3. **BẢNG SỐ LIỆU & HÌNH VẼ SVG**:
+- Nếu câu hỏi có bảng số liệu thống kê (ví dụ Câu 12) hoặc bảng phân bố hoặc BBT: Phải xuống dòng, cách 1 dòng trống trước và sau bảng, viết chuẩn Markdown nhiều dòng:
+  Ví dụ:
+  \`\`\`
+  | Nhóm | $[0; 20)$ | $[20; 40)$ | $[40; 60)$ |
+  | :--- | :---: | :---: | :---: |
+  | Tần số | $5$ | $10$ | $15$ |
+  \`\`\`
+- Nếu mục có \`[BẮT BUỘC CÓ HÌNH <svg>]\`, nhúng trực tiếp mã \`<svg viewBox="0 0 360 240" width="340" height="220" xmlns="http://www.w3.org/2000/svg">...</svg>\` sắc nét ngay trong câu hỏi đó.
+
+DANH SÁCH ĐẦY ĐỦ TẤT CẢ CÁC PHẦN & TỪNG CÂU HỎI BẮT BUỘC PHẢI VIẾT TRỌN VẸN 100% (KHÔNG ĐƯỢC BỎ SÓT BẤT KỲ PHẦN NÀO):
+${formatSectionChecklist(groupedSections)}
+
+Kết thúc đề thi bằng dòng: \`--- HẾT ---\`. Không cần bất kỳ lời bình nào ngoài nội dung Đề thi.`;
+
+    const pass2ARes = await generateWithFallback(req, {
+      preferredModels: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
+      contents: [{ role: "user", parts: [{ text: pass2AExamPrompt }] }],
+      config: {
+        systemInstruction: sharedSystemRules,
+        maxOutputTokens: 65536,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM }
+      }
+    });
+
+    let examMarkdown = normalizeServerLatex(pass2ARes?.text || "");
+    const modelUsed = pass2ARes?.modelUsed || "gemini-4-hydrogen";
+
+    // =========================================================================
+    // COMPLETENESS GATE & AUTOMATIC PER-SECTION REPAIR FOR EXAM MARKDOWN
+    // =========================================================================
+    const lazinessRegex =
+      /\(\s*(?:Các\s*câu|Tương\s*tự|Giải\s*tương\s*tự|Đề\s*tương\s*đương|Phần\s*còn\s*lại|Nội\s*dung\s*tương\s*ứng|Xem\s*đề\s*gốc)[^)]*\)|tương\s*đương\s*đề\s*gốc/i;
+
+    const findSectionHeaderRegex = (sec: any): RegExp => {
+      const rawId = String(sec.section_id || "").trim();
+      const rawTitle = String(sec.title || "").trim();
+      const candidates = new Set<string>();
+
+      const addCand = (s: string) => {
+        const cleaned = s.trim();
+        // Never allow single-letter candidates like "A" or "B" that would match multiple-choice option A. / B.
+        if (cleaned.length >= 4) {
+          candidates.add(cleaned.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+        }
+      };
+
+      addCand(rawId);
+      // Extract "PHẦN I", "PHẦN II", "PHẦN III", "PHẦN IV", "TỰ LUẬN" from e.g. "A - PHẦN II" or "B - TỰ LUẬN"
+      const phanMatch = `${rawId} ${rawTitle}`.match(/PHẦN\s*(?:IV|I{1,3}|[1-4]|TỰ\s*LUẬN)/i);
+      if (phanMatch) {
+        addCand(phanMatch[0]);
+      }
+      if (/tự\s*luận/i.test(`${rawId} ${rawTitle}`)) {
+        candidates.add("(?:PHẦN\\s*(?:IV|B)\\s*[\\.\\-:]?\\s*|B\\s*[\\.\\-:]\\s*)?TỰ\\s*LUẬN");
+      }
+      if (candidates.size === 0) {
+        addCand(rawTitle.split(/[\(\n]/)[0] || "PHẦN");
+      }
+
+      return new RegExp(`(?:^|\\n)[ \\t]*(?:#{1,4}[ \\t]*|\\*{0,2})(?:${Array.from(candidates).join("|")})(?:\\b|[\\.:\\s\\(])`, "i");
+    };
+
+    const inspectSectionsDefects = (md: string) => {
+      const located = groupedSections.map((g) => {
+        const re = findSectionHeaderRegex(g.section);
+        const match = re.exec(md);
+        return {
+          ...g,
+          startIdx: match ? match.index : -1
+        };
+      });
+
+      const foundStarts = located
+        .filter((x) => x.startIdx >= 0)
+        .map((x) => x.startIdx)
+        .sort((a, b) => a - b);
+
+      const defects: Array<{ group: { section: any; items: any[] }; reason: string; slice: string }> = [];
+
+      for (const entry of located) {
+        const expectedCount = Number(entry.section.question_count) || entry.items.length || 1;
+        if (entry.startIdx === -1) {
+          defects.push({ group: { section: entry.section, items: entry.items }, reason: "Thiếu hoàn toàn tiêu đề phần", slice: "" });
+          continue;
+        }
+        const nextStart = foundStarts.find((idx) => idx > entry.startIdx) ?? md.length;
+        const slice = md.slice(entry.startIdx, nextStart);
+
+        if (lazinessRegex.test(slice)) {
+          defects.push({ group: { section: entry.section, items: entry.items }, reason: "Chứa câu tóm tắt/giữ chỗ", slice });
+          continue;
+        }
+
+        const qMatches = slice.match(/(?:^|\n)[ \t]*(?:[-*•●]\s*)?(?:\*{0,2})(?:Câu|Bài)\s*\d+\b/gi) || [];
+        const ordListMatches = slice.match(/(?:^|\n)[ \t]*\d+\.\s+\S+/g) || [];
+        const detectedQCount = Math.max(qMatches.length, ordListMatches.length);
+
+        if (detectedQCount < Math.max(1, expectedCount - 1) || (expectedCount >= 2 && detectedQCount === 0)) {
+          defects.push({
+            group: { section: entry.section, items: entry.items },
+            reason: `Thiếu số câu (${detectedQCount}/${expectedCount})`,
+            slice
+          });
+          continue;
+        }
+
+        if (entry.section.format_type === "true_false") {
+          const abcdCount = (slice.match(/(?:^|\n)[ \t]*(?:\*{0,2})[a-d]\)/g) || []).length;
+          if (abcdCount < expectedCount * 3) {
+            defects.push({
+              group: { section: entry.section, items: entry.items },
+              reason: `Thiếu các mệnh đề a,b,c,d (${abcdCount}/${expectedCount * 4})`,
+              slice
+            });
+            continue;
+          }
+        }
+
+        if (entry.section.format_type === "multiple_choice") {
+          const optionACount = (slice.match(/(?:^|\n|[ \t]{2,})A\.\s+/g) || []).length;
+          if (optionACount < Math.max(1, expectedCount - 2)) {
+            defects.push({
+              group: { section: entry.section, items: entry.items },
+              reason: `Thiếu phương án A,B,C,D (${optionACount}/${expectedCount})`,
+              slice
+            });
+            continue;
+          }
+        }
+
+        if (entry.section.format_type === "essay" || entry.section.format_type === "short_answer") {
+          const avgCharsPerItem = slice.length / Math.max(1, expectedCount);
+          const minThreshold = entry.section.format_type === "essay" ? 95 : 55;
+          if (avgCharsPerItem < minThreshold) {
+            defects.push({
+              group: { section: entry.section, items: entry.items },
+              reason: `Nội dung câu quá ngắn/dạng gợi ý (${Math.round(avgCharsPerItem)} ký tự/câu)`,
+              slice
+            });
+          }
+        }
+      }
+
+      return defects;
+    };
+
+    const defects = inspectSectionsDefects(examMarkdown);
+    if (defects.length > 0) {
+      console.warn(
+        `[Isomorphic Stage 2A Repair] Detected ${defects.length} incomplete section(s):`,
+        defects.map((d) => `${d.group.section.section_id}: ${d.reason}`).join("; ")
+      );
+
+      // Repair defective sections in batches/dedicated call so AI writes 100% full questions
+      try {
+        const repairGroups = defects.map((d) => d.group);
+        const repairPrompt = `Bạn vừa sinh thiếu hoặc tóm tắt một số phần trong Đề đẳng cấu (Mã đề ${examCode}).
+Hãy viết lại **ĐẦY ĐỦ 100% NGUYÊN VĂN ĐỀ BÀI HOÀN CHỈNH** cho CHỈ CÁC PHẦN SAU ĐÂY (mỗi phần bắt đầu đúng tiêu đề phần và đủ tất cả các câu hỏi từ đầu đến cuối, TUYỆT ĐỐI KHÔNG viết tắt hay để câu tóm tắt trong ngoặc đơn!):
+
+${formatSectionChecklist(repairGroups)}
+
+QUY TẮC BẮT BUỘC:
+- Mỗi câu bắt đầu bằng \`**Câu 1.**\`, \`**Câu 2.**\`, ... (KHÔNG dùng danh sách \`1.\` hay bullet \`-\`).
+- Nếu là Đúng/Sai: mỗi câu phải có đoạn dẫn đầy đủ + ĐỦ 4 ý \`a)\`, \`b)\`, \`c)\`, \`d)\` trên 4 dòng riêng.
+- Nếu là Trả lời ngắn: đề bài toán học hoàn chỉnh, đủ số liệu mới để thí sinh giải ra số cụ thể.
+- Nếu là Tự luận: đề bài đầy đủ giả thiết, công thức, ý (a), (b) hoàn chỉnh và điểm từng câu; KHÔNG viết gạch đầu dòng gợi ý ngắn!
+- Bảng số liệu phải viết đúng chuẩn Markdown nhiều dòng có 1 dòng trống trước và sau. Công thức LaTeX dùng $\\log$, $\\ln$, $\\frac{...}{...}$ trong $...$.
+- CHỈ xuất nội dung các phần được yêu cầu sửa ở trên, KHÔNG lặp lại tiêu đề trường hay các phần khác.`;
+
+        const repairRes = await generateWithFallback(req, {
+          preferredModels: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
+          contents: [{ role: "user", parts: [{ text: repairPrompt }] }],
+          config: {
+            systemInstruction: sharedSystemRules,
+            maxOutputTokens: 65536,
+            thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM }
+          }
+        });
+
+        const repairedText = normalizeServerLatex(repairRes?.text || "");
+        if (repairedText.length > 150) {
+          // Splice each repaired section back into examMarkdown cleanly
+          let updatedMd = examMarkdown.replace(/\n*---\s*HẾT\s*---\s*$/i, "").trim();
+          for (const def of defects) {
+            const sec = def.group.section;
+            const secRe = findSectionHeaderRegex(sec);
+            const repMatch = secRe.exec(repairedText);
+            if (!repMatch) continue;
+
+            // Find end of this repaired section inside repairedText
+            let repEnd = repairedText.length;
+            for (const other of repairGroups) {
+              if (other.section.section_id === sec.section_id) continue;
+              const oRe = findSectionHeaderRegex(other.section);
+              const oMatch = oRe.exec(repairedText.slice(repMatch.index + repMatch[0].length));
+              if (oMatch) {
+                const candidateEnd = repMatch.index + repMatch[0].length + oMatch.index;
+                if (candidateEnd < repEnd) repEnd = candidateEnd;
+              }
+            }
+            const repSlice = repairedText.slice(repMatch.index, repEnd).trim();
+            if (!repSlice) continue;
+
+            const origMatch = secRe.exec(updatedMd);
+            if (origMatch) {
+              // Find next section start in updatedMd
+              let origEnd = updatedMd.length;
+              for (const g of groupedSections) {
+                if (g.section.section_id === sec.section_id) continue;
+                const gRe = findSectionHeaderRegex(g.section);
+                const gMatch = gRe.exec(updatedMd.slice(origMatch.index + origMatch[0].length));
+                if (gMatch) {
+                  const candEnd = origMatch.index + origMatch[0].length + gMatch.index;
+                  if (candEnd < origEnd) origEnd = candEnd;
+                }
+              }
+              updatedMd =
+                updatedMd.slice(0, origMatch.index).trimEnd() +
+                "\n\n" +
+                repSlice +
+                "\n\n" +
+                updatedMd.slice(origEnd).trimStart();
+            } else {
+              updatedMd = updatedMd + "\n\n" + repSlice;
+            }
+          }
+          examMarkdown = updatedMd.trim() + "\n\n--- HẾT ---";
+        }
+      } catch (repairErr) {
+        console.warn("[Isomorphic Stage 2A Repair Error]:", repairErr);
+      }
+    }
+
+    // Final guarantee: strip stray bullets and convert any raw numbered-list question lines (`1. Tính...`) to `**Câu 1.** Tính...`
+    examMarkdown = examMarkdown.replace(
+      /(^|\n)[ \t]*[-*•●][ \t]+((?:\*\*)?(?:Câu|Bài)\s*\d+\b)/gi,
+      "$1$2"
+    );
+    examMarkdown = examMarkdown.replace(
+      /(^|\n)[ \t]*(\d{1,2})\.[ \t]+(?=(?:[A-ZÀ-Ỹ\$\\]|Cho|Tính|Tìm|Giải|Biết|Hỏi|Xét|Gọi|Chóp|Hàm|Đạo|Trung|Bất|Tiệm|Số|Chọn|Một|Trong|Người|Khảo|Cực))/g,
+      "$1**Câu $2.** "
+    );
+
+    // =========================================================================
+    // PASS 2B & PASS 2C (SONG SONG): SINH ĐÁP ÁN CHI TIẾT & BẢNG ĐỐI CHIẾU MA TRẬN
+    // =========================================================================
+    const pass2BGradingPrompt = `Dựa trên **ĐỀ THI ĐẲNG CẤU HOÀN CHỈNH** (Mã đề ${examCode}) dưới đây và JSON Blueprint gốc, hãy biên soạn **ĐẦY ĐỦ 100% ĐÁP ÁN – HƯỚNG DẪN CHẤM – THANG ĐIỂM CHI TIẾT**.
+
+YÊU CẦU BẮT BUỘC:
+1. Giải chính xác và đầy đủ 100% tất cả các câu hỏi và từng ý nhỏ từ đầu đến cuối đề (CẤM bỏ sót câu nào, CẤM viết "(Các câu còn lại làm tương tự)").
+2. Nếu đề có Trắc nghiệm (Phần I ABCD / Phần II Đúng-Sai / Phần III Trả lời ngắn):
+   - Lập **Bảng đáp án nhanh** chuẩn cho từng phần.
+   - Viết **Lời giải chi tiết từng bước** cho MỌI câu hỏi (với Phần II Đúng/Sai phải chứng minh/giải thích rõ từng ý a, b, c, d vì sao Đúng hay Sai).
+3. Nếu đề có Tự luận:
+   - BẮT BUỘC trình bày bằng **Bảng 3 cột chuẩn Bộ/Sở GD&ĐT**:
+     | Câu / Ý | Nội dung lời giải chi tiết từng bước | Điểm |
+     | :---: | :--- | :---: |
+   - Chia nhỏ điểm đến từng bước $0,25$ điểm (có $0,25$đ vẽ hình nếu là bài hình học; nhúng \`<svg>\` kèm đường phụ đứt nét nếu cần). Dùng \`<br/>\` bên ngoài dấu \`$...$\` để xuống dòng trong cùng ô bảng.
+4. Công thức Toán học dùng chuẩn LaTeX \`$...$\` hoặc \`$$...$$\`, luôn dùng \`\\frac\`, \`\\log\`, \`\\ln\`, \`\\sin\`, \`\\cos\`.
+
+ĐỀ THI ĐẲNG CẤU (MÃ ĐỀ ${examCode}):
+${examMarkdown}`;
+
+    const pass2CMatrixPrompt = `Dựa trên JSON Blueprint đề gốc và Đề thi đẳng cấu (Mã đề ${examCode}) dưới đây, hãy xuất **PHẦN MA TRẬN – BẢN ĐẶC TẢ – ĐỐI CHIẾU ĐẲNG CẤU** chuẩn Công văn 7991/BGDĐT (chỉ xuất phần Ma trận & Đối chiếu, không lặp lại toàn văn đề thi hay lời giải).
+
+Gồm 3 mục rõ ràng:
+1. **Thông tin chung & Thống kê tỷ lệ 4 mức độ nhận thức** (Nhận biết - Thông hiểu - Vận dụng - Vận dụng cao).
+2. **Bảng Ma trận & Bản đặc tả Đề thi** dạng bảng Markdown đầy đủ cột: \`| TT | Chương / Chủ đề | Nội dung / Đơn vị kiến thức | Mức độ | Số câu/ý | Điểm |\`.
+3. **Bảng đối chiếu Đẳng cấu từng câu/ý (${totalItems} mục)**:
+\`| Câu / Ý | Chuyên đề & Mức độ | Kỹ thuật giải giữ nguyên từ đề gốc | Biến đổi Đẳng cấu ở Đề mới (Mã ${examCode}) | Điểm |\`
+
+BLUEPRINT ĐỀ GỐC:
+${JSON.stringify({ metadata: blueprint.metadata, sections: blueprint.sections, cognitive_ratio: blueprint.cognitive_ratio }, null, 2)}
+
+ĐỀ THI ĐẲNG CẤU ĐÃ SINH:
+${examMarkdown}`;
+
+    const [gradingSettled, matrixSettled] = await Promise.allSettled([
+      generateWithFallback(req, {
+        preferredModels: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
+        contents: [{ role: "user", parts: [{ text: pass2BGradingPrompt }] }],
+        config: {
+          systemInstruction: sharedSystemRules,
+          maxOutputTokens: 65536
+        }
+      }),
+      generateWithFallback(req, {
+        preferredModels: ["gemini-3.1-flash-lite", "gemini-4-hydrogen"],
+        contents: [{ role: "user", parts: [{ text: pass2CMatrixPrompt }] }],
+        config: {
+          systemInstruction: sharedSystemRules,
+          maxOutputTokens: 32768
+        }
+      })
+    ]);
+
+    let gradingGuideMarkdown =
+      gradingSettled.status === "fulfilled"
+        ? normalizeServerLatex(gradingSettled.value?.text || "")
+        : "";
+    let matrixMarkdown =
+      matrixSettled.status === "fulfilled"
+        ? normalizeServerLatex(matrixSettled.value?.text || "")
+        : "";
+
+    // Verify gradingGuideMarkdown completeness and retry once if empty or contains lazy placeholders
+    const isGradingIncomplete =
+      !gradingGuideMarkdown ||
+      gradingGuideMarkdown.length < 300 ||
+      lazinessRegex.test(gradingGuideMarkdown);
+
+    if (isGradingIncomplete) {
+      try {
+        const retryGradingRes = await generateWithFallback(req, {
+          preferredModels: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
+          contents: [{ role: "user", parts: [{ text: pass2BGradingPrompt }] }],
+          config: {
+            systemInstruction: sharedSystemRules,
+            maxOutputTokens: 65536
+          }
+        });
+        const retryText = normalizeServerLatex(retryGradingRes?.text || "");
+        if (retryText.length > gradingGuideMarkdown.length) {
+          gradingGuideMarkdown = retryText;
+        }
+      } catch (retryGradErr) {
+        console.warn("[Isomorphic Stage 2B Retry Notice]:", retryGradErr);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      matrixMarkdown,
+      examMarkdown,
+      gradingGuideMarkdown,
+      modelUsed
+    });
+  } catch (error: any) {
+    console.error("[Isomorphic Exam Generation Error]:", error);
+    return handleAiError(error, req, res);
+  }
+});
+
+// ============================================================================
+// CHUYÊN HỆ: ÔN THI TỐT NGHIỆP THPT (TOÁN) - CHUẨN GDPT 2018
+// ============================================================================
+app.post("/api/on-thi-tn-thpt/generate", async (req, res) => {
+  try {
+    const {
+      selectedTopics = [],
+      materialType = "chuyen_de",
+      part1Count = 8,
+      part2Count = 2,
+      part3Count = 4,
+      difficultyLevel = "kha_8_plus",
+      teacherHeader = "",
+      customNote = ""
+    } = req.body || {};
+
+    if (!Array.isArray(selectedTopics) || selectedTopics.length === 0) {
+      return res.status(400).json({
+        error: "Vui lòng chọn ít nhất một dạng bài trong cây thư mục chuyên đề."
+      });
+    }
+
+    const p1 = Math.max(0, Math.min(30, Number(part1Count) || 0));
+    const p2 = Math.max(0, Math.min(10, Number(part2Count) || 0));
+    const p3 = Math.max(0, Math.min(15, Number(part3Count) || 0));
+
+    if (p1 + p2 + p3 === 0) {
+      return res.status(400).json({
+        error: "Tổng số câu hỏi của các phần phải lớn hơn 0."
+      });
+    }
+
+    const normalizeOnThiLatex = (raw: string): string => {
+      if (!raw) return "";
+      let s = String(raw)
+        .replace(/^```(?:markdown|md|latex|json)?\s*\n?/i, "")
+        .replace(/\n?```\s*$/i, "")
+        .replace(/\r\n/g, "\n")
+        .trim();
+
+      const fixInner = (inner: string) => {
+        let f = inner.replace(/\\dfrac\b/g, "\\frac");
+        const tv: string[] = [];
+        f = f.replace(/\\(?:text|mathrm|textbf|textit)\s*\{[^{}]*\}/g, (m) => {
+          const i = tv.length;
+          tv.push(m);
+          return `@@OT_TX_${i}@@`;
+        });
+        f = f.replace(
+          /(?<![\\a-zA-Z])(arcsin|arccos|arctan|sin|cos|tan|cot|log|ln|lim)(?!h\b)(?=\s*[\(\[_^0-9a-zA-Z\\])/g,
+          "\\$1"
+        );
+        return f.replace(/@@OT_TX_(\d+)@@/g, (_m, i) => tv[Number(i)] || "");
+      };
+
+      s = s.replace(/\$\$([\s\S]*?)\$\$/g, (_m, body) => `$$${fixInner(body)}$$`);
+      s = s.replace(/(?<!\$)\$(?!\$)([^$\n]+?)(?<!\$)\$(?!\$)/g, (_m, body) => `$${fixInner(body)}$`);
+      return s;
+    };
+
+    const difficultyMap: Record<string, string> = {
+      co_ban_6_7:
+        "CƠ BẢN (Mục tiêu 6–7 điểm): Ưu tiên Nhận biết – Thông hiểu nền tảng, nhận diện nhanh công thức, BBT, đồ thị, tính toán trực tiếp rõ ràng, tránh bẫy quá lắt léo.",
+      kha_8_plus:
+        "KHÁ (Mục tiêu 8+ điểm): Cân bằng Thông hiểu – Vận dụng, lồng ghép bài toán chứa tham số $m$, bảng số liệu thực tế và câu Đúng/Sai phân hóa ý c, d.",
+      vdc_9_10:
+        "VẬN DỤNG CAO (Mục tiêu 9–10 điểm): Trọng tâm bài toán mô hình hóa thực tế phức hợp (kinh tế, kỹ thuật, y tế, viễn thông, vật lý), cực trị không gian $Oxyz$, xác suất Bayes, quy hoạch tuyến tính, đếm lưới ô vuông nâng cao."
+    };
+    const difficultyGuide = difficultyMap[difficultyLevel] || difficultyMap.kha_8_plus;
+
+    const topicChecklist = selectedTopics
+      .map(
+        (t: any, idx: number) =>
+          `${idx + 1}. [${t.gradeTitle || "THPT"}] ${t.topicTitle || ""} — ${t.label || ""} (Mức chuẩn: ${t.levelTag || "TH-VD"})${t.description ? `\n   Trọng tâm kiến thức: ${t.description}` : ""}`
+      )
+      .join("\n");
+
+    let materialInstructions = "";
+    if (materialType === "chuyen_de") {
+      materialInstructions = `LOẠI TÀI LIỆU: TÀI LIỆU CHUYÊN ĐỀ ÔN TẬP CHUYÊN SÂU.
+Cấu trúc bắt buộc trong "mainContentMarkdown":
+- Tiêu đề trang trọng (gồm thông tin trường/GV nếu có: "${teacherHeader || "TÀI LIỆU ÔN THI TỐT NGHIỆP THPT - MÔN TOÁN"}").
+- **I. LÝ THUYẾT TRỌNG TÂM & CÔNG THỨC CỐT LÕI**: Tóm tắt đầy đủ, hệ thống, chính xác các định nghĩa, tính chất, công thức ứng với các dạng bài đã chọn.
+- **II. PHƯƠNG PHÁP GIẢI & MẸO BẤM MÁY TÍNH CASIO fx-580VN X / fx-880BTG**: Nêu rõ các bước giải tay chuẩn mực VÀ hướng dẫn từng phím bấm CASIO nhanh cho từng dạng bài (ví dụ MENU 9 giải phương trình/bất phương trình, MENU 8 Table dò cực trị, MENU 5 Vector tính tích có hướng/góc, MENU 6 Thống kê ghép nhóm).
+- **III. VÍ DỤ MINH HỌA SÁT ĐỀ TN THPT**: Mỗi dạng bài được chọn có ít nhất 1 ví dụ minh họa sát cấu trúc đề Bộ GD&ĐT 2025–2026 kèm **Lời giải chi tiết**.
+- **IV. HỆ THỐNG BÀI TẬP TỰ LUYỆN PHÂN HÓA**: Chia đủ theo cấu trúc:
+  + ${p1 > 0 ? `PHẦN I. Trắc nghiệm nhiều phương án lựa chọn: Sinh ĐỦ ĐÚNG ${p1} câu (Câu 1 đến Câu ${p1}), mỗi câu đủ 4 phương án A, B, C, D trên 4 dòng riêng biệt.` : "Không cần sinh Phần I."}
+  + ${p2 > 0 ? `PHẦN II. Trắc nghiệm Đúng Sai: Sinh ĐỦ ĐÚNG ${p2} câu (Câu 1 đến Câu ${p2}), mỗi câu có ĐỦ 4 ý a), b), c), d) trên 4 dòng riêng biệt.` : "Không cần sinh Phần II."}
+  + ${p3 > 0 ? `PHẦN III. Trắc nghiệm Trả lời ngắn: Sinh ĐỦ ĐÚNG ${p3} câu (Câu 1 đến Câu ${p3}), nêu rõ quy cách làm tròn (nếu có) để đáp án là 1 số cụ thể tối đa 4 ký tự.` : "Không cần sinh Phần III."}`;
+    } else if (materialType === "giao_an_5512") {
+      materialInstructions = `LOẠI TÀI LIỆU: KẾ HOẠCH BÀI DẠY ÔN THI TỐT NGHIỆP THPT (CHUẨN CÔNG VĂN 5512/BGDĐT).
+Cấu trúc bắt buộc trong "mainContentMarkdown":
+- Quốc hiệu / Header kế hoạch bài dạy (${teacherHeader || "Trường THPT ... — Tổ Toán"}).
+- **I. MỤC TIÊU**: 1. Kiến thức; 2. Năng lực (tư duy lập luận toán học, mô hình hóa toán học, sử dụng công cụ CASIO); 3. Phẩm chất.
+- **II. THIẾT BỊ DẠY HỌC VÀ HỌC LIỆU**: Máy chiếu, bảng phụ, máy tính cầm tay CASIO fx-580VN X / fx-880BTG, phiếu học tập.
+- **III. TIẾN TRÌNH DẠY HỌC (ĐỦ 4 HOẠT ĐỘNG CHUẨN CV 5512)**:
+  1. **Hoạt động 1: Khởi động** (Mục tiêu, Nội dung, Sản phẩm, Tổ chức thực hiện).
+  2. **Hoạt động 2: Hình thành & Hệ thống hóa kiến thức trọng tâm** (Ôn tập sơ đồ công thức, lưu ý lỗi sai thường gặp, mẹo bấm máy CASIO).
+  3. **Hoạt động 3: Luyện tập** (Tổ chức giải mẫu & làm việc nhóm trên Phiếu học tập).
+  4. **Hoạt động 4: Vận dụng thực tế & Hướng dẫn về nhà** (Bài toán thực tiễn liên hệ ngành nghề, giao nhiệm vụ tự luyện).
+- **IV. PHIẾU HỌC TẬP CUỐI BÀI**:
+  + ${p1 > 0 ? `PHẦN I (Trắc nghiệm 4 lựa chọn): Sinh ĐỦ ĐÚNG ${p1} câu (Câu 1 đến Câu ${p1}), mỗi câu 4 phương án A, B, C, D mỗi ý 1 dòng.` : "Không có Phần I."}
+  + ${p2 > 0 ? `PHẦN II (Đúng/Sai): Sinh ĐỦ ĐÚNG ${p2} câu (Câu 1 đến Câu ${p2}), mỗi câu ĐỦ 4 ý a), b), c), d).` : "Không có Phần II."}
+  + ${p3 > 0 ? `PHẦN III (Trả lời ngắn): Sinh ĐỦ ĐÚNG ${p3} câu (Câu 1 đến Câu ${p3}), đáp số chuẩn hóa tối đa 4 ký tự.` : "Không có Phần III."}`;
+    } else {
+      materialInstructions = `LOẠI TÀI LIỆU: ĐỀ LUYỆN TẬP ÔN THI TỐT NGHIỆP THPT CHUẨN CẤU TRÚC 3 PHẦN BỘ GD&ĐT (GDPT 2018).
+Cấu trúc bắt buộc trong "mainContentMarkdown":
+- Tiêu đề chuẩn đề thi (${teacherHeader || "ĐỀ LUYỆN TẬP ÔN THI TỐT NGHIỆP THPT — MÔN TOÁN"}) kèm thông tin: Thời gian làm bài, Phạm vi chuyên đề, Mục tiêu điểm số.
+- ${p1 > 0 ? `**PHẦN I. Câu trắc nghiệm nhiều phương án lựa chọn**: Sinh ĐỦ ĐÚNG ${p1} câu (từ Câu 1 đến Câu ${p1}), mỗi câu có ĐỦ 4 phương án A., B., C., D. trên 4 dòng riêng biệt.` : "Bỏ qua Phần I vì số câu = 0."}
+- ${p2 > 0 ? `**PHẦN II. Câu trắc nghiệm đúng sai**: Sinh ĐỦ ĐÚNG ${p2} câu (từ Câu 1 đến Câu ${p2}), mỗi câu bắt buộc có phần dẫn + ĐỦ 4 mệnh đề con a), b), c), d) trên 4 dòng riêng biệt.` : "Bỏ qua Phần II vì số câu = 0."}
+- ${p3 > 0 ? `**PHẦN III. Câu trắc nghiệm trả lời ngắn**: Sinh ĐỦ ĐÚNG ${p3} câu (từ Câu 1 đến Câu ${p3}), mỗi câu là bài toán tính toán hoặc mô hình hóa thực tế rõ ràng, nêu rõ yêu cầu làm tròn (ví dụ: làm tròn kết quả đến hàng phần trăm / hàng phần mười / hàng đơn vị) để đáp số là một số cụ thể dài tối đa 4 ký tự (gồm cả dấu trừ hoặc dấu phẩy thập phân nếu có).` : "Bỏ qua Phần III vì số câu = 0."}`;
+    }
+
+    const answerInstructions = `Trong "answerAndSolutionMarkdown":
+- Tạo **BẢNG ĐÁP ÁN NHANH** bằng Markdown Table chuẩn cho tất cả câu hỏi ở Phần I, Phần II (bảng 5 hàng a, b, c, d), và Phần III:
+  + MỌI hàng của bảng Markdown BẮT BUỘC có đủ dấu \`|\` ở ĐẦU và CUỐI hàng (ví dụ: \`| Câu | 1 | 2 | 3 |\`), KHÔNG ĐƯỢC chèn dòng trống giữa hàng tiêu đề, hàng phân cách \`| :---: |\` và các hàng dữ liệu.
+  + Trong bảng Phần III (Trả lời ngắn), ghi trực tiếp giá trị số (ví dụ: \`| **Đáp số** | 200 | 31,7 | 126 |\`), TUYỆT ĐỐI KHÔNG bọc dấu nháy đơn \`'200'\` hay nháy kép.
+- Tạo **HƯỚNG DẪN GIẢI CHI TIẾT** cho TẤT CẢ 100% số câu đã sinh:
+  + Không được tóm tắt, không viết "(các câu còn lại tương tự)".
+  + MỖI CÂU HỎI MỚI (**Câu 1.**, **Câu 2.**, **Câu 3.**...) BẮT BUỘC xuống 2 dòng (1 dòng trống \`\\n\\n\`) tách riêng khỏi câu trước; TUYỆT ĐỐI KHÔNG viết dính liền kiểu \`**Đáp số: 200****Câu 2.**\`.
+  + Với Phần II (Đúng/Sai): giải thích rành mạch TỪNG Ý a), b), c), d) mỗi ý một dòng riêng (ví dụ: \`- **a) Đúng:** ...\`) kèm phép tính đối chứng.
+  + Với Phần III (Trả lời ngắn): trình bày lập luận mô hình hóa từng bước, kết quả trung gian chính xác, quy tắc làm tròn và chốt \`**Đáp số: ...**\` ở cuối đoạn rồi xuống dòng mới sang câu tiếp theo.`;
+
+    const promptText = `Hãy biên soạn tài liệu Toán học ôn thi Tốt nghiệp THPT chuẩn Bộ GD&ĐT (chương trình GDPT 2018) bám sát chính xác các yêu cầu sau:
+
+1. CÁC DẠNG BÀI / CHUYÊN ĐỀ ĐƯỢC GIÁO VIÊN TÍCH CHỌN:
+${topicChecklist}
+
+2. MỨC ĐỘ MỤC TIÊU:
+${difficultyGuide}
+
+3. ${materialInstructions}
+
+4. ${answerInstructions}
+
+5. YÊU CẦU BẮT BUỘC VỀ BỐI CẢNH THỰC TẾ & CHẤT LƯỢNG SƯ PHẠM:
+- Các câu hỏi ở **PHẦN II (Đúng/Sai)** và **PHẦN III (Trả lời ngắn)** BẮT BUỘC ưu tiên xây dựng bối cảnh mô hình hóa thực tế (kinh tế, doanh thu – lợi nhuận, kỹ thuật xây dựng, y tế – xét nghiệm Bayes, viễn thông 5G – radar Oxyz, vật lý chuyển động – lưu lượng nước, thống kê sản xuất...) gắn chặt với dạng bài đã chọn.
+- Nếu câu hỏi dùng bảng biến thiên, bảng xét dấu hoặc bảng số liệu thống kê ghép nhóm / bảng tần số 2 chiều: BẮT BUỘC chèn bảng Markdown chuẩn nhiều dòng (mỗi hàng 1 dòng riêng, đủ \`|\` đầu và cuối hàng).
+- Kiểm tra tính toán 2 lần trước khi xuất để đảm bảo mọi đáp án và lời giải khớp nhau tuyệt đối 100%, không mâu thuẫn số liệu.
+${customNote ? `\n6. GHI CHÚ RIÊNG CỦA GIÁO VIÊN:\n${customNote}` : ""}`;
+
+    const systemInstruction = `Bạn là Chuyên gia Ra đề & Biên soạn Tài liệu Ôn thi Tốt nghiệp THPT Môn Toán hàng đầu của Bộ GD&ĐT Việt Nam (Chương trình GDPT 2018).
+${MATH_FORMATTING_RULES}
+BỔ SUNG TUYỆT ĐỐI:
+- Trả về đúng định dạng JSON theo schema yêu cầu với 3 trường: title, mainContentMarkdown, answerAndSolutionMarkdown.
+- Tuyệt đối không dùng \\dfrac (luôn dùng \\frac).
+- Mọi công thức, biểu thức, phương trình, tập hợp, vectơ và biến số đơn lẻ ($x$, $y$, $z$, $m$, $n$, $t$, $p$, $S$, $V$, $P(\\overline{A})$...) BẮT BUỘC đặt trong $...$ hoặc $$...$$ để MathJax 3 render chính xác và xuất Word OMML hoàn hảo.
+- Trong giáo án 5512, mỗi tiểu mục trong Tiến trình dạy học (Mục tiêu, Nội dung, Sản phẩm, Tổ chức thực hiện) viết thành từng đoạn/gạch đầu dòng rõ ràng, không nhồi bảng biểu phức tạp làm hẹp cột.`;
+
+    const response = await generateWithFallback(req, {
+      preferredModels: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
+      contents: [{ role: "user", parts: [{ text: promptText }] }],
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: {
+              type: Type.STRING,
+              description: "Tiêu đề ngắn gọn của tài liệu ôn thi TN THPT."
+            },
+            mainContentMarkdown: {
+              type: Type.STRING,
+              description:
+                "Toàn bộ nội dung chính của tài liệu (Lý thuyết/Giáo án 5512/Đề luyện tập đầy đủ số câu Phần I, II, III) dùng Markdown chuẩn và LaTeX MathJax ($...$, $$...$$)."
+            },
+            answerAndSolutionMarkdown: {
+              type: Type.STRING,
+              description:
+                "Bảng đáp án nhanh chuẩn Markdown Table và Hướng dẫn giải chi tiết 100% các câu hỏi và từng ý a, b, c, d."
+            }
+          },
+          required: ["title", "mainContentMarkdown", "answerAndSolutionMarkdown"]
+        },
+        maxOutputTokens: 65536
+      }
+    });
+
+    const rawText = String(response?.text || "").trim();
+    if (!rawText) {
+      return res.status(502).json({ error: "AI không trả về nội dung. Vui lòng thử lại." });
+    }
+
+    let parsed: { title?: string; mainContentMarkdown?: string; answerAndSolutionMarkdown?: string } = {};
+    try {
+      const cleanedJson = rawText
+        .replace(/^```(?:json)?\s*\n?/i, "")
+        .replace(/\n?```\s*$/i, "")
+        .trim();
+      parsed = JSON.parse(cleanedJson);
+    } catch {
+      // Fallback: extract text cleanly if response wasn't strict JSON
+      parsed = {
+        title: "Tài liệu Ôn thi Tốt nghiệp THPT Môn Toán",
+        mainContentMarkdown: rawText,
+        answerAndSolutionMarkdown: ""
+      };
+    }
+
+    const title = String(parsed.title || "Tài liệu Ôn thi Tốt nghiệp THPT Môn Toán").trim();
+    const mainContentMarkdown = normalizeOnThiLatex(parsed.mainContentMarkdown || "");
+    const answerAndSolutionMarkdown = normalizeOnThiLatex(parsed.answerAndSolutionMarkdown || "");
+
+    const combinedMarkdown = [
+      mainContentMarkdown,
+      answerAndSolutionMarkdown
+        ? `\n\n---\n\n## ĐÁP ÁN VÀ HƯỚNG DẪN GIẢI CHI TIẾT\n\n${answerAndSolutionMarkdown}`
+        : ""
+    ]
+      .filter(Boolean)
+      .join("");
+
+    return res.status(200).json({
+      success: true,
+      title,
+      mainContentMarkdown,
+      answerAndSolutionMarkdown,
+      combinedMarkdown
+    });
+  } catch (error: any) {
+    console.error("[On Thi TN THPT Generate Error]:", error);
     return handleAiError(error, req, res);
   }
 });

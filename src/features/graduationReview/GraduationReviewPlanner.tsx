@@ -90,290 +90,11 @@ export const PERIOD_OPTIONS = [
   { value: 3, label: "3 tiết (135 phút - Mặc định PPCT 105 tiết)" },
   { value: 4, label: "4 tiết (180 phút - Chuyên đề nâng cao mở rộng)" },
   { value: 5, label: "5 tiết (225 phút - Chuyên đề lớn / Tích phân)" },
+  { value: 8, label: "8 tiết (360 phút - Chuyên đề lớn Tổ hợp & Xác suất)" },
 ];
 
 // Kế hoạch bài dạy mẫu chuẩn Công văn 5512/BGDĐT cho các môn
 export const SAMPLE_LESSON_PLAN = SAMPLE_MATH_PLAN;
-const _INLINE_PLAN = String.raw`# KẾ HOẠCH BÀI DẠY ÔN THI TỐT NGHIỆP THPT NĂM HỌC 2026 – 2027
-**Môn học:** Toán 12 | **Bộ sách:** Kết nối tri thức với cuộc sống  
-**Chủ đề:** **BÀI 1. TÍNH ĐƠN ĐIỆU VÀ CỰC TRỊ CỦA HÀM SỐ**  
-**Thời lượng:** $3$ tiết ($135$ phút) | **Tiết PPCT:** $1 - 3$  
-**Đối tượng áp dụng:** Học sinh lớp 12 (kết hợp phân hóa mục tiêu $6.5 - 8.0$ và nhóm lớp định hướng $8.0+$ như $12A_1, 12A_2, 12A_3$)
-
----
-
-## I. MỤC TIÊU
-
-### 1. Về kiến thức
-- Hệ thống hóa định lý về mối liên hệ giữa dấu của đạo hàm cấp một và tính đơn điệu của hàm số trên các khoảng xác định.
-- Nắm vững định nghĩa, điều kiện cần và điều kiện đủ (dấu hiệu $1$ và dấu hiệu $2$) để hàm số đạt cực trị; phân biệt rõ điểm cực trị của hàm số, điểm cực trị của đồ thị hàm số và giá trị cực trị.
-- Đọc, phân tích và khai thác chính xác bảng biến thiên, đồ thị của hàm số $y = f(x)$ cũng như đồ thị hàm số đạo hàm $y = f'(x)$.
-- Vận dụng thành thạo phương pháp cô lập tham số $m$ và định lý dấu tam thức bậc hai để giải quyết các bài toán chứa tham số $m$ về tính đơn điệu, cực trị (mục tiêu nâng cao dành cho học sinh khá, giỏi và các lớp $12A_1, 12A_2, 12A_3$).
-
-### 2. Về năng lực
-- **Năng lực tư duy và lập luận toán học:** Khả năng suy luận logic từ bảng xét dấu đạo hàm, phân tích các mệnh đề toán học Đúng/Sai, biện luận tham số $m$ theo điều kiện bài toán.
-- **Năng lực mô hình hóa toán học:** Chuyển hóa bài toán thực tế hoặc đồ thị mô phỏng sang các điều kiện giải tích về cực trị và đơn điệu.
-- **Năng lực giải quyết vấn đề toán học:** Nhận diện nhanh dạng toán, lựa chọn công cụ phù hợp (đạo hàm, bảng biến thiên, máy tính Casio fx-580VN X).
-- **Năng lực sử dụng công cụ, phương tiện học toán:** Khai thác tính năng TABLE ($[Menu] [8]$), giải phương trình ($[Menu] [9] [2] [2]$), tính đạo hàm tại điểm ($[SHIFT] [\int]$) để kiểm tra kết quả nhanh và chính xác.
-
-### 3. Về phẩm chất
-- **Chăm chỉ, trách nhiệm:** Tích cực hợp tác trong thảo luận nhóm, hoàn thành các nhiệm vụ trên phiếu học tập đúng thời gian.
-- **Cẩn thận, chính xác:** Khắc phục triệt để các sai lầm kinh điển như nhầm lẫn giữa "đồng biến trên $\mathbb{R} \setminus \{x_0\}$" và "đồng biến trên từng khoảng xác định", nhầm lẫn giữa điểm cực trị $x_0$ và giá trị cực trị $y_0$.
-
----
-
-## II. THIẾT BỊ DẠY HỌC VÀ HỌC LIỆU
-
-### 1. Giáo viên
-- Kế hoạch bài dạy chi tiết chuẩn Công văn 5512/BGDĐT.
-- Slide trình chiếu tóm tắt sơ đồ tư duy, bảng biến thiên và đồ thị minh họa trực quan.
-- **Phiếu học tập số 1:** Khung lý thuyết trọng tâm và $4$ ví dụ mẫu kinh điển.
-- **Phiếu học tập số 2:** Bộ câu hỏi rèn luyện chuẩn cấu trúc $3$ phần của Bộ GD&ĐT (Phần I: $6$ câu Trắc nghiệm nhiều lựa chọn; Phần II: $2$ câu Trắc nghiệm Đúng/Sai; Phần III: $3$ câu Trắc nghiệm Trả lời ngắn).
-
-### 2. Học sinh
-- Sách giáo khoa Toán 12 (Kết nối tri thức), vở ghi lý thuyết và bài tập ôn thi.
-- Máy tính cầm tay Casio fx-580VN X (hoặc tương đương).
-- Ôn lại các kiến thức cơ bản về quy tắc tính đạo hàm và dấu của tam thức bậc hai đã học ở lớp 10, 11.
-
----
-
-## III. TIẾN TRÌNH DẠY HỌC
-
-### TIẾT 1: HỆ THỐNG HÓA KIẾN THỨC VÀ CÁC DẠNG TOÁN CƠ BẢN (Nhận biết – Thông hiểu)
-
-#### Hoạt động 1: Khởi động & Hệ thống hóa kiến thức trọng tâm (20 phút)
-**a) Mục tiêu:** Tái hiện nhanh các định lý trọng tâm về tính đơn điệu và cực trị của hàm số; phân biệt các khái niệm then chốt tránh bẫy câu chữ trong đề thi tốt nghiệp.  
-**b) Nội dung:** Học sinh hoàn thành Bảng tra cứu nhanh trên Phiếu học tập số 1; giáo viên chuẩn hóa kiến thức qua sơ đồ so sánh trực quan.  
-**c) Sản phẩm:** Bảng tổng hợp kiến thức đã điền đầy đủ:
-- *Tính đơn điệu trên khoảng $K$:* $f'(x) \ge 0, \forall x \in K$ (đẳng thức tại hữu hạn điểm) $\Rightarrow$ đồng biến; $f'(x) \le 0, \forall x \in K$ $\Rightarrow$ nghịch biến. Không dùng dấu $\cup$ hoặc chấm phẩy (;).
-- *Hàm phân thức $y = \frac{ax + b}{cx + d}$:* $y' = \frac{ad - bc}{(cx + d)^2}$. Luôn luôn $ad - bc \ne 0$ (tuyệt đối không lấy dấu $=$).
-- *Cực trị (Dấu hiệu 1):* $f'(x)$ đổi dấu khi $x$ đi qua $x_0$: $+ \to -$ (cực đại); $- \to +$ (cực tiểu). $f'(x_0)$ có thể bằng $0$ hoặc không xác định, chỉ cần hàm số liên tục tại $x_0$.  
-**d) Tổ chức thực hiện:**  
-- Bước 1: Giáo viên chiếu câu hỏi phản chứng về các khẳng định sai lầm thường gặp.  
-- Bước 2: Học sinh trao đổi cặp đôi 5 phút.  
-- Bước 3: Đại diện cặp đôi phát biểu, các bạn phản biện.  
-- Bước 4: Giáo viên chốt các từ khóa then chốt: liên tục, hữu hạn điểm, đổi dấu, từng khoảng.
-
----
-
-#### Hoạt động 2: Phân loại dạng toán & Phân tích ví dụ mẫu (25 phút)
-
-##### Dạng 1: Đọc bảng biến thiên hoặc đồ thị của hàm số $y = f(x)$
-- **Phương pháp nhận diện:** Đồng biến ứng với đạo hàm mang dấu $+$ hoặc đồ thị đi lên từ trái sang phải; nghịch biến ứng với dấu $-$ hoặc đồ thị đi xuống; cực trị tại điểm đạo hàm đổi dấu.
-- **Ví dụ mẫu 1:** Cho hàm số $y = f(x)$ xác định trên $\mathbb{R} \setminus \{-1\}$, liên tục trên từng khoảng xác định và có bảng biến thiên:
-$$\begin{array}{c|ccccccccc}
-x & -\infty & & -2 & & -1 & & 1 & & +\infty \\
-\hline
-f'(x) & & + & 0 & - & \vline\vline & - & 0 & + & \\
-\hline
-& & & 3 & & \vline\vline & & & & +\infty \\
-f(x) & & \nearrow & & \searrow & \vline\vline & & \nearrow & & \\
-& -\infty & & & & \vline\vline & -\infty & & -1 &
-\end{array}$$
-Khẳng định nào sau đây là **đúng**?  
-A. Hàm số đồng biến trên khoảng $(-\infty; 1)$.  
-B. Điểm cực đại của hàm số là $x = -2$.  
-C. Giá trị cực tiểu của hàm số là $y = 1$.  
-D. Đồ thị hàm số có điểm cực tiểu là $M(1; 1)$.  
-*Lời giải chi tiết:*  
-Tại $x = -2$, $f'(x)$ đổi dấu từ $+$ sang $-$, hàm số đạt cực đại tại $x = -2$, giá trị cực đại $y = 3$. Vậy B đúng. Khẳng định A sai vì gián đoạn tại $x = -1$. Khẳng định C sai vì giá trị cực tiểu là $y = -1$. Khẳng định D sai vì điểm cực tiểu là $(1; -1)$. **Chọn B.**
-
----
-
-##### Dạng 2: Khai thác đồ thị hoặc bảng xét dấu của đạo hàm $y = f'(x)$
-- **Phương pháp nhận diện:** Khoảng hàm số $f(x)$ đồng biến khi đồ thị $y = f'(x)$ nằm phía trên trục hoành ($f'(x) > 0$). Điểm cực trị là nghiệm bội lẻ của $f'(x) = 0$ (cắt xuyên qua trục hoành).
-- **Ví dụ mẫu 2:** Cho hàm số $y = f(x)$ liên tục trên $\mathbb{R}$ và đồ thị đạo hàm $y = f'(x)$ là parabol cắt trục hoành tại $x = -1$ và $x = 3$, bề lõm hướng xuống dưới (tức $f'(x) > 0 \Leftrightarrow x \in (-1; 3)$). Hàm số $g(x) = f(1 - 2x)$ đồng biến trên khoảng nào dưới đây?  
-A. $(-1; 1)$.  
-B. $(1; 2)$.  
-C. $(-1; 0)$.  
-D. $(2; +\infty)$.  
-*Lời giải chi tiết:*  
-Ta có $g'(x) = [f(1 - 2x)]' = -2 \cdot f'(1 - 2x)$.  
-Hàm số $g(x)$ đồng biến $\Leftrightarrow g'(x) \ge 0 \Leftrightarrow -2 \cdot f'(1 - 2x) \ge 0 \Leftrightarrow f'(1 - 2x) \le 0$.  
-Từ đồ thị, $f'(u) \le 0 \Leftrightarrow u \le -1$ hoặc $u \ge 3$.  
-Thay $u = 1 - 2x$:  
-- $1 - 2x \le -1 \Leftrightarrow x \ge 1$.  
-- $1 - 2x \ge 3 \Leftrightarrow x \le -1$.  
-Vậy $g(x)$ đồng biến trên $(-\infty; -1)$ và $(1; +\infty)$. Do $(1; 2) \subset (1; +\infty)$ nên hàm số đồng biến trên $(1; 2)$. **Chọn B.**
-
----
-
-### TIẾT 2: BÀI TOÁN CHỨA THAM SỐ $m$ VÀ PHÂN HÓA NÂNG CAO (Vận dụng – Vận dụng cao)
-
-#### Hoạt động 2 (tiếp theo): Bài toán tham số $m$ (45 phút)
-
-##### Dạng 3: Tìm tham số $m$ để hàm số đơn điệu trên từng khoảng xác định hoặc trên $\mathbb{R}$
-- **Ví dụ mẫu 3:** Cho hàm số $y = \frac{x - m + 2}{x + 2m}$ ($m$ là tham số thực). Có bao nhiêu giá trị nguyên của $m$ thuộc $[-5; 5]$ để hàm số đã cho đồng biến trên từng khoảng xác định của nó?  
-A. $4$.  
-B. $5$.  
-C. $6$.  
-D. $7$.  
-*Lời giải chi tiết:*  
-Tập xác định $D = \mathbb{R} \setminus \{-2m\}$. Đạo hàm $y' = \frac{1 \cdot (2m) - 1 \cdot (-m + 2)}{(x + 2m)^2} = \frac{3m - 2}{(x + 2m)^2}$.  
-Hàm số đồng biến trên từng khoảng xác định $\Leftrightarrow y' > 0, \forall x \ne -2m \Leftrightarrow 3m - 2 > 0 \Leftrightarrow m > \frac{2}{3}$.  
-Vì $m \in [-5; 5]$ và $m \in \mathbb{Z} \Rightarrow m \in \{1; 2; 3; 4; 5\}$. Có $5$ giá trị nguyên thỏa mãn. **Chọn B.**
-
----
-
-##### Dạng 4: Bài toán tham số $m$ đơn điệu trên khoảng (Dành cho lớp $12A_1, 12A_2, 12A_3$)
-- **Phương pháp cô lập tham số:** Đưa về dạng $m \ge g(x), \forall x \in (a; b) \Leftrightarrow m \ge \max_{[a; b]} g(x)$ (hoặc $m \le g(x) \Leftrightarrow m \le \min_{[a; b]} g(x)$).
-- **Ví dụ mẫu 4:** Tìm tất cả các giá trị thực của tham số $m$ để hàm số $y = x^3 - 3x^2 + (m - 1)x + 2026$ đồng biến trên khoảng $(2; +\infty)$.  
-A. $m \ge 4$.  
-B. $m > 4$.  
-C. $m \le 4$.  
-D. $m \ge 1$.  
-*Lời giải chi tiết:*  
-Ta có $y' = 3x^2 - 6x + m - 1$.  
-Hàm số đồng biến trên $(2; +\infty) \Leftrightarrow y' \ge 0, \forall x \in (2; +\infty) \Leftrightarrow 3x^2 - 6x + m - 1 \ge 0, \forall x \in (2; +\infty)$.  
-Cô lập $m$: $m \ge -3x^2 + 6x + 1 = g(x), \forall x \in (2; +\infty)$.  
-Khảo sát $g(x) = -3x^2 + 6x + 1$ trên $(2; +\infty)$: $g'(x) = -6x + 6 = -6(x - 1) < 0, \forall x > 2$.  
-Hàm số $g(x)$ nghịch biến trên $(2; +\infty)$, suy ra $g(x) < g(2) = -3(4) + 12 + 1 = 1$.  
-Vậy để $m \ge g(x), \forall x > 2$ thì $m \ge 1$. **Chọn D.**
-
----
-
-### TIẾT 3: LUYỆN TẬP ĐỊNH DẠNG MỚI, THỦ THUẬT CASIO VÀ TỔNG KẾT (45 phút)
-
-#### Hoạt động 3: Luyện tập theo hệ thống câu hỏi định dạng đề thi mới (20 phút)
-**a) Mục tiêu:** Rèn luyện phản xạ giải đề thi TN THPT theo đúng 3 phần: Trắc nghiệm 4 lựa chọn, Trắc nghiệm Đúng/Sai, Trả lời ngắn.  
-**b) Nội dung:** Học sinh chia nhóm làm việc trên Phiếu học tập số 2 (Phần II và III).  
-**c) Sản phẩm:** Bảng nhóm ghi lời giải chi tiết và đáp số.  
-**d) Tổ chức thực hiện:**  
-- Bước 1: Giao nhiệm vụ cho 4 nhóm (nhóm 1, 2 giải câu Đúng/Sai; nhóm 3, 4 giải câu Trả lời ngắn).  
-- Bước 2: Học sinh thảo luận nhóm, giải thích vì sao từng ý Đúng hay Sai.  
-- Bước 3: Đại diện 2 nhóm lên bảng thuyết trình.  
-- Bước 4: Giáo viên chuẩn hóa đáp án và biểu điểm chi tiết.
-
----
-
-#### Hoạt động 4: Kỹ năng máy tính cầm tay (Casio fx-580VN X) và Nhận diện bẫy đề thi (15 phút)
-**a) Kỹ năng Casio:**
-1. *Dò bảng TABLE kiểm tra tính đơn điệu:* Bấm $[Menu] [8]$, nhập $f(x)$, thiết lập $Start, End, Step = \frac{End - Start}{29}$. Nếu giá trị cột $f(x)$ tăng liên tục $\Rightarrow$ đồng biến; giảm liên tục $\Rightarrow$ nghịch biến.
-2. *Kiểm tra điểm cực trị:* Bấm $[SHIFT] [\int]$, nhập hàm số, tính đạo hàm tại $x_0 \Rightarrow$ kết quả xấp xỉ $0$. Sau đó tính tại $x_0 \pm 0.001$ để kiểm tra đổi dấu.
-**b) Nhận diện bẫy thường gặp:**
-- Không kết luận đồng biến trên $\mathbb{R} \setminus \{x_0\}$ hay dùng dấu $\cup$.
-- Nhầm lẫn giữa đồ thị hàm số $y = f(x)$ và đồ thị đạo hàm $y = f'(x)$.
-- Điểm cực trị là nghiệm bội lẻ của $f'(x) = 0$; nghiệm bội chẵn thì không đổi dấu nên không sinh ra cực trị.
-
----
-
-#### Hoạt động 5: Vận dụng và Hướng dẫn tự học ở nhà (10 phút)
-- Hoàn thành đầy đủ các bài tập còn lại trong Phiếu học tập số 2 vào vở tự học.
-- Đọc trước nội dung **Bài 2. Giá trị lớn nhất và giá trị nhỏ nhất của hàm số** (Tiết 4 – 5).
-
----
-
-## IV. PHỤ LỤC: HỆ THỐNG PHIẾU HỌC TẬP VÀ ĐÁP ÁN CHI TIẾT
-
-### 1. NỘI DUNG PHIẾU HỌC TẬP SỐ 2 (RÈN LUYỆN ĐỊNH DẠNG MỚI)
-
-#### PHẦN I. Câu trắc nghiệm nhiều phương án lựa chọn (Thí sinh trả lời từ câu 1 đến câu 6)
-
-**Câu 1 (NB):** Cho hàm số $y = f(x)$ có bảng biến thiên:
-$$\begin{array}{c|ccccccc}
-x & -\infty & & -1 & & 2 & & +\infty \\
-\hline
-f'(x) & & - & 0 & + & 0 & - & \\
-\hline
-& +\infty & & & & 3 & & \\
-f(x) & & \searrow & & \nearrow & & \searrow & \\
-& & & -2 & & & & -\infty
-\end{array}$$
-Mệnh đề nào dưới đây đúng?  
-A. Hàm số đồng biến trên khoảng $(-\infty; 3)$.  
-B. Hàm số nghịch biến trên khoảng $(-1; 2)$.  
-C. Hàm số đồng biến trên khoảng $(-1; 2)$.  
-D. Hàm số nghịch biến trên khoảng $(-2; 3)$.
-
-**Câu 2 (NB):** Cho hàm số $y = f(x)$ có đạo hàm $f'(x) = x(x - 1)(x + 2)^3$ với mọi $x \in \mathbb{R}$. Số điểm cực trị của hàm số đã cho là:  
-A. $1$.  
-B. $2$.  
-C. $3$.  
-D. $5$.
-
-**Câu 3 (TH):** Cho hàm số bậc ba $y = ax^3 + bx^2 + cx + d$ có đồ thị uốn lượn đạt cực đại tại $(-1; 3)$ và cực tiểu tại $(1; -1)$. Điểm cực tiểu của đồ thị hàm số đã cho có tọa độ là:  
-A. $(1; -1)$.  
-B. $(-1; 3)$.  
-C. $x = 1$.  
-D. $y = -1$.
-
-**Câu 4 (TH):** Cho hàm số $y = \frac{x - 3}{x + 1}$. Khẳng định nào sau đây là đúng?  
-A. Hàm số đồng biến trên khoảng $(-\infty; -1)$.  
-B. Hàm số nghịch biến trên khoảng $(-\infty; +\infty)$.  
-C. Hàm số đồng biến trên $\mathbb{R} \setminus \{-1\}$.  
-D. Hàm số nghịch biến trên $(-1; 3)$.
-
-**Câu 5 (VD):** Tìm tất cả các giá trị của tham số thực $m$ để hàm số $y = \frac{1}{3}x^3 - mx^2 + (m^2 - 4)x + 3$ đạt cực đại tại điểm $x = 1$.  
-A. $m = 1$.  
-B. $m = 3$.  
-C. $m = -1$.  
-D. Không tồn tại $m$.
-
-**Câu 6 (VD - Dành cho lớp $12A_1, 12A_2, 12A_3$):** Có bao nhiêu giá trị nguyên của tham số $m$ thuộc đoạn $[-5; 5]$ để hàm số $y = \frac{mx - 4}{x - m}$ đồng biến trên khoảng $(1; +\infty)$?  
-A. $2$.  
-B. $3$.  
-C. $4$.  
-D. $5$.
-
----
-
-#### PHẦN II. Câu trắc nghiệm đúng sai (Thí sinh trả lời từ câu 1 đến câu 2. Trong mỗi ý a, b, c, d ở mỗi câu, thí sinh chọn đúng hoặc sai)
-
-**Câu 1:** Cho hàm số bậc ba $y = f(x) = x^3 - 3x^2 + 2$ có đồ thị là $(C)$.
-- a) Hàm số có đạo hàm là $f'(x) = 3x^2 - 6x$.
-- b) Hàm số đã cho nghịch biến trên khoảng $(0; 2)$.
-- c) Điểm cực đại của đồ thị hàm số $(C)$ là điểm $A(0; 2)$.
-- d) Đường thẳng đi qua hai điểm cực trị của đồ thị hàm số $(C)$ có phương trình là $2x + y - 2 = 0$.
-
-**Câu 2:** Cho hàm số $y = f(x)$ xác định và liên tục trên $\mathbb{R}$. Đạo hàm $f'(x)$ có đồ thị là đường cong cắt trục hoành tại ba điểm phân biệt $x = -2$, $x = 1$, $x = 3$. Ngoài ra $f'(x) < 0$ trên các khoảng $(-\infty; -2)$ và $(1; 3)$, $f'(x) > 0$ trên $(-2; 1)$ và $(3; +\infty)$.
-- a) Hàm số $y = f(x)$ nghịch biến trên khoảng $(1; 3)$.
-- b) Hàm số $y = f(x)$ đạt cực tiểu tại điểm $x = 1$.
-- c) Hàm số $y = f(x)$ có tất cả $3$ điểm cực trị.
-- d) Hàm số $g(x) = f(x^2 - 2)$ nghịch biến trên khoảng $(0; 1)$.
-
----
-
-#### PHẦN III. Câu trắc nghiệm trả lời ngắn (Thí sinh trả lời từ câu 1 đến câu 3)
-
-**Câu 1 (TH):** Cho hàm số $y = f(x) = \frac{x^2 - 3x + 6}{x - 1}$. Khoảng cách giữa hai điểm cực trị của đồ thị hàm số đã cho bằng bao nhiêu? *(Làm tròn kết quả đến hàng phần mười).*
-
-**Câu 2 (VD):** Cho hàm số bậc ba $y = f(x) = ax^3 + bx^2 + cx + d$ ($a \ne 0$) có hai điểm cực trị là $x_1 = -1$ và $x_2 = 3$. Biết rằng $f(-1) = 4$ và $f(3) = -4$. Tính giá trị của biểu thức $T = f(1) + 2f'(2)$.
-
-**Câu 3 (VDC - Dành cho lớp $12A_1, 12A_2, 12A_3$):** Có tất cả bao nhiêu giá trị nguyên của tham số $m \in [-20; 20]$ để hàm số $y = \left| x^3 - 3x^2 + m \right|$ có đúng $5$ điểm cực trị?
-
----
-
-### 2. BẢNG ĐÁP ÁN VÀ LỜI GIẢI CHI TIẾT PHIẾU HỌC TẬP SỐ 2
-
-#### PHẦN I: ĐÁP ÁN TRẮC NGHIỆM 4 LỰA CHỌN
-- **Câu 1: C.** Trên khoảng $(-1; 2)$ thì $f'(x) > 0 \Rightarrow$ đồng biến.
-- **Câu 2: C.** $f'(x) = 0$ có 3 nghiệm bội lẻ $x = 0, x = 1, x = -2 \Rightarrow 3$ cực trị.
-- **Câu 3: A.** Tọa độ điểm cực tiểu của đồ thị là $(1; -1)$.
-- **Câu 4: A.** $y' = \frac{4}{(x + 1)^2} > 0, \forall x \ne -1 \Rightarrow$ đồng biến trên $(-\infty; -1)$.
-- **Câu 5: B.** $y'(1) = m^2 - 2m - 3 = 0 \Leftrightarrow m = -1$ hoặc $m = 3$. Vì đạt cực đại nên $y''(1) = 2 - 2m < 0 \Leftrightarrow m > 1 \Rightarrow m = 3$.
-- **Câu 6: B.** $y' = \frac{-m^2 + 4}{(x - m)^2} > 0 \Leftrightarrow -2 < m < 2$. Điều kiện không thuộc khoảng: $m \le 1$. Kết hợp: $m \in \{-1; 0; 1\} \Rightarrow 3$ giá trị nguyên.
-
-#### PHẦN II: ĐÁP ÁN TRẮC NGHIỆM ĐÚNG SAI
-- **Câu 1:** a) **ĐÚNG** | b) **ĐÚNG** | c) **ĐÚNG** | d) **ĐÚNG**  
-  *Giải thích ý d:* Hai điểm cực trị là $A(0; 2)$ và $B(2; -2)$. Phương trình đường thẳng đi qua $A, B$ là $y = -2x + 2 \Leftrightarrow 2x + y - 2 = 0$.
-- **Câu 2:** a) **ĐÚNG** | b) **SAI** | c) **ĐÚNG** | d) **SAI**  
-  *Giải thích ý b:* Tại $x = 1$, $f'(x)$ đổi dấu từ $+$ sang $-$ nên $x = 1$ là điểm cực đại.  
-  *Giải thích ý d:* $g'(x) = 2x \cdot f'(x^2 - 2)$. Khi $x \in (0; 1) \Rightarrow 2x > 0$ và $x^2 - 2 \in (-2; -1) \subset (-2; 1) \Rightarrow f'(x^2 - 2) > 0 \Rightarrow g'(x) > 0 \Rightarrow$ hàm số đồng biến trên $(0; 1)$.
-
-#### PHẦN III: ĐÁP ÁN TRẮC NGHIỆM TRẢ LỜI NGẮN
-- **Câu 1:** **8.9**  
-  *Lời giải:* $y' = \frac{x^2 - 2x - 3}{(x - 1)^2} = 0 \Leftrightarrow x = -1 \Rightarrow y = -5; x = 3 \Rightarrow y = 3$. Khoảng cách $AB = \sqrt{(3 - (-1))^2 + (3 - (-5))^2} = \sqrt{16 + 64} = \sqrt{80} \approx 8.9$.
-- **Câu 2:** **-4.5**  
-  *Lời giải:* Điểm uốn $I(1; 0) \Rightarrow f(1) = 0$. Từ $f(-1) - f(3) = 8 \Rightarrow \int_{-1}^3 f'(x)dx = -8 \Rightarrow a = \frac{1}{4}$. Khi đó $f'(2) = -\frac{9}{4} \Rightarrow T = 0 + 2\left(-\frac{9}{4}\right) = -4.5$.
-- **Câu 3:** **3**  
-  *Lời giải:* Đặt $h(x) = x^3 - 3x^2 + m$. Cực trị của $h(x)$ là $y_1 = m$ và $y_2 = m - 4$. Hàm số $y = |h(x)|$ có $5$ cực trị khi $y_1 \cdot y_2 < 0 \Leftrightarrow m(m - 4) < 0 \Leftrightarrow 0 < m < 4 \Rightarrow m \in \{1; 2; 3\}$ ($3$ giá trị).
-
----
-
-### PHÊ DUYỆT CỦA TỔ CHUYÊN MÔN
-*Ngày ...... tháng ...... năm 202...*  
-**TỔ TRƯỞNG CHUYÊN MÔN**  
-*(Ký và ghi rõ họ tên)*`;
 
 
 // Icon Helper Component
@@ -453,7 +174,7 @@ export function GraduationReviewPlannerModule() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [progressStage, setProgressStage] = useState<string>("");
   const [progressPercent, setProgressPercent] = useState<number>(0);
-  const [resultPlan, setResultPlan] = useState<string>(SAMPLE_LESSON_PLAN);
+  const [resultPlan, setResultPlan] = useState<string>(() => cleanGraduationPlanMarkdown(SAMPLE_LESSON_PLAN));
   const [activeTab, setActiveTab] = useState<"preview" | "markdown">("preview");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -597,7 +318,7 @@ export function GraduationReviewPlannerModule() {
     }
     // Load corresponding CV 5512 sample plan for the selected subject
     const sample = getSampleLessonPlan(subjectId);
-    setResultPlan(sample);
+    setResultPlan(cleanGraduationPlanMarkdown(sample));
     showToast(`Đã chuyển sang môn ${sub.name}! Đã tải giáo án mẫu chuẩn CV 5512.`);
   };
 
@@ -633,155 +354,234 @@ export function GraduationReviewPlannerModule() {
     const isEnglish = category === "tieng_anh";
     const isLiterature = category === "ngu_van";
     const isTinHoc = category === "tin_hoc";
+    const isExamPracticeTopic = /Luyện đề|Kiểm tra giữa kỳ/i.test(effectiveTopicTitle);
+
+    const totalMinutes = periods * 45;
+    const periodBreakdownRows = Array.from({ length: periods }, (_, idx) => {
+      const pNum = idx + 1;
+      if (periods === 1) {
+        return `| **Tiết 1** | HĐ 1: Khởi động ($5$ phút)<br/>HĐ 2: Hệ thống kiến thức ($15$ phút)<br/>HĐ 3: Luyện tập dạng bài ($18$ phút)<br/>HĐ 4: Vận dụng & Nhận diện bẫy ($7$ phút) | Trọn vẹn kiến thức trọng tâm, các dạng bài cốt lõi & hướng dẫn Phiếu học tập | $45$ phút |`;
+      }
+      if (pNum === 1) {
+        return `| **Tiết 1** | HĐ 1: Khởi động ($10$ phút)<br/>HĐ 2: Hệ thống kiến thức trọng tâm ($35$ phút) | Tình huống mở đầu & Hệ thống hóa toàn bộ lý thuyết, công thức, lưu ý tránh sai sót | $45$ phút |`;
+      }
+      if (pNum < periods) {
+        return `| **Tiết ${pNum}** | HĐ 3: Luyện tập theo dạng bài (Phần ${pNum - 1}) ($45$ phút) | Phương pháp giải tổng quát + Ví dụ minh họa + Lời giải từng bước các dạng bài trọng tâm | $45$ phút |`;
+      }
+      return `| **Tiết ${pNum}** | HĐ 3: Luyện tập dạng bài nâng cao/thực tế ($30$ phút)<br/>HĐ 4: Vận dụng, Nhận diện bẫy & Giao Phiếu học tập ($15$ phút) | Giải các dạng toán vận dụng, phân tích $5$ bẫy đề thi kinh điển & hướng dẫn tự luyện | $45$ phút |`;
+    }).join("\n");
 
     let subjectFormatInstructions = "";
 
     if (isMath) {
-      subjectFormatInstructions = `QUY CHUẨN ĐỊNH DẠNG ĐỀ THI & CHUYÊN ĐỀ MÔN TOÁN HỌC (BẮT BUỘC CHI TIẾT 100% NHƯ GIÁO ÁN MẪU CỐT CÁN):
-- Tiến trình dạy học ở Phần III BẮT BUỘC chia rõ theo từng tiết học (Ví dụ với ${periods} tiết: chia rõ ### TIẾT 1: HỆ THỐNG HÓA KIẾN THỨC VÀ CÁC DẠNG TOÁN CƠ BẢN; ### TIẾT 2: BÀI TOÁN CHỨA THAM SỐ $m$ VÀ PHÂN HÓA NÂNG CAO; ${periods >= 3 ? "### TIẾT 3: LUYỆN TẬP ĐỊNH DẠNG MỚI, THỦ THUẬT CASIO VÀ TỔNG KẾT" : ""}).
-- Hoạt động 1 (Hệ thống hóa kiến thức trọng tâm): Bắt buộc trình bày đầy đủ định nghĩa, định lý, công thức cốt lõi, chú ý dấu hiệu đặc biệt (không dùng dấu $\\cup$ khi kết luận khoảng đơn điệu, đạo hàm hàm phân thức bậc nhất trên bậc nhất $y' = \\frac{ad-bc}{(cx+d)^2}$ không có dấu $=$, phân biệt điểm cực trị $x_0$ của hàm số, giá trị cực trị $y_0$ và điểm cực trị $M(x_0; y_0)$ của đồ thị).
-- Hoạt động 2 (Phân loại dạng toán & Phân tích ví dụ mẫu): BẮT BUỘC chia thành TỐI THIỂU 4 DẠNG TOÁN TRỌNG TÂM (##### Dạng 1, ##### Dạng 2, ##### Dạng 3, ##### Dạng 4) từ Nhận biết, Thông hiểu đến Vận dụng và Vận dụng cao (bài toán chứa tham số $m$, hàm hợp hoặc toán thực tế). MỖI DẠNG BẮT BUỘC CÓ:
-  + Phương pháp nhận diện & quy trình giải nhanh.
-  + Ví dụ mẫu điển hình (có đầy đủ đề bài, bảng biến thiên $\\begin{array}...\\end{array}$ nếu có, 4 phương án A, B, C, D nằm trên các dòng riêng) và *Lời giải chi tiết* biến đổi từng bước đến đáp án cuối cùng.
-- Hoạt động 4 (Kỹ năng máy tính cầm tay Casio fx-580VN X và Nhận diện bẫy đề thi):
-  + Hướng dẫn cụ thể thao tác phím bấm Casio fx-580VN X (Ví dụ: Dò bảng TABLE bằng $[Menu] [8]$ với $Step = \\frac{End - Start}{29}$; kiểm tra đạo hàm tại điểm bằng $[SHIFT] [\\int]$ $\\left.\\frac{d}{dx}f(x)\\right|_{x=x_0}$; giải phương trình/bất phương trình bằng $[Menu] [9]$ hoặc $[Menu] [A]$).
-  + Phân tích tối thiểu 4 bẫy sai lầm phổ biến nhất của học sinh trong đề thi Tốt nghiệp THPT và cách khắc phục triệt để.
-- Phiếu học tập số 2 ở Phần IV (Phụ lục) BẮT BUỘC gồm đầy đủ 3 phần theo cấu trúc đề thi mới 2025-2027:
-  + #### PHẦN I. Câu trắc nghiệm nhiều phương án lựa chọn: BẮT BUỘC ĐỦ 6 CÂU (Từ **Câu 1 (NB):** đến **Câu 6 (VD):**; mỗi câu có 4 phương án A., B., C., D. trình bày trên các dòng riêng biệt, tuyệt đối không viết gộp chung dòng và không tự điền sẵn đáp án ngay dưới đề bài).
-  + #### PHẦN II. Câu trắc nghiệm đúng sai: BẮT BUỘC ĐỦ 2 - 3 CÂU (**Câu 1:**, **Câu 2:**...); mỗi câu gồm ngữ cảnh/giả thiết chung và ĐỦ 4 LỆNH HỎI ĐỘC LẬP (- a) ..., - b) ..., - c) ..., - d) ...) phân hóa từ Nhận biết đến Vận dụng cao (tuyệt đối không ghi sẵn (Đ)/(S) vào đề bài của học sinh).
-  + #### PHẦN III. Câu trắc nghiệm trả lời ngắn: BẮT BUỘC ĐỦ 3 - 4 CÂU (**Câu 1 (TH):** đến **Câu 3 (VDC):**; câu hỏi toán thực tế, tham số $m$, cực trị, tối ưu... điền kết quả số thực/nguyên/thập phân, không giải ngay trong phần đề).
-- Ngay sau Phiếu học tập số 2 BẮT BUỘC có mục ### 2. BẢNG ĐÁP ÁN VÀ LỜI GIẢI CHI TIẾT PHIẾU HỌC TẬP SỐ 2:
-  + Giải chi tiết TỪNG CÂU MỘT của Phần I (từ Câu 1 đến Câu 6), Phần II (giải thích tường tận vì sao từng mệnh đề a, b, c, d là ĐÚNG hay SAI), và Phần III (biến đổi chi tiết ra kết quả số cuối cùng).`;
+      const targetFormsCount = periods >= 3 ? "4 - 5 DẠNG TOÁN TRỌNG TÂM" : "3 - 4 DẠNG TOÁN TRỌNG TÂM";
+      const targetMcCount = isExamPracticeTopic ? "12 CÂU (Từ Câu 1 đến Câu 12)" : (periods >= 3 ? "8 CÂU (Từ Câu 1 đến Câu 8)" : "6 CÂU (Từ Câu 1 đến Câu 6)");
+      const targetTfCount = isExamPracticeTopic ? "4 CÂU (Từ Câu 1 đến Câu 4 - Đủ 16 ý a, b, c, d)" : "3 CÂU (Từ Câu 1 đến Câu 3 - Đủ 12 ý a, b, c, d)";
+      const targetShortCount = isExamPracticeTopic ? "6 CÂU (Từ Câu 1 đến Câu 6)" : "4 CÂU (Từ Câu 1 đến Câu 4)";
+
+      subjectFormatInstructions = `QUY CHUẨN MÔN TOÁN HỌC BÁM SÁT KHUNG PPCT 105 TIẾT & CÔNG VĂN 5512 (${periods} TIẾT = ${totalMinutes} PHÚT):
+- **HOẠT ĐỘNG 2 (HỆ THỐNG HÓA KIẾN THỨC TRỌNG TÂM):** Bắt buộc trình bày **Bảng kiến thức trọng tâm chuẩn hóa** dạng Markdown 2 cột:
+  \`| Đơn vị kiến thức | Nội dung, Công thức chuẩn & Lưu ý tránh sai sót |\`
+  Mỗi dòng trình bày đầy đủ định nghĩa, định lý, công thức chuẩn, điều kiện áp dụng và lưu ý tránh sai sót (dùng \`<br/>\` bên ngoài dấu \`$\` để xuống dòng trong ô bảng).
+- **HOẠT ĐỘNG 3 (LUYỆN TẬP THEO DẠNG BÀI):**
+  + Triển khai đầy đủ **${targetFormsCount}** (\`##### Dạng 1: ...\`, \`##### Dạng 2: ...\`) bao phủ 100% Yêu cầu cần đạt (\`${effectiveYccd}\`) và Ghi chú phân hóa (\`${effectiveDiffNotes}\`).
+  + MỖI DẠNG BÀI BẮT BUỘC PHẢI CÓ ĐỦ:
+    1) **Phương pháp giải tổng quát:** Nêu rõ quy trình giải từng bước + mẹo bấm máy tính Casio fx-580VN X / fx-880BTG hoặc GeoGebra.
+    2) **Ít nhất 1 - 2 Ví dụ minh họa cụ thể:** Có đề bài rõ ràng, đầy đủ số liệu/giả thiết và **Lời giải chi tiết từng bước** ngay bên dưới (hoặc giải chi tiết tường minh trong tiểu mục \`c) Sản phẩm\`).
+- **HOẠT ĐỘNG 4 (VẬN DỤNG, NHẬN DIỆN BẪY ĐỀ THI & HƯỚNG DẪN TỰ HỌC):**
+  + Phân tích tối thiểu **5 bẫy sai lầm kinh điển** trong đề thi TN THPT gắn với bài học (kèm ví dụ phản chứng và cách khắc phục) + bài toán vận dụng thực tiễn.
+- **MỤC IV (PHIẾU HỌC TẬP TỰ LUYỆN):** Bắt buộc soạn ĐẦY ĐỦ 100% từng câu hỏi cụ thể bám sát mức độ **${studentInfo.label}**:
+  + \`### PHẦN I. CÂU TRẮC NGHIỆM NHIỀU PHƯƠNG ÁN LỰA CHỌN\`: Soạn đầy đủ **${targetMcCount}**. Mỗi câu có đề bài tường minh và đủ 4 phương án \`A.\`, \`B.\`, \`C.\`, \`D.\` trên 4 dòng riêng biệt (KHÔNG lộ đáp án ở phần đề, CẤM viết câu đại ý tóm tắt).
+  + \`### PHẦN II. CÂU TRẮC NGHIỆM ĐÚNG / SAI\`: Soạn đầy đủ **${targetTfCount}**. Mỗi câu có phần dẫn rõ ràng và đủ 4 ý \`a)\`, \`b)\`, \`c)\`, \`d)\` trên 4 dòng riêng biệt phân hóa từ Nhận biết -> Thông hiểu -> Vận dụng -> Vận dụng cao.
+  + \`### PHẦN III. CÂU TRẮC NGHIỆM TRẢ LỜI NGẮN\`: Soạn đầy đủ **${targetShortCount}** (bài toán tính toán, tham số $m$, cực trị/tối ưu thực tế có kết quả là một số thực/nguyên cụ thể, kèm yêu cầu làm tròn rõ ràng).
+- **MỤC V (BẢNG ĐÁP ÁN VÀ HƯỚNG DẪN GIẢI CHI TIẾT):**
+  + **5.1. Bảng đáp án nhanh:** Kẻ bảng Markdown tổng hợp đáp án nhanh cho toàn bộ các câu Phần I, Phần II (Đúng/Sai cho từng ý a, b, c, d), và Phần III (đáp số từng câu).
+  + **5.2. Lời giải chi tiết từng bước:** Giải chi tiết từng bước cho TOÀN BỘ 100% các câu hỏi ở Mục IV (giải thích rõ từng câu Phần I; chứng minh rõ đúng/sai cho từng ý a, b, c, d ở Phần II; trình bày đầy đủ các bước biến đổi và kết quả câu VDC ở Phần III).`;
     } else if (isKhtn) {
-      subjectFormatInstructions = `QUY CHUẨN CẤU TRÚC ĐỀ THI VÀ PHIẾU HỌC TẬP MÔN ${currentSubject.name.toUpperCase()} (KHOA HỌC TỰ NHIÊN):
-- Phiếu học tập ở Phần IV (Phụ lục) BẮT BUỘC gồm 3 phần theo đúng định dạng đề thi mới của Bộ GD&ĐT:
-  + Phần I: Trắc nghiệm 4 lựa chọn (Bắt buộc đủ 6 - 8 câu nhận biết, thông hiểu có 4 phương án A, B, C, D).
-  + Phần II: Trắc nghiệm Đúng/Sai (Bắt buộc đủ 2 - 3 câu; mỗi câu gắn với đồ thị, sơ đồ thí nghiệm, hiện tượng hoặc bài toán thực tế, gồm đủ 4 ý a, b, c, d độc lập có tính phân hóa).
-  + Phần III: Trắc nghiệm Trả lời ngắn (Bắt buộc đủ 3 - 4 câu tính toán điền kết quả số).
-- Mục 2: Bảng đáp án và LỜI GIẢI CHI TIẾT TOÀN BỘ các câu trong Phiếu học tập (phân tích hiện tượng, cơ chế, phương trình phản ứng / công thức và giải thích tường tận vì sao từng ý Đúng hay Sai).
-- Hoạt động 4: Hướng dẫn kỹ năng làm bài, phân tích đồ thị, xử lý số liệu thí nghiệm và nhận diện các bẫy đề thi hay gặp.`;
+      subjectFormatInstructions = `QUY CHUẨN MÔN ${currentSubject.name.toUpperCase()} BÁM SÁT CÔNG VĂN 5512 (${periods} TIẾT = ${totalMinutes} PHÚT):
+- **HOẠT ĐỘNG 2:** Bảng tổng hợp kiến thức trọng tâm 2 cột (\`| Đơn vị kiến thức | Nội dung, Định luật, Công thức & Lưu ý tránh sai sót |\`).
+- **HOẠT ĐỘNG 3:** Triển khai tối thiểu ${periods >= 3 ? 4 : 3} dạng bài trọng tâm (\`##### Dạng 1...\`), mỗi dạng có Phương pháp giải tổng quát + ít nhất 1 - 2 Ví dụ minh họa cụ thể kèm Lời giải chi tiết từng bước.
+- **HOẠT ĐỘNG 4:** Phân tích đồ thị/thí nghiệm thực tiễn và tối thiểu 5 bẫy đề thi hay gặp.
+- **MỤC IV (PHIẾU HỌC TẬP TỰ LUYỆN):** Soạn đầy đủ từng câu hỏi cụ thể cho 3 phần (Phần I: ${periods >= 3 ? 8 : 6} câu ABCD; Phần II: 3 câu Đúng/Sai đủ 4 ý a, b, c, d; Phần III: 4 câu Trả lời ngắn điền số).
+- **MỤC V (BẢNG ĐÁP ÁN VÀ HƯỚNG DẪN GIẢI CHI TIẾT):** Gồm **1. Bảng đáp án nhanh** và **2. Lời giải chi tiết từng bước** cho toàn bộ các câu hỏi ở Mục IV.`;
     } else if (isKhxh) {
-      subjectFormatInstructions = `QUY CHUẨN CẤU TRÚC ĐỀ THI VÀ PHIẾU HỌC TẬP MÔN ${currentSubject.name.toUpperCase()} (KHOA HỌC XÃ HỘI):
-- Phiếu học tập ở Phần IV (Phụ lục) BẮT BUỘC gồm 2 phần theo đúng định dạng đề thi mới của Bộ GD&ĐT:
-  + Phần I: Trắc nghiệm 4 lựa chọn (Bắt buộc đủ 6 - 8 câu nhận biết, thông hiểu có 4 phương án A, B, C, D).
-  + Phần II: Trắc nghiệm Đúng/Sai (Bắt buộc đủ 2 - 3 câu; khai thác tư liệu lịch sử gốc, bảng số liệu biểu đồ địa lý hoặc tình huống pháp luật/kinh tế thực tế, gồm đủ 4 ý a, b, c, d độc lập).
-- Mục 2: Bảng đáp án và LỜI GIẢI CHI TIẾT TOÀN BỘ các câu trong Phiếu học tập (chỉ rõ căn cứ từ văn kiện/tư liệu, số liệu Atlat, điều khoản luật pháp và giải thích rõ từng mệnh đề a, b, c, d Đúng hay Sai).
-- Hoạt động 4: Kỹ năng đọc hiểu văn bản tư liệu gốc / khai thác Atlat, bảng biểu / phân tích tình huống thực tế và bẫy ngôn từ đánh lừa.`;
+      subjectFormatInstructions = `QUY CHUẨN MÔN ${currentSubject.name.toUpperCase()} BÁM SÁT CÔNG VĂN 5512 (${periods} TIẾT = ${totalMinutes} PHÚT):
+- **HOẠT ĐỘNG 2:** Bảng hệ thống kiến thức cốt lõi 2 cột (\`| Đơn vị kiến thức | Nội dung trọng tâm & Lưu ý phân biệt |\`).
+- **HOẠT ĐỘNG 3:** Phân dạng câu hỏi khai thác tư liệu / bảng số liệu / tình huống kèm Phương pháp giải tổng quát + 1 - 2 Ví dụ minh họa cụ thể và Lời giải chi tiết.
+- **HOẠT ĐỘNG 4:** Kỹ năng đọc tư liệu và tối thiểu 5 bẫy ngôn từ đánh lừa trong đề thi.
+- **MỤC IV (PHIẾU HỌC TẬP TỰ LUYỆN):** Soạn đầy đủ từng câu hỏi cụ thể cho 2 phần (Phần I: 8 câu ABCD; Phần II: 3 câu Đúng/Sai đủ 4 ý a, b, c, d gắn tư liệu/tình huống).
+- **MỤC V (BẢNG ĐÁP ÁN VÀ HƯỚNG DẪN GIẢI CHI TIẾT):** Gồm **1. Bảng đáp án nhanh** và **2. Lời giải chi tiết từng bước** giải thích rõ từng câu và từng ý a, b, c, d.`;
     } else if (isEnglish) {
-      subjectFormatInstructions = `QUY CHUẨN CẤU TRÚC ĐỀ THI VÀ PHIẾU HỌC TẬP MÔN TIẾNG ANH:
-- Phiếu học tập ở Phần IV (Phụ lục) BẮT BUỘC 100% trắc nghiệm 4 lựa chọn phân bố theo các chuyên đề chuẩn đề thi tốt nghiệp mới:
-  + Ngữ âm/Trọng âm (Phonetics & Stress): Từ 2 - 4 câu.
-  + Từ vựng - Ngữ pháp (Grammar & Vocabulary): Từ 4 - 6 câu.
-  + Đọc điền từ (Cloze text / Guided gap fill): 1 bài văn ngắn kèm 3 - 5 chỗ trống.
-  + Đọc hiểu văn bản (Reading Comprehension): 1 bài đọc ngắn có 4 - 5 câu hỏi (Main idea, Detail, Vocab in context, Reference).
-  + Tìm lỗi sai / Chức năng giao tiếp (Error identification / Communication): Từ 2 - 4 câu.
-- Bảng đáp án và LỜI GIẢI CHI TIẾT BẰNG TIẾNG VIỆT (dịch nghĩa văn cảnh, chỉ rõ cấu trúc ngữ pháp và giải thích cặn kẽ tại sao chọn phương án đúng).
-- Hoạt động 4: Mẹo nhận diện dạng câu, bẫy từ loại, bẫy thì và chiến thuật Skimming/Scanning đọc hiểu nhanh.`;
+      subjectFormatInstructions = `QUY CHUẨN MÔN TIẾNG ANH BÁM SÁT CÔNG VĂN 5512 (${periods} TIẾT = ${totalMinutes} PHÚT):
+- **HOẠT ĐỘNG 2:** Bảng hệ thống ngữ pháp/từ vựng/kỹ năng đọc hiểu 2 cột (\`| Kiến thức trọng tâm | Cấu trúc chuẩn & Lưu ý bẫy đề thi |\`).
+- **HOẠT ĐỘNG 3:** Mỗi dạng bài có Phương pháp làm bài tổng quát + 1 - 2 Ví dụ minh họa cụ thể kèm Lời giải chi tiết.
+- **MỤC IV (PHIẾU HỌC TẬP TỰ LUYỆN):** Soạn đầy đủ từng câu hỏi trắc nghiệm 4 lựa chọn A, B, C, D theo cấu trúc đề mới.
+- **MỤC V (BẢNG ĐÁP ÁN VÀ HƯỚNG DẪN GIẢI CHI TIẾT):** Gồm **1. Bảng đáp án nhanh** và **2. Lời giải chi tiết từng bước** (dịch nghĩa và giải thích cấu trúc cho toàn bộ câu hỏi).`;
     } else if (isLiterature) {
-      subjectFormatInstructions = `QUY CHUẨN CẤU TRÚC ĐỀ THI VÀ PHIẾU HỌC TẬP MÔN NGỮ VĂN (TUYỆT ĐỐI KHÔNG RA ĐỀ TRẮC NGHIỆM):
-- Phiếu học tập ở Phần IV (Phụ lục) BẮT BUỘC 100% TỰ LUẬN gồm 2 phần theo ma trận cấu trúc đề thi mới nhất của Bộ GD&ĐT:
-  + Phần I. ĐỌC HIỂU (4.0 điểm): Trích dẫn một ngữ liệu là văn bản mới (ngoài SGK - đoạn trích thơ hiện đại, tản văn, truyện ngắn hoặc văn bản nghị luận xã hội) kèm hệ thống 4 - 5 câu hỏi phân tích từ nhận biết, thông hiểu đến vận dụng.
-  + Phần II. VIẾT (6.0 điểm):
-    * Câu 1 (2.0 điểm): Viết đoạn văn nghị luận xã hội (khoảng 200 chữ) bàn về một khía cạnh/thông điệp rút ra từ phần Đọc hiểu.
-    * Câu 2 (4.0 điểm): Viết bài văn nghị luận văn học phân tích, so sánh hoặc đánh giá về ngữ liệu đã cho.
-- HƯỚNG DẪN CHẤM VÀ RUBRIC BAREM ĐIỂM CHI TIẾT:
-  + Phần Đọc hiểu: Hướng dẫn chấm chi tiết từng câu hỏi (chấp nhận các cách diễn đạt tương đương nhưng đúng bản chất).
-  + Phần Viết: Barem điểm cụ thể: Yêu cầu về hình thức (đúng đoạn văn 200 chữ / bài văn), Đúng vấn đề nghị luận, Triển khai luận điểm và lí lẽ dẫn chứng, Chính tả ngữ pháp, Tính sáng tạo và chiều sâu cảm xúc.
-- Hoạt động 4: Kỹ năng nhận diện từ khóa đề bài, phân bố dung lượng viết đoạn văn 200 chữ tránh viết lan man, cách lấy dẫn chứng thực tế thuyết phục.`;
+      subjectFormatInstructions = `QUY CHUẨN MÔN NGỮ VĂN BÁM SÁT CÔNG VĂN 5512 (100% TỰ LUẬN - ${periods} TIẾT = ${totalMinutes} PHÚT):
+- **HOẠT ĐỘNG 2:** Bảng hệ thống tri thức thể loại, kỹ năng đọc hiểu & làm văn 2 cột.
+- **HOẠT ĐỘNG 3:** Mỗi dạng câu hỏi Đọc hiểu và Viết đều có Phương pháp làm bài tổng quát + Ví dụ ngữ liệu minh họa kèm Hướng dẫn giải chi tiết.
+- **MỤC IV (PHIẾU HỌC TẬP TỰ LUYỆN):** Đề thi tự luận đầy đủ gồm Phần I. Đọc hiểu (4,0 điểm, ngữ liệu đầy đủ + 5 câu hỏi) và Phần II. Viết (6,0 điểm).
+- **MỤC V (HƯỚNG DẪN CHẤM VÀ LỜI GIẢI CHI TIẾT):** Bảng hướng dẫn chấm chi tiết từng câu, từng ý và dàn ý/bài viết tham khảo.`;
     } else if (isTinHoc) {
-      subjectFormatInstructions = `QUY CHUẨN CẤU TRÚC ĐỀ THI VÀ PHIẾU HỌC TẬP MÔN TIN HỌC:
-- Phiếu học tập ở Phần IV (Phụ lục) BẮT BUỘC gồm 3 phần:
-  + Phần I: Trắc nghiệm 4 lựa chọn (Từ 6 - 8 câu nhận biết, thông hiểu có 4 phương án A, B, C, D).
-  + Phần II: Trắc nghiệm Đúng/Sai (Từ 2 - 3 câu; mỗi câu gắn với thuật toán Python, cấu trúc CSDL hoặc an toàn mạng, gồm 4 ý a, b, c, d độc lập).
-  + Phần III: Trắc nghiệm Trả lời ngắn (Từ 2 câu điền kết quả code in ra màn hình hoặc kết quả truy vấn SQL).
-- Bảng đáp án và LỜI GIẢI CHI TIẾT TOÀN BỘ các câu trong Phiếu học tập (giải thích từng dòng lệnh, vết thực thi thuật toán hoặc giải thích mệnh đề Đúng/Sai).
-- Hoạt động 4: Kỹ năng chạy tay thuật toán (Dry run), bẫy chỉ số mảng 0-index, lỗi cú pháp và phạm vi biến.`;
+      subjectFormatInstructions = `QUY CHUẨN MÔN TIN HỌC BÁM SÁT CÔNG VĂN 5512 (${periods} TIẾT = ${totalMinutes} PHÚT):
+- **HOẠT ĐỘNG 2:** Bảng tổng hợp kiến thức Python / CSDL / Mạng máy tính 2 cột (\`| Đơn vị kiến thức | Cú pháp, Thuật toán & Lưu ý |\`).
+- **HOẠT ĐỘNG 3:** Mỗi dạng bài có Phương pháp giải tổng quát + 1 - 2 Ví dụ minh họa kèm Lời giải chạy vết từng bước.
+- **MỤC IV (PHIẾU HỌC TẬP TỰ LUYỆN):** Đủ 3 phần (Phần I: 8 câu ABCD; Phần II: 3 câu Đúng/Sai đủ 4 ý a, b, c, d; Phần III: 3 câu Trả lời ngắn).
+- **MỤC V (BẢNG ĐÁP ÁN VÀ HƯỚNG DẪN GIẢI CHI TIẾT):** Gồm **1. Bảng đáp án nhanh** và **2. Lời giải chi tiết từng bước** cho toàn bộ câu hỏi.`;
     }
 
     return `Bạn là chuyên gia thẩm định chương trình giáo dục phổ thông kiêm giáo viên dạy giỏi cốt cán cấp Tỉnh/Thành phố môn ${currentSubject.name}.
-Nhiệm vụ của bạn là đóng vai một GIÁO VIÊN CỐT CÁN DẠY GIỎI môn ${currentSubject.name} 12 cấp THPT để soạn một KẾ HOẠCH BÀI DẠY (GIÁO ÁN) ÔN TẬP TĂNG CƯỜNG BUỔI CHIỀU hoàn chỉnh, đồ sộ, sâu sắc, chuẩn mực theo Công văn 5512/BGDĐT, bám sát Chương trình GDPT 2018 (sách Kết nối tri thức với cuộc sống) và đúng cấu trúc định dạng đề thi Tốt nghiệp THPT mới nhất của Bộ GD&ĐT để in nộp duyệt tổ chuyên môn.
+Nhiệm vụ của bạn là soạn một KẾ HOẠCH BÀI DẠY (GIÁO ÁN) ÔN THI TỐT NGHIỆP THPT LỚP 12 CHUẨN CÔNG VĂN 5512/BGDĐT hoàn chỉnh, chi tiết 100%, chuẩn mực để dạy trực tiếp trên lớp và in phát ngay Phiếu học tập cho học sinh.
 
 =========================================
-THÔNG TIN ĐẦU VÀO KẾ HOẠCH BÀI DẠY:
+THÔNG TIN ĐẦU VÀO BẮT BUỘC BÁM SÁT 100%:
 - Môn học: ${currentSubject.name} - Lớp 12
 - Bộ sách tham chiếu: Kết nối tri thức với cuộc sống (Chương trình GDPT 2018)
-- Tên chủ đề/Bài học ôn tập: ${effectiveTopicTitle}
+- Tên chủ đề/Bài học: ${effectiveTopicTitle}
 - Tiết PPCT: ${effectivePeriodRange}
-- Thời lượng thực dạy: ${periods} tiết (${periods * 45} phút)
-- Yêu cầu cần đạt trọng tâm: ${effectiveYccd}
+- Thời lượng thực dạy đã chọn: ${periods} tiết (${totalMinutes} phút)
+- Yêu cầu cần đạt (PPCT 105 tiết — PHẢI ĐÁP ỨNG ĐỦ 100% MỌI Ý): ${effectiveYccd}
 - Ghi chú phân hóa đối tượng: ${effectiveDiffNotes}
-- Đối tượng học sinh: ${studentInfo.label} (${studentInfo.desc})
+- Đối tượng học sinh & Mục tiêu: ${studentInfo.label} (${studentInfo.desc})
 - Cấu trúc đề thi tham chiếu: ${currentSubject.examNote}
 
 =========================================
-CẤU TRÚC & ĐỘ SÂU BẮT BUỘC THEO CÔNG VĂN 5512/BGDĐT (TUYỆT ĐỐI KHÔNG SOẠN SƠ SÀI):
-Bắt đầu bằng Quốc hiệu / Tiêu đề lớn:
-# KẾ HOẠCH BÀI DẠY ÔN THI TỐT NGHIỆP THPT NĂM HỌC 2026 – 2027
-**Môn học:** ${currentSubject.name} 12 | **Bộ sách:** Kết nối tri thức với cuộc sống  
+4 QUY TẮC BẮT BUỘC TUYỆT ĐỐI KHI SOẠN GIÁO ÁN:
+
+1. QUY TẮC CHỐNG TÓM TẮT (ANTI-LAZINESS):
+- TUYỆT ĐỐI CẤM viết các câu mô tả đại ý trong ngoặc đơn như: "(Các câu hỏi từ 1 đến 8 tập trung vào...)", "(Giải thích chi tiết: Áp dụng quy tắc...)", "(Tương tự các câu trên)", "(Học sinh tự giải tương tự)", "...".
+- Bắt buộc sinh đầy đủ, chi tiết 100% nội dung có thể dùng để dạy và in phát ngay cho học sinh.
+
+2. CHUẨN HÓA CẤU TRÚC CÔNG VĂN 5512 & PHÂN BỔ THỜI GIAN (${periods} TIẾT = ${totalMinutes} PHÚT):
+- Bảng tổng hợp Tiến trình dạy học ở đầu Mục III BẮT BUỘC phải chia đủ **${periods} tiết** người dùng đã chọn trên giao diện (thể hiện rõ đủ từ **Tiết 1** đến **Tiết ${periods}** với tổng thời lượng đúng bằng **$${totalMinutes}$ phút**).
+- Tất cả 4 Hoạt động (**Hoạt động 1: Khởi động**, **Hoạt động 2: Hệ thống kiến thức**, **Hoạt động 3: Luyện tập theo dạng bài**, **Hoạt động 4: Vận dụng / Nhận diện bẫy**) ĐỀU PHẢI CÓ ĐỦ 4 TIỂU MỤC:
+  + **a) Mục tiêu:** (Nêu rõ mục tiêu kiến thức, kỹ năng của hoạt động).
+  + **b) Nội dung:** (Trình bày đầy đủ câu hỏi/nhiệm vụ, bảng lý thuyết, các dạng bài kèm phương pháp và ví dụ minh họa cụ thể).
+  + **c) Sản phẩm:** (Trình bày đầy đủ câu trả lời, bảng hệ thống hóa hoàn chỉnh và **lời giải chi tiết từng bước của các ví dụ minh họa**).
+  + **d) Tổ chức thực hiện:** (Bắt buộc trình bày đầy đủ 4 bước: **Bước 1: Chuyển giao nhiệm vụ** -> **Bước 2: Thực hiện nhiệm vụ** -> **Bước 3: Báo cáo, thảo luận** -> **Bước 4: Kết luận, nhận định**).
+- Ở **Hoạt động 3 (Luyện tập theo dạng bài)**, mỗi dạng bài BẮT BUỘC phải có: **Phương pháp giải tổng quát** + **Ít nhất 1 - 2 Ví dụ minh họa** có đề bài cụ thể và **Lời giải từng bước**.
+
+3. CHI TIẾT HÓA PHIẾU HỌC TẬP & ĐÁP ÁN (MỤC IV & V):
+- **Mục IV (Phiếu học tập tự luyện):** Phải soạn đầy đủ từng câu hỏi cụ thể (đề bài rõ ràng, đủ 4 phương án A, B, C, D cho Phần I; đủ 4 ý a, b, c, d cho Phần II; câu hỏi điền số thực cho Phần III) bám sát mức độ mục tiêu học sinh đã chọn (${studentInfo.label}).
+- **Mục V (Bảng đáp án và hướng dẫn giải chi tiết):** Phải có **1. Bảng đáp án nhanh** cho tất cả các câu, tiếp theo là phần **2. Lời giải chi tiết từng bước** cho toàn bộ các câu hỏi ở Mục IV (đặc biệt là giải thích rõ đúng/sai cho từng ý a, b, c, d ở Phần II và các bước giải câu VDC ở Phần III).
+
+4. QUY TẮC ĐỊNH DẠNG MARKDOWN & LATEX NGHIÊM NGẶT (TRÁNH LỖI HIỂN THỊ & XUẤT FILE):
+- Dùng cú pháp in đậm chuẩn \`**text**\` (không để khoảng trắng sát bên trong dấu \`**\`, luôn có khoảng trắng sau \`**Nhãn:**\`). TUYỆT ĐỐI KHÔNG đặt dấu gạch đầu dòng \`-\` hay \`+\` trước các tiêu đề \`#\`, \`##\`, \`###\`, \`####\`.
+- Chỉ sử dụng cú pháp LaTeX chuẩn trong cặp dấu \`$ ... $\` (nội dòng) và \`$$ ... $$\` (khối riêng). Luôn dùng \`\\frac\` thay vì \`\\dfrac\`.
+- TUYỆT ĐỐI KHÔNG chèn các từ tiếng Việt có dấu (như "Lưu ý", "với", "hoặc", "trên khoảng", "thỏa mãn", "loại") hoặc thẻ \`<br/>\` vào bên trong cặp dấu \`$ ... $\` hoặc \`$$ ... $$\` để tránh lỗi vỡ chữ khi render MathJax/KaTeX!
+  + Viết ĐÚNG: \`$f'(x) \\ge 0$ (hoặc $f'(x) \\le 0$) trên khoảng $(a; b)$\`, \`$\\Delta' \\le 0$ (với $a \\ne 0$)\`, \`$x = 2$ (thỏa mãn)\`.
+  + Viết SAI (CẤM TUYỆT ĐỐI): \`$f'(x) \\ge 0 (hoặc \\le 0) trên khoảng (a; b)$\`, \`$\\Delta' \\le 0 (với a \\ne 0)$\`, \`$f'(x) = 0 <br/> Lưu ý: ...$\`.
+
+=========================================
+KHUNG CẤU TRÚC TRÌNH BÀY BẮT BUỘC (THEO ĐÚNG THỨ TỰ NÀY):
+
+# KẾ HOẠCH BÀI DẠY ÔN THI TỐT NGHIỆP THPT NĂM HỌC 2026 - 2027
+**Môn học:** ${currentSubject.name} 12 | **Bộ sách:** Kết nối tri thức với cuộc sống (GDPT 2018)  
 **Chủ đề:** **${effectiveTopicTitle.toUpperCase()}**  
-**Thời lượng:** $${periods}$ tiết ($${periods * 45}$ phút) | **Tiết PPCT:** ${effectivePeriodRange}  
+**Thời lượng:** $${periods}$ tiết ($${totalMinutes}$ phút) | **Tiết PPCT:** ${effectivePeriodRange}  
 **Đối tượng áp dụng:** ${studentInfo.label}
 
-1. ## I. MỤC TIÊU:
-   - ### 1. Về kiến thức (Liệt kê chi tiết 4-5 gạch đầu dòng cụ thể).
-   - ### 2. Về năng lực (Năng lực tư duy và lập luận; Năng lực mô hình hóa; Năng lực giải quyết vấn đề; Năng lực sử dụng công cụ phương tiện học tập).
-   - ### 3. Về phẩm chất (Chăm chỉ, trách nhiệm, cẩn thận, chính xác).
+## I. MỤC TIÊU DẠY HỌC
+### 1. Về kiến thức
+### 2. Về năng lực
+### 3. Về phẩm chất
 
-2. ## II. THIẾT BỊ DẠY HỌC VÀ HỌC LIỆU:
-   - ### 1. Giáo viên (Giáo án CV 5512, Slide sơ đồ tư duy, Phiếu học tập số 1 - Khung lý thuyết & Ví dụ mẫu, Phiếu học tập số 2 - Bộ đề luyện tập chuẩn cấu trúc mới).
-   - ### 2. Học sinh (SGK, vở ghi, máy tính cầm tay, kiến thức chuẩn bị).
+## II. THIẾT BỊ DẠY HỌC VÀ HỌC LIỆU
+### 1. Giáo viên
+### 2. Học sinh
 
-3. ## III. TIẾN TRÌNH DẠY HỌC (Phân bổ rõ theo từng tiết học: ### TIẾT 1, ### TIẾT 2${periods >= 3 ? ", ### TIẾT 3" : ""}):
-   Trong TỪNG HOẠT ĐỘNG (từ Hoạt động 1 đến Hoạt động 5) BẮT BUỘC trình bày đầy đủ 4 mục:
-   **a) Mục tiêu:** (Nêu rõ mục tiêu kiến thức, kỹ năng của hoạt động)
-   **b) Nội dung:** (Viết đầy đủ bảng lý thuyết, công thức, đề bài ví dụ, nhiệm vụ học tập - TUYỆT ĐỐI KHÔNG tóm tắt 1-2 dòng)
-   **c) Sản phẩm:** (Trình bày chi tiết bảng tổng hợp kiến thức đã điền và lời giải từng bước của các ví dụ/bài tập)
-   **d) Tổ chức thực hiện:** (Trình bày rõ ràng 4 bước:
-   - Bước 1: Chuyển giao nhiệm vụ
-   - Bước 2: Thực hiện nhiệm vụ
-   - Bước 3: Báo cáo, thảo luận
-   - Bước 4: Kết luận, nhận định)
+## III. TIẾN TRÌNH DẠY HỌC (CHUẨN CÔNG VĂN 5512)
+### Bảng tổng hợp Tiến trình dạy học (${periods} tiết = $${totalMinutes}$ phút)
+| Tiết học | Hoạt động dạy học | Nội dung trọng tâm | Thời lượng |
+| :---: | :--- | :--- | :---: |
+${periodBreakdownRows}
 
-   ĐỦ 5 HOẠT ĐỘNG TRỌNG TÂM:
-   - #### Hoạt động 1: Khởi động & Hệ thống hóa kiến thức trọng tâm (Có bảng tổng hợp/so sánh lý thuyết, công thức, điều kiện áp dụng và chú ý đặc biệt).
-   - #### Hoạt động 2: Phân loại dạng toán & Phân tích ví dụ mẫu:
-     + BẮT BUỘC chia thành ít nhất 4 Dạng bài trọng tâm (##### Dạng 1, ##### Dạng 2, ##### Dạng 3, ##### Dạng 4).
-     + Mỗi dạng bài BẮT BUỘC có: Phương pháp nhận diện/giải nhanh + Ví dụ mẫu đầy đủ đề bài (4 phương án A, B, C, D) + *Lời giải chi tiết* biến đổi từng bước rõ ràng.
-     + ${studentTarget === "advanced" ? "TÍCH HỢP BẮT BUỘC các dạng toán chứa tham số $m$, hàm hợp và vận dụng cao phân hóa cho nhóm lớp mục tiêu 8.0+." : "Tập trung các dạng toán nhận biết, thông hiểu và vận dụng vừa sức cho nhóm lớp mục tiêu 6.5 - 8.0."}
-   - #### Hoạt động 3: Luyện tập theo hệ thống câu hỏi định dạng đề thi mới (Tổ chức 4 bước CV 5512 cho học sinh thảo luận nhóm giải Phiếu học tập số 2).
-   - #### Hoạt động 4: Kỹ năng làm bài, thủ thuật máy tính cầm tay (Casio fx-580VN X) và Nhận diện bẫy đề thi (Nêu rõ quy trình bấm phím và ít nhất 4 bẫy sai lầm kinh điển).
-   - #### Hoạt động 5: Vận dụng và Hướng dẫn tự học ở nhà.
+### HOẠT ĐỘNG 1: KHỞI ĐỘNG (XÁC ĐỊNH VẤN ĐỀ)
+**a) Mục tiêu:**
+**b) Nội dung:**
+**c) Sản phẩm:**
+**d) Tổ chức thực hiện:** (Đủ 4 bước: Bước 1: Chuyển giao nhiệm vụ -> Bước 2: Thực hiện nhiệm vụ -> Bước 3: Báo cáo, thảo luận -> Bước 4: Kết luận, nhận định)
 
-4. ## IV. PHỤ LỤC: HỆ THỐNG PHIẾU HỌC TẬP VÀ ĐÁP ÁN CHI TIẾT:
-   - ### 1. NỘI DUNG PHIẾU HỌC TẬP SỐ 2 (RÈN LUYỆN ĐỊNH DẠNG MỚI) (Chỉ ghi đề bài cho học sinh làm, KHÔNG ghi đáp án ngay dưới câu hỏi trong phần đề)
-   - ### 2. BẢNG ĐÁP ÁN VÀ LỜI GIẢI CHI TIẾT PHIẾU HỌC TẬP SỐ 2 (Bắt buộc có lời giải chi tiết từng câu cho Phần I, Phần II và Phần III).
+### HOẠT ĐỘNG 2: HÌNH THÀNH KIẾN THỨC MỚI (HỆ THỐNG HÓA KIẾN THỨC TRỌNG TÂM)
+**a) Mục tiêu:**
+**b) Nội dung:** (Bảng hệ thống kiến thức trọng tâm 2 cột chi tiết)
+**c) Sản phẩm:**
+**d) Tổ chức thực hiện:** (Đủ 4 bước: Bước 1: Chuyển giao nhiệm vụ -> Bước 2: Thực hiện nhiệm vụ -> Bước 3: Báo cáo, thảo luận -> Bước 4: Kết luận, nhận định)
+
+### HOẠT ĐỘNG 3: LUYỆN TẬP (PHÂN DẠNG BÀI TẬP TRỌNG TÂM)
+**a) Mục tiêu:**
+**b) Nội dung:** (Chia rõ từng Dạng 1, Dạng 2, Dạng 3, Dạng 4... Mỗi dạng có: **Phương pháp giải tổng quát** + **Ví dụ minh họa 1**, **Ví dụ minh họa 2** có đề bài cụ thể)
+**c) Sản phẩm:** (Trình bày **Lời giải chi tiết từng bước** cho toàn bộ các Ví dụ minh họa ở mục b)
+**d) Tổ chức thực hiện:** (Đủ 4 bước: Bước 1: Chuyển giao nhiệm vụ -> Bước 2: Thực hiện nhiệm vụ -> Bước 3: Báo cáo, thảo luận -> Bước 4: Kết luận, nhận định)
+
+### HOẠT ĐỘNG 4: VẬN DỤNG, NHẬN DIỆN BẪY ĐỀ THI VÀ HƯỚNG DẪN TỰ HỌC
+**a) Mục tiêu:**
+**b) Nội dung:** (Tối thiểu 5 bẫy sai lầm kinh điển trong đề thi + Bài toán vận dụng thực tế + Hướng dẫn tự học)
+**c) Sản phẩm:** (Phân tích phản ví dụ cho từng bẫy và lời giải chi tiết bài toán vận dụng)
+**d) Tổ chức thực hiện:** (Đủ 4 bước: Bước 1: Chuyển giao nhiệm vụ -> Bước 2: Thực hiện nhiệm vụ -> Bước 3: Báo cáo, thảo luận -> Bước 4: Kết luận, nhận định)
+
+## IV. PHIẾU HỌC TẬP TỰ LUYỆN: ${effectiveTopicTitle.toUpperCase()}
+*Họ và tên học sinh: .................................................... Lớp: 12..... Điểm: .......... / 10*
+(Soạn đầy đủ 100% từng câu hỏi cụ thể của Phần I, Phần II, Phần III)
+
+## V. BẢNG ĐÁP ÁN VÀ HƯỚNG DẪN GIẢI CHI TIẾT
+### 1. Bảng đáp án nhanh
+### 2. Lời giải chi tiết từng bước
+(Giải chi tiết từng bước cho toàn bộ 100% các câu hỏi của Phần I, từng ý a, b, c, d của Phần II và từng bài của Phần III)
+
+### PHÊ DUYỆT CỦA TỔ CHUYÊN MÔN
 
 =========================================
-${subjectFormatInstructions}
-
-=========================================
-QUY TẮC HIỂN THỊ CÔNG THỨC TOÁN & KHOA HỌC (NGHIÊM NGẶT 100%):
-1. TẤT CẢ công thức, ký hiệu toán học, vật lý, hóa học, biến số đơn lẻ ($x$, $y$, $z$, $m$, $a$, $b$, $\\mathbb{R}$, $\\Delta$, $\\pi$, $f'(x)$...) BẮT BUỘC đặt trong cặp dấu đô la: $công_thức$ (nội dòng) hoặc $$công_thức$$ (khối riêng).
-2. Luôn có khoảng trắng giữa chữ tiếng Việt hoặc dấu ngoặc kép và dấu $: viết chuẩn "hàm số đồng biến trên $\\mathbb{R}$", "đạo hàm $f'(x)$ và", không viết dính chữ.
-3. Dùng cú pháp LaTeX chuẩn: \\frac{a}{b}, \\sqrt{...}, \\pi, \\Leftrightarrow, \\Rightarrow, \\ge, \\le, \\neq, \\in, \\setminus, \\{1; 2; 3\\}. Luôn dùng \\frac thay vì \\dfrac. Với tập hợp dùng \\{ và \\} bên trong $...$, ví dụ $m \\in \\{-1; 0; 1; 2\\}$.
-4. Mỗi tiêu đề Markdown (##, ###, ####, #####) BẮT BUỘC nằm trên một dòng riêng biệt có dòng trống phía trước.
-5. Cuối kế hoạch bài dạy BẮT BUỘC có mục ### PHÊ DUYỆT CỦA TỔ CHUYÊN MÔN.
-
-TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG ĐƯỢC VIẾT SƠ SÀI 1-2 CÂU MỖI PHẦN, KHÔNG ĐƯỢC GHI '...tương tự giáo viên hướng dẫn'. Bắt buộc biên soạn đầy đủ, chi tiết, dài và sâu sắc tương đương giáo án mẫu cấp Tỉnh (tối thiểu 4 ví dụ mẫu ở Hoạt động 2 và đủ 11-13 câu hỏi kèm lời giải chi tiết ở Phần IV Phụ lục).`;
+${subjectFormatInstructions}`;
   };
 
-  const cleanGraduationPlanMarkdown = (raw: string): string => {
+  function cleanGraduationPlanMarkdown(raw: string): string {
     if (!raw) return "";
     let s = raw.normalize("NFC");
+
+    // 0. Loại bỏ dấu gạch đầu dòng (-, +, *, •, ●) đặt nhầm trước các tiêu đề Markdown (#, ##, ###...) gây ra chấm đen mồ côi
+    s = s.replace(/(^|\n)[ \t]*[-*+•●]+[ \t]+(#{1,6}\s+)/g, "$1$2");
+
+    // 0.1. Sửa các từ tiếng Việt bị tách chữ hoặc dính chữ do lỗi nhốt trong công thức Toán trước đó
+    s = s
+      .replace(/\bhoặ\s+c\b/gi, "hoặc")
+      .replace(/\bv\s+ới\b/gi, "với")
+      .replace(/\btrênkhoảng\b/gi, "trên khoảng")
+      .replace(/\btrênđoạn\b/gi, "trên đoạn")
+      .replace(/\btrênnửakhoảng\b/gi, "trên nửa khoảng")
+      .replace(/\btạihữuhạnđiểm\b/gi, "tại hữu hạn điểm");
+
     s = fixBrokenLatexSyntax(s);
     s = rescueTrappedVietnameseFromMath(s);
     s = sanitizeLatexMathAndDelimiters(s);
     s = normalizeMathText(s);
     s = cleanMathAndUnwrapHeadings(s);
 
-    // Đảm bảo có dòng xuống hàng trước các tiêu đề Markdown bị viết dính liền
+    // 1. Sửa lỗi dính 3 dấu sao hoặc dính sát chữ quanh nhãn **Label:** (vd: **Chủ đề:***BÀI 8. -> **Chủ đề:** **BÀI 8.**)
+    s = s.replace(/(\*\*[^*\n]+?:\*\*)\*{1,3}([^\n]+)/g, (_m, label, rest) => {
+      const cleanRest = rest.replace(/^\*+|\*+$/g, "").trim();
+      return `${label} **${cleanRest}**`;
+    });
+    s = s.replace(/\*\*([^*\n]+?:)\*{3}([^\n]+)/g, "**$1** **$2**");
+    s = s.replace(/(\*\*[^*\n]+?:\*\*)([^\s*\n])/g, "$1 $2");
+
+    // 2. Chuẩn hóa cú pháp in đậm **text** bị dư khoảng trắng bên trong (vd: ** text ** -> **text**)
+    s = s.replace(/\*\*[ \t]+([^*\n]+?)[ \t]*\*\*/g, (_m, inner) => `**${inner.trim()}**`);
+    s = s.replace(/\*\*([^*\n]+?)[ \t]+\*\*/g, (_m, inner) => `**${inner.trim()}**`);
+
+    // 3. Đảm bảo mỗi dòng metadata đầu giáo án, tiêu đề Markdown và các mục CV 5512 tách dòng rõ ràng
     s = s.replace(/([^\n])\s*(#{1,5}\s+)/g, "$1\n\n$2");
-    // Tách dòng tiêu đề bị dính **** (vd: **TIÊU ĐỀ****Môn: ...**)
+    // Tách dòng nếu tiêu đề ## IV. PHIẾU HỌC TẬP... bị dính liền với *Họ và tên...*
+    s = s.replace(/(#{1,4}\s+[^\n*]+?)(\*Họ\s+và\s+tên)/gi, "$1\n\n$2");
+    s = s.replace(/([^\n])\s*(\*\*(?:Môn học|Chủ đề|Thời lượng|Đối tượng áp dụng):\*\*|(?:I|II|III|IV|V)\.\s+(?:MỤC TIÊU|THIẾT BỊ|TIẾN TRÌNH|PHỤ LỤC|PHIẾU HỌC TẬP|BẢNG ĐÁP ÁN)\b|TIẾT\s+\$?\d+\$?\s*(?:\(|:)|Hoạt động\s+\$?\d+\$?\s*:)/gi, "$1\n\n$2");
+    s = s.replace(/([^\n])\s*\*{0,2}([a-d]\)\s*(?:Mục tiêu|Nội dung|Sản phẩm|Tổ chức thực hiện)[^:\n]*:)\*{0,2}/gi, "$1\n\n**$2** ");
+    s = s.replace(/(^|\n)[ \t]*([a-d]\)\s*(?:Mục tiêu|Nội dung|Sản phẩm|Tổ chức thực hiện)[^:\n]*:)(?!\*)/gim, "$1**$2**");
+
+    // 4. Tách dòng các mục Phương pháp / Ví dụ / Lời giải nếu bị viết dính trên cùng 1 dòng
+    s = s.replace(/([^\n|])\s+(\*\*(?:Phương\s*pháp(?:\s*giải)?|Ví\s*dụ(?:\s*minh\s*họa|\s*mẫu)?(?:\s*\d+)?|Lời\s*giải(?:\s*chi\s*tiết)?|Bước\s*[1-4])\s*[:\.]?\*\*)/gi, "$1\n- $2");
+
+    // 5. Tách dòng tiêu đề bị dính **** (vd: **TIÊU ĐỀ****Môn: ...**)
     s = s.replace(/\*{4,}/g, "**\n\n**");
     // Đảm bảo khoảng trắng sau dấu hai chấm trước chữ cái viết hoa tiếng Việt (vd: Mục tiêu:HS -> Mục tiêu: HS)
     s = s.replace(/([a-zà-ỹ]):([A-ZÀ-Ỹ])/g, "$1: $2");
@@ -790,17 +590,34 @@ TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG ĐƯỢC VIẾT SƠ SÀI 1-2 CÂU MỖI
     s = s.replace(/(\$[^$\n]+\$)(["”])/g, "$1 $2");
     s = s.replace(/(["“])(\$[^$\n]+\$)/g, "$1 $2");
 
-    // Chuẩn hóa và làm sạch triệt để dấu sao (**) xung quanh và ngay sau nhãn phương án A, B, C, D (chỉ in hoa [A-D], bảo vệ a), b), c), d) Đúng/Sai)
-    s = s.replace(/(?:^|\n|\s+)(?:[-*•●]\s*)?(?:\*{1,3}|<b>)?\(?([A-D])\)?[\.\:](?:\*{1,3}|<\/b>)?\s*(?:\*{1,3}\s*)?/g, (m, letter) => {
-      const isNewline = m.startsWith('\n') || m.startsWith('\r\n');
-      const prefix = isNewline ? '\n' : ' ';
-      return `${prefix}${letter}. `;
-    });
+    // 6. Chuẩn hóa và làm sạch dấu sao (**) quanh nhãn phương án A., B., C., D. CHỈ ở đầu dòng
+    if (/PHẦN\s*(?:I\b|1\b)/i.test(s)) {
+      s = s.replace(/(^|\n)[ \t]*(?:[-*•●]\s*)?(?:\*{1,3}|<b>)?(?:\(([A-D])\)|([A-D]))[\.\:](?:\*{1,3}|<\/b>)?[ \t]*(?:\*{1,3}[ \t]*)?/g, (_m, nl, l1, l2) => {
+        const letter = l1 || l2;
+        return `${nl}${letter}. `;
+      });
+    }
 
+    // 7. Xóa hoàn toàn các dòng chỉ chứa dấu gạch đầu dòng rỗng (- , * , • , ● ) hoặc đường kẻ ngang --- dư thừa gây chấm đen trong Word/PDF
+    s = s.replace(/^[ \t]*[-*+•●][ \t]*$/gm, "");
+    s = s.replace(/^[ \t]*---+[ \t]*$/gm, "");
+
+    // 8. Khôi phục mọi thẻ <strong> / < strong > bị rò rỉ về chuẩn Markdown **text** để không bao giờ hiển thị thẻ HTML thô
+    s = s.replace(/<\s*strong\s*>([\s\S]*?)<\s*\/\s*strong\s*>/gi, "**$1**");
+    s = s.replace(/<\s*\/?\s*strong\s*>/gi, "");
+    s = s.replace(/\\le\s+ft\b/g, "\\left");
+    s = s.replace(/\\right\s+\\right\.\$\s*[\r\n]*\s*\]\$/g, "\\right]$");
+    s = s.replace(/\\right\s+\\right\./g, "\\right]");
+
+    // Tách dòng giữa các công thức đứng riêng từng dòng liên tiếp để Markdown không gộp chung một hàng
+    s = s.replace(/^([ \t]*\$[^\$\n]+\$[ \t]*)\n(?=[ \t]*\$[^\$\n]+\$[ \t]*$)/gm, "$1\n\n");
+
+    // Quét lại 1 lần để chắc chắn không còn $...$$ hay dấu $ lẻ chưa đóng trước ### Heading
+    s = rescueTrappedVietnameseFromMath(s);
     s = fixAndMergeMathArrows(s);
 
-    return s.trim();
-  };
+    return s.replace(/\n{3,}/g, "\n\n").trim();
+  }
 
   // Generate Lesson Plan
   const handleGeneratePlan = async () => {
@@ -972,7 +789,7 @@ TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG ĐƯỢC VIẾT SƠ SÀI 1-2 CÂU MỖI
                 type="button"
                 onClick={() => {
                   const sample = getSampleLessonPlan(selectedSubjectId);
-                  setResultPlan(sample);
+                  setResultPlan(cleanGraduationPlanMarkdown(sample));
                   setActiveTab("preview");
                   showToast(`Đã nạp Kế hoạch bài dạy mẫu môn ${currentSubject.name} chuẩn CV 5512!`);
                 }}
@@ -1272,7 +1089,7 @@ TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG ĐƯỢC VIẾT SƠ SÀI 1-2 CÂU MỖI
                     PPCT: {currentMathTopic.defaultPeriods || 3} tiết
                   </span>
                 </div>
-                <div className="grid grid-cols-5 gap-1.5">
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
                   {PERIOD_OPTIONS.map((opt) => (
                     <button
                       key={opt.value}
@@ -1533,7 +1350,7 @@ TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG ĐƯỢC VIẾT SƠ SÀI 1-2 CÂU MỖI
                     className="bg-white text-slate-900 p-6 md:p-8 rounded-xl shadow-inner font-serif leading-relaxed text-sm md:text-base border border-slate-200 tex2jax_process"
                     style={{ fontFamily: "'Times New Roman', serif" }}
                   >
-                    <MarkdownRenderer key={`plan_${resultPlan.length}_${resultPlan.slice(0, 40)}`} content={resultPlan} />
+                    <MarkdownRenderer key={`plan_${resultPlan.length}_${resultPlan.slice(0, 40)}`} content={resultPlan} skipWorksheetFormatting />
                   </div>
                 ) : (
                   <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">

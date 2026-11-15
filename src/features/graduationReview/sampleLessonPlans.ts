@@ -1,301 +1,293 @@
 // Hệ thống Kế hoạch bài dạy (Giáo án) mẫu chuẩn Công văn 5512/BGDĐT cho các môn thi Tốt nghiệp THPT 2025 - 2027
 
-export const SAMPLE_MATH_PLAN = String.raw`# KẾ HOẠCH BÀI DẠY ÔN THI TỐT NGHIỆP THPT NĂM HỌC 2026 – 2027
-**Môn học:** Toán 12 | **Bộ sách:** Kết nối tri thức với cuộc sống  
-**Chủ đề:** **BÀI 1. TÍNH ĐƠN ĐIỆU VÀ CỰC TRỊ CỦA HÀM SỐ**  
-**Thời lượng:** $3$ tiết ($135$ phút) | **Tiết PPCT:** $1 - 3$  
-**Đối tượng áp dụng:** Học sinh lớp 12 (kết hợp phân hóa mục tiêu $6.5 - 8.0$ và nhóm lớp định hướng $8.0+$ như $12A_1, 12A_2, 12A_3$)
+export const SAMPLE_MATH_PLAN = String.raw`# KẾ HOẠCH BÀI DẠY ÔN THI TỐT NGHIỆP THPT MÔN TOÁN 12 (CHUẨN CÔNG VĂN 5512)
+**Môn học:** Toán học 12 | **Bộ sách:** Kết nối tri thức với cuộc sống (GDPT 2018)  
+**Chủ đề:** **BÀI 7: HỆ TRỤC TỌA ĐỘ TRONG KHÔNG GIAN**  
+**Thời lượng:** $2$ tiết ($90$ phút) | **Tiết PPCT:** $17 - 18$  
+**Đối tượng áp dụng:** Học sinh lớp 12 (lớp đại trà mục tiêu $6.5 - 8.0$ kết hợp phân hóa nâng cao cho nhóm $12A_1, 12A_2, 12A_3$)
 
 ---
 
-## I. MỤC TIÊU
+## I. MỤC TIÊU DẠY HỌC
 
 ### 1. Về kiến thức
-- Hệ thống hóa định lý về mối liên hệ giữa dấu của đạo hàm cấp một và tính đơn điệu của hàm số trên các khoảng xác định.
-- Nắm vững định nghĩa, điều kiện cần và điều kiện đủ (dấu hiệu $1$ và dấu hiệu $2$) để hàm số đạt cực trị; phân biệt rõ điểm cực trị của hàm số, điểm cực trị của đồ thị hàm số và giá trị cực trị.
-- Đọc, phân tích và khai thác chính xác bảng biến thiên, đồ thị của hàm số $y = f(x)$ cũng như đồ thị hàm số đạo hàm $y = f'(x)$.
-- Vận dụng thành thạo phương pháp cô lập tham số $m$ và định lý dấu tam thức bậc hai để giải quyết các bài toán chứa tham số $m$ về tính đơn điệu, cực trị (mục tiêu nâng cao dành cho học sinh khá, giỏi và các lớp $12A_1, 12A_2, 12A_3$).
+- Học sinh hiểu được định nghĩa hệ trục tọa độ $Oxyz$ trong không gian gồm $3$ trục $Ox$, $Oy$, $Oz$ đôi một vuông góc tại gốc $O(0; 0; 0)$ cùng các vectơ đơn vị $\vec{i}, \vec{j}, \vec{k}$ và các mặt phẳng tọa độ $(Oxy)$, $(Oyz)$, $(Ozx)$.
+- Hiểu và viết được tọa độ của một vectơ đối với hệ trục tọa độ $Oxyz$: $\vec{u} = x\vec{i} + y\vec{j} + z\vec{k} \Leftrightarrow \vec{u} = (x; y; z)$.
+- Hiểu và xác định được tọa độ của một điểm $M$: $M(x; y; z) \Leftrightarrow \overrightarrow{OM} = x\vec{i} + y\vec{j} + z\vec{k}$.
+- Nắm vững quy tắc tìm tọa độ hình chiếu vuông góc của một điểm lên các trục tọa độ, các mặt phẳng tọa độ và tọa độ điểm đối xứng qua trục, qua mặt phẳng, qua gốc tọa độ $O$.
+- Sử dụng hệ trục tọa độ $Oxyz$ để mô tả các đối tượng hình học không gian đơn giản (hình hộp chữ nhật, hình lập phương, hình chóp) và mô hình hóa các bài toán định vị thực tế.
 
 ### 2. Về năng lực
-- **Năng lực tư duy và lập luận toán học:** Khả năng suy luận từ bảng biến thiên, đồ thị để nhận định chiều biến thiên và tọa độ cực trị.
-- **Năng lực giải quyết vấn đề toán học:** Phân loại và lựa chọn phương pháp phù hợp với từng dạng câu hỏi (Trắc nghiệm nhiều lựa chọn, Đúng/Sai, Trả lời ngắn).
-- **Năng lực sử dụng công cụ, phương tiện học toán:** Khai thác tối đa máy tính cầm tay (Casio fx-580VN X) để dò nghiệm, thử tính đơn điệu bằng chức năng Bảng giá trị $[Menu] [8]$ (Table).
+- **Năng lực tư duy và lập luận toán học:** Chuyển đổi linh hoạt giữa biểu diễn hình học không gian và biểu diễn đại số qua bộ ba số $(x; y; z)$; phân tích nhanh tính đúng/sai của các mệnh đề tọa độ.
+- **Năng lực giải quyết vấn đề toán học:** Biết gắn hệ trục tọa độ $Oxyz$ thích hợp vào hình hộp chữ nhật, hình lập phương, hình chóp để xác định tọa độ đỉnh, tâm và độ dài vectơ.
+- **Năng lực mô hình hóa toán học:** Vận dụng hệ trục tọa độ $Oxyz$ vào giải quyết bài toán định vị thực tế (máy bay, vệ tinh, flycam, cần cẩu tháp).
+- **Năng lực sử dụng công cụ, phương tiện học toán:** Khai thác mô hình trực quan GeoGebra 3D và máy tính cầm tay Casio fx-580VN X / fx-880BTG chế độ Vector ($[Menu] [5]$) để kiểm tra kết quả.
 
 ### 3. Về phẩm chất
-- Rèn luyện tính cẩn thận, kỷ luật, tránh các bẫy thường gặp về tập xác định và kết luận khoảng đơn điệu.
-- Phát triển tư duy tự học, chủ động hợp tác nhóm khi giải quyết hệ thống câu hỏi phân hóa.
+- Rèn luyện tính cẩn thận, chính xác khi xác định dấu âm, thứ tự hoành độ – tung độ – cao độ và thành phần khuyết bằng $0$.
+- Tích cực trao đổi, hình thành phản xạ nhanh với các câu hỏi Trắc nghiệm nhiều lựa chọn, Đúng/Sai và Trả lời ngắn theo cấu trúc thi Tốt nghiệp THPT mới.
 
 ---
 
 ## II. THIẾT BỊ DẠY HỌC VÀ HỌC LIỆU
-1. **Giáo viên:** 
-   - Kế hoạch bài dạy ôn tập chuẩn CV 5512, slide trình chiếu bài giảng tóm tắt lý thuyết và ví dụ mẫu.
-   - Phiếu học tập số 1 (Tóm tắt lý thuyết & Ví dụ mẫu) và Phiếu học tập số 2 (Định dạng đề thi tốt nghiệp mới).
-   - Phần mềm GeoGebra mô phỏng trực quan tiếp tuyến và sự chuyển động của tiếp tuyến qua điểm cực trị.
-2. **Học sinh:** 
-   - Sách giáo khoa Toán 12 (Kết nối tri thức), vở ghi lý thuyết ôn thi tốt nghiệp, máy tính cầm tay fx-580VN X.
-   - Chuẩn bị trước phần bài tập được giao ở nhà.
+
+### 1. Giáo viên
+- Kế hoạch bài dạy ôn thi chuẩn Công văn 5512, mô hình trực quan GeoGebra 3D xoay góc nhìn hệ trục $Oxyz$.
+- Bảng tổng hợp công thức chuẩn hóa và **Phiếu học tập tự luyện Bài 7** (3 phần chuẩn định dạng Bộ GD&ĐT) kèm bảng đáp án và lời giải chi tiết.
+
+### 2. Học sinh
+- Ôn tập hệ trục tọa độ $Oxy$ lớp 10, SGK Toán 12 (Kết nối tri thức), thước kẻ, vở ghi chuyên đề.
+- Máy tính cầm tay Casio fx-580VN X hoặc fx-880BTG.
 
 ---
 
-## III. TIẾN TRÌNH DẠY HỌC
+## III. TIẾN TRÌNH DẠY HỌC (CHUẨN CÔNG VĂN 5512)
 
-### TIẾT 1: HỆ THỐNG HÓA KIẾN THỨC VÀ CÁC DẠNG BÀI TOÁN CƠ BẢN (45 phút)
+### Bảng phân bổ thời lượng theo Khung PPCT 105 tiết ($2$ tiết $= 90$ phút)
 
-#### Hoạt động 1: Khởi động và Hệ thống hóa kiến thức cốt lõi (15 phút)
-**a) Mục tiêu:** Tái hiện nhanh các định lý, công thức then chốt về đơn điệu và cực trị; nhận diện các sai lầm lý thuyết phổ biến.  
-**b) Nội dung:** Học sinh hoàn thành Bảng so sánh lý thuyết trên Phiếu học tập số 1:
-- *Định lý đơn điệu:* Cho hàm số $y = f(x)$ có đạo hàm trên khoảng $K$.
-  + Nếu $f'(x) \ge 0, \forall x \in K$ (dấu bằng chỉ xảy ra tại hữu hạn điểm) $\Rightarrow$ Hàm số đồng biến trên $K$.
-  + Nếu $f'(x) \le 0, \forall x \in K$ (dấu bằng chỉ xảy ra tại hữu hạn điểm) $\Rightarrow$ Hàm số nghịch biến trên $K$.
-- *Bẫy kinh điển:* Tuyệt đối không kết luận hàm số đồng biến trên $\mathbb{R} \setminus \{x_0\}$ hay dùng ký hiệu hợp $\cup$. Phải kết luận trên từng khoảng riêng biệt.
-- *Điều kiện cần và đủ của cực trị:* Điểm $x_0$ là điểm cực trị khi và chỉ khi đạo hàm $f'(x)$ đổi dấu khi $x$ đi qua $x_0$.
-**c) Sản phẩm:** Bảng tóm tắt kiến thức chuẩn xác trong vở ghi của học sinh.  
-**d) Tổ chức thực hiện:**  
-- Bước 1 (Chuyển giao): GV chiếu sơ đồ tư duy khuyết thiếu, yêu cầu cá nhân hoàn thành trong 5 phút.  
-- Bước 2 (Thực hiện): HS nhớ lại kiến thức, điền vào phiếu cá nhân.  
-- Bước 3 (Báo cáo): GV gọi 2 HS nêu sự khác biệt giữa "hàm số đồng biến trên từng khoảng xác định" và "hàm số đồng biến trên $\mathbb{R}$".  
-- Bước 4 (Nhận định): GV chuẩn hóa, nhấn mạnh các bẫy thường gặp trong đề thi tốt nghiệp.
+| Tiết PPCT | Hoạt động dạy học | Nội dung trọng tâm | Thời lượng |
+| :---: | :--- | :--- | :---: |
+| **Tiết 17** | Hoạt động 1: Khởi động | Tình huống định vị máy bay / flycam trong không gian 3 chiều | $10$ phút |
+| **Tiết 17** | Hoạt động 2: Hình thành kiến thức mới | Hệ thống hóa $4$ đơn vị kiến thức $Oxyz$, tọa độ vectơ, điểm, hình chiếu & đối xứng | $35$ phút |
+| **Tiết 18** | Hoạt động 2 (tiếp) & Hoạt động 3: Luyện tập | Chốt bảng công thức ($5$ phút) và giải $3$ dạng toán trọng tâm kèm ví dụ mẫu ($30$ phút) | $35$ phút |
+| **Tiết 18** | Hoạt động 4: Vận dụng & Tự học | Nhận diện bẫy đề thi, kiểm tra bằng Casio / GeoGebra 3D và giao Phiếu tự luyện | $10$ phút |
 
 ---
 
-#### Hoạt động 2: Phân loại dạng toán trọng tâm và Phân tích ví dụ mẫu (30 phút)
-**a) Mục tiêu:** Nắm vững thuật toán giải và dấu hiệu nhận diện cho Dạng 1 (Đọc BBT, đồ thị) và Dạng 2 (Tìm khoảng đơn điệu của hàm số tường minh).  
+### HOẠT ĐỘNG 1: KHỞI ĐỘNG (XÁC ĐỊNH VẤN ĐỀ) ($10$ phút – Tiết 17)
+
+**a) Mục tiêu:** Gợi mở nhu cầu mở rộng từ không gian hai chiều $Oxy$ lên không gian ba chiều $Oxyz$ để xác định vị trí vật thể trong thực tế.
+
+**b) Nội dung:** Giáo viên đặt vấn đề: Để định vị một tàu thuyền trên mặt biển phẳng, ta chỉ cần kinh độ và vĩ độ ($2$ tọa độ trong mặt phẳng $Oxy$). Nhưng đối với một máy bay hay một flycam đang bay trên bầu trời, hai con số đó đã đủ để xác định vị trí chính xác chưa? Ta cần bổ sung thêm yếu tố nào và thiết lập hệ trục tọa độ ra sao?
+
+**c) Sản phẩm:** Học sinh nhận thức được sự cần thiết của trục cao độ $Oz$ vuông góc với mặt đất $(Oxy)$ để biểu thị độ cao $z$ của vật thể, từ đó hình thành hệ $3$ trục tọa độ $Oxyz$ đôi một vuông góc.
+
+**d) Tổ chức thực hiện:**
+- *Bước 1 (Chuyển giao nhiệm vụ):* GV trình chiếu hình ảnh mô phỏng tàu biển và flycam trên không trung, nêu câu hỏi tình huống và yêu cầu học sinh thảo luận cặp đôi trong $2$ phút.
+- *Bước 2 (Thực hiện nhiệm vụ):* Học sinh trao đổi theo cặp, liên hệ hệ trục $Oxy$ lớp 10 để đề xuất thêm phương thẳng đứng biểu diễn độ cao.
+- *Bước 3 (Báo cáo, thảo luận):* GV gọi đại diện $2$ cặp đôi phát biểu; các nhóm khác nhận xét, bổ sung về chiều dương và gốc tọa độ gắn tại mặt đất.
+- *Bước 4 (Kết luận, nhận định):* GV chuẩn hóa câu trả lời, giới thiệu hệ trục tọa độ Đề-các vuông góc $Oxyz$ trong không gian và dẫn dắt vào nội dung bài học.
+
+---
+
+### HOẠT ĐỘNG 2: HÌNH THÀNH KIẾN THỨC MỚI (HỆ THỐNG HÓA KIẾN THỨC TRỌNG TÂM) ($40$ phút – Tiết 17 & đầu Tiết 18)
+
+**a) Mục tiêu:** Học sinh nắm vững định nghĩa hệ trục tọa độ $Oxyz$, tọa độ của vectơ, tọa độ của điểm, tọa độ hình chiếu vuông góc và điểm đối xứng.
+
+**b) Nội dung kiến thức trọng tâm:**
+
+| Đơn vị kiến thức | Nội dung, Công thức chuẩn & Lưu ý tránh sai sót |
+| :--- | :--- |
+| **1. Hệ trục tọa độ $Oxyz$** | • Gồm ba trục $Ox$, $Oy$, $Oz$ đôi một vuông góc tại gốc $O(0; 0; 0)$.<br/>• Các vectơ đơn vị: $\vec{i} \in Ox$, $\vec{j} \in Oy$, $\vec{k} \in Oz$ thỏa mãn: $\|\vec{i}\| = \|\vec{j}\| = \|\vec{k}\| = 1$ và $\vec{i}^2 = \vec{j}^2 = \vec{k}^2 = 1$, $\vec{i} \cdot \vec{j} = \vec{j} \cdot \vec{k} = \vec{k} \cdot \vec{i} = 0$.<br/>• Các mặt phẳng tọa độ: $(Oxy)$, $(Oyz)$, $(Ozx)$ đôi một vuông góc với nhau tại $O$. |
+| **2. Tọa độ của vectơ** | • Mỗi vectơ $\vec{u}$ đều biểu diễn duy nhất dưới dạng: $\vec{u} = x\vec{i} + y\vec{j} + z\vec{k} \Leftrightarrow \vec{u} = (x; y; z)$.<br/>• Trong đó: $x$ là hoành độ, $y$ là tung độ, $z$ là cao độ.<br/>• Hai vectơ bằng nhau: $\vec{u}(x; y; z) = \vec{v}(x'; y'; z') \Leftrightarrow x = x', y = y', z = z'$.<br/>• Độ dài vectơ: $\|\vec{u}\| = \sqrt{x^2 + y^2 + z^2}$.<br/>• *Lưu ý:* Nếu trong biểu diễn thiếu $\vec{i}, \vec{j}$ hoặc $\vec{k}$ thì tọa độ tương ứng bằng $0$ (ví dụ $\vec{a} = -\vec{i} + 4\vec{k} \Rightarrow \vec{a} = (-1; 0; 4)$). |
+| **3. Tọa độ của một điểm** | • Tọa độ của điểm $M$ chính là tọa độ của vectơ $\overrightarrow{OM}$: $M(x; y; z) \Leftrightarrow \overrightarrow{OM} = x\vec{i} + y\vec{j} + z\vec{k} \Leftrightarrow \overrightarrow{OM} = (x; y; z)$.<br/>• Các điểm đặc biệt nằm trên trục hoặc mặt phẳng tọa độ:<br/>+ $M \in Ox \Rightarrow M(x; 0; 0)$; $M \in Oy \Rightarrow M(0; y; 0)$; $M \in Oz \Rightarrow M(0; 0; z)$.<br/>+ $M \in (Oxy) \Rightarrow M(x; y; 0)$; $M \in (Oyz) \Rightarrow M(0; y; z)$; $M \in (Ozx) \Rightarrow M(x; 0; z)$. |
+| **4. Hình chiếu & Đối xứng** | Cho điểm $M(x_0; y_0; z_0)$:<br/>• **Hình chiếu vuông góc:** *Chiếu lên trục hoặc mặt phẳng nào thì giữ nguyên thành phần tọa độ đó, các tọa độ còn lại bằng $0$.*<br/>+ Chiếu lên $(Oxy)$: $M_1(x_0; y_0; 0)$; lên $(Oyz)$: $M_2(0; y_0; z_0)$; lên $(Ozx)$: $M_3(x_0; 0; z_0)$.<br/>+ Chiếu lên $Ox$: $H_1(x_0; 0; 0)$; lên $Oy$: $H_2(0; y_0; 0)$; lên $Oz$: $H_3(0; 0; z_0)$.<br/>• **Điểm đối xứng:** *Đối xứng qua trục hoặc mặt phẳng nào thì tọa độ đó giữ nguyên, các tọa độ còn lại đổi dấu.*<br/>+ Qua $(Oxy)$: $M'(x_0; y_0; -z_0)$; qua $(Oyz)$: $(-x_0; y_0; z_0)$; qua $(Ozx)$: $(x_0; -y_0; z_0)$.<br/>+ Qua $Ox$: $M''(x_0; -y_0; -z_0)$; qua $Oy$: $(-x_0; y_0; -z_0)$; qua $Oz$: $(-x_0; -y_0; z_0)$.<br/>+ Qua gốc $O$: đổi dấu cả $3$ tọa độ $\Rightarrow M'''(-x_0; -y_0; -z_0)$. |
+
+**c) Sản phẩm:** Bảng tổng hợp kiến thức chuẩn xác cùng quy tắc ghi nhớ nhanh *"Chiếu lên đâu giữ nguyên đó, còn lại bằng $0$; Đối xứng qua đâu giữ nguyên đó, còn lại đổi dấu"* trong vở ghi của học sinh.
+
+**d) Tổ chức thực hiện:**
+- *Bước 1 (Chuyển giao nhiệm vụ):* GV trình chiếu khung bảng $4$ đơn vị kiến thức khuyết thiếu các trường hợp đặc biệt và mô hình GeoGebra 3D của điểm $M(x_0; y_0; z_0)$ trong hình hộp chữ nhật tọa độ.
+- *Bước 2 (Thực hiện nhiệm vụ):* HS quan sát hình chiếu của $M$ lên $3$ trục và $3$ mặt phẳng tọa độ trên phần mềm, thảo luận nhóm đôi để điền hoàn chỉnh cột công thức.
+- *Bước 3 (Báo cáo, thảo luận):* GV gọi $3$ HS lần lượt phát biểu tọa độ vectơ khuyết thành phần, tọa độ hình chiếu và tọa độ đối xứng qua trục/mặt phẳng.
+- *Bước 4 (Kết luận, nhận định):* GV chốt bảng kiến thức trọng tâm, nhấn mạnh mẹo phân biệt **chiếu** (cho bằng $0$) và **đối xứng** (đổi dấu) để tránh mất điểm ở các câu Nhận biết – Thông hiểu.
+
+---
+
+### HOẠT ĐỘNG 3: LUYỆN TẬP CỦNG CỐ DẠY THÊM ($30$ phút – Tiết 18)
+
+**a) Mục tiêu:** Học sinh vận dụng thành thạo việc xác định tọa độ vectơ, tọa độ điểm, hình chiếu, điểm đối xứng và mô tả tọa độ trong các khối hình học không gian (hình hộp chữ nhật, hình lập phương, bài toán thực tế).
+
+**b) Phân dạng bài tập trọng tâm & Ví dụ mẫu:**
+
+##### Dạng 1: Chuyển đổi biểu diễn vectơ $\vec{u} = x\vec{i} + y\vec{j} + z\vec{k} \Leftrightarrow \vec{u} = (x; y; z)$ và độ dài vectơ
+- **Phương pháp giải:**
+  + Sắp xếp các hạng tử theo đúng thứ tự $\vec{i} \to \vec{j} \to \vec{k}$.
+  + Thành phần nào khuyết mặt trong biểu thức thì hệ số tọa độ tương ứng bằng $0$.
+  + Tính độ dài vectơ theo công thức $\|\vec{u}\| = \sqrt{x^2 + y^2 + z^2}$.
+- **Ví dụ mẫu 1:** Trong không gian $Oxyz$, cho điểm $A(3; -1; 2)$ và vectơ $\vec{u} = 4\vec{k} - 2\vec{i}$. Tọa độ của vectơ $\overrightarrow{OA}$ và độ dài của vectơ $\vec{u}$ lần lượt là:
+  A. $\overrightarrow{OA} = (3; -1; 2)$ và $\|\vec{u}\| = 2\sqrt{5}$.
+  B. $\overrightarrow{OA} = (3; -1; 2)$ và $\|\vec{u}\| = 2$.
+  C. $\overrightarrow{OA} = (-3; 1; -2)$ và $\|\vec{u}\| = 2\sqrt{5}$.
+  D. $\overrightarrow{OA} = (3; -1; 2)$ và $\|\vec{u}\| = \sqrt{12}$.
+- *Lời giải chi tiết:*
+  + Vì $A(3; -1; 2)$ nên tọa độ của điểm $A$ chính là tọa độ của vectơ $\overrightarrow{OA} = (3; -1; 2)$.
+  + Ta viết lại $\vec{u} = -2\vec{i} + 0\vec{j} + 4\vec{k} \Rightarrow \vec{u} = (-2; 0; 4)$.
+  + Độ dài vectơ $\vec{u}$ là $\|\vec{u}\| = \sqrt{(-2)^2 + 0^2 + 4^2} = \sqrt{4 + 16} = \sqrt{20} = 2\sqrt{5}$.
+  + **Chọn A.** *(Mẹo Casio fx-580VN X: Bấm $[Menu] [5] [1] [3]$ nhập vectơ $\vec{u}$, sau đó bấm $[OPTN] [2] \to \text{Abs(VctA)}$ cho kết quả xấp xỉ $4,472 = 2\sqrt{5}$).*
+
+##### Dạng 2: Tìm tọa độ hình chiếu vuông góc và điểm đối xứng qua trục, mặt phẳng tọa độ
+- **Phương pháp giải:**
+  + Xác định rõ đề hỏi **hình chiếu vuông góc** (giữ nguyên tên trục/mp, các thành phần còn lại $= 0$) hay **điểm đối xứng** (giữ nguyên tên trục/mp, các thành phần còn lại đổi dấu).
+  + Đối với câu hỏi tính khoảng cách từ $M(x_0; y_0; z_0)$ đến mặt phẳng tọa độ: $d(M, (Oxy)) = |z_0|$; đến trục $Ox$: $d(M, Ox) = \sqrt{y_0^2 + z_0^2}$.
+- **Ví dụ mẫu 2:** Trong không gian $Oxyz$, cho điểm $M(-2; 5; 3)$. Gọi $M_1$ là hình chiếu vuông góc của $M$ lên trục $Oy$ và $M_2$ là điểm đối xứng với $M$ qua mặt phẳng $(Oxz)$. Tính độ dài đoạn thẳng $M_1 M_2$.
+- *Lời giải chi tiết:*
+  + Hình chiếu vuông góc của $M(-2; 5; 3)$ lên trục $Oy$ là $M_1(0; 5; 0)$ (giữ nguyên $y = 5$, các tọa độ $x, z$ bằng $0$).
+  + Điểm đối xứng với $M(-2; 5; 3)$ qua mặt phẳng $(Oxz)$ là $M_2(-2; -5; 3)$ (giữ nguyên $x = -2, z = 3$, đổi dấu tung độ thành $-5$).
+  + Độ dài đoạn thẳng $M_1 M_2$:
+    $$M_1 M_2 = \sqrt{(-2 - 0)^2 + (-5 - 5)^2 + (3 - 0)^2} = \sqrt{4 + 100 + 9} = \sqrt{113}.$$
+
+##### Dạng 3: Gắn hệ trục tọa độ $Oxyz$ vào khối hình hộp, hình chóp và bài toán mô hình hóa thực tế
+- **Phương pháp giải:**
+  + Chọn gốc $O$ tại đỉnh có $3$ cạnh đôi một vuông góc của hình hộp chữ nhật / hình lập phương (thường chọn $O \equiv A$, trục $Ox$ chứa $AB$, trục $Oy$ chứa $AD$, trục $Oz$ chứa $AA'$).
+  + Xác định tọa độ các đỉnh dựa vào chiều dài cạnh theo đúng quy tắc hình hộp: $C(a; b; 0)$, $B'(a; 0; c)$, $D'(0; b; c)$, $C'(a; b; c)$.
+  + Với bài toán thực tế (flycam, radar, phòng học), gắn mặt đất là $(Oxy)$, phương thẳng đứng hướng lên là $Oz$, đọc đúng đơn vị đo ($m$ hoặc $km$).
+- **Ví dụ mẫu 3 (Vận dụng thực tế):** Một phòng học dạng hình hộp chữ nhật $ABCD.A'B'C'D'$ có chiều dài $AB = 8\text{ m}$, chiều rộng $AD = 6\text{ m}$, chiều cao $AA' = 4\text{ m}$. Chọn hệ trục tọa độ $Oxyz$ sao cho $A \equiv O(0; 0; 0)$, tia $Ox$ trùng tia $AB$, tia $Oy$ trùng tia $AD$, tia $Oz$ trùng tia $AA'$ (đơn vị trên mỗi trục là $1\text{ m}$). Một chiếc đèn chiếu được gắn tại tâm $I$ của trần nhà $A'B'C'D'$. Xác định tọa độ của đèn $I$ và khoảng cách từ công tắc đặt tại $B$ đến đèn $I$.
+- *Lời giải chi tiết:*
+  + Từ cách chọn hệ trục tọa độ ta có: $A(0; 0; 0)$, $B(8; 0; 0)$, $D(0; 6; 0)$, $A'(0; 0; 4)$, $C'(8; 6; 4)$.
+  + Tâm $I$ của mặt trần $A'B'C'D'$ là trung điểm của đường chéo $A'C'$ nên:
+    $$I\left(\frac{0 + 8}{2}; \frac{0 + 6}{2}; \frac{4 + 4}{2}\right) = I(4; 3; 4).$$
+  + Khoảng cách từ công tắc $B(8; 0; 0)$ đến đèn $I(4; 3; 4)$ là:
+    $$BI = \sqrt{(4 - 8)^2 + (3 - 0)^2 + (4 - 0)^2} = \sqrt{16 + 9 + 16} = \sqrt{41} \approx 6,4\text{ m}.$$
+
+**c) Sản phẩm:** Bài làm hoàn chỉnh của học sinh trên bảng phụ và vở ghi cho cả $3$ dạng toán trọng tâm.
+
+**d) Tổ chức thực hiện:**
+- *Bước 1 (Chuyển giao nhiệm vụ):* GV chia lớp thành $4$ nhóm; nhóm $1, 2$ xử lý Ví dụ mẫu $1, 2$; nhóm $3, 4$ xử lý Ví dụ mẫu $3$ (riêng lớp $12A_1, 12A_2, 12A_3$ bổ sung yêu cầu mô tả thêm bài toán tìm điểm trên trục sao cho tổng bình phương khoảng cách nhỏ nhất).
+- *Bước 2 (Thực hiện nhiệm vụ):* Học sinh làm việc nhóm trong $10$ phút, sử dụng bảng phụ để trình bày lời giải chi tiết.
+- *Bước 3 (Báo cáo, thảo luận):* Đại diện nhóm lên bảng thuyết trình, sử dụng máy tính Casio kiểm chứng độ dài vectơ; các nhóm khác phản biện.
+- *Bước 4 (Kết luận, nhận định):* GV nhận xét bài làm, nhấn mạnh quy trình chọn hệ trục tối ưu cho bài toán thực tế.
+
+---
+
+### HOẠT ĐỘNG 4: VẬN DỤNG, NHẬN DIỆN BẪY ĐỀ THI VÀ HƯỚNG DẪN TỰ HỌC ($10$ phút – Cuối Tiết 18)
+
+**a) Mục tiêu:** Hình thành kỹ năng phòng tránh sai sót kinh điển trong phòng thi và hướng dẫn học sinh tự luyện **Phiếu học tập Bài 7** ở nhà.
+
 **b) Nội dung:**
+1. **Nhận diện $5$ bẫy sai lầm kinh điển trong đề thi:**
+   - *Bẫy 1 (Đảo thứ tự $\vec{i}, \vec{j}, \vec{k}$ hoặc khuyết thành phần):* Viết $\vec{u} = 3\vec{k} - 2\vec{i}$ nhưng học sinh vội chọn $(3; -2; 0)$ thay vì $(-2; 0; 3)$.
+   - *Bẫy 2 (Nhầm chiếu lên trục với chiếu lên mặt phẳng):* Chiếu $M(x_0; y_0; z_0)$ lên $Ox$ là $(x_0; 0; 0)$, không phải $(0; y_0; z_0)$.
+   - *Bẫy 3 (Nhầm hình chiếu với điểm đối xứng):* Quên đổi dấu hoặc cho bằng $0$ nhầm quy tắc.
+   - *Bẫy 4 (Sai hướng tia hệ trục trong bài toán gắn tọa độ):* Không kiểm tra đỉnh nằm trên tia dương hay tia âm của trục $Ox, Oy, Oz$ dẫn đến sai dấu tọa độ.
+   - *Bẫy 5 (Làm tròn số trong Phần III Trả lời ngắn):* Không đọc kỹ yêu cầu làm tròn đến hàng đơn vị hay hàng phần mười, hoặc quên bình phương khi đề hỏi $HK^2$.
+2. **Hướng dẫn tự học:**
+   - Hoàn thành trọn vẹn **Phiếu học tập tự luyện Bài 7** theo đúng cấu trúc đề thi TN THPT mới ($3$ phần).
+   - Dùng phần mềm **GeoGebra 3D** nhập tọa độ các điểm $A, B, C, M$ để kiểm tra trực quan lại hình chiếu và điểm đối xứng.
+   - Chuẩn bị trước nội dung **Bài 8: Biểu thức tọa độ của các phép toán vectơ** (Tiết PPCT $19 - 20$).
 
-##### Dạng 1: Đọc bảng biến thiên hoặc đồ thị để xác định khoảng đơn điệu và cực trị
-- **Ví dụ mẫu 1:** Cho hàm số $y = f(x)$ liên tục trên $\mathbb{R}$ và có bảng biến thiên:
-$$\begin{array}{c|ccccccc}
-x & -\infty & & -2 & & 1 & & +\infty \\
-\hline
-f'(x) & & + & 0 & - & 0 & + & \\
-\hline
-& & & 4 & & & & +\infty \\
-f(x) & & \nearrow & & \searrow & & \nearrow & \\
-& -\infty & & & & -3 & &
-\end{array}$$
-Mệnh đề nào sau đây là đúng?  
-A. Hàm số nghịch biến trên khoảng $(-\infty; 1)$.  
-B. Hàm số đạt cực đại tại điểm $x = 4$.  
-C. Giá trị cực tiểu của hàm số đã cho bằng $-3$.  
-D. Điểm cực tiểu của đồ thị hàm số là $x = 1$.  
-*Lời giải chi tiết:*  
-- Dựa vào BBT: $f'(x) < 0$ với mọi $x \in (-2; 1) \Rightarrow$ Hàm số nghịch biến trên $(-2; 1)$, suy ra A sai.  
-- Hàm số đạt cực đại tại điểm $x = -2$, giá trị cực đại $y_{CĐ} = 4 \Rightarrow$ B sai.  
-- Hàm số đạt cực tiểu tại $x = 1$, giá trị cực tiểu $y_{CT} = -3 \Rightarrow$ **C đúng.**  
-- Điểm cực tiểu của đồ thị hàm số là tọa độ $(1; -3)$, không phải là $x = 1 \Rightarrow$ D sai.  
-**Chọn C.**
+**c) Sản phẩm:** Bản ghi chú $5$ bẫy thường gặp và bài làm hoàn chỉnh của Phiếu học tập tự luyện Bài 7 vào buổi ôn tập kế tiếp.
+
+**d) Tổ chức thực hiện:**
+- *Bước 1:* GV chiếu nhanh $5$ tình huống bẫy trắc nghiệm, yêu cầu HS giơ thẻ đáp án nhanh trong $30$ giây.
+- *Bước 2:* HS phản hồi, tự phát hiện lỗi sai của bản thân nếu chọn nhầm.
+- *Bước 3:* GV phát Phiếu học tập tự luyện Bài 7, dặn dò thời gian tự bấm giờ làm bài ở nhà ($30$ phút) và quy tắc tô phiếu Trả lời ngắn.
+- *Bước 4:* GV chốt toàn bộ kiến thức bài học và nhận xét tinh thần học tập của lớp.
 
 ---
 
-##### Dạng 2: Xét tính đơn điệu và cực trị của hàm số cho bởi công thức tường minh
-- **Ví dụ mẫu 2:** Tìm khoảng nghịch biến của hàm số $y = -x^3 + 3x^2 + 9x - 5$.  
-A. $(-\infty; -1)$ và $(3; +\infty)$.  
-B. $(-1; 3)$.  
-C. $(-\infty; 3)$.  
-D. $(-1; +\infty)$.  
-*Lời giải chi tiết:*  
-Tập xác định $D = \mathbb{R}$. Đạo hàm $y' = -3x^2 + 6x + 9$.  
-Cho $y' = 0 \Leftrightarrow -3(x^2 - 2x - 3) = 0 \Leftrightarrow x = -1$ hoặc $x = 3$.  
-Hệ số $a = -3 < 0$, theo quy tắc xét dấu tam thức bậc hai:  
-$y' < 0 \Leftrightarrow x \in (-\infty; -1) \cup (3; +\infty)$.  
-Vậy hàm số nghịch biến trên các khoảng $(-\infty; -1)$ và $(3; +\infty)$. **Chọn A.**
+## IV. PHIẾU HỌC TẬP TỰ LUYỆN BÀI 7: HỆ TRỤC TỌA ĐỘ TRONG KHÔNG GIAN
+*Họ và tên học sinh: .................................................... Lớp: 12..... Điểm: .......... / 10*
 
-**c) Sản phẩm:** Lời giải chi tiết của học sinh vào vở.  
-**d) Tổ chức thực hiện:** GV phân tích phương pháp, gọi HS giải chi tiết, chuẩn hóa câu trả lời.
+### PHẦN I. CÂU TRẮC NGHIỆM NHIỀU PHƯƠNG ÁN LỰA CHỌN ($3,0$ điểm - Mỗi câu $0,5$ điểm)
 
----
+**Câu 1.** Trong không gian $Oxyz$, cho vectơ $\vec{u} = 2\vec{i} - 3\vec{j} + 5\vec{k}$. Tọa độ của vectơ $\vec{u}$ là:
+A. $\vec{u} = (2; -3; 5)$
+B. $\vec{u} = (2; 3; 5)$
+C. $\vec{u} = (-2; 3; -5)$
+D. $\vec{u} = (2; -3; -5)$
 
-### TIẾT 2: CHUYÊN ĐỀ PHÂN HÓA THAM SỐ $m$ VÀ TOÁN VẬN DỤNG CAO (45 phút)
+**Câu 2.** Trong không gian $Oxyz$, cho vectơ $\vec{a} = -\vec{i} + 4\vec{k}$. Tọa độ của vectơ $\vec{a}$ là:
+A. $\vec{a} = (-1; 4; 0)$
+B. $\vec{a} = (-1; 0; 4)$
+C. $\vec{a} = (0; -1; 4)$
+D. $\vec{a} = (1; 0; -4)$
 
-#### Hoạt động 2 (tiếp theo): Bài toán tham số $m$ (45 phút)
+**Câu 3.** Trong không gian $Oxyz$, cho điểm $M(3; -2; 7)$. Hình chiếu vuông góc của $M$ lên mặt phẳng $(Oxy)$ có tọa độ là:
+A. $(3; 0; 7)$
+B. $(0; -2; 7)$
+C. $(3; -2; 0)$
+D. $(3; 0; 0)$
 
-##### Dạng 3: Tìm tham số $m$ để hàm số phân thức bậc nhất/bậc nhất đơn điệu trên từng khoảng xác định
-- **Phương pháp:** Cho hàm số $y = \frac{ax + b}{cx + d}$ ($ad - bc \ne 0$, $c \ne 0$).  
-  Tập xác định $D = \mathbb{R} \setminus \{-\frac{d}{c}\}$. Đạo hàm $y' = \frac{ad - bc}{(cx + d)^2}$.  
-  + Hàm số đồng biến trên từng khoảng xác định $\Leftrightarrow y' > 0, \forall x \ne -\frac{d}{c} \Leftrightarrow ad - bc > 0$.  
-  + Hàm số nghịch biến trên từng khoảng xác định $\Leftrightarrow y' < 0, \forall x \ne -\frac{d}{c} \Leftrightarrow ad - bc < 0$.  
-  *(Lưu ý cực kỳ quan trọng: Tuyệt đối không có dấu bằng $\ge 0$ hay $\le 0$).*
-- **Ví dụ mẫu 3:** Cho hàm số $y = \frac{x - m + 2}{x + 2m}$ ($m$ là tham số thực). Có bao nhiêu giá trị nguyên của $m$ thuộc $[-5; 5]$ để hàm số đã cho đồng biến trên từng khoảng xác định của nó?  
-A. $4$.  
-B. $5$.  
-C. $6$.  
-D. $7$.  
-*Lời giải chi tiết:*  
-Tập xác định $D = \mathbb{R} \setminus \{-2m\}$. Đạo hàm $y' = \frac{1 \cdot (2m) - 1 \cdot (-m + 2)}{(x + 2m)^2} = \frac{3m - 2}{(x + 2m)^2}$.  
-Hàm số đồng biến trên từng khoảng xác định $\Leftrightarrow y' > 0, \forall x \ne -2m \Leftrightarrow 3m - 2 > 0 \Leftrightarrow m > \frac{2}{3}$.  
-Vì $m \in [-5; 5]$ và $m \in \mathbb{Z} \Rightarrow m \in \{1; 2; 3; 4; 5\}$. Có $5$ giá trị nguyên thỏa mãn. **Chọn B.**
+**Câu 4.** Trong không gian $Oxyz$, cho điểm $A(1; 4; -5)$. Hình chiếu vuông góc của điểm $A$ lên trục $Oy$ có tọa độ là:
+A. $(0; 4; 0)$
+B. $(1; 0; 0)$
+C. $(0; 0; -5)$
+D. $(1; 0; -5)$
 
----
+**Câu 5.** Trong không gian $Oxyz$, cho điểm $M(-2; 5; 3)$. Điểm $M'$ đối xứng với $M$ qua mặt phẳng tọa độ $(Oxz)$ có tọa độ là:
+A. $M'(-2; -5; 3)$
+B. $M'(2; 5; 3)$
+C. $M'(-2; 5; -3)$
+D. $M'(2; -5; -3)$
 
-##### Dạng 4: Bài toán tham số $m$ đơn điệu trên khoảng (Dành cho nhóm lớp $12A_1, 12A_2, 12A_3$)
-- **Phương pháp cô lập tham số:** Đưa bất phương trình về dạng $m \ge g(x), \forall x \in (a; b) \Leftrightarrow m \ge \max_{[a; b]} g(x)$ (hoặc $m \le g(x) \Leftrightarrow m \le \min_{[a; b]} g(x)$).
-- **Ví dụ mẫu 4:** Tìm tất cả các giá trị thực của tham số $m$ để hàm số $y = x^3 - 3x^2 + (m - 1)x + 2026$ đồng biến trên khoảng $(2; +\infty)$.  
-A. $m \ge 4$.  
-B. $m > 4$.  
-C. $m \le 4$.  
-D. $m \ge 1$.  
-*Lời giải chi tiết:*  
-Ta có $y' = 3x^2 - 6x + m - 1$.  
-Hàm số đồng biến trên $(2; +\infty) \Leftrightarrow y' \ge 0, \forall x \in (2; +\infty) \Leftrightarrow 3x^2 - 6x + m - 1 \ge 0, \forall x \in (2; +\infty)$.  
-Cô lập $m$: $m \ge -3x^2 + 6x + 1 = g(x), \forall x \in (2; +\infty)$.  
-Khảo sát hàm số $g(x) = -3x^2 + 6x + 1$ trên $(2; +\infty)$:  
-$g'(x) = -6x + 6 = -6(x - 1) < 0, \forall x > 2$.  
-Hàm số $g(x)$ nghịch biến trên $(2; +\infty)$, suy ra $g(x) < g(2) = -3(4) + 12 + 1 = 1$.  
-Vậy để $m \ge g(x), \forall x > 2$ thì $m \ge 1$. **Chọn D.**
+**Câu 6.** Trong không gian $Oxyz$, cho điểm $B(4; -1; 6)$. Điểm $B'$ đối xứng với $B$ qua trục cao $Oz$ có tọa độ là:
+A. $B'(-4; 1; 6)$
+B. $B'(-4; 1; -6)$
+C. $B'(4; -1; -6)$
+D. $B'(4; 1; 6)$
 
 ---
 
-### TIẾT 3: LUYỆN TẬP ĐỊNH DẠNG MỚI, THỦ THUẬT CASIO VÀ TỔNG KẾT (45 phút)
+### PHẦN II. CÂU TRẮC NGHIỆM ĐÚNG / SAI ($4,0$ điểm - Mỗi ý đúng/sai $0,25$đ; $1$ câu trọn vẹn $1,0$đ)
 
-#### Hoạt động 3: Luyện tập theo hệ thống câu hỏi định dạng đề thi mới (20 phút)
-**a) Mục tiêu:** Rèn luyện phản xạ giải đề thi TN THPT theo đúng 3 phần: Trắc nghiệm 4 lựa chọn, Trắc nghiệm Đúng/Sai, Trả lời ngắn.  
-**b) Nội dung:** Học sinh chia nhóm làm việc trên Phiếu học tập số 2 (Phần II và III).  
-**c) Sản phẩm:** Bảng nhóm ghi lời giải chi tiết và đáp số.  
-**d) Tổ chức thực hiện:**  
-- Bước 1: Giao nhiệm vụ cho 4 nhóm (nhóm 1, 2 giải câu Đúng/Sai; nhóm 3, 4 giải câu Trả lời ngắn).  
-- Bước 2: Học sinh thảo luận nhóm, giải thích vì sao từng ý Đúng hay Sai.  
-- Bước 3: Đại diện 2 nhóm lên bảng thuyết trình.  
-- Bước 4: Giáo viên chuẩn hóa đáp án và biểu điểm chi tiết.
+**Câu 1.** Trong không gian $Oxyz$, cho ba điểm $A(2; -1; 3)$, $B(0; 4; -2)$ và $C(-3; 0; 5)$.
+- a) Vectơ $\overrightarrow{OA} = 2\vec{i} - \vec{j} + 3\vec{k}$.
+- b) Điểm $B$ nằm trên mặt phẳng tọa độ $(Oyz)$.
+- c) Hình chiếu của điểm $A$ lên trục $Ox$ là điểm $H(2; -1; 0)$.
+- d) Điểm đối xứng của $C$ qua mặt phẳng $(Oxy)$ là $C'(-3; 0; -5)$.
 
----
-
-#### Hoạt động 4: Kỹ năng máy tính cầm tay (Casio fx-580VN X) và Nhận diện bẫy đề thi (15 phút)
-**a) Kỹ năng Casio:**
-1. *Dò bảng TABLE kiểm tra tính đơn điệu:* Bấm $[Menu] [8]$, nhập $f(x)$, thiết lập $Start, End, Step = \frac{End - Start}{29}$. Nếu giá trị cột $f(x)$ tăng liên tục $\Rightarrow$ đồng biến; giảm liên tục $\Rightarrow$ nghịch biến.
-2. *Kiểm tra điểm cực trị:* Bấm $[SHIFT] [\int]$, nhập hàm số, tính đạo hàm tại $x_0 \Rightarrow$ kết quả xấp xỉ $0$. Sau đó tính tại $x_0 \pm 0.001$ để kiểm tra đổi dấu.
-**b) Nhận diện bẫy thường gặp:**
-- Không kết luận đồng biến trên $\mathbb{R} \setminus \{x_0\}$ hay dùng dấu $\cup$.
-- Nhầm lẫn giữa đồ thị hàm số $y = f(x)$ và đồ thị đạo hàm $y = f'(x)$.
-- Điểm cực trị là nghiệm bội lẻ của $f'(x) = 0$; nghiệm bội chẵn thì không đổi dấu nên không sinh ra cực trị.
+**Câu 2.** Cho hình hộp chữ nhật $ABCD.A'B'C'D'$ có đỉnh $A$ trùng với gốc tọa độ $O(0; 0; 0)$. Đỉnh $B$ nằm trên tia $Ox$ sao cho $AB = 3$, đỉnh $D$ nằm trên tia $Oy$ sao cho $AD = 4$, đỉnh $A'$ nằm trên tia $Oz$ sao cho $AA' = 5$.
+- a) Tọa độ của điểm $B$ là $B(3; 0; 0)$ và điểm $D$ là $D(0; 4; 0)$.
+- b) Tọa độ đỉnh $C$ là $C(3; 4; 0)$.
+- c) Vectơ $\overrightarrow{AC'}$ có tọa độ là $(3; 4; 5)$.
+- d) Tọa độ tâm $O'$ của mặt đáy $A'B'C'D'$ là $\left(\frac{3}{2}; 2; 0\right)$.
 
 ---
 
-#### Hoạt động 5: Vận dụng và Hướng dẫn tự học ở nhà (10 phút)
-- Hoàn thành đầy đủ các bài tập còn lại trong Phiếu học tập số 2 vào vở tự học.
-- Đọc trước nội dung **Bài 2. Giá trị lớn nhất và giá trị nhỏ nhất của hàm số** (Tiết 4 – 5).
+### PHẦN III. CÂU TRẮC NGHIỆM TRẢ LỜI NGẮN ($3,0$ điểm - Mỗi câu $1,0$ điểm)
 
----
+**Câu 1.** Trong không gian $Oxyz$, cho vectơ $\vec{u} = 3\vec{i} - 2\vec{j} + \sqrt{11}\vec{k}$. Tính độ dài của vectơ $\vec{u}$ *(làm tròn kết quả đến hàng phần mười)*.
 
-## IV. PHỤ LỤC: HỆ THỐNG PHIẾU HỌC TẬP VÀ ĐÁP ÁN CHI TIẾT
+**Câu 2.** Trong không gian $Oxyz$, cho điểm $M(2; -5; 4)$. Gọi $H$ là hình chiếu vuông góc của $M$ lên trục $Oz$ và $K$ là hình chiếu vuông góc của $M$ lên mặt phẳng $(Oyz)$. Tính bình phương độ dài đoạn thẳng $HK^2$.
 
-### 1. NỘI DUNG PHIẾU HỌC TẬP SỐ 2 (RÈN LUYỆN ĐỊNH DẠNG MỚI)
+**Câu 3.** Một flycam khảo sát địa hình đang bay ở độ cao $85\text{ m}$ so với mặt đất. Thiết lập hệ trục $Oxyz$ sao cho mặt đất là mặt phẳng $(Oxy)$, trục $Oz$ hướng thẳng đứng lên trời (đơn vị trên các trục là mét). Flycam đang ở vị trí $M$ có hình chiếu vuông góc xuống mặt đất là điểm có tọa độ $(120; 160; 0)$. Khoảng cách từ điểm xuất phát $O(0; 0; 0)$ đến vị trí $M$ của flycam bằng bao nhiêu mét? *(làm tròn kết quả đến hàng đơn vị)*.
 
-#### PHẦN I. Câu trắc nghiệm nhiều phương án lựa chọn (Thí sinh trả lời từ câu 1 đến câu 6)
+## V. BẢNG ĐÁP ÁN VÀ HƯỚNG DẪN GIẢI CHI TIẾT
 
-**Câu 1 (NB):** Cho hàm số $y = f(x)$ có bảng biến thiên:
-$$\begin{array}{c|ccccccc}
-x & -\infty & & -1 & & 2 & & +\infty \\
-\hline
-f'(x) & & - & 0 & + & 0 & - & \\
-\hline
-& +\infty & & & & 3 & & \\
-f(x) & & \searrow & & \nearrow & & \searrow & \\
-& & & -2 & & & & -\infty
-\end{array}$$
-Mệnh đề nào dưới đây đúng?  
-A. Hàm số đồng biến trên khoảng $(-\infty; 3)$.  
-B. Hàm số nghịch biến trên khoảng $(-1; 2)$.  
-C. Hàm số đồng biến trên khoảng $(-1; 2)$.  
-D. Hàm số nghịch biến trên khoảng $(-2; 3)$.
+### 1. Bảng đáp án nhanh
 
-**Câu 2 (NB):** Cho hàm số $y = f(x)$ có đạo hàm $f'(x) = x(x - 1)(x + 2)^3$ với mọi $x \in \mathbb{R}$. Số điểm cực trị của hàm số đã cho là:  
-A. $1$.  
-B. $2$.  
-C. $3$.  
-D. $5$.
+| Phần | Đáp án chuẩn |
+| :--- | :--- |
+| **Phần I (Trắc nghiệm ABCD)** | **Câu 1:** A \| **Câu 2:** B \| **Câu 3:** C \| **Câu 4:** A \| **Câu 5:** A \| **Câu 6:** A |
+| **Phần II (Đúng / Sai)** | • **Câu 1:** a) **Đúng** \| b) **Đúng** \| c) **Sai** \| d) **Đúng**<br/>• **Câu 2:** a) **Đúng** \| b) **Đúng** \| c) **Đúng** \| d) **Sai** |
+| **Phần III (Trả lời ngắn)** | **Câu 1:** $4,9$ \| **Câu 2:** $25$ \| **Câu 3:** $217$ |
 
-**Câu 3 (TH):** Cho hàm số bậc ba $y = ax^3 + bx^2 + cx + d$ có đồ thị đạt cực đại tại $(-1; 3)$ và cực tiểu tại $(1; -1)$. Điểm cực tiểu của đồ thị hàm số đã cho có tọa độ là:  
-A. $(1; -1)$.  
-B. $(-1; 3)$.  
-C. $x = 1$.  
-D. $y = -1$.
+### 2. Lời giải chi tiết từng bước
 
-**Câu 4 (TH):** Cho hàm số $y = \frac{x - 3}{x + 1}$. Khẳng định nào sau đây là đúng?  
-A. Hàm số đồng biến trên khoảng $(-\infty; -1)$.  
-B. Hàm số nghịch biến trên khoảng $(-\infty; +\infty)$.  
-C. Hàm số đồng biến trên $\mathbb{R} \setminus \{-1\}$.  
-D. Hàm số nghịch biến trên $(-1; 3)$.
+#### A. Giải chi tiết Phần I (Trắc nghiệm nhiều phương án lựa chọn)
+- **Câu 1 (Chọn A):** Từ $\vec{u} = 2\vec{i} - 3\vec{j} + 5\vec{k} \Rightarrow \vec{u} = (2; -3; 5)$.
+- **Câu 2 (Chọn B):** Biểu diễn $\vec{a} = -\vec{i} + 0\vec{j} + 4\vec{k}$ (khuyết thành phần $\vec{j}$ nên tung độ bằng $0$) $\Rightarrow \vec{a} = (-1; 0; 4)$.
+- **Câu 3 (Chọn C):** Hình chiếu vuông góc của $M(3; -2; 7)$ lên mặt phẳng $(Oxy)$ giữ nguyên $x = 3, y = -2$ và cho $z = 0 \Rightarrow (3; -2; 0)$.
+- **Câu 4 (Chọn A):** Hình chiếu vuông góc của $A(1; 4; -5)$ lên trục $Oy$ giữ nguyên $y = 4$ và cho $x = z = 0 \Rightarrow (0; 4; 0)$.
+- **Câu 5 (Chọn A):** Điểm đối xứng với $M(-2; 5; 3)$ qua mặt phẳng $(Oxz)$ giữ nguyên $x = -2, z = 3$ và đổi dấu tung độ $y \Rightarrow M'(-2; -5; 3)$.
+- **Câu 6 (Chọn A):** Điểm đối xứng với $B(4; -1; 6)$ qua trục cao $Oz$ giữ nguyên $z = 6$ và đổi dấu $x, y \Rightarrow B'(-4; 1; 6)$.
 
-**Câu 5 (VD):** Tìm tất cả các giá trị của tham số thực $m$ để hàm số $y = \frac{1}{3}x^3 - mx^2 + (m^2 - 4)x + 3$ đạt cực đại tại điểm $x = 1$.  
-A. $m = 1$.  
-B. $m = 3$.  
-C. $m = -1$.  
-D. Không tồn tại $m$.
-
-**Câu 6 (VD - Dành cho nhóm $12A_1, 12A_2, 12A_3$):** Có bao nhiêu giá trị nguyên của tham số $m$ thuộc đoạn $[-5; 5]$ để hàm số $y = \frac{mx - 4}{x - m}$ đồng biến trên khoảng $(1; +\infty)$?  
-A. $2$.  
-B. $3$.  
-C. $4$.  
-D. $5$.
-
----
-
-#### PHẦN II. Câu trắc nghiệm Đúng/Sai (Thí sinh trả lời từ câu 1 đến câu 2)
-
-**Câu 1:** Cho hàm số bậc ba $y = f(x) = ax^3 + bx^2 + cx + d$ ($a \ne 0$) có đồ thị đi qua gốc tọa độ $O(0; 0)$ và đồ thị hàm số đạo hàm $y = f'(x)$ như hình vẽ (parabol có đỉnh tại $(1; -3)$, cắt trục hoành tại hai điểm $x = 0$ và $x = 2$).  
-a) Hàm số $y = f(x)$ nghịch biến trên khoảng $(0; 2)$.  
-b) Hàm số $y = f(x)$ đạt cực đại tại điểm $x = 2$.  
-c) Điểm cực tiểu của hàm số $y = f(x)$ là $x = 2$.  
-d) Trên khoảng $(-\infty; 0)$, giá trị của $f(x)$ luôn nhận giá trị âm.
-
-**Câu 2:** Cho hàm số phân thức $y = f(x) = \frac{x^2 - 2x + 4}{x - 1}$.  
-a) Tập xác định của hàm số là $D = \mathbb{R} \setminus \{1\}$.  
-b) Đạo hàm của hàm số là $f'(x) = \frac{x^2 - 2x - 2}{(x - 1)^2}$.  
-c) Hàm số đạt cực đại tại điểm $x = -1$ và giá trị cực đại tương ứng là $f(-1) = -3$.  
-d) Hàm số đồng biến trên mỗi khoảng $(-\infty; 1 - \sqrt{3})$ và $(1 + \sqrt{3}; +\infty)$.
-
----
-
-#### PHẦN III. Câu trắc nghiệm Trả lời ngắn (Thí sinh trả lời từ câu 1 đến câu 2)
-
-**Câu 1:** Cho hàm số $y = f(x)$ có đạo hàm $f'(x) = (x - 2)^2(x^2 - 4x + 3)(x - 5)$. Hỏi hàm số $y = f(x)$ có bao nhiêu điểm cực trị?  
-*(Điền số nguyên)*
-
-**Câu 2 (VD - Nhóm $12A_1, 12A_2, 12A_3$):** Có bao nhiêu giá trị nguyên của tham số $m$ thuộc khoảng $(-10; 10)$ để hàm số $y = x^3 - 3mx^2 + 3(m^2 - 1)x + 2026$ đồng biến trên khoảng $(2; +\infty)$?  
-*(Điền số nguyên)*
-
----
-
-### 2. ĐÁP ÁN VÀ LỜI GIẢI CHI TIẾT PHIẾU HỌC TẬP SỐ 2
-
-#### PHẦN I: TRẮC NGHIỆM NHIỀU PHƯƠNG ÁN LỰA CHỌN
-- **Câu 1:** Chọn **C**. Vì trên khoảng $(-1; 2)$, $f'(x) > 0$ nên hàm số đồng biến.
-- **Câu 2:** Chọn **C**. Ta có $f'(x) = x(x - 1)(x + 2)^3 = 0 \Leftrightarrow x = 0, x = 1, x = -2$. Cả 3 nghiệm đều là nghiệm bội lẻ (bội 1 và bội 3), do đó đạo hàm đổi dấu khi qua 3 nghiệm này $\Rightarrow$ có $3$ điểm cực trị.
-- **Câu 3:** Chọn **A**. Đề hỏi "Điểm cực tiểu của đồ thị hàm số" nên câu trả lời là một điểm có tọa độ $(1; -1)$.
-- **Câu 4:** Chọn **A**. Tập xác định $D = \mathbb{R} \setminus \{-1\}$. Ta có $y' = \frac{1 \cdot 1 - 1 \cdot (-3)}{(x + 1)^2} = \frac{4}{(x + 1)^2} > 0, \forall x \ne -1$. Do đó hàm số đồng biến trên từng khoảng $(-\infty; -1)$ và $(-1; +\infty)$.
-- **Câu 5:** Chọn **B**. Ta có $y' = x^2 - 2mx + m^2 - 4$. Hàm số đạt cực trị tại $x = 1 \Rightarrow y'(1) = 1 - 2m + m^2 - 4 = 0 \Leftrightarrow m^2 - 2m - 3 = 0 \Leftrightarrow m = -1$ hoặc $m = 3$.  
-  Mặt khác, $y'' = 2x - 2m$. Để đạt cực đại tại $x = 1$ thì $y''(1) < 0 \Leftrightarrow 2 - 2m < 0 \Leftrightarrow m > 1$. Vậy chọn $m = 3$.
-- **Câu 6:** Chọn **C**. Đạo hàm $y' = \frac{-m^2 + 4}{(x - m)^2}$.  
-  Để hàm số đồng biến trên $(1; +\infty)$ thì:
-  $$\begin{cases} y' > 0, \forall x \in (1; +\infty) \\ m \notin (1; +\infty) \end{cases} \Leftrightarrow \begin{cases} -m^2 + 4 > 0 \\ m \le 1 \end{cases} \Leftrightarrow \begin{cases} -2 < m < 2 \\ m \le 1 \end{cases} \Leftrightarrow -2 < m \le 1.$$
-  Vì $m \in \mathbb{Z} \Rightarrow m \in \{-1; 0; 1\}$. Có $3$ giá trị nguyên. (Sửa phương án nếu cần: $m \in \{-1, 0, 1\}$ có $3$ giá trị).
-
-#### PHẦN II: TRẮC NGHIỆM ĐÚNG / SAI
+#### B. Giải chi tiết Phần II (Trắc nghiệm Đúng / Sai)
 - **Câu 1:**
-  + a) **ĐÚNG.** Trên $(0; 2)$, đồ thị $y = f'(x)$ nằm hoàn toàn phía dưới trục hoành nên $f'(x) < 0 \Rightarrow$ hàm số nghịch biến.
-  + b) **SAI.** Khi $x$ đi qua $x = 2$, $f'(x)$ đổi dấu từ âm sang dương $\Rightarrow x = 2$ là điểm cực tiểu, không phải cực đại.
-  + c) **ĐÚNG.** Như giải thích ở ý b, $x = 2$ là điểm cực tiểu của hàm số.
-  + d) **SAI.** Đồ thị đi qua $O(0; 0)$ nên $f(0) = 0$. Trên $(-\infty; 0)$, $f'(x) > 0$ nên hàm số đồng biến. Với $x < 0 \Rightarrow f(x) < f(0) = 0 \Rightarrow$ luôn nhận giá trị âm là khẳng định đúng. (Do đó mệnh đề d là **ĐÚNG**).
-
+  + **Ý a) ĐÚNG:** Theo định nghĩa tọa độ điểm, $A(2; -1; 3) \Leftrightarrow \overrightarrow{OA} = 2\vec{i} - \vec{j} + 3\vec{k}$.
+  + **Ý b) ĐÚNG:** Điểm $B(0; 4; -2)$ có hoành độ $x_B = 0$ nên $B$ thuộc mặt phẳng tọa độ $(Oyz)$.
+  + **Ý c) SAI:** Hình chiếu vuông góc của $A(2; -1; 3)$ lên trục $Ox$ phải là $H(2; 0; 0)$, còn $(2; -1; 0)$ là hình chiếu lên mặt phẳng $(Oxy)$.
+  + **Ý d) ĐÚNG:** Điểm đối xứng của $C(-3; 0; 5)$ qua mặt phẳng $(Oxy)$ giữ nguyên $x, y$ và đổi dấu $z \Rightarrow C'(-3; 0; -5)$.
 - **Câu 2:**
-  + a) **ĐÚNG.** Mẫu số $x - 1 \ne 0 \Leftrightarrow x \ne 1$.
-  + b) **SAI.** $f'(x) = \frac{(2x - 2)(x - 1) - (x^2 - 2x + 4)}{(x - 1)^2} = \frac{2x^2 - 4x + 2 - x^2 + 2x - 4}{(x - 1)^2} = \frac{x^2 - 2x - 2}{(x - 1)^2}$. Khẳng định b ghi đúng biểu thức, do đó ý b là **ĐÚNG**.
-  + c) **SAI.** Điểm cực trị là nghiệm của $x^2 - 2x - 2 = 0 \Leftrightarrow x = 1 \pm \sqrt{3}$, không phải $x = -1$.
-  + d) **ĐÚNG.** Tam thức $x^2 - 2x - 2 > 0 \Leftrightarrow x < 1 - \sqrt{3}$ hoặc $x > 1 + \sqrt{3}$, nên hàm số đồng biến trên các khoảng đó.
+  + **Ý a) ĐÚNG:** Vì $B \in Ox$ và $AB = 3 \Rightarrow B(3; 0; 0)$; $D \in Oy$ và $AD = 4 \Rightarrow D(0; 4; 0)$.
+  + **Ý b) ĐÚNG:** Tứ giác $ABCD$ là hình chữ nhật nằm trong mặt phẳng $(Oxy)$ nên $\overrightarrow{AC} = \overrightarrow{AB} + \overrightarrow{AD} = (3; 4; 0) \Rightarrow C(3; 4; 0)$.
+  + **Ý c) ĐÚNG:** Theo quy tắc hình hộp, $\overrightarrow{AC'} = \overrightarrow{AB} + \overrightarrow{AD} + \overrightarrow{AA'} = (3; 4; 5)$.
+  + **Ý d) SAI:** Tâm $O'$ của mặt đáy $A'B'C'D'$ là trung điểm đoạn $A'C'$ với $A'(0; 0; 5)$ và $C'(3; 4; 5)$ nên có cao độ $z = 5$, tọa độ đúng là $O'\left(\frac{3}{2}; 2; 5\right)$.
 
-#### PHẦN III: TRẢ LỜI NGẮN
-- **Câu 1:** **Đáp số: 2.**  
-  *Giải thích:* $f'(x) = (x - 2)^2 (x - 1)(x - 3)(x - 5) = 0$. Nghiệm $x = 2$ là nghiệm bội chẵn (bội 2) nên không làm đổi dấu đạo hàm. Còn $x = 1, x = 3, x = 5$ là các nghiệm bội lẻ (bội 1). Tổng cộng có $3$ nghiệm bội lẻ $\Rightarrow$ có $3$ điểm cực trị. **Đáp số: 3.**
-- **Câu 2:** **Đáp số: 11.**  
-  *Giải thích:* $y' = 3x^2 - 6mx + 3(m^2 - 1) = 3[x^2 - 2mx + m^2 - 1] = 3(x - m - 1)(x - m + 1)$.  
-  Hai nghiệm của $y' = 0$ là $x_1 = m - 1$ và $x_2 = m + 1$ ($x_1 < x_2$).  
-  Hàm số đồng biến trên $(2; +\infty) \Leftrightarrow x_2 \le 2 \Leftrightarrow m + 1 \le 2 \Leftrightarrow m \le 1$.  
-  Vì $m \in (-10; 10)$ và $m \in \mathbb{Z} \Rightarrow m \in \{-9; -8; -7; -6; -5; -4; -3; -2; -1; 0; 1\}$.  
-  Có tất cả $11$ giá trị nguyên thỏa mãn. **Đáp số: 11.**
+#### C. Giải chi tiết Phần III (Trắc nghiệm Trả lời ngắn)
+- **Câu 1 (Đáp số: $4,9$):**
+  + Tọa độ của vectơ $\vec{u}$ là $\vec{u} = (3; -2; \sqrt{11})$.
+  + Độ dài vectơ $\vec{u}$ là: $\|\vec{u}\| = \sqrt{3^2 + (-2)^2 + (\sqrt{11})^2} = \sqrt{9 + 4 + 11} = \sqrt{24} = 2\sqrt{6} \approx 4,9$.
+- **Câu 2 (Đáp số: $25$):**
+  + Hình chiếu vuông góc của $M(2; -5; 4)$ lên trục $Oz$ là $H(0; 0; 4)$.
+  + Hình chiếu vuông góc của $M(2; -5; 4)$ lên mặt phẳng $(Oyz)$ là $K(0; -5; 4)$.
+  + Suy ra $\overrightarrow{HK} = (0; -5; 0) \Rightarrow HK^2 = 0^2 + (-5)^2 + 0^2 = 25$.
+- **Câu 3 (Đáp số: $217$):**
+  + Vì flycam bay ở độ cao $85\text{ m}$ và có hình chiếu xuống mặt đất $(Oxy)$ là $(120; 160; 0)$ nên tọa độ của flycam là $M(120; 160; 85)$.
+  + Khoảng cách từ gốc xuất phát $O(0; 0; 0)$ đến vị trí $M$ là:
+    $$OM = \sqrt{120^2 + 160^2 + 85^2} = \sqrt{14400 + 25600 + 7225} = \sqrt{47225} \approx 217,31\text{ m} \approx 217\text{ m}.$$
 
----
-
+### PHÊ DUYỆT CỦA TỔ CHUYÊN MÔN
 | **NGƯỜI SOẠN** | **TỔ TRƯỞNG CHUYÊN MÔN DUYỆT** |
 | :---: | :---: |
 | *(Ký và ghi rõ họ tên)* | *(Ký và ghi rõ họ tên)* |

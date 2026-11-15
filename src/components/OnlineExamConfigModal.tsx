@@ -9,7 +9,7 @@ import { apiFetch } from '../lib/apiFetch';
 import { saveExamToCloud } from '../lib/cloudExamStore';
 import { registerExamUrlMapping } from '../lib/smartRouter';
 import { embedTikzSvgsInText } from './TikzRenderer';
-import { sanitizeExamQuestion, cleanOptionText, sanitizeAndPolishMath, stripExamAnswers } from '../lib/utils';
+import { sanitizeExamQuestion, cleanOptionText, sanitizeAndPolishMath, stripExamAnswers, getPublicAppUrl } from '../lib/utils';
 import { 
   STANDARDIZED_EXAM_TYPES, 
   getDefaultDurationForExamType, 
@@ -244,12 +244,10 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
         console.warn("LZString compression notice:", compErr);
       }
 
-      const publicBase = window.location.origin;
-      // Link dạng /exam#data=${hashData}
-      const onlineHashUrl = hashData ? `${publicBase}/exam#data=${hashData}` : `${publicBase}/?pin=${examId}`;
+      const publicBase = getPublicAppUrl() || window.location.origin;
       const shortUrl = `${publicBase}/?pin=${examId}`;
       const fullBackupUrl = hashData 
-        ? `${publicBase}/?pin=${examId}&d=${hashData}`
+        ? `${publicBase}/?pin=${examId}#data=${hashData}`
         : shortUrl;
 
       // Generate QR Code with the short clean URL so QR is sharp, large blocks and scans instantly (<0.2s)
@@ -290,7 +288,7 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
       }
 
       setSharePin(examId);
-      setShareLink(onlineHashUrl);
+      setShareLink(shortUrl);
       setBackupLink(fullBackupUrl);
       setStep('success');
 

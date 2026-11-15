@@ -3,7 +3,6 @@ import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { embedTikzSvgsInText } from "../components/TikzRenderer";
 import { embedBbtSvgsInText, convertBbtTableToSvg, analyzeFunctionToBbt, generateBbtSvg, autoEnrichTextWithVisuals, aiFixQuestionVisuals } from "../lib/bbtRenderer";
 import { apiFetch } from '../lib/apiFetch';
-import { generateContent, generateContentStream } from '../services/geminiService';
 import { aiCacheService, generateHashKey } from '../services/aiCacheService';
 import { asyncEnrichExamQuestions } from '../lib/workerHelper';
 import { AiCacheIndicator } from '../components/AiCacheIndicator';
@@ -1357,7 +1356,15 @@ const [examName, setExamName] = useState("");
 
   const handleAiRegenerateExamQuestion = async (q: Question, idx: number) => {
     try {
-      const { text: resText } = await generateContent({ question: q, mode: 'regenerate', subject, grade });
+      const response = await apiFetch('/api/fix-question', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q, mode: 'regenerate', subject, grade })
+      });
+      const resText = await response.text();
+      if (!response.ok) {
+        throw new Error(resText || `HTTP ${response.status}`);
+      }
       const data = parseApiResponse<any>(resText);
       if (data && data.question) {
         const newQs = [...questions];
@@ -1371,7 +1378,15 @@ const [examName, setExamName] = useState("");
 
   const handleAiReplaceExamQuestion = async (q: Question, idx: number) => {
     try {
-      const { text: resText } = await generateContent({ question: q, mode: 'replace_similar', subject, grade });
+      const response = await apiFetch('/api/fix-question', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q, mode: 'replace_similar', subject, grade })
+      });
+      const resText = await response.text();
+      if (!response.ok) {
+        throw new Error(resText || `HTTP ${response.status}`);
+      }
       const data = parseApiResponse<any>(resText);
       if (data && data.question) {
         const newQs = [...questions];
@@ -1749,8 +1764,25 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
         }
       }
 
-      const { text: resText } = await generateContent(requestPayload);
+      const response = await apiFetch('/api/generate-exam', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestPayload)
+      });
+      const resText = await response.text();
+      if (!response.ok) {
+        let errMsg = resText;
+        try {
+          const parsedErr = JSON.parse(resText);
+          errMsg = parsedErr?.error?.message || parsedErr?.error || parsedErr?.message || errMsg;
+        } catch (_) {}
+        throw new Error(errMsg || `Lỗi từ máy chủ API (HTTP ${response.status})`);
+      }
       const data = parseApiResponse<any>(resText);
+      if (data?.error && (!Array.isArray(data?.questions) || data.questions.length === 0)) {
+        const serverErr = typeof data.error === 'string' ? data.error : (data.error?.message || JSON.stringify(data.error));
+        throw new Error(serverErr);
+      }
       if (data && Array.isArray(data.questions) && data.questions.length > 0) {
         setExamName(data.examName || "Đề kiểm tra");
         
@@ -4639,10 +4671,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                                         }
                                     } catch (e) {}
 
-                                    try {
-                                        fetch(`https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/jaku8xjm/${encodeURIComponent(examId.toUpperCase())}/${encodeURIComponent(compressed)}`, { method: 'POST' }).catch(() => {});
-                                        localStorage.setItem(`examCache_${examId}`, JSON.stringify(singleData));
-                                    } catch (e) {}
+                                    await saveExamToCloud(examId, singleData);
 
                                     const finalUrl = `${publicBase}/?pin=${examId}`;
 

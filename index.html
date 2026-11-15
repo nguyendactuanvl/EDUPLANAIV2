@@ -81,11 +81,12 @@
         // 0. Remove invalid control characters (except newline, tab, carriage return) that cause rendering failures
         s = s.replace(/[\x00-\x08\x0B\x0E-\x1F\x7F-\x9F]/g, '');
 
-        // 0. Strip leading spaces/tabs (indented code blocks) from lines containing math or worksheet headers
+        // 0. Strip leading spaces/tabs (indented code blocks) outside fenced blocks
         if (!isInnerMath) {
-          s = s.replace(/^[ \t]{2,8}(?=\$\$|\$|\\begin|\\end|\\frac|\\sqrt|\\vec|\\Left|\\Right|\\iff|\\implies|\*{0,2}(?:Câu|Bài)\s*\d+|#{1,4}|PHẦN|Lời giải|Đáp án|Hệ|Ta có|Suy ra|Do đó|[a-d]\))/gm, '');
+          s = s.replace(/^[ \t]{4,}(?=[-*+•]\s|\d+\.\s)/gm, '  ');
+          s = s.replace(/^[ \t]{2,8}(?![-*+•]\s|\d+\.\s)/gm, '');
           s = s.replace(/\${3,}/g, function(m) { return m.length % 2 === 1 ? '$' : '$$'; });
-          s = s.replace(/(?<!\$)\$\s*\$(?!\$)/g, '');
+          s = s.replace(/^[ \t]*\$\$[ \t]*\$\$[ \t]*$/gm, '');
         }
 
         // 0.0001 Restore missing backslashes on TeX environment tags
@@ -207,8 +208,7 @@
         s = s.replace(/Missing\s*\\?(?:begin|end)\{cases\}(?:\s*or\s*extra\s*\\?(?:begin|end)\{cases\})?/gi, '');
         s = s.replace(/Missing\s*\\?\{[^{}]*\}/gi, '');
         if (!isInnerMath) {
-          s = s.replace(/\$\$\s*[\r\n]*\s*\$\$/g, '');
-          s = s.replace(/(?<!\$)\$\s*[\r\n]*\s*\$(?!\$)/g, '');
+          s = s.replace(/^[ \t]*\$\$[ \t\r\n]*\$\$[ \t]*$/gm, '');
           s = s.replace(/(?:^|\n)\s*(?:SS|S)?0?\s*\$\.\s*/gi, '\n');
           s = s.replace(/(?:^|\n)\s*SS0\.\s*\*{0,2}Câu\s*\d+:?\*{0,2}SS\s*/gi, '\n');
           s = s.replace(/(?:^|\n)\s*d\$\.\s*/gi, '\n');
@@ -229,14 +229,15 @@
         s = s.replace(/\\frac\s+([\+\-]?[0-9a-zA-Z_\^\(\)\+\-\s]+)\}\s*\{([^{}\$\n]+)\}/g, '\\frac{$1}{$2}');
         s = s.replace(/\\frac\s*\{([^{}\$\n]+)\}\s+([\+\-]?[0-9a-zA-Z_\^\(\)\+\-\s]+)\}/g, '\\frac{$1}{$2}');
 
-        // 1.25. Auto-heal missing closing braces before $ or $.
+        // 1.25. Heal previously corrupted \le ft -> \left, \ne arrow -> \nearrow, S_{\Delta} ABC} -> S_{\Delta ABC}
+        s = s.replace(/\\le\s+ft\b/g, '\\left');
+        s = s.replace(/\\ne\s+arrow\b/g, '\\nearrow');
+        s = s.replace(/\\ne\s+q\b/g, '\\neq');
+        s = s.replace(/([SV]_\{\\Delta)\}\s*([A-Z]+)\}/g, '$1 $2}');
+        s = s.replace(/([SV]_\{[^{}]+)\}\s*([A-Z']{2,6})\}/g, '$1 $2}');
+        s = s.replace(/\^\}\s*(\d+)\}/g, '^$1}');
         if (!isInnerMath) {
           s = s.replace(/(\\vec\{[A-Za-z0-9_'\^]+?)\s*\$/g, '$1}$');
-          s = s.replace(/(\\frac\{(?:[^{}]|\{[^{}]*\})+\}\{[^{}\$\n]+?)\s*\$/g, '$1}$');
-          s = s.replace(/(\\sqrt(?:\[[^\]]*\])?\{[^{}\$\n]+?)\s*\$/g, '$1}$');
-          s = s.replace(/(\\(?:text|mathrm|mathbf)\{[^{}\$\n]+?)\s*\$/g, '$1}$');
-          s = s.replace(/([uSa-zA-Z]_\{[^{}\$\n]+?)\s*\$/g, '$1}$');
-          s = s.replace(/(\^\{[^{}\$\n]+?)\s*\$/g, '$1}$');
         }
 
         // 1.3. Rejoin split fraction numerators and denominators split across lines
@@ -247,10 +248,12 @@
         }
         s = s.replace(/(\\frac\{[^{}]*\}\{[^{}]*\})\s*[\r\n]+\s*\\cdot\s*/gi, '$1 \\cdot ');
 
-        // 1.4. Unwrap $$ accidentally enclosing markdown headings, question labels, or section titles
+        // 1.4. Unwrap $$ accidentally enclosing markdown headings, question labels, or prose
         if (!isInnerMath) {
           s = s.replace(/\$\$([\s\S]*?)\$\$/g, function(fullMatch, body) {
-            if (/(?:#{1,6}\s+|(?:\*{0,2})(?:Câu|Bài)\s*\d+[:\.]?|PHẦN\s*(?:[1-4]|I{1,3}|IV)|^\s*[-*]\s+\*\*[A-D]\.\*\*|^\s*[a-d]\))/m.test(body)) {
+            var stripped = body.replace(/\\text\{[^{}]*\}/g, '');
+            var vnLetters = (stripped.match(/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/gi) || []).length;
+            if (/(?:#{1,6}\s+|(?:\*{0,2})(?:Câu|Bài)\s*\d+[:\.]?|PHẦN\s*(?:[1-4]|I{1,3}|IV)|^\s*[-*]\s+\*\*[A-D]\.\*\*|^\s*[a-d]\)|\n\s*\n)/m.test(body) || vnLetters > 20) {
               return body.replace(/\$\$/g, '');
             }
             return fullMatch;
@@ -304,8 +307,10 @@
         s = s.replace(/(?<!\\)\bneq\b/g, '\\neq');
         s = s.replace(/(?<!\\)\bne\b(?=\s*0|\s*\d|\s*\$|\s*[a-zA-Z]|\s*-|\s*\\)/g, '\\neq');
 
-        // 5. Fix missing spaces after comparison operators: \geq0 -> \ge 0, \leq0 -> \le 0, \geqy -> \ge y
-        s = s.replace(/\\(geq|leq|neq|ge|le|ne)([0-9a-zA-Z])/g, '\\$1 $2');
+        // 5. Fix missing spaces after comparison operators WITHOUT corrupting \left, \leftarrow, \nearrow, \neq
+        s = s.replace(/\\(geq|leq|neq)([0-9a-zA-Z])/g, '\\$1 $2');
+        s = s.replace(/\\(ge|le|ne)([0-9])/g, '\\$1 $2');
+        s = s.replace(/\\(ge|le|ne)([xyzmnabckXYZMNABCK])(?![a-zA-Z])/g, '\\$1 $2');
 
         // 6. Fix formfeed and tab characters before LaTeX commands
         s = s.replace(/\x0crac\b/g, '\\frac');
@@ -318,8 +323,10 @@
         s = s.replace(/\\dfrac\b/g, '\\frac');
         s = s.replace(/\\geq\b/g, '\\ge');
         s = s.replace(/\\leq\b/g, '\\le');
-        s = s.replace(/\\ge([0-9a-zA-Z])/g, '\\ge $1');
-        s = s.replace(/\\le([0-9a-zA-Z])/g, '\\le $1');
+        s = s.replace(/\\ge([0-9])/g, '\\ge $1');
+        s = s.replace(/\\le([0-9])/g, '\\le $1');
+        s = s.replace(/\\ge([xyzmnabckXYZMNABCK])(?![a-zA-Z])/g, '\\ge $1');
+        s = s.replace(/\\le([xyzmnabckXYZMNABCK])(?![a-zA-Z])/g, '\\le $1');
         s = s.replace(/\\neq([0-9a-zA-Z])/g, '\\neq $1');
 
         // 8. Fix incomplete fractions \frac{NUM} missing second argument {DENOM}

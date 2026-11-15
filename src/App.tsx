@@ -10,6 +10,8 @@ import { SettingsModal } from "./components/SettingsModal";
 import { UserGuideModal } from "./components/UserGuideModal";
 import { getInitialTheme, applyTheme, ThemeMode } from "./lib/theme";
 import { generateContent, getApiKey } from "./services/geminiService";
+import { Worksheets } from "./pages/Worksheets";
+import { EduAiAssistantWorkspace } from "./pages/EduAiAssistantWorkspace";
 
 function safeLazy<T extends React.ComponentType<any>>(
   factory: () => Promise<any>,
@@ -63,7 +65,6 @@ const EducationalPlan = safeLazy(() => import("./pages/EducationalPlan.tsx"), "E
 const LessonPlan = safeLazy(() => import("./pages/LessonPlan.tsx"), "LessonPlan");
 const Circulars = safeLazy(() => import("./pages/Circulars.tsx"), "Circulars");
 const HistoryPage = safeLazy(() => import("./pages/HistoryPage.tsx"), "HistoryPage");
-const Worksheets = safeLazy(() => import("./pages/Worksheets.tsx"), "Worksheets");
 const ExerciseSolver = safeLazy(() => import('./pages/ExerciseSolver.tsx'), "ExerciseSolver");
 const PdfToWord = safeLazy(() => import('./pages/PdfToWord.tsx'), "PdfToWord");
 const ExamGenerator = safeLazy(() => import('./pages/ExamGenerator.tsx'), "ExamGenerator");
@@ -74,18 +75,15 @@ const WeeklyTimetable = safeLazy(() => import('./pages/WeeklyTimetable.tsx'), "W
 const Gamification = safeLazy(() => import('./pages/Gamification.tsx'), "Gamification");
 const MathTools = safeLazy(() => import('./pages/MathTools.tsx'), "MathTools");
 const DeOnlinePdf = safeLazy(() => import('./pages/DeOnlinePdf.tsx'), "DeOnlinePdf");
-const AiStudioSuite = safeLazy(() => import('./pages/AiStudioSuite.tsx'), "AiStudioSuite");
-const EduPlanInkPage = safeLazy(() => import('./pages/EduPlanInkPage.tsx'), "EduPlanInkPage");
-const MathOCRPage = safeLazy(() => import('./pages/MathOCRPage.tsx'), "MathOCRPage");
-const HsaTsaHub = safeLazy(() => import('./pages/HsaTsaHub.tsx'), "HsaTsaHub");
 const ExamStatsDashboard = safeLazy(() => import('./pages/ExamStatsDashboard.tsx'), "ExamStatsDashboard");
 const OverallAnalyticsDashboard = safeLazy(() => import('./pages/OverallAnalyticsDashboard.tsx'), "OverallAnalyticsDashboard");
 const ExamShufflerView = safeLazy(() => import('./components/ExamShuffler/ExamShufflerView.tsx'), "ExamShufflerView");
 const BiologyWorkspace = safeLazy(() => import('./features/biology/BiologyWorkspace.tsx'), "BiologyWorkspace");
 const PhysicsWorkspace = safeLazy(() => import('./features/physics/PhysicsWorkspace.tsx'), "PhysicsWorkspace");
 const SubjectHubWorkspace = safeLazy(() => import('./features/subjects/SubjectHubWorkspace.tsx'), "SubjectHubWorkspace");
-const SpatialGeometryWorkspace = safeLazy(() => import('./features/spatialGeometry/index.ts').then(m => ({ default: m.SpatialGeometryWorkspace })), "SpatialGeometryWorkspace");
 const GraduationReviewPlanner = safeLazy(() => import('./features/graduationReview/GraduationReviewPlanner.tsx'), "GraduationReviewPlannerModule");
+const IsomorphicExamGenerator = safeLazy(() => import('./features/isomorphicExam/IsomorphicExamGenerator.tsx'), "IsomorphicExamGenerator");
+const OnThiTNTHPTModule = safeLazy(() => import('./components/OnThiTNTHPTModule.tsx'), "OnThiTNTHPTModule");
 
 import { parseExamIdFromLocation, registerExamUrlMapping } from "./lib/smartRouter";
 
@@ -99,10 +97,11 @@ export default function App() {
     if (tabParam === 'chemistry' || tabParam === 'chem' || tabParam === 'hoa') return 'chemistry';
     if (tabParam === 'english' || tabParam === 'eng' || tabParam === 'anh') return 'english';
     if (tabParam === 'subjects_hub' || tabParam === 'hub') return 'subjects_hub';
-    if (tabParam) return tabParam;
+    const removedTabs = new Set(['spatial_geometry', 'hsa_tsa', 'ai_studio', 'math_ocr', 'ink']);
+    if (tabParam && !removedTabs.has(tabParam)) return tabParam;
     try {
       const saved = localStorage.getItem('eduplan_last_active_tab');
-      if (saved) return saved;
+      if (saved && !removedTabs.has(saved)) return saved;
     } catch (_) {}
     return "worksheets";
   });
@@ -396,17 +395,14 @@ export default function App() {
         <div className="flex-1 overflow-y-auto relative w-full h-full">
           <ErrorBoundary key={activeTab}>
             <Suspense fallback={<div className="flex items-center justify-center h-full text-slate-500">Đang tải...</div>}>
-              {activeTab === "hsa_tsa" && <HsaTsaHub />}
-              {activeTab === "math_ocr" && <MathOCRPage />}
-              {activeTab === "ink" && <EduPlanInkPage />}
-              {activeTab === "ai_studio" && <AiStudioSuite />}
+              {activeTab === "edu_ai_assistant" && <EduAiAssistantWorkspace />}
               {activeTab === "khgd" && <EducationalPlan />}
               {activeTab === "khdh" && <LessonPlan />}
               {activeTab === "graduation_review" && <GraduationReviewPlanner />}
+              {activeTab === "on_thi_tn_thpt" && <OnThiTNTHPTModule />}
               {activeTab === "worksheets" && <Worksheets />}
               {activeTab === "exercise" && <ExerciseSolver />}
               {activeTab === "math_tools" && <MathTools />}
-              {activeTab === "spatial_geometry" && <SpatialGeometryWorkspace />}
               {(activeTab === "physics" || activeTab === "physics_toolkit") && <SubjectHubWorkspace initialSubject="physics" />}
               {(activeTab === "chemistry" || activeTab === "chemistry_toolkit") && <SubjectHubWorkspace initialSubject="chemistry" />}
               {activeTab === "biology" && <BiologyWorkspace />}
@@ -418,6 +414,7 @@ export default function App() {
               {activeTab === "timetable" && <WeeklyTimetable />}
               {activeTab === "exam_shuffler" && <ExamShufflerView />}
               {activeTab === "exam" && <ExamGenerator />}
+              {activeTab === "isomorphic_exam" && <IsomorphicExamGenerator />}
               {activeTab === "exam_stats" && <ExamStatsDashboard initialExamId={statsExamId} onBackToExam={() => setActiveTab("exam")} />}
               {activeTab === "overall_dashboard" && <OverallAnalyticsDashboard />}
               {activeTab === "pdf2word" && <PdfToWord />}

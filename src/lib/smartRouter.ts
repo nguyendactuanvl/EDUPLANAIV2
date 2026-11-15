@@ -88,32 +88,6 @@ export function parseExamIdFromLocation(): { examId: string | null; examData: st
   // Hash parsing
   const hashStr = hash.startsWith("#") ? hash.substring(1) : hash;
 
-  let hashExamData: string | null = null;
-  if (hashStr.includes("data=")) {
-    const dataMatch = hashStr.match(/(?:^|[&#?])data=([^&]+)/);
-    if (dataMatch && dataMatch[1]) {
-      hashExamData = dataMatch[1];
-    }
-  }
-
-  // If URL hash contains #data=..., return immediately to open StudentExamView
-  if (hashExamData) {
-    return {
-      examId: null,
-      examData: hashExamData,
-      isStudentMode: true,
-    };
-  }
-
-  // Check /exam pathname
-  if (pathname === "/exam" || pathname === "/exam/") {
-    return {
-      examId: urlParams.get("pin") || urlParams.get("code") || null,
-      examData: urlParams.get("data") || urlParams.get("d") || null,
-      isStudentMode: true,
-    };
-  }
-
   const hashQuestionIdx = hashStr.indexOf("?");
   let hashPath = hashStr;
   let hashQueryStr = "";
@@ -125,6 +99,23 @@ export function parseExamIdFromLocation(): { examId: string | null; examData: st
 
   const hashParams = new URLSearchParams(hashQueryStr || (hashStr.includes("=") ? hashStr : ""));
 
+  let hashExamData: string | null = null;
+  if (hashStr.includes("data=")) {
+    const dataMatch = hashStr.match(/(?:^|[&#?])data=([^&]+)/);
+    if (dataMatch && dataMatch[1]) {
+      hashExamData = dataMatch[1];
+    }
+  }
+
+  const resolvedExamData =
+    hashExamData ||
+    urlParams.get("examData") ||
+    urlParams.get("d") ||
+    urlParams.get("data") ||
+    hashParams.get("examData") ||
+    hashParams.get("d") ||
+    null;
+
   // 1. Direct query parameters check
   const queryKeys = ["pin", "exam", "code", "examId", "p", "room", "id", "s", "de"];
   for (const key of queryKeys) {
@@ -132,7 +123,7 @@ export function parseExamIdFromLocation(): { examId: string | null; examData: st
     if (val && val.trim()) {
       return {
         examId: val.trim().toUpperCase(),
-        examData: urlParams.get("examData") || urlParams.get("d") || hashParams.get("examData") || hashParams.get("d"),
+        examData: resolvedExamData,
         isStudentMode: true,
       };
     }
@@ -144,7 +135,7 @@ export function parseExamIdFromLocation(): { examId: string | null; examData: st
   if (pathMatch && pathMatch[1]) {
     return {
       examId: pathMatch[1].trim().toUpperCase(),
-      examData: urlParams.get("examData") || urlParams.get("d") || hashParams.get("examData") || hashParams.get("d"),
+      examData: resolvedExamData,
       isStudentMode: true,
     };
   }
@@ -155,7 +146,7 @@ export function parseExamIdFromLocation(): { examId: string | null; examData: st
   if (hashMatch && hashMatch[1]) {
     return {
       examId: hashMatch[1].trim().toUpperCase(),
-      examData: urlParams.get("examData") || urlParams.get("d") || hashParams.get("examData") || hashParams.get("d"),
+      examData: resolvedExamData,
       isStudentMode: true,
     };
   }
@@ -166,7 +157,7 @@ export function parseExamIdFromLocation(): { examId: string | null; examData: st
   if (pathCodeMatch && pathCodeMatch[1]) {
     return {
       examId: pathCodeMatch[1].trim().toUpperCase(),
-      examData: urlParams.get("examData") || urlParams.get("d"),
+      examData: resolvedExamData,
       isStudentMode: true,
     };
   }
@@ -176,7 +167,25 @@ export function parseExamIdFromLocation(): { examId: string | null; examData: st
   if (hashCodeMatch && hashCodeMatch[1]) {
     return {
       examId: hashCodeMatch[1].trim().toUpperCase(),
-      examData: hashParams.get("examData") || hashParams.get("d"),
+      examData: resolvedExamData,
+      isStudentMode: true,
+    };
+  }
+
+  // If URL hash/query contains data=... (even without PIN), open StudentExamView
+  if (resolvedExamData) {
+    return {
+      examId: null,
+      examData: resolvedExamData,
+      isStudentMode: true,
+    };
+  }
+
+  // Check /exam pathname
+  if (pathname === "/exam" || pathname === "/exam/") {
+    return {
+      examId: urlParams.get("pin") || urlParams.get("code") || null,
+      examData: resolvedExamData,
       isStudentMode: true,
     };
   }
@@ -202,7 +211,7 @@ export function parseExamIdFromLocation(): { examId: string | null; examData: st
 
   return {
     examId: null,
-    examData: urlParams.get("examData") || urlParams.get("d") || hashParams.get("examData") || hashParams.get("d"),
+    examData: resolvedExamData,
     isStudentMode,
   };
 }

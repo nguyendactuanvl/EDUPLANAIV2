@@ -17,7 +17,7 @@ import {
 import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
 import { saveExamToCloud, fetchExamFromCloud, saveExamToWebhook } from "../lib/cloudExamStore";
 import { registerExamUrlMapping } from "../lib/smartRouter";
-import { safePrompt } from "../lib/utils";
+import { safePrompt, getPublicAppUrl } from "../lib/utils";
 
 // Types for Exam Configuration
 interface Part1Key {
@@ -915,21 +915,26 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
     setExamError("");
     try {
       const cleanCode = code.trim().toUpperCase();
-      let data = null;
+      let data: any = null;
 
-      // 1. Thử lấy từ Backend API
-      try {
-        const res = await fetch(`/api/exams/${cleanCode}?fresh=true`);
-        if (res.ok) {
-          data = await res.json();
+      for (let attempt = 0; attempt < 3 && !data; attempt++) {
+        if (attempt > 0) {
+          await new Promise(r => setTimeout(r, 600 * attempt));
         }
-      } catch (e) {
-        console.warn("Backend API load room error:", e);
-      }
+        // 1. Thử lấy từ Backend API
+        try {
+          const res = await fetch(`/api/exams/${encodeURIComponent(cleanCode)}?fresh=true`);
+          if (res.ok) {
+            data = await res.json();
+          }
+        } catch (e) {
+          console.warn("Backend API load room error:", e);
+        }
 
-      // 2. Dự phòng lấy từ Cloud Store (Cloud KV, LocalStorage, Google Webhook) nếu Backend API không có dữ liệu
-      if (!data) {
-        data = await fetchExamFromCloud(cleanCode);
+        // 2. Dự phòng lấy từ Cloud Store (Cloud KV, LocalStorage, Google Webhook) nếu Backend API không có dữ liệu
+        if (!data) {
+          data = await fetchExamFromCloud(cleanCode);
+        }
       }
 
       if (!data) {
@@ -1293,7 +1298,8 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
       registerExamUrlMapping(`/?view=exam_pdf&data=${cleanCode}`, cleanCode);
       registerExamUrlMapping(`/?data=${cleanCode}`, cleanCode);
 
-      const newShareUrl = `${window.location.origin}${window.location.pathname}?view=exam_pdf&data=${cleanCode}`;
+      const publicBase = getPublicAppUrl() || window.location.origin;
+      const newShareUrl = `${publicBase}/?view=exam_pdf&data=${cleanCode}`;
       if (navigator?.clipboard?.writeText) {
         await navigator.clipboard.writeText(newShareUrl);
       }
@@ -2453,12 +2459,12 @@ HS05 - Hoàng Văn Em`);
                             <input 
                               type="text" 
                               readOnly 
-                              value={`${window.location.origin}${window.location.pathname}?view=exam_pdf&data=${sharedRoomId}`}
+                              value={`${getPublicAppUrl() || window.location.origin}/?view=exam_pdf&data=${sharedRoomId}`}
                               className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-[9px] text-slate-300 font-mono flex-1 focus:outline-none"
                             />
                             <button 
                               onClick={() => {
-                                const link = `${window.location.origin}${window.location.pathname}?view=exam_pdf&data=${sharedRoomId}`;
+                                const link = `${getPublicAppUrl() || window.location.origin}/?view=exam_pdf&data=${sharedRoomId}`;
                                 navigator.clipboard.writeText(link);
                                 setIsLinkCopied(true);
                                 setTimeout(() => setIsLinkCopied(false), 2000);
@@ -2859,7 +2865,8 @@ HS05 - Hoàng Văn Em`);
                         </button>
                         <button
                           onClick={() => {
-                            const link = `${window.location.origin}${window.location.pathname}?view=exam_pdf&data=${room.code}`;
+                            const publicOrigin = getPublicAppUrl() || window.location.origin;
+                            const link = `${publicOrigin}${window.location.pathname}?view=exam_pdf&data=${room.code}`;
                             navigator.clipboard.writeText(link);
                             alert("Đã copy link học sinh cho phòng: " + room.code);
                           }}

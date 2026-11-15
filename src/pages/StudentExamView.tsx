@@ -826,6 +826,13 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
 
     let loaded = false;
     if (rawData) {
+      const trimmedRaw = rawData.trim();
+      // If rawData is actually a short room PIN (e.g. from ?view=exam&data=PIN), treat it as examId
+      if (/^[A-Za-z0-9_-]{4,12}$/.test(trimmedRaw) && !examId) {
+        fetchExamById(trimmedRaw);
+        return;
+      }
+
       try {
         const decompressed = LZString.decompressFromEncodedURIComponent(rawData);
         if (decompressed) {
@@ -875,7 +882,11 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
       fetchExamById(examId);
     } else if (!loaded && !examId) {
       setLoading(false);
-      setError("Không tìm thấy thông tin bài thi hoặc mã phòng thi.");
+      if (rawData) {
+        setError("Đường link bài thi bị rút gọn hoặc thiếu dữ liệu. Vui lòng nhập Mã phòng thi (PIN) do giáo viên cung cấp bên dưới.");
+      } else {
+        setError(null);
+      }
     }
   }, [examId, examRawData]);
 

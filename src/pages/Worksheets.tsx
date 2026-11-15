@@ -33,7 +33,7 @@ import { analyzeFunctionToBbt, generateBbtSvg, convertBbtTableToSvg, autoEnrichT
 import { getTikzSvg, embedTikzSvgsInText } from "../components/TikzRenderer";
 import { saveToHistory, getHistory, deleteFromHistory } from '../lib/history';
 import { HistoryItem } from '../types';
-import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMath, cleanQuestionStem, cleanOptionText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, normalizeGeometricProgressionFormulas, formatWorksheetQuestionsAndSections, sanitizeExamQuestion, sanitizeAndPolishMath, normalizeArrayAndTableEnvironments, cleanMathAndUnwrapHeadings, formatStructuredJsonToMarkdown, safeJsonParse } from "../lib/utils";
+import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMath, cleanQuestionStem, cleanOptionText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, normalizeGeometricProgressionFormulas, formatWorksheetQuestionsAndSections, formatWorksheetSolutionSections, sanitizeExamQuestion, sanitizeAndPolishMath, normalizeArrayAndTableEnvironments, cleanMathAndUnwrapHeadings, formatStructuredJsonToMarkdown, safeJsonParse, getPublicAppUrl } from "../lib/utils";
 import { parseRawExamText } from '../lib/examParser';
 import { printElement, ensureMathRendered } from '../lib/print';
 import { saveExamToCloud, saveExamToWebhook } from '../lib/cloudExamStore';
@@ -106,9 +106,11 @@ export function cleanDocumentContent(content: string, lessonName?: string, skipV
   // 3.5 Chuẩn hóa các môi trường bảng số liệu thống kê \begin{array}... \end{array}
   cleaned = normalizeArrayAndTableEnvironments(cleaned);
 
-  // 4. Chuẩn hóa đánh số câu hỏi (Câu 1, Câu 2...) và tách các phương án A, B, C, D rõ ràng (chỉ chạy trên phần đề bài)
+  // 4. Chuẩn hóa đánh số câu hỏi (Câu 1, Câu 2...) và tách các phương án A, B, C, D rõ ràng (hoặc tách từng câu phần Hướng dẫn giải)
   if (!isSolution) {
     cleaned = formatWorksheetQuestionsAndSections(cleaned);
+  } else {
+    cleaned = formatWorksheetSolutionSections(cleaned);
   }
 
   // 4.5. Bỏ hoàn toàn BẢNG ĐÁP ÁN NHANH khỏi Phiếu học tập, chỉ giữ HƯỚNG DẪN GIẢI CHI TIẾT
@@ -118,6 +120,9 @@ export function cleanDocumentContent(content: string, lessonName?: string, skipV
   if (!skipVisualEnrich) {
     cleaned = autoEnrichTextWithVisuals(cleaned, isSolution);
   }
+
+  // 6. Loại bỏ các dòng bullet trống (-, *, •) để không sinh dấu chấm đen mồ côi khi render & xuất Word
+  cleaned = cleaned.replace(/^[ \t]*[-*•●][ \t]*$/gm, '');
 
   return cleaned.trim();
 }
@@ -165,7 +170,7 @@ export function Worksheets() {
   const [layoutStyle, setLayoutStyle] = useState<LayoutStyle>('a4_print');
 
   // Hierarchy KNTT States
-  const [selectedSemester, setSelectedSemester] = useState<"semester_1" | "semester_2">("semester_1");
+  const [selectedSemester, setSelectedSemester] = useState<"semester_1" | "semester_2" | "special_topic">("semester_1");
   const [selectedChapterId, setSelectedChapterId] = useState<string>("g11_s1_c2");
   const [selectedLessonId, setSelectedLessonId] = useState<string>("g11_s1_c2_l2");
   const [additionalNotes, setAdditionalNotes] = useState<string>("");
@@ -205,8 +210,13 @@ export function Worksheets() {
         lesId = lesson.id;
       }
 
-      if (lesson) {
-        if (/cấp\s*số\s*cộng/i.test(lesson.name)) {
+      if (chapter && lesson) {
+        if (selectedSemester === 'special_topic') {
+          const match = chapter.name.match(/^(Chuyên\s*đề\s*\d+)(?:\s*[:\-]\s*(.*))?$/i);
+          const topicNum = match ? match[1].toUpperCase() : "CHUYÊN ĐỀ";
+          const lessonText = lesson.name.toUpperCase();
+          setCustomLessonName(`${topicNum} - ${lessonText}`);
+        } else if (/cấp\s*số\s*cộng/i.test(lesson.name)) {
           setCustomLessonName("CHỦ ĐỀ: CẤP SỐ CỘNG");
         } else {
           setCustomLessonName(lesson.name);
@@ -996,7 +1006,8 @@ export function Worksheets() {
       registerExamUrlMapping(`/?view=worksheet&data=${cleanCode}`, cleanCode);
       registerExamUrlMapping(`/?data=${cleanCode}`, cleanCode);
 
-      const newShareUrl = `${window.location.origin}/?pin=${cleanCode}`;
+      const publicBase = getPublicAppUrl() || window.location.origin;
+      const newShareUrl = `${publicBase}/?pin=${cleanCode}`;
       if (navigator?.clipboard?.writeText) {
         await navigator.clipboard.writeText(newShareUrl);
       }
@@ -1213,7 +1224,8 @@ export function Worksheets() {
       } catch (e) {}
 
       // Primary link is clean short PIN url (~40 chars)
-      const shortLink = `${window.location.origin}/?pin=${examId}`;
+      const publicBase = getPublicAppUrl() || window.location.origin;
+      const shortLink = `${publicBase}/?pin=${examId}`;
       let compressed = '';
       try {
         compressed = LZString.compressToEncodedURIComponent(JSON.stringify(payload));
@@ -1222,7 +1234,7 @@ export function Worksheets() {
       }
 
       const fullBackupLink = compressed 
-        ? `${window.location.origin}/?pin=${examId}&d=${compressed}`
+        ? `${publicBase}/?pin=${examId}#data=${compressed}`
         : shortLink;
        
       setShareLink(shortLink);
@@ -1956,20 +1968,32 @@ export function Worksheets() {
                   >
                     <option value="semester_1">Học kỳ 1</option>
                     <option value="semester_2">Học kỳ 2</option>
+                    <option value="special_topic">Chuyên đề học tập</option>
                   </select>
                 </div>
               </div>
 
               <div>
                 <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                  Chương / Chủ đề
+                  {selectedSemester === 'special_topic' ? 'Chuyên đề' : 'Chương / Chủ đề'}
                 </label>
                 <select 
                   className="w-full px-3 py-1.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white text-xs font-semibold text-slate-800"
                   value={selectedChapterId}
                   onChange={(e) => {
-                    setSelectedChapterId(e.target.value);
+                    const cId = e.target.value;
+                    setSelectedChapterId(cId);
                     setSelectedLessonId("");
+                    const semData = getKnttCurriculum(subject, selectedGrade, selectedSemester);
+                    const chapters = semData?.chapters || [];
+                    const selectedChapter = chapters.find(c => c.id === cId) || chapters[0];
+                    const lesson = selectedChapter?.lessons[0];
+                    if (selectedChapter && lesson && selectedSemester === 'special_topic') {
+                      const match = selectedChapter.name.match(/^(Chuyên\s*đề\s*\d+)(?:\s*[:\-]\s*(.*))?$/i);
+                      const topicNum = match ? match[1].toUpperCase() : "CHUYÊN ĐỀ";
+                      const lessonText = lesson.name.toUpperCase();
+                      setCustomLessonName(`${topicNum} - ${lessonText}`);
+                    }
                   }}
                 >
                   {(() => {
@@ -1996,8 +2020,13 @@ export function Worksheets() {
                     const chapters = semData?.chapters || [];
                     const selectedChapter = chapters.find(c => c.id === selectedChapterId) || chapters[0];
                     const lesson = selectedChapter?.lessons.find(l => l.id === lId);
-                    if (lesson) {
-                      if (/cấp\s*số\s*cộng/i.test(lesson.name)) {
+                    if (selectedChapter && lesson) {
+                      if (selectedSemester === 'special_topic') {
+                        const match = selectedChapter.name.match(/^(Chuyên\s*đề\s*\d+)(?:\s*[:\-]\s*(.*))?$/i);
+                        const topicNum = match ? match[1].toUpperCase() : "CHUYÊN ĐỀ";
+                        const lessonText = lesson.name.toUpperCase();
+                        setCustomLessonName(`${topicNum} - ${lessonText}`);
+                      } else if (/cấp\s*số\s*cộng/i.test(lesson.name)) {
                         setCustomLessonName("CHỦ ĐỀ: CẤP SỐ CỘNG");
                       } else {
                         setCustomLessonName(lesson.name);
@@ -2438,55 +2467,57 @@ export function Worksheets() {
           </div>
           
           {shareLink && (
-            <div className="mt-4 p-4 bg-emerald-50 rounded-xl border border-emerald-200">
-              <div className="flex items-center justify-between mb-2">
+            <div className="mt-4 p-4 bg-emerald-50 rounded-xl border border-emerald-200 space-y-2.5 overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-sm font-bold text-emerald-900 flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                   Link online cho học sinh (đã rút gọn):
                 </span>
-                <span className="text-xs text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full font-medium">
+                <span className="text-xs text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full font-medium shrink-0">
                   Gửi qua Zalo / Facebook
                 </span>
               </div>
-              <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  readOnly 
-                  value={shareLink} 
-                  className="flex-1 bg-white border border-emerald-300 rounded-lg px-3 py-2 text-sm text-emerald-800 font-semibold shadow-inner focus:outline-none select-all" 
-                />
-                <button 
+              <input
+                type="text"
+                readOnly
+                value={shareLink}
+                className="w-full min-w-0 bg-white border border-emerald-300 rounded-lg px-3 py-2 text-xs sm:text-sm text-emerald-800 font-semibold shadow-inner focus:outline-none select-all"
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(shareLink); 
-                    alert('Đã sao chép link!\nCô có thể dán trực tiếp vào nhóm Zalo/Facebook để học sinh làm bài ngay.');
-                  }} 
-                  className="px-3.5 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 shrink-0 flex items-center gap-1.5 transition-colors cursor-pointer"
+                    navigator.clipboard.writeText(shareLink);
+                    showToast('✅ Đã sao chép link! Cô có thể dán vào nhóm Zalo/Facebook cho học sinh làm bài.');
+                  }}
+                  className="flex-1 min-w-fit px-3 py-2 bg-emerald-600 text-white text-xs sm:text-sm font-medium rounded-lg hover:bg-emerald-700 flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
                 >
-                  <Copy className="w-4 h-4" /> Sao chép
+                  <Copy className="w-3.5 h-3.5 shrink-0" /> Sao chép
                 </button>
-                <button 
+                <button
+                  type="button"
                   onClick={() => {
                     const matchPin = shareLink.match(/pin=([A-Za-z0-9_-]+)/);
                     const pin = matchPin ? matchPin[1] : '';
                     if (pin) {
                       handleRefreshExamUrl(pin);
                     }
-                  }} 
+                  }}
                   title="Làm mới liên kết chia sẻ & tái ánh xạ mã phòng thi vào hệ thống"
-                  className="px-3.5 py-2 bg-amber-500 text-white text-sm font-medium rounded-lg hover:bg-amber-600 shrink-0 flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="flex-1 min-w-fit px-3 py-2 bg-amber-500 text-white text-xs sm:text-sm font-medium rounded-lg hover:bg-amber-600 flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
                 >
-                  <RefreshCw className="w-4 h-4" /> Làm mới URL
+                  <RefreshCw className="w-3.5 h-3.5 shrink-0" /> Làm mới URL
                 </button>
-                <a 
-                  href={shareLink} 
-                  target="_blank" 
-                  rel="noreferrer" 
-                  className="px-3.5 py-2 bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-700 shrink-0 flex items-center gap-1.5 transition-colors"
+                <a
+                  href={shareLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-1 min-w-fit px-3 py-2 bg-slate-800 text-white text-xs sm:text-sm font-medium rounded-lg hover:bg-slate-700 flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
                 >
-                  <ExternalLink className="w-4 h-4" /> Mở thử
+                  <ExternalLink className="w-3.5 h-3.5 shrink-0" /> Mở thử
                 </a>
               </div>
-              <p className="text-xs text-slate-500 mt-2">
+              <p className="text-xs text-slate-500">
                 💡 Link ngắn gọn, học sinh mở trực tiếp trên điện thoại/máy tính mà không bị lỗi đứt link.
               </p>
             </div>
@@ -2547,7 +2578,8 @@ export function Worksheets() {
                       </button>
                       <button
                         onClick={() => {
-                          const rawLink = room.shareLink || `${window.location.origin}/?pin=${room.code}`;
+                          const publicBase = getPublicAppUrl() || window.location.origin;
+                          const rawLink = room.shareLink || `${publicBase}/?pin=${room.code}`;
                           const cleanLink = rawLink.includes('&d=') ? rawLink.split('&d=')[0] : rawLink;
                           navigator.clipboard.writeText(cleanLink);
                           alert("Đã copy Link Rút Gọn học sinh cho phòng: " + room.code + "\nLink: " + cleanLink);
@@ -3477,7 +3509,17 @@ export function Worksheets() {
                       className="bg-white p-8 md:p-12 shadow-sm border border-slate-300 rounded-xl min-h-[500px] font-serif text-slate-900 max-w-[210mm] mx-auto space-y-6 text-[15px] leading-relaxed"
                     >
                       {/* School Exam Header for A4 Print (Chuẩn Sư Phạm GDPT 2018) */}
-                      <div className="border-2 border-slate-800 mb-6 p-4 bg-white text-xs sm:text-sm text-slate-800 leading-normal">
+                      <div
+                        data-docx-worksheet-header="true"
+                        data-department={headerConfig.department || "SỞ GIÁO DỤC VÀ ĐÀO TẠO"}
+                        data-school={headerConfig.schoolName ? `TRƯỜNG: ${headerConfig.schoolName}` : "TRƯỜNG THPT: ................................................"}
+                        data-subject-group={headerConfig.subjectGroup || `TỔ CHUYÊN MÔN: ${subject || "TOÁN - TIN HỌC"}`}
+                        data-teacher={headerConfig.teacherName ? `Giáo viên: ${headerConfig.teacherName}` : "Giáo viên: ................................................"}
+                        data-title="PHIẾU HỌC TẬP"
+                        data-lesson={getFormattedLessonTitle(customLessonName)}
+                        data-meta={`Môn: ${subject} • Lớp ${selectedGrade} • Năm học ${headerConfig.schoolYear || "2026 - 2027"}`}
+                        className="border-2 border-slate-800 mb-6 p-4 bg-white text-xs sm:text-sm text-slate-800 leading-normal"
+                      >
                         <div className="grid grid-cols-2 gap-4 pb-3 border-b border-slate-300">
                           <div className="text-center font-bold">
                             <div className="uppercase text-[11px] sm:text-xs tracking-wider text-slate-700">{headerConfig.department || "SỞ GIÁO DỤC VÀ ĐÀO TẠO"}</div>
@@ -3509,7 +3551,7 @@ export function Worksheets() {
                             <span className="font-semibold">Lớp:</span> .................... <span className="font-semibold ml-2">STT:</span> ......
                           </div>
                           <div className="sm:text-right">
-                            <span className="font-semibold">Ngày nộp:</span> ...... / ...... / 202...
+                            <span className="font-semibold">Ngày nộp:</span> ....../....../202...
                           </div>
                         </div>
 
@@ -4053,7 +4095,17 @@ export function Worksheets() {
                       >
                       {/* 1. Header decor for A4 Chuẩn In Ấn (Chuẩn Sư Phạm GDPT 2018) */}
                       {layoutStyle === 'a4_print' && (
-                        <div className="border-2 border-slate-800 mb-8 p-4 bg-white text-xs sm:text-sm text-slate-800 leading-normal">
+                        <div
+                          data-docx-worksheet-header="true"
+                          data-department={headerConfig.department || "SỞ GIÁO DỤC VÀ ĐÀO TẠO"}
+                          data-school={headerConfig.schoolName ? `TRƯỜNG: ${headerConfig.schoolName}` : "TRƯỜNG THPT: ................................................"}
+                          data-subject-group={headerConfig.subjectGroup || `TỔ CHUYÊN MÔN: ${subject || "TOÁN - TIN HỌC"}`}
+                          data-teacher={headerConfig.teacherName ? `Giáo viên: ${headerConfig.teacherName}` : "Giáo viên: ................................................"}
+                          data-title="PHIẾU HỌC TẬP"
+                          data-lesson={getFormattedLessonTitle(customLessonName)}
+                          data-meta={`Môn: ${subject} • Lớp ${selectedGrade} • Năm học ${headerConfig.schoolYear || "2026 - 2027"}`}
+                          className="border-2 border-slate-800 mb-8 p-4 bg-white text-xs sm:text-sm text-slate-800 leading-normal"
+                        >
                           <div className="grid grid-cols-2 gap-4 pb-3 border-b border-slate-300">
                             <div className="text-center font-bold">
                             <div className="uppercase text-[11px] sm:text-xs tracking-wider text-slate-700">{headerConfig.department || "SỞ GIÁO DỤC VÀ ĐÀO TẠO"}</div>
@@ -4085,7 +4137,7 @@ export function Worksheets() {
                               <span className="font-semibold">Lớp:</span> .................... <span className="font-semibold ml-2">STT:</span> ......
                             </div>
                             <div className="sm:text-right">
-                              <span className="font-semibold">Ngày nộp:</span> ...... / ...... / 202...
+                              <span className="font-semibold">Ngày nộp:</span> ....../....../202...
                             </div>
                           </div>
 
@@ -4157,7 +4209,7 @@ export function Worksheets() {
 
                       {/* Content Renderer with Layout-specific typography */}
                       {layoutStyle === 'infographic' ? (
-                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch text-slate-900 font-sans leading-relaxed">
+                        <div data-docx-2col-grid="true" className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch text-slate-900 font-sans leading-relaxed">
                           
                           {/* COL 1: LEFT COLUMN (LÝ THUYẾT & ĐỊNH NGHĨA) */}
                           <div className="lg:col-span-6 bg-white border-2 border-blue-900 rounded-2xl overflow-hidden flex flex-col justify-between shadow-xs">

@@ -1,8 +1,8 @@
 import { 
   Trophy, BookOpen, Calendar, FileText, Settings, Sparkles, Clock, 
   ClipboardList, FileEdit, FileCheck, Users, ShieldCheck, 
-  Key, Calculator, HelpCircle, PlayCircle, PenTool, ScanLine, Sun, Moon, GraduationCap, BarChart3,
-  Dna, Zap, Lock, Shuffle, PieChart, FlaskConical, Languages, Box
+  Key, Calculator, HelpCircle, PlayCircle, Sun, Moon, GraduationCap, BarChart3,
+  Dna, Zap, Lock, Shuffle, PieChart, FlaskConical, Languages, Bot, Target
 } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -27,17 +27,19 @@ export function Sidebar({
     {
       title: "Chuyên môn & Soạn giảng",
       items: [
+        { id: "edu_ai_assistant", label: "00. Trợ lí Giáo dục AI THPT", icon: Bot, badge: "12 tiết - QĐ 2422" },
         { id: "worksheets", label: "1. Phiếu học tập", icon: ClipboardList },
         { id: "exercise", label: "2. Giải bài tập", icon: Sparkles },
         { id: "pdf2word", label: "3. Chuyển PDF sang Word", icon: FileEdit },
         { id: "exam_shuffler", label: "4. Khảo thí & Chấm OMR", icon: Shuffle },
         { id: "exam", label: "5. Tạo & Trộn đề (Ma trận)", icon: FileCheck },
+        { id: "isomorphic_exam", label: "5b. Tạo đề tương tự (Đề đẳng cấu)", icon: Sparkles, badge: "2-Step AI" },
         { id: "de_online_pdf", label: "6. Đề online từ PDF của GV", icon: FileText },
         { id: "khgd", label: "7. Kế hoạch giáo dục", icon: Calendar },
         { id: "khdh", label: "8. Kế hoạch dạy học", icon: BookOpen },
         { id: "graduation_review", label: "8b. Ôn TN THPT 12 (CV 5512)", icon: GraduationCap },
+        { id: "on_thi_tn_thpt", label: "🎯 Ôn thi TN THPT (Toán)", icon: Target, badge: "GDPT 2018" },
         { id: "math_tools", label: "9. Công cụ Toán học", icon: Calculator },
-        { id: "spatial_geometry", label: "10. Hình học Không gian (3D)", icon: Box },
       ]
     },
     {
@@ -52,10 +54,6 @@ export function Sidebar({
     {
       title: "Khảo thí & Tiện ích Nâng cao",
       items: [
-        { id: "hsa_tsa", label: "Ôn thi HSA & TSA (ĐGNL)", icon: GraduationCap },
-        { id: "ai_studio", label: "AI Studio & Sáng tạo", icon: Sparkles },
-        { id: "math_ocr", label: "Math OCR & LaTeX (Word)", icon: ScanLine },
-        { id: "ink", label: "EduPlan AI Ink (Bảng vẽ)", icon: PenTool },
         { id: "exam_stats", label: "Dashboard Thống kê thi", icon: BarChart3 },
         { id: "overall_dashboard", label: "Dashboard Tổng quan", icon: PieChart },
         { id: "user_guide", label: "Hướng dẫn sử dụng", icon: HelpCircle, isAction: true },
@@ -115,7 +113,12 @@ export function Sidebar({
                       )}
                     >
                       <Icon className={cn("h-5 w-5", item.id === "user_guide" && "text-emerald-400")} />
-                      <span className="flex-1 text-left">{item.label}</span>
+                      <span className="flex-1 text-left truncate">{item.label}</span>
+                      {(item as any).badge && (
+                        <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-1 py-0.5 rounded font-bold shrink-0">
+                          {(item as any).badge}
+                        </span>
+                      )}
                     </button>
                   </li>
                 );

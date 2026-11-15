@@ -592,6 +592,39 @@ export const KNTT_CURRICULUM: CurriculumData = {
           ]
         }
       ]
+    },
+    special_topic: {
+      chapters: [
+        {
+          id: "g10_st_c1",
+          name: "Chuyên đề 1: Hệ phương trình bậc nhất ba ẩn",
+          lessons: [
+            { id: "g10_st_c1_l1", name: "Bài 1: Hệ phương trình bậc nhất ba ẩn" },
+            { id: "g10_st_c1_l2", name: "Bài 2: Ứng dụng của hệ phương trình bậc nhất ba ẩn" },
+            { id: "g10_st_c1_l3", name: "Bài tập cuối chuyên đề 1" }
+          ]
+        },
+        {
+          id: "g10_st_c2",
+          name: "Chuyên đề 2: Phương pháp quy nạp toán học. Nhị thức Newton",
+          lessons: [
+            { id: "g10_st_c2_l1", name: "Bài 3: Phương pháp quy nạp toán học" },
+            { id: "g10_st_c2_l2", name: "Bài 4: Nhị thức Newton" },
+            { id: "g10_st_c2_l3", name: "Bài tập cuối chuyên đề 2" }
+          ]
+        },
+        {
+          id: "g10_st_c3",
+          name: "Chuyên đề 3: Ba đường conic và ứng dụng",
+          lessons: [
+            { id: "g10_st_c3_l1", name: "Bài 5: Elip" },
+            { id: "g10_st_c3_l2", name: "Bài 6: Hypebol" },
+            { id: "g10_st_c3_l3", name: "Bài 7: Parabol" },
+            { id: "g10_st_c3_l4", name: "Bài 8: Sự thống nhất giữa ba đường conic" },
+            { id: "g10_st_c3_l5", name: "Bài tập cuối chuyên đề 3" }
+          ]
+        }
+      ]
     }
   },
   grade_11: {
@@ -697,6 +730,42 @@ export const KNTT_CURRICULUM: CurriculumData = {
           ]
         }
       ]
+    },
+    special_topic: {
+      chapters: [
+        {
+          id: "g11_st_c1",
+          name: "Chuyên đề 1: Phép biến hình trong mặt phẳng",
+          lessons: [
+            { id: "g11_st_c1_l1", name: "Bài 1: Phép biến hình và phép dời hình" },
+            { id: "g11_st_c1_l2", name: "Bài 2: Phép tịnh tiến" },
+            { id: "g11_st_c1_l3", name: "Bài 3: Phép đối xứng trục" },
+            { id: "g11_st_c1_l4", name: "Bài 4: Phép đối xứng tâm" },
+            { id: "g11_st_c1_l5", name: "Bài 5: Phép quay" },
+            { id: "g11_st_c1_l6", name: "Bài 6: Phép đồng dạng và phép vị tự" },
+            { id: "g11_st_c1_l7", name: "Bài tập cuối chuyên đề 1" }
+          ]
+        },
+        {
+          id: "g11_st_c2",
+          name: "Chuyên đề 2: Làm quen với một vài khái niệm của lí thuyết đồ thị",
+          lessons: [
+            { id: "g11_st_c2_l1", name: "Bài 7: Một vài khái niệm cơ bản" },
+            { id: "g11_st_c2_l2", name: "Bài 8: Đường đi Euler và đường đi Hamilton" },
+            { id: "g11_st_c2_l3", name: "Bài 9: Bài toán tìm đường đi tối ưu trong một vài trường hợp đơn giản" },
+            { id: "g11_st_c2_l4", name: "Bài tập cuối chuyên đề 2" }
+          ]
+        },
+        {
+          id: "g11_st_c3",
+          name: "Chuyên đề 3: Một số yếu tố vẽ kĩ thuật",
+          lessons: [
+            { id: "g11_st_c3_l1", name: "Bài 10: Hình chiếu vuông góc và hình chiếu trục đo" },
+            { id: "g11_st_c3_l2", name: "Bài 11: Bản vẽ kĩ thuật" },
+            { id: "g11_st_c3_l3", name: "Bài tập cuối chuyên đề 3" }
+          ]
+        }
+      ]
     }
   },
   grade_12: {
@@ -766,6 +835,38 @@ export const KNTT_CURRICULUM: CurriculumData = {
           ]
         }
       ]
+    },
+    special_topic: {
+      chapters: [
+        {
+          id: "g12_st_c1",
+          name: "Chuyên đề 1: Ứng dụng toán học giải các bài toán tối ưu",
+          lessons: [
+            { id: "g12_st_c1_l1", name: "Bài 1: Bài toán quy hoạch tuyến tính" },
+            { id: "g12_st_c1_l2", name: "Bài 2: Vận dụng đạo hàm để giải quyết một số bài toán tối ưu" },
+            { id: "g12_st_c1_l3", name: "Bài tập cuối chuyên đề 1" }
+          ]
+        },
+        {
+          id: "g12_st_c2",
+          name: "Chuyên đề 2: Ứng dụng toán học trong một số vấn đề liên quan đến tài chính",
+          lessons: [
+            { id: "g12_st_c2_l1", name: "Bài 3: Tiền tệ. Lãi suất" },
+            { id: "g12_st_c2_l2", name: "Bài 4: Tín dụng. Vay nợ" },
+            { id: "g12_st_c2_l3", name: "Bài 5: Đầu tư tài chính. Lập kế hoạch tài chính cá nhân" },
+            { id: "g12_st_c2_l4", name: "Bài tập cuối chuyên đề 2" }
+          ]
+        },
+        {
+          id: "g12_st_c3",
+          name: "Chuyên đề 3: Biến ngẫu nhiên rời rạc. Các số đặc trưng của biến ngẫu nhiên rời rạc",
+          lessons: [
+            { id: "g12_st_c3_l1", name: "Bài 6: Biến ngẫu nhiên rời rạc" },
+            { id: "g12_st_c3_l2", name: "Bài 7: Phân bố Bernoulli và phân bố nhị thức" },
+            { id: "g12_st_c3_l3", name: "Bài tập cuối chuyên đề 3" }
+          ]
+        }
+      ]
     }
   }
 };
@@ -801,7 +902,7 @@ export function normalizeSubjectKey(subj?: string): string {
 export function getKnttCurriculum(
   subject: string,
   grade: number = 12,
-  semester: "semester_1" | "semester_2" = "semester_1"
+  semester: "semester_1" | "semester_2" | "special_topic" = "semester_1"
 ): SemesterData {
   const key = normalizeSubjectKey(subject);
 
@@ -810,6 +911,9 @@ export function getKnttCurriculum(
     const gradeKey = `grade_${grade}`;
     if (KNTT_CURRICULUM[gradeKey]?.[semester]) {
       return KNTT_CURRICULUM[gradeKey][semester];
+    }
+    if (semester === "special_topic" && KNTT_CURRICULUM[gradeKey]?.semester_1) {
+      return KNTT_CURRICULUM[gradeKey].semester_1;
     }
   }
 
@@ -831,7 +935,7 @@ export function getKnttCurriculum(
 
   // Dynamic pedagogical outline for any other subject or grade (never mistakenly show Math)
   const cleanSubj = subject || "Môn học";
-  const semText = semester === "semester_1" ? "Học kỳ 1" : "Học kỳ 2";
+  const semText = semester === "semester_1" ? "Học kỳ 1" : semester === "semester_2" ? "Học kỳ 2" : "Chuyên đề học tập";
   const semNum = semester === "semester_1" ? 1 : 2;
 
   return {

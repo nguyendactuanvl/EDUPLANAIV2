@@ -343,13 +343,242 @@ export function unflattenMarkdownTables(text: string): string {
     .replace(/\\prime/g, "'")
     .replace(/[−–—]/g, '-');
 
-  // Kiểm tra xem văn bản có chứa cấu trúc bảng Markdown / BBT hay không
-  const hasMarkdownTable = /\|[ \t]*:?-{2,}:?[ \t]*\|/.test(s) ||
+  // Helper: split any general flattened Markdown table on a single line (or prose + table on same line)
+  // e.g.: "- Thời gian tập thể dục: | Nhóm | [0; 20) | [20; 40) | | :--- | :---: | :---: | | Tần số | 5 | 10 | Tính TB..."
+  const splitFlattenedGeneralTableLine = (line: string): string => {
+    const sepRegex = /\|[ \t]*:?-{2,}:?[ \t]*(?:\|[ \t]*:?-{2,}:?[ \t]*)+\|/;
+    const sepMatch = line.match(sepRegex);
+    if (!sepMatch || sepMatch.index === undefined) return line;
+
+    const sepStart = sepMatch.index;
+    const sepStr = sepMatch[0].trim();
+    const sepEnd = sepStart + sepMatch[0].length;
+    const beforeSep = line.slice(0, sepStart).trim();
+    const afterSep = line.slice(sepEnd).trim();
+
+    // If both beforeSep and afterSep are empty, this is just a standalone separator line
+    if (!beforeSep && !afterSep) return line;
+
+    const numCols = sepStr.replace(/^\||\|$/g, '').split('|').length;
+    if (numCols < 2) return line;
+
+    // Extract leading prose before the header row (if beforeSep has text before its first `|`)
+    let leadingProse = '';
+    let headerRow = '';
+    if (beforeSep) {
+      const firstPipeIdx = beforeSep.indexOf('|');
+      if (firstPipeIdx > 0) {
+        leadingProse = beforeSep.slice(0, firstPipeIdx).trim();
+        headerRow = beforeSep.slice(firstPipeIdx).trim();
+      } else if (firstPipeIdx === 0) {
+        headerRow = beforeSep;
+      } else {
+        leadingProse = beforeSep;
+      }
+    }
+
+    // Parse afterSep into rows of `numCols` cells if multiple rows are jammed on the same line
+    const bodyRows: string[] = [];
+    let trailingProse = '';
+    if (afterSep) {
+      // Split pipes carefully while respecting $...$ math expressions (e.g. $|x|$)
+      const pipePositions: number[] = [];
+      let inMath = false;
+      for (let i = 0; i < afterSep.length; i++) {
+        if (afterSep[i] === '$' && (i === 0 || afterSep[i - 1] !== '\\')) {
+          inMath = !inMath;
+        } else if (afterSep[i] === '|' && !inMath) {
+          pipePositions.push(i);
+        }
+      }
+
+      if (pipePositions.length >= numCols + 1) {
+        // Walk segments starting from first pipe; each row needs numCols cells (numCols + 1 pipes)
+        let cursor = pipePositions[0];
+        let rowBuf: string[] = [];
+        let pIdx = 0;
+        while (pIdx < pipePositions.length - 1) {
+          const pStart = pipePositions[pIdx];
+          const pNext = pipePositions[pIdx + 1];
+          const between = afterSep.slice(pStart + 1, pNext);
+
+          // If we already completed a row and `between` is purely whitespace between closing `|` and next row opening `|`
+          if (rowBuf.length === numCols && /^\s*$/.test(between)) {
+            bodyRows.push(`| ${rowBuf.join(' | ')} |`);
+            rowBuf = [];
+            pIdx++;
+            cursor = pipePositions[pIdx];
+            continue;
+          }
+
+          rowBuf.push(between.trim());
+          pIdx++;
+          cursor = pNext;
+
+          if (rowBuf.length === numCols) {
+            bodyRows.push(`| ${rowBuf.join(' | ')} |`);
+            rowBuf = [];
+            // Peek if next segment is whitespace before next row's opening `|`
+            if (pIdx < pipePositions.length - 1) {
+              const gap = afterSep.slice(pipePositions[pIdx] + 1, pipePositions[pIdx + 1]);
+              if (/^\s*$/.test(gap)) {
+                pIdx++;
+                cursor = pipePositions[pIdx];
+              }
+            }
+          }
+        }
+        if (rowBuf.length > 0) {
+          bodyRows.push(`| ${rowBuf.join(' | ')} |`);
+        }
+        trailingProse = afterSep.slice(cursor + 1).trim();
+      } else {
+        // Fallback: split between adjacent closing & opening pipes `| |`
+        const lastPipe = pipePositions.length > 0 ? pipePositions[pipePositions.length - 1] : afterSep.lastIndexOf('|');
+        const tableChunk = lastPipe >= 0 ? afterSep.slice(0, lastPipe + 1).trim() : '';
+        trailingProse = lastPipe >= 0 ? afterSep.slice(lastPipe + 1).trim() : afterSep;
+        if (tableChunk) {
+          const splitRows = tableChunk
+            .replace(/\|[ \t]+\|/g, '|\n|')
+            .split('\n')
+            .map((r) => r.trim())
+            .filter(Boolean);
+          bodyRows.push(...splitRows);
+        }
+      }
+    }
+
+    const parts: string[] = [];
+    if (leadingProse) parts.push(leadingProse, '');
+    if (headerRow) parts.push(headerRow);
+    parts.push(sepStr);
+    if (bodyRows.length > 0) parts.push(...bodyRows);
+    if (trailingProse) parts.push('', trailingProse);
+    return parts.join('\n');
+  };
+
+  // Kiểm tra xem văn bản có chứa cấu trúc bảng Markdown hay không
+  const hasGeneralSeparator = /\|[ \t]*:?-{2,}:?[ \t]*(?:\|[ \t]*:?-{2,}:?[ \t]*)+\|/.test(s);
+  const isBbtTable =
     /(?:^|\n)[ \t]*\|[ \t]*\$?[xt]\$?[ \t]*\|/i.test(s) ||
     /\|\s*(?:y['’′]|f['’′]|f\([a-z]\))\s*\|/i.test(s);
 
-  if (!hasMarkdownTable) {
+  if (!hasGeneralSeparator && !isBbtTable) {
     return s;
+  }
+
+  const sepLineRegex = /^[ \t]*\|?[ \t]*:?-{2,}:?[ \t]*(?:\|[ \t]*:?-{2,}:?[ \t]*)+\|?[ \t]*$/;
+
+  const countUnescapedOutsideMathPipes = (line: string): number => {
+    let count = 0;
+    let inMath = false;
+    for (let i = 0; i < line.length; i++) {
+      if (line[i] === '$' && (i === 0 || line[i - 1] !== '\\')) {
+        inMath = !inMath;
+      } else if (line[i] === '|' && !inMath && (i === 0 || line[i - 1] !== '\\')) {
+        count++;
+      }
+    }
+    return count;
+  };
+
+  const isPipeTableRow = (line: string): boolean => {
+    const trimmed = line.trim();
+    if (!trimmed) return false;
+    if (sepLineRegex.test(trimmed)) return true;
+    return trimmed.startsWith('|') && countUnescapedOutsideMathPipes(trimmed) >= 2;
+  };
+
+  const normalizePipeTableRow = (line: string): string => {
+    let trimmed = line.trim();
+    if (!trimmed) return '';
+    if (!trimmed.startsWith('|')) trimmed = `| ${trimmed}`;
+    if (!trimmed.endsWith('|')) trimmed = `${trimmed} |`;
+    // Remove spurious quotes around numeric short-answer cells inside tables (e.g. | '200' | '31,7' | -> | 200 | 31,7 |)
+    trimmed = trimmed.replace(/(?<=\|[ \t]*)'(-?\d+(?:[.,]\d+)?)'(?=[ \t]*\|)/g, '$1');
+    return trimmed;
+  };
+
+  // First pass for general flattened Markdown tables (and prose stuck immediately before table header `| ... |`)
+  if (hasGeneralSeparator) {
+    const rawLines = s.split('\n');
+    const fixedLines: string[] = [];
+
+    for (let i = 0; i < rawLines.length; i++) {
+      const cur = rawLines[i];
+      // Case A: Single line containing separator + header/body rows jammed together
+      if (/\|[ \t]*:?-{2,}:?[ \t]*(?:\|[ \t]*:?-{2,}:?[ \t]*)+\|/.test(cur) && !sepLineRegex.test(cur)) {
+        fixedLines.push(splitFlattenedGeneralTableLine(cur));
+        continue;
+      }
+      // Case B: Line i has prose followed by table header `... như sau: | Nhóm | ... |`, and line i+1 is the separator row
+      if (
+        i + 1 < rawLines.length &&
+        sepLineRegex.test(rawLines[i + 1]) &&
+        !/^[ \t]*\|/.test(cur) &&
+        /\|[^|\n]+\|/.test(cur)
+      ) {
+        const firstPipe = cur.indexOf('|');
+        const prose = cur.slice(0, firstPipe).trim();
+        const headerPart = cur.slice(firstPipe).trim();
+        if (prose) {
+          fixedLines.push(prose, '');
+        }
+        fixedLines.push(normalizePipeTableRow(headerPart));
+        continue;
+      }
+      // Case C: Final table row has trailing prose stuck on the same line (e.g. `| 5 | 10 | Tính trung bình...`)
+      if (
+        /^[ \t]*\|(?:[^|\n]+\|)+[ \t]+[A-Za-zÀ-ỹĐđ#*][^|\n]*$/.test(cur)
+      ) {
+        const m = cur.match(/^([ \t]*\|(?:[^|\n]+\|)+)[ \t]+([A-Za-zÀ-ỹĐđ#*][^|\n]*)$/);
+        if (m) {
+          fixedLines.push(normalizePipeTableRow(m[1]), '', m[2].trim());
+          continue;
+        }
+      }
+      fixedLines.push(cur);
+    }
+    s = fixedLines.join('\n');
+  }
+
+  // If this is NOT a BBT (no x / y' rows), clean up spacing around general Markdown tables and return early!
+  if (!isBbtTable) {
+    // Remove accidental blank lines between header pipe row and separator row
+    const rawLines = s.split('\n');
+    const compactLines: string[] = [];
+    for (let i = 0; i < rawLines.length; i++) {
+      const cur = rawLines[i];
+      if (
+        cur.trim() === '' &&
+        compactLines.length > 0 &&
+        isPipeTableRow(compactLines[compactLines.length - 1]) &&
+        i + 1 < rawLines.length &&
+        isPipeTableRow(rawLines[i + 1])
+      ) {
+        continue;
+      }
+      compactLines.push(cur);
+    }
+
+    // Ensure a blank line before/after any Markdown table block and normalize every row to start/end with '|'
+    const out: string[] = [];
+    for (let i = 0; i < compactLines.length; i++) {
+      const prev = out.length > 0 ? out[out.length - 1] : '';
+      let cur = compactLines[i];
+      const curIsTable = isPipeTableRow(cur);
+      const prevIsTable = isPipeTableRow(prev);
+      if (curIsTable) {
+        cur = normalizePipeTableRow(cur);
+      }
+      if (curIsTable && prev.trim() !== '' && !prevIsTable) {
+        out.push('');
+      } else if (!curIsTable && cur.trim() !== '' && prevIsTable) {
+        out.push('');
+      }
+      out.push(cur);
+    }
+    return out.join('\n').replace(/(\|[^\n]+\|)[ \t]*\n\s*\n[ \t]*(\|)/g, '$1\n$2');
   }
 
   // 1. Tách văn bản đứng trước bảng nếu dính liền vào | x |:
@@ -389,9 +618,9 @@ export function unflattenMarkdownTables(text: string): string {
       if (isTableRow) {
         inTable = true;
         tableBuffer.push(line);
-      } else if (inTable && (line === '' || /^(?:Câu|Bài|Giá trị|Đáp án|Mệnh đề|##|\d+[\.\)]|[A-Da-d][\.\)])/i.test(line))) {
+      } else if (inTable && (!line.includes('|') || line === '' || /^(?:Câu|Bài|Giá trị|Đáp án|Mệnh đề|Tính|Tìm|Cho|Biết|Hỏi|Xét|Gọi|##|\d+[\.\)]|[A-Da-d][\.\)])/i.test(line))) {
         resultLines.push(collapseMultilineTableLines(tableBuffer));
-        resultLines.push(line);
+        resultLines.push(lines[i]);
         tableBuffer = [];
         inTable = false;
       } else if (inTable) {
@@ -424,8 +653,10 @@ function collapseMultilineTableLines(tblLines: string[]): string {
   // Nếu tblLines đã là các hàng riêng biệt:
   if (tblLines.length >= 2) {
     const cleanLines = tblLines.map(ensureRowPipes).filter(Boolean);
-    const hasHeader = cleanLines.some(l => /\|[ \t]*\$?[xt]\$?[ \t]*\|/i.test(l));
-    if (hasHeader) {
+    const hasHeaderOrSeparator = cleanLines.some(
+      (l) => /\|[ \t]*\$?[xt]\$?[ \t]*\|/i.test(l) || /\|[ \t]*:?-{2,}:?[ \t]*\|/.test(l)
+    );
+    if (hasHeaderOrSeparator) {
       return cleanLines.join('\n');
     }
   }
@@ -504,13 +735,31 @@ export function parseMarkdownBbtTable(tableMarkdown: string): BBTData | null {
     });
 
     // Kiểm tra hàng 1: bắt đầu bằng x hoặc t
-    const row1Header = cleanMathText(rowCells[0][0]).toLowerCase().replace(/[\$\s]/g, '');
+    const rawRow1Header = cleanMathText(rowCells[0][0]).replace(/[\$\s]/g, '');
+    const row1Header = rawRow1Header.toLowerCase();
     const isRow1X = row1Header === 'x' || row1Header === 't' || row1Header === 'xx' || (row1Header === '' && rowCells[0].length >= 3);
     if (!isRow1X) return null;
 
-    // Kiểm tra hàng 2: y' hoặc f'(x) hoặc y
+    // Kiểm tra hàng 2: bắt buộc phải là đạo hàm (y', f'(x), g'(x)...) hoặc hàm số (y, f(x), g(x)...)
+    // Tuyệt đối từ chối bảng phân bố xác suất (P, P(X=x_i), p_i), bảng tần số/thống kê (n, tần số, tần suất...)
     const row2Header = cleanMathText(rowCells[1][0]).toLowerCase().replace(/[\$\s]/g, '');
-    const hasDerivative = row2Header.includes("y'") || row2Header.includes("f'") || row2Header.includes("g'") || row2Header.includes("y′") || row2Header.includes("f′");
+    if (/^(?:p|p\(.*\)|p_.*|xácsuất|tầnsố|tầnsuất|số.*|nhóm|giátrị|cỡmẫu|trungbình|phươngsai|độlệch)$/i.test(row2Header)) {
+      return null;
+    }
+    const hasDerivative =
+      row2Header.includes("y'") ||
+      row2Header.includes("f'") ||
+      row2Header.includes("g'") ||
+      row2Header.includes("h'") ||
+      row2Header.includes("s'") ||
+      row2Header.includes("v'") ||
+      row2Header.includes("y′") ||
+      row2Header.includes("f′") ||
+      row2Header.includes("g′");
+    const isFunctionRow2 = /^(?:y|f\(x\)|g\(x\)|h\(x\)|s\(t\)|v\(t\)|y=f\(x\)|f\(t\))$/.test(row2Header);
+    if (!hasDerivative && !isFunctionRow2) {
+      return null;
+    }
 
     let xCells = rowCells[0].slice(1);
     let yPrimeCells: string[] = [];
@@ -581,6 +830,16 @@ export function parseMarkdownBbtTable(tableMarkdown: string): BBTData | null {
       }
     }
     milestoneGroups.push(currentGroup);
+
+    // Nếu bảng không có dòng đạo hàm (hasDerivative = false) VÀ cũng không có mũi tên biến thiên (intervalTrends.length === 0),
+    // thì đây chỉ là bảng giá trị (x, y) hoặc bảng thống kê/xác suất thông thường, KHÔNG PHẢI Bảng biến thiên!
+    if (!hasDerivative && intervalTrends.length === 0) {
+      return null;
+    }
+    // Ngay cả khi có dòng đạo hàm nhưng không có dấu +/- và không có mũi tên biến thiên thì cũng không phải BBT
+    if (hasDerivative && signs.length === 0 && intervalTrends.length === 0) {
+      return null;
+    }
 
     const points: BBTPoint[] = [];
     const intervals: BBTInterval[] = [];
@@ -896,15 +1155,13 @@ export function convertBbtTableToSvg(tableMarkdown: string): string | null {
 export function embedBbtSvgsInText(text: string): string {
   if (!text) return '';
   const unflattened = unflattenMarkdownTables(text);
-  return unflattened.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
+  return unflattened.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match, _g1, offset) => {
     try {
-      let svg = convertBbtTableToSvg(match);
-      if (!svg && (match.includes('x') || match.includes("y'") || match.includes('f('))) {
-        const synthData = syntheticBbtFromQuestion(match);
-        if (synthData) {
-          svg = generateBbtSvg(synthData);
-        }
+      const preceding = unflattened.slice(Math.max(0, offset - 220), offset);
+      if (/(?:phân\s*bố\s*xác\s*suất|biến\s*ngẫu\s*nhiên|bảng\s*tần\s*số|bảng\s*tần\s*suất|mẫu\s*số\s*liệu|bảng\s*thống\s*kê|bảng\s*giá\s*trị)/i.test(preceding)) {
+        return match;
       }
+      const svg = convertBbtTableToSvg(match);
       if (svg) {
         const base64 = typeof btoa !== 'undefined' 
           ? btoa(encodeURIComponent(svg)) 
@@ -2537,7 +2794,19 @@ export function autoEnrichTextWithVisuals(text: string, isSolution: boolean = fa
   const enrichedBlocks = blocks.map(block => {
     let b = block;
 
-    const hasBbtText = /(?:bảng\s*biến\s*thiên|bảng\s*xét\s*dấu|chiều\s*biến\s*thiên|\bBBT\b)/i.test(b);
+    const isProbOrStatQuestion = /(?:phân\s*bố\s*xác\s*suất|biến\s*ngẫu\s*nhiên|bảng\s*tần\s*số|bảng\s*tần\s*suất|mẫu\s*số\s*liệu)/i.test(b);
+    if (isProbOrStatQuestion && b.includes('<svg-wrapper')) {
+      b = b.replace(/<svg-wrapper\s+data-svg=["']([^"']+)["']\s*><\/svg-wrapper>/gi, (fullTag, b64) => {
+        try {
+          const decoded = typeof atob !== 'undefined' ? decodeURIComponent(atob(b64)) : Buffer.from(b64, 'base64').toString('utf8');
+          if (decoded.includes('Bảng biến thiên') || decoded.includes('f(x)')) {
+            return '';
+          }
+        } catch (e) {}
+        return fullTag;
+      });
+    }
+    const hasBbtText = !isProbOrStatQuestion && /(?:bảng\s*biến\s*thiên|bảng\s*xét\s*dấu|chiều\s*biến\s*thiên|\bBBT\b)/i.test(b);
     const hasVisualAlready = b.includes('svg-wrapper') || b.includes('<img') || b.includes('data:image/') || b.includes('<svg') || b.includes('\\begin{tikzpicture}');
 
     if (hasBbtText && !hasVisualAlready) {

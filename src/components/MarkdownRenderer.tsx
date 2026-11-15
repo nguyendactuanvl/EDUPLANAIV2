@@ -7,7 +7,7 @@ import { rehypeSanitizeEventHandlers, cleanProps, cleanMathAndUnwrapHeadings, fi
 import { TikzRenderer, getTikzSvg } from './TikzRenderer';
 import { ImageViewerModal } from './ImageViewerModal';
 import { convertBbtTableToSvg, unflattenMarkdownTables } from '../lib/bbtRenderer';
-import { MathView, preprocessMath } from './MathView';
+import { MathView, preprocessMath, wrapRawSvgBlocks } from './MathView';
 import { 
   fixMath, 
   formatMathContent, 
@@ -67,7 +67,14 @@ export const typesetMathJax = (element?: HTMLElement | null): Promise<void> => {
   const task = async () => {
     let mj = (window as any).MathJax;
     let retries = 0;
-    while ((!mj || typeof mj.typesetPromise !== 'function') && retries < 8) {
+    while ((!mj || typeof mj.typesetPromise !== 'function') && retries < 40) {
+      if (mj?.startup?.promise) {
+        try {
+          await mj.startup.promise;
+          mj = (window as any).MathJax;
+          if (mj && typeof mj.typesetPromise === 'function') break;
+        } catch (e) {}
+      }
       await new Promise((r) => setTimeout(r, 200));
       mj = (window as any).MathJax;
       retries++;
@@ -444,14 +451,334 @@ const CustomImageRenderer: React.FC<{ cleanSrc: string; alt?: string; [key: stri
   );
 };
 
-export const MarkdownRenderer = ({ 
+const MARKDOWN_REMARK_PLUGINS = [remarkMath, remarkGfm];
+const MARKDOWN_REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
+
+const markdownCodeRenderer = ({ children, className, ...props }: any) => {
+  const codeStr = String(children || '').replace(/\n$/, '');
+  const isMath = className && (className.includes('math') || className.includes('language-math'));
+  if (isMath) {
+    const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
+    const isDisplay = className.includes('math-display');
+    return isDisplay ? (
+      <div key={cleanMath} className="math-display my-2.5 text-center font-serif overflow-x-auto" data-latex={cleanMath}>
+        {`$$${cleanMath}$$`}
+      </div>
+    ) : (
+      <span key={cleanMath} className="math-inline font-serif" data-latex={cleanMath}>
+        {`$${cleanMath}$`}
+      </span>
+    );
+  }
+  if (className && className.includes('language-') && !className.includes('math')) {
+    return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...cleanProps(props)}>{children}</code>;
+  }
+  if (/(?:^|\n)\s*(?:function|const|let|var|import|export|class|def|return)\b/.test(codeStr) && !codeStr.includes('\\')) {
+    return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...cleanProps(props)}>{children}</code>;
+  }
+  const isAccidentalProse =
+    codeStr.includes('\n') ||
+    /\*\*|###|PHẦN\s*(?:[1-4]|I{1,3}|IV)|Câu\s*\d+/i.test(codeStr) ||
+    /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ].*\s+[a-zA-ZÀ-ỹ]*[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(codeStr);
+  if (isAccidentalProse) {
+    return <span className="font-serif whitespace-pre-line">{children}</span>;
+  }
+  const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
+  return cleanMath ? <span key={cleanMath} className="math-inline font-serif" data-latex={cleanMath}>{`$${cleanMath}$`}</span> : null;
+};
+
+const markdownSpanRenderer = ({ node, children, className, ...props }: any) => {
+  if (className && className.includes('math-inline')) {
+    const text = String(children || '').trim();
+    const cleanMath = text.replace(/^\$+|\$+$/g, '').trim();
+    return (
+      <span key={cleanMath} className="math-inline font-serif" data-latex={cleanMath} {...cleanProps(props)}>
+        {`$${cleanMath}$`}
+      </span>
+    );
+  }
+  return <span className={className} {...cleanProps(props)}>{children}</span>;
+};
+
+const markdownInlineComponents = {
+  script: () => null,
+  p: ({ node, children, ...props }: any) => (
+    <span className="inline" {...cleanProps(props)}>
+      {children}
+    </span>
+  ),
+  div: ({ node, children, ...props }: any) => (
+    <span className="inline" {...cleanProps(props)}>
+      {children}
+    </span>
+  ),
+  // @ts-ignore
+  'svg-wrapper': ({ node }: any) => {
+    try {
+      const base64 = node.properties?.dataSvg || node.properties?.['data-svg'];
+      if (!base64) return null;
+      const decoded = decodeURIComponent(typeof atob !== 'undefined' ? atob(base64) : Buffer.from(base64, 'base64').toString('utf8'));
+      return <SvgImageRenderer svgCode={decoded} />;
+    } catch (e) {
+      return <span className="text-red-500">Lỗi hiển thị hình ảnh SVG</span>;
+    }
+  },
+  span: markdownSpanRenderer,
+  code: markdownCodeRenderer,
+};
+
+const ChoiceListContext = React.createContext<boolean>(false);
+
+const getNodePlainText = (n: any): string => {
+  if (!n) return '';
+  if (typeof n === 'string' || typeof n === 'number') return String(n);
+  if (Array.isArray(n)) return n.map(getNodePlainText).join(' ');
+  if (React.isValidElement(n)) return getNodePlainText((n.props as any)?.children);
+  return '';
+};
+
+const hasNestedListOrBlock = (n: any): boolean => {
+  if (!n) return false;
+  if (Array.isArray(n)) return n.some(hasNestedListOrBlock);
+  if (React.isValidElement(n)) {
+    const t = n.type;
+    if (t === 'ul' || t === 'ol' || t === 'table' || t === 'pre') return true;
+    return hasNestedListOrBlock((n.props as any)?.children);
+  }
+  return false;
+};
+
+const isGenuineChoiceOptionText = (rawText: string): boolean => {
+  const trimmed = rawText.trim();
+  // Strictly uppercase A/B/C/D at the start of the item followed by . or ) and whitespace
+  if (!/^(?:\*{0,2})?[A-D][\.\)](?:\*{0,2})?\s+/.test(trimmed)) return false;
+  // Never classify True/False verdict items or solution lines as ABCD choice cards
+  if (/^(?:\*{0,2})?[A-D][\.\)](?:\*{0,2})?\s*(?:Đúng|Sai)\b/i.test(trimmed)) return false;
+  return true;
+};
+
+const markdownFullComponents = {
+  script: () => null,
+  p: ({ node, children, ...props }: any) => {
+    const firstChild = React.Children.toArray(children)[0];
+    const isQuestion = typeof firstChild === 'string' && /^\s*(?:\*\*)?(?:Câu|Bài|\d+\.)\s*\d*/i.test(firstChild);
+    return (
+      <div className={`leading-relaxed ${isQuestion ? 'mt-6 mb-2 font-medium text-slate-900 text-base sm:text-lg' : 'my-3'}`} {...cleanProps(props)}>
+        {children}
+      </div>
+    );
+  },
+  span: markdownSpanRenderer,
+  code: markdownCodeRenderer,
+  // @ts-ignore
+  'svg-wrapper': ({ node }: any) => {
+    try {
+      const base64 = node.properties?.dataSvg || node.properties?.['data-svg'];
+      if (!base64) return null;
+      const decoded = decodeURIComponent(typeof atob !== 'undefined' ? atob(base64) : Buffer.from(base64, 'base64').toString('utf8'));
+      return <SvgImageRenderer svgCode={decoded} />;
+    } catch (e) {
+      return <span className="text-red-500">Lỗi hiển thị hình ảnh SVG</span>;
+    }
+  },
+  // @ts-ignore
+  'tikz-diagram': ({ node }: any) => {
+    try {
+      const base64 = node.properties?.dataTikz || node.properties?.['data-tikz'];
+      if (!base64) return null;
+      const decoded = decodeURIComponent(typeof atob !== 'undefined' ? atob(base64) : Buffer.from(base64, 'base64').toString('utf8'));
+      return (
+        <span className="flex justify-center my-6 overflow-x-auto bg-white p-4 rounded-xl border border-slate-200">
+          <TikzRenderer content={decoded} />
+        </span>
+      );
+    } catch (e) {
+      return <span className="text-red-500">Lỗi hiển thị hình ảnh TikZ</span>;
+    }
+  },
+  img: ({ node, src, alt, ...props }: any) => {
+    let cleanSrc = (src || '').trim();
+    if (!cleanSrc || cleanSrc === '#' || cleanSrc === 'about:blank' || cleanSrc === '...' || cleanSrc === 'undefined') {
+      return null;
+    }
+    if (cleanSrc.startsWith('[Hình') || cleanSrc.startsWith('[Đồ thị') || cleanSrc.includes('placeholder')) {
+      return (
+        <div className="no-print my-4 p-4 rounded-xl border-2 border-dashed border-indigo-200 bg-indigo-50/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg">
+              <span className="text-xl">🖼️</span>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-800 text-sm">{alt || cleanSrc || 'Hình vẽ minh họa đề thi'}</p>
+              <p className="text-xs text-slate-500">Chèn ảnh cắt từ trang PDF gốc hoặc vẽ đồ thị / hình 3D</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('open-pdf-cropper', { detail: { placeholder: alt || cleanSrc } }))}
+            className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all shadow-xs cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+          >
+            <span>✂️ Cắt ảnh PDF gốc</span>
+          </button>
+        </div>
+      );
+    }
+    if (cleanSrc.includes('drive.google.com/file/d/')) {
+      const fileId = cleanSrc.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)?.[1];
+      if (fileId) {
+        cleanSrc = `https://drive.google.com/uc?export=view&id=${fileId}`;
+      }
+    }
+    return (
+      <CustomImageRenderer
+        cleanSrc={cleanSrc}
+        alt={alt || 'Hình minh họa SGK'}
+        referrerPolicy="no-referrer"
+        {...cleanProps(props)}
+      />
+    );
+  },
+  table: ({ node, children, ...props }: any) => (
+    <div className="overflow-x-auto my-4 max-w-full">
+      <table className="min-w-fit w-full mx-auto border-collapse border border-slate-300 text-sm shadow-xs rounded-md overflow-hidden bg-white" {...cleanProps(props)}>
+        {children}
+      </table>
+    </div>
+  ),
+  th: ({ node, children, ...props }: any) => (
+    <th className="border border-slate-300 bg-blue-50/90 px-3.5 py-2 font-semibold text-slate-800 text-center whitespace-normal" {...cleanProps(props)}>
+      {children}
+    </th>
+  ),
+  td: ({ node, children, ...props }: any) => {
+    const extractLen = (n: any): number => {
+      if (!n) return 0;
+      if (typeof n === 'string' || typeof n === 'number') return String(n).trim().length;
+      if (Array.isArray(n)) return n.reduce((acc, item) => acc + extractLen(item), 0);
+      if (React.isValidElement(n) && (n.props as any)?.children) return extractLen((n.props as any).children);
+      return 0;
+    };
+    const isLongOrMultiline = extractLen(children) > 28 || (Array.isArray(children) && children.some((c: any) => React.isValidElement(c) && c.type === 'br'));
+    return (
+      <td
+        className={`border border-slate-300 px-3.5 py-2 text-slate-800 ${
+          isLongOrMultiline ? 'text-left align-top whitespace-normal leading-relaxed' : 'text-center whitespace-nowrap'
+        }`}
+        {...cleanProps(props)}
+      >
+        {children}
+      </td>
+    );
+  },
+  pre({ node, children, ...props }: any) {
+    const getTxt = (n: any): string => {
+      if (!n) return '';
+      if (typeof n === 'string' || typeof n === 'number') return String(n);
+      if (Array.isArray(n)) return n.map(getTxt).join('');
+      if (React.isValidElement(n) && (n.props as any)?.children) return getTxt((n.props as any).children);
+      return '';
+    };
+    const txt = getTxt(children).trim();
+    if (!txt || txt === '$$$$' || txt === '$$' || txt === '$ $') return null;
+    const isProgrammingCode =
+      /(?:^|\n)\s*(?:function|const|let|var|import|export|class|def |print\(|console\.log|SELECT |INSERT |CREATE TABLE|<!DOCTYPE|<html)/i.test(txt) &&
+      !/\\(?:begin|end|frac|sqrt|ge|le|neq|Rightarrow|Leftrightarrow|vec)|PHẦN|Câu\s*\d+/i.test(txt);
+    if (!isProgrammingCode) {
+      return <div className="my-2.5 text-slate-800 leading-relaxed font-serif whitespace-pre-line">{children}</div>;
+    }
+    return (
+      <pre className="bg-slate-50 border border-slate-200 text-slate-800 rounded-lg p-3 overflow-x-auto my-3 text-sm font-mono" {...cleanProps(props)}>
+        {children}
+      </pre>
+    );
+  },
+  ul: ({ node, children, ...props }: any) => {
+    const cleanListChildren = React.Children.toArray(children).filter(
+      (child: any) => !(typeof child === 'string' && /^\s*$/.test(child))
+    );
+    const hasNested = cleanListChildren.some((child: any) => hasNestedListOrBlock(child?.props?.children));
+    const isChoiceList =
+      !hasNested &&
+      cleanListChildren.length >= 2 &&
+      cleanListChildren.length <= 4 &&
+      cleanListChildren.every((child: any) => isGenuineChoiceOptionText(getNodePlainText(child?.props?.children)));
+
+    if (isChoiceList) {
+      const itemLengths = cleanListChildren.map((child: any) => getNodePlainText(child?.props?.children).length);
+      const totalLen = itemLengths.reduce((a, b) => a + b, 0);
+      const maxLen = Math.max(...itemLengths, 0);
+      const gridCols = totalLen > 140 || maxLen > 38 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-2 lg:grid-cols-4';
+      return (
+        <ChoiceListContext.Provider value={true}>
+          <ul className={`grid ${gridCols} gap-2.5 my-3 pl-0 list-none text-slate-800 whitespace-normal`} {...cleanProps(props)}>
+            {cleanListChildren}
+          </ul>
+        </ChoiceListContext.Provider>
+      );
+    }
+    return (
+      <ChoiceListContext.Provider value={false}>
+        <ul className="my-3 pl-6 list-disc space-y-1.5 text-slate-800 whitespace-normal" {...cleanProps(props)}>
+          {cleanListChildren}
+        </ul>
+      </ChoiceListContext.Provider>
+    );
+  },
+  ol: ({ node, children, start, ...props }: any) => {
+    const cleanListChildren = React.Children.toArray(children).filter(
+      (child: any) => !(typeof child === 'string' && /^\s*$/.test(child))
+    );
+    return (
+      <ChoiceListContext.Provider value={false}>
+        <ol
+          start={start}
+          className="my-3 pl-6 list-decimal space-y-1.5 text-slate-800 whitespace-normal"
+          {...cleanProps(props)}
+        >
+          {cleanListChildren}
+        </ol>
+      </ChoiceListContext.Provider>
+    );
+  },
+  li: ({ node, children, ...props }: any) => {
+    const inChoiceList = React.useContext(ChoiceListContext);
+    const cleanItemChildren = React.Children.toArray(children).filter(
+      (child: any) => !(typeof child === 'string' && /^\s*$/.test(child))
+    );
+    const text = getNodePlainText(cleanItemChildren);
+    if (!text.trim()) return null;
+    const isChoice = inChoiceList && !hasNestedListOrBlock(cleanItemChildren) && isGenuineChoiceOptionText(text);
+    if (isChoice) {
+      return (
+        <li
+          className="block py-1.5 px-3 rounded-lg bg-slate-50/70 border border-slate-200 text-slate-800 hover:bg-slate-100 transition-colors shadow-none list-none m-0 whitespace-normal leading-relaxed [&>div]:inline [&>div]:my-0 [&>p]:inline [&>p]:my-0"
+          {...cleanProps(props)}
+        >
+          {cleanItemChildren}
+        </li>
+      );
+    }
+    return (
+      <li
+        className="my-1 leading-relaxed text-slate-800 whitespace-normal [&>div]:my-1 [&>p]:my-1 [&>p:first-child]:mt-0 [&>p:last-child]:mb-0"
+        {...cleanProps(props)}
+      >
+        {cleanItemChildren}
+      </li>
+    );
+  }
+};
+
+export const MarkdownRenderer = React.memo(({ 
   content, 
   className, 
-  inline = false 
+  inline = false,
+  skipWorksheetFormatting = false
 }: { 
   content: string; 
   className?: string; 
   inline?: boolean; 
+  skipWorksheetFormatting?: boolean;
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
@@ -464,9 +791,10 @@ export const MarkdownRenderer = ({
     return () => window.removeEventListener('open-fullscreen-image', handleOpenFullscreen);
   }, []);
 
-  // Let's rewrite the text preparation block of MarkdownRenderer in a pristine, robust way.
-  // Normalize math text globally (converts backticks to $, fixes torn backslashes)
-  let processedContent = cleanMathAndUnwrapHeadings(preprocessMath(content));
+  // Normalize math text without running worksheet-only section manglers when rendering lesson plans
+  let processedContent = skipWorksheetFormatting
+    ? cleanMathAndUnwrapHeadings(normalizeMathLatex(String(content || '')))
+    : cleanMathAndUnwrapHeadings(preprocessMath(content));
 
   // Normalize array and table environments (repair \begin{array} column specifiers and remove inner blank lines)
   processedContent = normalizeArrayAndTableEnvironments(processedContent);
@@ -476,8 +804,12 @@ export const MarkdownRenderer = ({
 
   // 1. Chuyển đổi trực tiếp các BẢNG BIẾN THIÊN (BBT) Markdown table sang <svg-wrapper>
   processedContent = unflattenMarkdownTables(processedContent);
-  processedContent = processedContent.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
+  processedContent = processedContent.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match, _g1, offset) => {
     try {
+      const preceding = processedContent.slice(Math.max(0, offset - 220), offset);
+      if (/(?:phân\s*bố\s*xác\s*suất|biến\s*ngẫu\s*nhiên|bảng\s*tần\s*số|bảng\s*tần\s*suất|mẫu\s*số\s*liệu|bảng\s*thống\s*kê|bảng\s*giá\s*trị)/i.test(preceding)) {
+        return match;
+      }
       const svg = convertBbtTableToSvg(match);
       if (svg) {
         const base64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : Buffer.from(encodeURIComponent(svg)).toString('base64');
@@ -554,9 +886,25 @@ export const MarkdownRenderer = ({
     }
   });
 
+  // 2.6. Chuyển đổi trực tiếp mọi khối <svg>...</svg> thô trong Markdown sang <svg-wrapper data-svg="...">
+  // Ngăn rehypeRaw render trực tiếp thẻ <text>, <circle>, <path> và thuộc tính kebab-case vào React DOM
+  processedContent = wrapRawSvgBlocks(processedContent);
+
   // 3.5 Triệt tiêu hoàn toàn bất kỳ rò rỉ nào của chữ "undefined" hoặc "null" lẻ loi trong tài liệu tiếng Việt
   processedContent = processedContent.replace(/(?<![a-zA-Z0-9_\$])(?:undefined|null)(?![a-zA-Z0-9_\$])/g, '');
   processedContent = fixAndMergeMathArrows(processedContent);
+  processedContent = processedContent.split('\n').map((line) => {
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      return line.replace(/\$[^\$\n]+\$/g, (mathChunk) => {
+        return mathChunk
+          .replace(/\\left\s*\|/g, '\\left\\vert ')
+          .replace(/\\right\s*\|/g, '\\right\\vert ')
+          .replace(/\\\|/g, '\\Vert ')
+          .replace(/\|/g, '\\vert ');
+      });
+    }
+    return line;
+  }).join('\n');
 
   // 4. Auto-scanner effect with MathJax 3: whenever content updates or AI streams in new text,
   // scan the rendered DOM container with MathJax typeset and attach data-latex attributes
@@ -564,21 +912,8 @@ export const MarkdownRenderer = ({
     const timer = setTimeout(() => {
       if (containerRef.current) {
         typesetMathJax(containerRef.current);
-        setTimeout(() => {
-          if (containerRef.current) {
-            const containers = containerRef.current.querySelectorAll('mjx-container');
-            containers.forEach((mjx) => {
-              if (!mjx.hasAttribute('data-latex')) {
-                const text = mjx.getAttribute('aria-label') || mjx.querySelector('mjx-assistive-mml')?.textContent || '';
-                if (text) {
-                  mjx.setAttribute('data-latex', text.replace(/^\$+|\$+$/g, '').trim());
-                }
-              }
-            });
-          }
-        }, 180);
       }
-    }, 100);
+    }, 60);
     return () => clearTimeout(timer);
   }, [processedContent]);
 
@@ -589,58 +924,9 @@ export const MarkdownRenderer = ({
         className={className || "inline-flex items-center gap-1 align-baseline"}
       >
         <Markdown
-          remarkPlugins={[remarkMath, remarkGfm]}
-          rehypePlugins={[rehypeRaw, rehypeSanitizeEventHandlers]}
-          components={{
-            script: () => null,
-            p: ({ node, children, ...props }: any) => (
-              <span className="inline" {...cleanProps(props)}>
-                {children}
-              </span>
-            ),
-            div: ({ node, children, ...props }: any) => (
-              <span className="inline" {...cleanProps(props)}>
-                {children}
-              </span>
-            ),
-            span: ({ node, children, className, ...props }: any) => {
-              if (className && className.includes('math-inline')) {
-                const text = String(children || '').trim();
-                const cleanMath = text.replace(/^\$+|\$+$/g, '').trim();
-                return (
-                  <span key={cleanMath} className="math-inline font-serif" data-latex={cleanMath} {...cleanProps(props)}>
-                    {`$${cleanMath}$`}
-                  </span>
-                );
-              }
-              return <span className={className} {...cleanProps(props)}>{children}</span>;
-            },
-            code: ({ children, className, ...props }: any) => {
-              const codeStr = String(children || '').replace(/\n$/, '');
-              const isMath = className && (className.includes('math') || className.includes('language-math'));
-              if (isMath) {
-                const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
-                const isDisplay = className.includes('math-display');
-                return isDisplay ? (
-                  <div key={cleanMath} className="math-display my-2.5 text-center font-serif overflow-x-auto" data-latex={cleanMath}>
-                    {`$$${cleanMath}$$`}
-                  </div>
-                ) : (
-                  <span key={cleanMath} className="math-inline font-serif" data-latex={cleanMath}>
-                    {`$${cleanMath}$`}
-                  </span>
-                );
-              }
-              if (className && className.includes('language-') && !className.includes('math')) {
-                return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...cleanProps(props)}>{children}</code>;
-              }
-              if (/(?:^|\n)\s*(?:function|const|let|var|import|export|class|def|return)\b/.test(codeStr) && !codeStr.includes('\\')) {
-                return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...cleanProps(props)}>{children}</code>;
-              }
-              const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
-              return cleanMath ? <span key={cleanMath} className="math-inline font-serif" data-latex={cleanMath}>{`$${cleanMath}$`}</span> : null;
-            }
-          }}
+          remarkPlugins={MARKDOWN_REMARK_PLUGINS}
+          rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
+          components={markdownInlineComponents}
         >
           {processedContent}
         </Markdown>
@@ -654,217 +940,15 @@ export const MarkdownRenderer = ({
       className={className || "markdown-body prose prose-slate max-w-none prose-headings:text-slate-800 prose-h2:text-2xl prose-h2:border-b prose-h2:pb-2 prose-h3:text-xl prose-a:text-emerald-600 prose-table:border-collapse prose-th:border prose-th:bg-slate-50 prose-td:border prose-td:p-2"}
     >
       <Markdown 
-        remarkPlugins={[remarkMath, remarkGfm]} 
-        rehypePlugins={[rehypeRaw, rehypeSanitizeEventHandlers]}
-        components={{
-          script: () => null,
-          p: ({ node, children, ...props }: any) => {
-            const firstChild = React.Children.toArray(children)[0];
-            const isQuestion = typeof firstChild === 'string' && /^\s*(?:\*\*)?(?:Câu|Bài|\d+\.)\s*\d*/i.test(firstChild);
-            return (
-              <div className={`leading-relaxed ${isQuestion ? 'mt-6 mb-2 font-medium text-slate-900 text-base sm:text-lg' : 'my-3'}`} {...cleanProps(props)}>
-                {children}
-              </div>
-            );
-          },
-          span: ({ node, children, className, ...props }: any) => {
-            if (className && className.includes('math-inline')) {
-              const text = String(children || '').trim();
-              const cleanMath = text.replace(/^\$+|\$+$/g, '').trim();
-              return (
-                <span key={cleanMath} className="math-inline font-serif" data-latex={cleanMath} {...cleanProps(props)}>
-                  {`$${cleanMath}$`}
-                </span>
-              );
-            }
-            return <span className={className} {...cleanProps(props)}>{children}</span>;
-          },
-          code: ({ children, className, ...props }: any) => {
-            const codeStr = String(children || '').replace(/\n$/, '');
-            const isMath = className && (className.includes('math') || className.includes('language-math'));
-            if (isMath) {
-              const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
-              const isDisplay = className.includes('math-display');
-              return isDisplay ? (
-                <div key={cleanMath} className="math-display my-2.5 text-center font-serif overflow-x-auto" data-latex={cleanMath}>
-                  {`$$${cleanMath}$$`}
-                </div>
-              ) : (
-                <span key={cleanMath} className="math-inline font-serif" data-latex={cleanMath}>
-                  {`$${cleanMath}$`}
-                </span>
-              );
-            }
-            if (className && className.includes('language-') && !className.includes('math')) {
-              return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...cleanProps(props)}>{children}</code>;
-            }
-            if (/(?:^|\n)\s*(?:function|const|let|var|import|export|class|def|return)\b/.test(codeStr) && !codeStr.includes('\\')) {
-              return <code className={className || "font-mono bg-slate-100 px-1 py-0.5 rounded text-xs"} {...cleanProps(props)}>{children}</code>;
-            }
-            const cleanMath = codeStr.replace(/^\$+|\$+$/g, '').trim();
-            return cleanMath ? <span key={cleanMath} className="math-inline font-serif" data-latex={cleanMath}>{`$${cleanMath}$`}</span> : null;
-          },
-          // @ts-ignore
-          'svg-wrapper': ({node}: any) => {
-            try {
-              const base64 = node.properties?.dataSvg || node.properties?.['data-svg'];
-              if (!base64) return null;
-              const decoded = decodeURIComponent(typeof atob !== 'undefined' ? atob(base64) : Buffer.from(base64, 'base64').toString('utf8'));
-              return (
-                <SvgImageRenderer svgCode={decoded} />
-              );
-            } catch(e) {
-              return <span className="text-red-500">Lỗi hiển thị hình ảnh SVG</span>;
-            }
-          },
-          'tikz-diagram': ({node}: any) => {
-            try {
-              const base64 = node.properties?.dataTikz || node.properties?.['data-tikz'];
-              if (!base64) return null;
-              const decoded = decodeURIComponent(typeof atob !== 'undefined' ? atob(base64) : Buffer.from(base64, 'base64').toString('utf8'));
-              return (
-                <span className="flex justify-center my-6 overflow-x-auto bg-white p-4 rounded-xl border border-slate-200">
-                  <TikzRenderer content={decoded} />
-                </span>
-              );
-            } catch(e) {
-              return <span className="text-red-500">Lỗi hiển thị hình ảnh TikZ</span>;
-            }
-          },
-          img: ({node, src, alt, ...props}: any) => {
-            let cleanSrc = (src || '').trim();
-            if (!cleanSrc || cleanSrc === '#' || cleanSrc === 'about:blank' || cleanSrc === '...' || cleanSrc === 'undefined') {
-              return null;
-            }
-            if (cleanSrc.startsWith('[Hình') || cleanSrc.startsWith('[Đồ thị') || cleanSrc.includes('placeholder')) {
-              return (
-                <div className="no-print my-4 p-4 rounded-xl border-2 border-dashed border-indigo-200 bg-indigo-50/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg">
-                      <span className="text-xl">🖼️</span>
-                    </div>
-                    <div>
-                      <p className="font-semibold text-slate-800 text-sm">{alt || cleanSrc || 'Hình vẽ minh họa đề thi'}</p>
-                      <p className="text-xs text-slate-500">Chèn ảnh cắt từ trang PDF gốc hoặc vẽ đồ thị / hình 3D</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => window.dispatchEvent(new CustomEvent('open-pdf-cropper', { detail: { placeholder: alt || cleanSrc } }))}
-                    className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all shadow-xs cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
-                  >
-                    <span>✂️ Cắt ảnh PDF gốc</span>
-                  </button>
-                </div>
-              );
-            }
-            // Auto convert Google Drive preview/view links to direct streaming image links
-            if (cleanSrc.includes('drive.google.com/file/d/')) {
-              const fileId = cleanSrc.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)?.[1];
-              if (fileId) {
-                cleanSrc = `https://drive.google.com/uc?export=view&id=${fileId}`;
-              }
-            }
-            return (
-              <CustomImageRenderer
-                cleanSrc={cleanSrc}
-                alt={alt || 'Hình minh họa SGK'}
-                referrerPolicy="no-referrer"
-                {...cleanProps(props)}
-              />
-            );
-          },
-          table: ({ node, children, ...props }: any) => (
-            <div className="overflow-x-auto my-4 max-w-full">
-              <table className="min-w-fit mx-auto border-collapse border border-slate-300 text-sm text-center shadow-xs rounded-md overflow-hidden bg-white" {...cleanProps(props)}>
-                {children}
-              </table>
-            </div>
-          ),
-          th: ({ node, children, ...props }: any) => (
-            <th className="border border-slate-300 bg-slate-100 px-3.5 py-2 font-semibold text-slate-800 text-center whitespace-nowrap" {...cleanProps(props)}>
-              {children}
-            </th>
-          ),
-          td: ({ node, children, ...props }: any) => (
-            <td className="border border-slate-300 px-3.5 py-2 text-slate-800 text-center whitespace-nowrap" {...cleanProps(props)}>
-              {children}
-            </td>
-          ),
-          pre({node, children, ...props}: any) {
-            const getTxt = (n: any): string => {
-              if (!n) return '';
-              if (typeof n === 'string' || typeof n === 'number') return String(n);
-              if (Array.isArray(n)) return n.map(getTxt).join('');
-              if (React.isValidElement(n) && (n.props as any)?.children) return getTxt((n.props as any).children);
-              return '';
-            };
-            const txt = getTxt(children).trim();
-            if (!txt || txt === '$$$$' || txt === '$$' || txt === '$ $') return null;
-            if (/\\begin|\\end|\\frac|\\sqrt|\\ge|\\le|\\neq|\\Rightarrow|\\iff|\$\$|cases|PHẦN|Câu|Bài|Đáp|Lời/i.test(txt) || txt.includes('$')) {
-              return <div className="my-2.5 text-slate-800 leading-relaxed font-serif whitespace-pre-line">{children}</div>;
-            }
-            return (
-              <pre className="bg-slate-50 border border-slate-200 text-slate-800 rounded-lg p-3 overflow-x-auto my-3 text-sm font-mono" {...cleanProps(props)}>
-                {children}
-              </pre>
-            );
-          },
-          ul: ({ node, children, ...props }: any) => {
-            const getNodePlainText = (n: any): string => {
-              if (!n) return '';
-              if (typeof n === 'string' || typeof n === 'number') return String(n);
-              if (Array.isArray(n)) return n.map(getNodePlainText).join(' ');
-              if (React.isValidElement(n)) return getNodePlainText((n.props as any)?.children);
-              return '';
-            };
-
-            const childArray = React.Children.toArray(children);
-            // Check if items are multiple choice options (- **A.** ...)
-            const isChoiceList = childArray.length >= 2 && childArray.length <= 4 && childArray.some((child: any) => {
-              const text = getNodePlainText(child?.props?.children);
-              return /^\s*(?:\*{0,2}|[-*•])*\s*[A-D][\.\)]/i.test(text) || /\b[A-D][\.\)]/.test(text);
-            });
-
-            if (isChoiceList) {
-              const fullText = getNodePlainText(children);
-              const isLong = fullText.length > 140;
-              const gridCols = isLong ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-2 lg:grid-cols-4";
-              return (
-                <ul className={`grid ${gridCols} gap-2.5 my-3 pl-0 list-none text-slate-800`} {...cleanProps(props)}>
-                  {children}
-                </ul>
-              );
-            }
-            return <ul className="my-3 pl-6 list-disc space-y-1 text-slate-800" {...cleanProps(props)}>{children}</ul>;
-          },
-          li: ({ node, children, ...props }: any) => {
-            const getNodePlainText = (n: any): string => {
-              if (!n) return '';
-              if (typeof n === 'string' || typeof n === 'number') return String(n);
-              if (Array.isArray(n)) return n.map(getNodePlainText).join(' ');
-              if (React.isValidElement(n)) return getNodePlainText((n.props as any)?.children);
-              return '';
-            };
-
-            const text = getNodePlainText(children);
-            const isChoice = /^\s*(?:\*{0,2}|[-*•])*\s*[A-D][\.\)]/i.test(text) || /\b[A-D][\.\)]/.test(text);
-            if (isChoice) {
-              return (
-                <li className="flex items-baseline gap-2 py-1.5 px-3 rounded-lg bg-slate-50/70 border border-slate-200 text-slate-800 hover:bg-slate-100 transition-colors shadow-none list-none m-0 [&>div]:inline [&>p]:inline" {...cleanProps(props)}>
-                  {children}
-                </li>
-              );
-            }
-            return <li className="my-1 leading-relaxed text-slate-800 [&>div]:inline [&>p]:inline" {...cleanProps(props)}>{children}</li>;
-          }
-        }}
+        remarkPlugins={MARKDOWN_REMARK_PLUGINS} 
+        rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
+        components={markdownFullComponents}
       >
         {processedContent}
       </Markdown>
     </div>
   );
-};
+});
 
 export const MathSpan: React.FC<{ content: string; className?: string }> = ({ content, className }) => {
   return <MathView content={content} inline className={className} />;
