@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Sparkles, Play, Download, Copy, Check, Upload, HelpCircle, Image as ImageIcon, FileText, RefreshCw, Key } from "lucide-react";
-import { apiFetch, getActiveApiKeyPool } from "../../lib/apiFetch";
+import { apiFetch } from "../../lib/apiFetch";
 import { sanitizeSvgOrHtmlForReact } from "../../lib/globalMath";
 
 interface PresetItem {
@@ -158,10 +158,10 @@ Nhiệm vụ của bạn là đọc đề bài (qua văn bản hoặc hình ản
     setIsGenerating(true);
     setSvgContent("");
 
-    const hasCustomPoolKey = getActiveApiKeyPool().length > 0;
+    const targetKey = (localStorage.getItem("custom_gemini_api_key") || localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim();
 
-    // 1. Thử dùng API proxy /api/generate-math-simulation trước nếu không có key cá nhân trong pool
-    if (!hasCustomPoolKey && !fileBase64) {
+    // 1. Thử dùng API proxy /api/generate-math-simulation trước nếu không có targetKey thủ công
+    if (!targetKey && !fileBase64) {
       try {
         const res = await apiFetch("/api/generate-math-simulation", {
           method: "POST",
@@ -181,7 +181,7 @@ Nhiệm vụ của bạn là đọc đề bài (qua văn bản hoặc hình ản
       }
     }
 
-    if (!hasCustomPoolKey) {
+    if (!targetKey) {
       try {
         const res = await apiFetch("/api/chat", {
           method: "POST",

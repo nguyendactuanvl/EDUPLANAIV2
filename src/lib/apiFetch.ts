@@ -531,39 +531,12 @@ export function getApiHeaders(options: RequestInit = {}, skipCustomKey = false, 
   return headers;
 }
 
-const inMemoryUploadStore = new Map<string, { data: string; type: string; name?: string; timestamp: number }>();
-
-export function getUploadedFileById(fileId: string): { data: string; type: string; name?: string } | null {
-  if (!fileId) return null;
-  if (inMemoryUploadStore.has(fileId)) {
-    const entry = inMemoryUploadStore.get(fileId)!;
-    inMemoryUploadStore.delete(fileId);
-    return { data: entry.data, type: entry.type, name: entry.name };
-  }
-  if (typeof window !== 'undefined') {
-    try {
-      const raw = localStorage.getItem(`upload_chunk_${fileId}`);
-      if (raw) {
-        localStorage.removeItem(`upload_chunk_${fileId}`);
-        return { data: raw, type: 'application/pdf' };
-      }
-    } catch (_) {}
-  }
-  return null;
-}
-
 export async function uploadFileChunked(fileData: string, type: string, extraHeaders?: Headers, name?: string): Promise<string> {
   const fileId = Math.random().toString(36).substring(2) + Date.now().toString(36);
-  inMemoryUploadStore.set(fileId, {
-    data: fileData,
-    type: type || 'application/pdf',
-    name,
-    timestamp: Date.now(),
-  });
   try {
     localStorage.setItem(`upload_chunk_${fileId}`, fileData);
   } catch (e) {
-    // In-memory store already holds the full file data for large PDFs
+    console.warn('Local storage limit reached during chunk save fallback', e);
   }
   return fileId;
 }
@@ -598,116 +571,24 @@ export function parseGeminiStreamChunk(chunk: string): string {
   return result;
 }
 
-export interface RotationKeyMeta {
-  id?: string;
-  label: string;
-  key: string;
-  isFromPool: boolean;
-}
-
 /**
- * Executes an async AI operation with Round-Robin key selection (`getOrderedRotationKeys`)
- * and Auto-Fallback retry across all active keys in the pool when a key returns 429 or 400/401/403.
- */
-export async function generateWithKeyRotation<T>(
-  operation: (
-    apiKey: string,
-    keyMeta: RotationKeyMeta,
-    attempt: number,
-    totalKeys: number
-  ) => Promise<T>
-): Promise<T> {
-  const rotationKeys = getOrderedRotationKeys();
-  const effectiveKeys: RotationKeyMeta[] =
-    rotationKeys.length > 0
-      ? rotationKeys
-      : [{ label: 'Mặc định (ENV)', key: getNextApiKey(), isFromPool: false }];
-
-  const maxAttempts = effectiveKeys.length;
-  let lastError: any = null;
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const currentKeyObj = effectiveKeys[attempt];
-    try {
-      const result = await operation(
-        currentKeyObj.key,
-        currentKeyObj,
-        attempt,
-        maxAttempts
-      );
-      if (currentKeyObj.isFromPool && currentKeyObj.id) {
-        updateApiKeyStatus(currentKeyObj.id, 'valid');
-      }
-      return result;
-    } catch (err: any) {
-      lastError = err;
-      const httpStatus = typeof err?.status === 'number' ? err.status : 0;
-      const errMsg = err?.message || String(err || '');
-      const errType = classifyApiErrorStatus(httpStatus, errMsg);
-      const hasNextKey = attempt + 1 < maxAttempts;
-
-      if (errType) {
-        if (currentKeyObj.isFromPool && currentKeyObj.id) {
-          updateApiKeyStatus(currentKeyObj.id, errType);
-        }
-        console.warn(
-          `[EduPlan Key Pool] Key "${currentKeyObj.label}" gặp lỗi (${errType}).` +
-            (hasNextKey
-              ? ` Đang tự động chuyển sang key dự phòng "${effectiveKeys[attempt + 1].label}" (${attempt + 2}/${maxAttempts})...`
-              : ' Đã thử hết tất cả các key đang bật trong danh sách.')
-        );
-
-        if (hasNextKey && typeof window !== 'undefined') {
-          window.dispatchEvent(
-            new CustomEvent('api-retry-status', {
-              detail: {
-                attempt: attempt + 1,
-                maxRetries: maxAttempts,
-                message: `Key "${currentKeyObj.label}" gặp lỗi (${errType === 'rate_limited' ? 'Quá tải 429' : 'Lỗi key'}), tự động chuyển sang "${effectiveKeys[attempt + 1].label}"...`,
-              },
-            })
-          );
-          continue;
-        }
-      } else if (hasNextKey && err?.isNetworkError) {
-        console.warn(
-          `[EduPlan Key Pool] Lỗi kết nối với key "${currentKeyObj.label}", đang thử key kế tiếp (${attempt + 2}/${maxAttempts})...`
-        );
-        continue;
-      }
-
-      throw err;
-    }
-  }
-
-  throw lastError || new Error('Tất cả các API Key trong danh sách đều thất bại.');
-}
-
-/**
- * CLIENT-SIDE API FETCH ROUTER WITH ROUND-ROBIN & AUTO-FALLBACK RETRY LOOP ACROSS ACTIVE KEY POOL.
- * All Gemini AI content generation routes execute 100% client-side in the browser via `clientAiEngine`
- * to avoid the 10-second Vercel Serverless Function timeout on `/api/index`.
+ * CLIENT-SIDE API FETCH ROUTER WITH ROUND-ROBIN & AUTO-FALLBACK RETRY LOOP ACROSS ACTIVE KEY POOL
  */
 export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const incomingHeaders = new Headers(options.headers || {});
   const skipRotation = incomingHeaders.get('x-skip-key-rotation') === '1';
   incomingHeaders.delete('x-skip-key-rotation');
 
-  const { isClientAiRoute, dispatchClientAiRoute } = await import('../services/clientAiEngine');
-  const isAiRoute = isClientAiRoute(url);
+  // Non-AI endpoints or explicit single-key test calls bypass rotation
+  const isNonAiEndpoint =
+    skipRotation ||
+    url.startsWith('/api/health') ||
+    url.startsWith('/api/circulars') ||
+    url.startsWith('/api/upload-chunk') ||
+    url.startsWith('/api/exams') ||
+    url.startsWith('/api/test-gemini-key');
 
-  // Explicit single-key test calls execute directly in the browser without advancing Round-Robin
-  if (isAiRoute && (skipRotation || url.startsWith('/api/test-gemini-key'))) {
-    const explicitKey = incomingHeaders.get('x-gemini-api-key') || undefined;
-    const headers = getApiHeaders({ ...options, headers: incomingHeaders }, false, explicitKey);
-    if (options.body && typeof options.body === 'string' && !headers.has('Content-Type')) {
-      headers.set('Content-Type', 'application/json');
-    }
-    return dispatchClientAiRoute(url, { ...options, headers }, explicitKey);
-  }
-
-  // Non-AI lightweight server endpoints (/api/health, /api/circulars, /api/exams/*, /api/webhook, /api/export-docx)
-  if (!isAiRoute) {
+  if (isNonAiEndpoint) {
     const explicitKey = incomingHeaders.get('x-gemini-api-key') || undefined;
     const headers = getApiHeaders({ ...options, headers: incomingHeaders }, false, explicitKey);
     if (options.body && typeof options.body === 'string' && !headers.has('Content-Type')) {
@@ -719,44 +600,40 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
     });
   }
 
+  const rotationKeys = getOrderedRotationKeys();
+  const maxAttempts = Math.max(1, rotationKeys.length);
   let lastResponse: Response | null = null;
+  let lastError: any = null;
 
-  try {
-    return await generateWithKeyRotation(async (apiKey, _keyMeta, attempt, totalKeys) => {
-      const headers = getApiHeaders(
-        { ...options, headers: incomingHeaders },
-        !apiKey,
-        apiKey
-      );
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const currentKeyObj = rotationKeys[attempt];
+    const headers = getApiHeaders(
+      { ...options, headers: incomingHeaders },
+      !currentKeyObj,
+      currentKeyObj?.key
+    );
 
-      if (options.body && typeof options.body === 'string' && !headers.has('Content-Type')) {
-        headers.set('Content-Type', 'application/json');
-      }
+    if (options.body && typeof options.body === 'string' && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
 
-      if (attempt + 1 < totalKeys) {
-        headers.set('x-disable-env-fallback', '1');
-      } else {
-        headers.delete('x-disable-env-fallback');
-      }
+    // If there are more active keys in the pool after this one, instruct server not to mask failure with env key yet
+    if (attempt + 1 < rotationKeys.length) {
+      headers.set('x-disable-env-fallback', '1');
+    } else {
+      headers.delete('x-disable-env-fallback');
+    }
 
-      let response: Response;
-      try {
-        response = await dispatchClientAiRoute(
-          url,
-          {
-            ...options,
-            headers,
-          },
-          apiKey
-        );
-      } catch (networkErr: any) {
-        if (networkErr && typeof networkErr === 'object') {
-          networkErr.isNetworkError = true;
-        }
-        throw networkErr;
-      }
+    try {
+      const response = await window.fetch(url, {
+        ...options,
+        headers,
+      });
 
       if (response.ok) {
+        if (currentKeyObj?.isFromPool && currentKeyObj.id) {
+          updateApiKeyStatus(currentKeyObj.id, 'valid');
+        }
         return response;
       }
 
@@ -767,22 +644,47 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
       } catch (_) {}
 
       const errType = classifyApiErrorStatus(response.status, errText);
-      if (errType && attempt + 1 < totalKeys) {
-        const retryableErr: any = new Error(errText || `HTTP ${response.status}`);
-        retryableErr.status = response.status;
-        throw retryableErr;
-      }
+      if (errType) {
+        if (currentKeyObj?.isFromPool && currentKeyObj.id) {
+          updateApiKeyStatus(currentKeyObj.id, errType);
+        }
+        const hasNextKey = attempt + 1 < rotationKeys.length;
+        console.warn(
+          `[EduPlan Key Pool] Key "${currentKeyObj?.label || 'Mặc định'}" gặp lỗi HTTP ${response.status} (${errType}).` +
+            (hasNextKey
+              ? ` Đang tự động chuyển sang key dự phòng "${rotationKeys[attempt + 1].label}" (${attempt + 2}/${rotationKeys.length})...`
+              : ' Đã thử hết tất cả các key đang bật trong danh sách.')
+        );
 
-      if (errType && _keyMeta.isFromPool && _keyMeta.id) {
-        updateApiKeyStatus(_keyMeta.id, errType);
+        if (hasNextKey && typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('api-retry-status', {
+              detail: {
+                attempt: attempt + 1,
+                maxRetries: rotationKeys.length,
+                message: `Key "${currentKeyObj?.label}" gặp lỗi (${errType === 'rate_limited' ? 'Quá tải 429' : 'Lỗi key'}), tự động chuyển sang "${rotationKeys[attempt + 1].label}"...`,
+              },
+            })
+          );
+          continue;
+        }
       }
 
       return response;
-    });
-  } catch (err: any) {
-    if (lastResponse) {
-      return lastResponse;
+    } catch (networkErr: any) {
+      lastError = networkErr;
+      if (attempt + 1 < rotationKeys.length) {
+        console.warn(
+          `[EduPlan Key Pool] Lỗi kết nối với key "${currentKeyObj?.label}", đang thử key kế tiếp (${attempt + 2}/${rotationKeys.length})...`
+        );
+        continue;
+      }
+      throw networkErr;
     }
-    throw err;
   }
+
+  if (lastResponse) {
+    return lastResponse;
+  }
+  throw lastError || new Error('Tất cả các API Key trong danh sách đều không thể kết nối.');
 }

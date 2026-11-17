@@ -1,7 +1,7 @@
 import {
   apiFetch,
-  generateWithKeyRotation,
   parseGeminiStreamChunk,
+  getCustomApiKey,
   getNextApiKey as getNextKeyFromPool,
   getNextApiKeyItem,
   getApiKeyPool,
@@ -20,11 +20,9 @@ import {
   sanitizeSingleKeyString,
   type ApiKeyPoolItem,
   type ApiKeyStatus,
-  type RotationKeyMeta,
 } from '../lib/apiFetch';
 
 export {
-  generateWithKeyRotation,
   getApiKeyPool,
   saveApiKeyPool,
   addApiKeysToPool,
@@ -39,7 +37,6 @@ export {
   maskApiKey,
   type ApiKeyPoolItem,
   type ApiKeyStatus,
-  type RotationKeyMeta,
 };
 
 export const DEFAULT_GEMINI_MODEL = 'gemini-4-hydrogen';
@@ -53,15 +50,12 @@ export function getNextApiKey(): string {
 }
 
 /**
- * Reads Gemini API key from the active pool or environment variables.
+ * Reads Gemini API key from the active pool (without advancing Round-Robin) or environment variables.
  */
 export function getApiKey(advanceRotation = false): string {
-  if (advanceRotation) {
-    return getNextKeyFromPool();
-  }
-  const activePool = getActiveApiKeyPool();
-  if (activePool.length > 0) {
-    return activePool[0].key.trim();
+  if (typeof window !== 'undefined') {
+    const poolKey = getCustomApiKey(advanceRotation);
+    if (poolKey) return poolKey.trim();
   }
   return getEnvDefaultApiKey();
 }

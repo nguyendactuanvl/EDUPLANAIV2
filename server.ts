@@ -37,12 +37,6 @@ async function startServer() {
     return next();
   });
 
-  // Start listening on PORT 3000 immediately so health checks pass in < 50ms
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`Local: http://localhost:${PORT}`);
-  });
-
   if (!isProduction) {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
@@ -76,6 +70,11 @@ async function startServer() {
       res.sendFile(path.resolve(distPath, "index.html"));
     });
   }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Local: http://localhost:${PORT}`);
+  });
 }
 
 startServer().catch((err) => {

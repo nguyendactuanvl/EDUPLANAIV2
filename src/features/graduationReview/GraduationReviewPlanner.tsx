@@ -38,7 +38,7 @@ import {
 import { MarkdownRenderer, typesetMathJax } from "../../components/MarkdownRenderer";
 import { exportHtmlToWord } from "../../lib/exportUtils";
 import { printElement } from "../../lib/print";
-import { apiFetch, getNextApiKey, setCustomApiKey } from "../../lib/apiFetch";
+import { apiFetch, API_KEY_STORAGE, setCustomApiKey } from "../../lib/apiFetch";
 import { cleanDocumentContent } from "../../pages/Worksheets";
 import {
   normalizeMathText,
@@ -157,7 +157,14 @@ export function GraduationReviewPlannerModule() {
   const [includeExamFormats, setIncludeExamFormats] = useState<boolean>(true);
 
   // AI Model Controls & User Account Live Fetching
-  const [apiKey, setApiKey] = useState<string>(() => getNextApiKey());
+  const [apiKey, setApiKey] = useState<string>(() => {
+    return (
+      localStorage.getItem(API_KEY_STORAGE) ||
+      localStorage.getItem("gemini_api_key") ||
+      (import.meta as any).env?.VITE_GEMINI_API_KEY ||
+      ""
+    );
+  });
   const [geminiModel, setGeminiModel] = useState<string>("gemini-3.8-flash");
   const [availableModels, setAvailableModels] = useState<AiModelItem[]>(DEFAULT_AI_MODELS);
   const [isFetchingModels, setIsFetchingModels] = useState<boolean>(false);
@@ -220,7 +227,7 @@ export function GraduationReviewPlannerModule() {
 
     setIsFetchingModels(true);
     try {
-      setCustomApiKey(activeKey);
+      localStorage.setItem(API_KEY_STORAGE, activeKey);
       const res = await apiFetch("/api/list-gemini-models");
       if (!res.ok) throw new Error(`HTTP ${res.status}: Không thể truy vấn danh sách mô hình.`);
       const data = await res.json();
@@ -283,11 +290,11 @@ export function GraduationReviewPlannerModule() {
     }
   };
 
-  // Sync API Key to pool & trigger model fetch
+  // Sync API Key to localStorage & trigger model fetch
   const handleApiKeyChange = (val: string) => {
     setApiKey(val);
     if (val.trim()) {
-      setCustomApiKey(val.trim());
+      localStorage.setItem(API_KEY_STORAGE, val.trim());
       fetchAvailableModels(val, false);
     }
   };
@@ -622,6 +629,8 @@ ${subjectFormatInstructions}`;
     try {
       const cleanKey = apiKey.trim();
       if (cleanKey) {
+        localStorage.setItem(API_KEY_STORAGE, cleanKey);
+        localStorage.setItem("eduplan_gemini_api_key_v2", cleanKey);
         setCustomApiKey(cleanKey);
       }
       const prompt = buildSystemPrompt();

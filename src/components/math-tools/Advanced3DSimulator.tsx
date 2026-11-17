@@ -1162,6 +1162,7 @@ export const Advanced3DSimulator: React.FC<Advanced3DSimulatorProps> = ({ onInse
     setAiStatusMsg("Đang dùng AI Gemini 3.8 Flash phân tích đề bài toán thực tế...");
 
     try {
+      const storedKey = (localStorage.getItem("custom_gemini_api_key") || localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim();
       const promptContent = `Bạn là trợ lý Chuyên gia Toán THPT 2018. Hãy phân tích đề bài toán thực tế sau và trích xuất tham số 3D:
 "${aiPrompt}"
 
