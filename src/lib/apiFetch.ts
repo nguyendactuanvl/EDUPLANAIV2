@@ -531,12 +531,39 @@ export function getApiHeaders(options: RequestInit = {}, skipCustomKey = false, 
   return headers;
 }
 
+const inMemoryUploadStore = new Map<string, { data: string; type: string; name?: string; timestamp: number }>();
+
+export function getUploadedFileById(fileId: string): { data: string; type: string; name?: string } | null {
+  if (!fileId) return null;
+  if (inMemoryUploadStore.has(fileId)) {
+    const entry = inMemoryUploadStore.get(fileId)!;
+    inMemoryUploadStore.delete(fileId);
+    return { data: entry.data, type: entry.type, name: entry.name };
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(`upload_chunk_${fileId}`);
+      if (raw) {
+        localStorage.removeItem(`upload_chunk_${fileId}`);
+        return { data: raw, type: 'application/pdf' };
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
 export async function uploadFileChunked(fileData: string, type: string, extraHeaders?: Headers, name?: string): Promise<string> {
   const fileId = Math.random().toString(36).substring(2) + Date.now().toString(36);
+  inMemoryUploadStore.set(fileId, {
+    data: fileData,
+    type: type || 'application/pdf',
+    name,
+    timestamp: Date.now(),
+  });
   try {
     localStorage.setItem(`upload_chunk_${fileId}`, fileData);
   } catch (e) {
-    console.warn('Local storage limit reached during chunk save fallback', e);
+    // In-memory store already holds the full file data for large PDFs
   }
   return fileId;
 }
@@ -594,7 +621,7 @@ export async function generateWithKeyRotation<T>(
   const effectiveKeys: RotationKeyMeta[] =
     rotationKeys.length > 0
       ? rotationKeys
-      : [{ label: 'Mặc định (Server)', key: '', isFromPool: false }];
+      : [{ label: 'Mặc định (ENV)', key: getNextApiKey(), isFromPool: false }];
 
   const maxAttempts = effectiveKeys.length;
   let lastError: any = null;
@@ -657,23 +684,30 @@ export async function generateWithKeyRotation<T>(
 }
 
 /**
- * CLIENT-SIDE API FETCH ROUTER WITH ROUND-ROBIN & AUTO-FALLBACK RETRY LOOP ACROSS ACTIVE KEY POOL
+ * CLIENT-SIDE API FETCH ROUTER WITH ROUND-ROBIN & AUTO-FALLBACK RETRY LOOP ACROSS ACTIVE KEY POOL.
+ * All Gemini AI content generation routes execute 100% client-side in the browser via `clientAiEngine`
+ * to avoid the 10-second Vercel Serverless Function timeout on `/api/index`.
  */
 export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const incomingHeaders = new Headers(options.headers || {});
   const skipRotation = incomingHeaders.get('x-skip-key-rotation') === '1';
   incomingHeaders.delete('x-skip-key-rotation');
 
-  // Non-AI endpoints or explicit single-key test calls bypass rotation
-  const isNonAiEndpoint =
-    skipRotation ||
-    url.startsWith('/api/health') ||
-    url.startsWith('/api/circulars') ||
-    url.startsWith('/api/upload-chunk') ||
-    url.startsWith('/api/exams') ||
-    url.startsWith('/api/test-gemini-key');
+  const { isClientAiRoute, dispatchClientAiRoute } = await import('../services/clientAiEngine');
+  const isAiRoute = isClientAiRoute(url);
 
-  if (isNonAiEndpoint) {
+  // Explicit single-key test calls execute directly in the browser without advancing Round-Robin
+  if (isAiRoute && (skipRotation || url.startsWith('/api/test-gemini-key'))) {
+    const explicitKey = incomingHeaders.get('x-gemini-api-key') || undefined;
+    const headers = getApiHeaders({ ...options, headers: incomingHeaders }, false, explicitKey);
+    if (options.body && typeof options.body === 'string' && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+    return dispatchClientAiRoute(url, { ...options, headers }, explicitKey);
+  }
+
+  // Non-AI lightweight server endpoints (/api/health, /api/circulars, /api/exams/*, /api/webhook, /api/export-docx)
+  if (!isAiRoute) {
     const explicitKey = incomingHeaders.get('x-gemini-api-key') || undefined;
     const headers = getApiHeaders({ ...options, headers: incomingHeaders }, false, explicitKey);
     if (options.body && typeof options.body === 'string' && !headers.has('Content-Type')) {
@@ -699,7 +733,6 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
         headers.set('Content-Type', 'application/json');
       }
 
-      // If there are more active keys in the pool after this one, instruct server not to mask failure with env key yet
       if (attempt + 1 < totalKeys) {
         headers.set('x-disable-env-fallback', '1');
       } else {
@@ -708,10 +741,14 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
 
       let response: Response;
       try {
-        response = await window.fetch(url, {
-          ...options,
-          headers,
-        });
+        response = await dispatchClientAiRoute(
+          url,
+          {
+            ...options,
+            headers,
+          },
+          apiKey
+        );
       } catch (networkErr: any) {
         if (networkErr && typeof networkErr === 'object') {
           networkErr.isNetworkError = true;
@@ -736,7 +773,6 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
         throw retryableErr;
       }
 
-      // On final attempt or non-key error, still update status if it's a key error before returning response
       if (errType && _keyMeta.isFromPool && _keyMeta.id) {
         updateApiKeyStatus(_keyMeta.id, errType);
       }
