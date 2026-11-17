@@ -992,7 +992,24 @@ export function cleanMathAndUnwrapHeadings(text: string): string {
     return fullMatch;
   });
 
-  return fixAndMergeMathArrows(s);
+  let out = fixAndMergeMathArrows(s);
+  out = out.replace(
+    /\$\$([\s\S]*?)\$\$[ \t\r\n]*([.,;])(?!(?:\.|[0-9a-zA-Zà-ỹÀ-Ỹ]))(?=[ \t]*(?:\r?\n|$))/g,
+    (fullMatch, body: string, punct: string) => {
+      const trimmed = body.trim();
+      if (!trimmed) return fullMatch;
+      const isDisplayBlock =
+        trimmed.includes('\n') ||
+        /\\begin\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)/i.test(trimmed) ||
+        /\\left\s*\[/.test(trimmed);
+      if (!isDisplayBlock && !fullMatch.includes('\n')) {
+        return `$$${trimmed}${/[.,;]$/.test(trimmed) ? '' : punct}$$`;
+      }
+      const nextBody = /[.,;]$/.test(trimmed) ? trimmed : `${trimmed}${punct}`;
+      return `\n\n$$\n${nextBody}\n$$\n\n`;
+    }
+  );
+  return out;
 }
 
 const GM_LATEX_CMD_ATOM = `\\\\[a-zA-Z]+(?:\\[[^\\]]*\\])?(?:\\{(?:[^{}]|\\{[^{}]*\\})*\\}){0,3}`;
@@ -1012,14 +1029,14 @@ const GM_D_CHAIN_REGEX = new RegExp(
 
 const GM_NORM_TERM = `(?:\\\\left\\s*)?(?:\\||\\\\vert)\\s*(?:\\\\left\\s*\\[[^\\]\\n\\$]+\\\\right\\s*\\]|\\[[^\\]\\n\\$]+\\]|\\\\(?:vec|overrightarrow)\\s*${GM_BRACE3}|[A-Za-z0-9_']+)\\s*(?:\\\\right\\s*)?(?:\\||\\\\vert)(?:\\^\\s*(?:${GM_BRACE3}|[0-9]+))?`;
 const GM_CROSS_TERM = `(?:\\\\left\\s*)?\\[\\s*\\\\(?:vec|overrightarrow)\\s*${GM_BRACE3}\\s*[,;]\\s*\\\\(?:vec|overrightarrow)\\s*${GM_BRACE3}\\s*(?:\\\\right\\s*)?\\]`;
-const GM_TEX_CMD_TERM = `(?:[0-9]+\\s*)?\\\\(?:frac\\s*${GM_BRACE3}\\s*${GM_BRACE3}|sqrt(?:\\[[^\\]]*\\])?\\s*${GM_BRACE3}|(?:vec|overrightarrow|widehat)\\s*${GM_BRACE3}|(?:sin|cos|tan|cot|arcsin|arccos|arctan|ln|log)\\s*(?:\\^\\s*(?:${GM_BRACE3}|[0-9]+))?(?:\\s*\\([^()\\n\\$]*\\)|\\s*\\\\(?:varphi|phi|alpha|beta|gamma|theta|pi|widehat\\s*${GM_BRACE3})\\b|\\s*[A-Za-z0-9]+)?|(?:cdot|times|le|ge|leq|geq|neq|ne|approx|pi|infty|alpha|beta|gamma|varphi|phi|theta|Delta|Sigma|pm|mp|circ|perp|parallel)\\b)`;
+const GM_TEX_CMD_TERM = `(?:[0-9]+\\s*)?\\\\(?:frac\\s*${GM_BRACE3}\\s*${GM_BRACE3}|sqrt(?:\\[[^\\]]*\\])?\\s*${GM_BRACE3}|(?:vec|overrightarrow|widehat)\\s*${GM_BRACE3}|(?:sin|cos|tan|cot|arcsin|arccos|arctan|ln|log|lim)\\s*(?:(?:_(?:${GM_BRACE3}|[A-Za-z0-9.,]+)|\\^\\s*(?:${GM_BRACE3}|[A-Za-z0-9\\-+]+))){0,2}(?:\\s*\\([^()\\n\\$]*\\)|\\s*\\\\(?:varphi|phi|alpha|beta|gamma|theta|pi|widehat\\s*${GM_BRACE3})\\b|\\s*[A-Za-z0-9]+)?|(?:cdot|times|le|ge|leq|geq|neq|ne|approx|pi|infty|alpha|beta|gamma|varphi|phi|theta|Delta|Sigma|pm|mp|circ|perp|parallel)\\b)`;
 const GM_PAREN_TERM = `\\((?!\\s*[A-D]\\.\\s)[^()\\n\\$]*\\)(?:[\\^_](?:${GM_BRACE3}|[A-Za-z0-9]+))?`;
 const GM_ID_TERM = `[A-Za-z0-9_']+(?:,[0-9]+)?(?:[\\^_](?:${GM_BRACE3}|\\\\circ\\b|[A-Za-z0-9]+)){1,4}|[A-Za-z0-9_']+(?:,[0-9]+)?`;
 const GM_TEX_ATOM = `(?:${GM_NORM_TERM}|${GM_CROSS_TERM}|${GM_TEX_CMD_TERM}|${GM_PAREN_TERM}|${GM_ID_TERM})`;
 const GM_TEX_BIN_OP = `(?:\\s*(?:=|\\\\le|\\\\ge|\\\\neq|\\\\ne|\\\\approx|<=|>=|<|>|\\+|\\-|\\*|/|\\\\cdot|\\\\times|\\\\perp|\\\\parallel)\\s*)`;
 const GM_VN_STOP_WORDS = `(?:Với|Kết|Đáp|Tìm|Cho|Biết|Tính|Gọi|Vậy|Nên|Suy|Do|Khi|Từ|Theo|Trong|và|với|khi|thì|tại|trong|ta|được|là|nếu|theo|cùng|hay|hoặc|cho|tìm|tính|biết|bằng)\\b`;
 const GM_VN_ACCENTED_WORD = `[a-zA-ZÀ-ỹ]*[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ][a-zA-ZÀ-ỹ]*`;
-const GM_FULL_EQ_SIGNAL = /\\(?:frac|sqrt|cdot|times|vec|overrightarrow|widehat|le|ge|leq|geq|neq|ne|pi|infty|alpha|beta|varphi|phi|theta|cos|sin|tan|cot|circ|pm|mp|perp|parallel)|[\^_]/;
+const GM_FULL_EQ_SIGNAL = /\\(?:frac|sqrt|cdot|times|vec|overrightarrow|widehat|le|ge|leq|geq|neq|ne|pi|infty|alpha|beta|varphi|phi|theta|cos|sin|tan|cot|arcsin|arccos|arctan|log|ln|lim|circ|pm|mp|perp|parallel)|[\^_]/;
 const GM_FULL_EQ_REGEX = new RegExp(`(?<![\\$\\\\\\wÀ-ỹ])(?!\\d+\\.\\s)(${GM_TEX_ATOM}(?:${GM_TEX_BIN_OP}${GM_TEX_ATOM}|\\s+(?!${GM_VN_STOP_WORDS}|${GM_VN_ACCENTED_WORD})${GM_TEX_ATOM}){0,16})(?=[;!?\\)]|\\.\\s|\\.$|,\\s|\\s+(?:${GM_VN_STOP_WORDS}|${GM_VN_ACCENTED_WORD})|\\n|$)`, 'g');
 
 const GM_FRAC_BRACE3_REGEX = new RegExp(`(?<!\\$)\\\\frac${GM_BRACE3}${GM_BRACE3}(?!\\$)`, 'g');
@@ -1607,7 +1624,23 @@ export function normalizeMathText(text: any): string {
   t = wrapNakedMathInDocument(t);
 
   // Clean orphan dots right after display math
-  t = t.replace(/(\$\$[\s\S]*?\$\$)\s*\.\s*(?=[A-ZÀ-Ỹ])/g, '$1\n\n');
+  t = t.replace(
+    /\$\$([\s\S]*?)\$\$[ \t\r\n]*([.,;])(?!(?:\.|[0-9a-zA-Zà-ỹÀ-Ỹ]))(?=[ \t]*(?:\r?\n|$))/g,
+    (fullMatch, body: string, punct: string) => {
+      const trimmed = body.trim();
+      if (!trimmed) return fullMatch;
+      const isDisplayBlock =
+        trimmed.includes('\n') ||
+        /\\begin\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)/i.test(trimmed) ||
+        /\\left\s*\[/.test(trimmed);
+      if (!isDisplayBlock && !fullMatch.includes('\n')) {
+        return `$$${trimmed}${/[.,;]$/.test(trimmed) ? '' : punct}$$`;
+      }
+      const nextBody = /[.,;]$/.test(trimmed) ? trimmed : `${trimmed}${punct}`;
+      return `\n\n$$\n${nextBody}\n$$\n\n`;
+    }
+  );
+  t = t.replace(/(\$\$[\s\S]*?\$\$)\s*\.\s*(?=(?:[A-ZÀ-Ỹ]|\*{1,2}(?:Câu|Bài)\s*\d))/g, '$1\n\n');
 
   // Clean leaked undefined/null
   t = t.replace(/(?<![a-zA-Z0-9_\$])(?:undefined|null)(?![a-zA-Z0-9_\$])/g, '');
@@ -2104,13 +2137,13 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
   }
   text = mathSplitParts.join('');
   text = fixAndMergeMathArrows(text);
-  // 1.1 Chỉ chuẩn hóa dấu sao quanh nhãn phương án [A-D] đứng đầu dòng nếu văn bản thực sự có PHẦN I, tuyệt đối không làm hỏng "(A. 90°, B. 0°, ...)" giữa câu
+  // 1.1 Chỉ chuẩn hóa dấu sao quanh nhãn phương án [A-D] đứng đầu dòng nếu văn bản thực sự có PHẦN I, tuyệt đối không làm hỏng "(A. 90°, B. 0°, ...)" giữa câu hoặc "A.BCD"
   if (/PHẦN\s*(?:I\b|1\b)/i.test(text)) {
-    text = text.replace(/(^|\n)[ \t]*(?:[-*•●]\s*)?(?:\*{1,3}|<b>)?(?:\(([A-D])\)|([A-D]))[\.\:](?:\*{1,3}|<\/b>)?[ \t]*(?:\*{1,3}[ \t]*)?/g, (_m, nl, l1, l2) => {
+    text = text.replace(/(^|\n)[ \t]*(?:[-*•●]\s*)?(?:\*{1,3}|<b>)?(?:\(([A-D])\)|([A-D]))[\.\:](?:\*{1,3}|<\/b>)?(?:[ \t]+|(?=\$|\n|$))(?:\*{1,3}[ \t]*)?/g, (_m, nl, l1, l2) => {
       const letter = l1 || l2;
       return `${nl}${letter}. `;
     });
-    text = text.replace(/(^|\n)[ \t]*([A-D]\.)(?=[^\s\*])/gm, "$1$2 ");
+    text = text.replace(/(^|\n)[ \t]*([A-D]\.)(?![\s\*]|[A-Z]{2,})/gm, "$1$2 ");
   }
 
   // 2. Duyệt từng dòng và đánh số câu hỏi cho từng Phần I, II, III, IV
@@ -2206,14 +2239,19 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
             .trim();
         };
 
-        // Kiểm tra xem A. B. C. D. có nằm chung dòng không
-        const mcMatch = stemLine.match(/^(.*?)(?:\s+)(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?A[\.\):](?:\*{0,2}|<\/b>)?\s*([\s\S]*?)(?:\s+)(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?B[\.\):](?:\*{0,2}|<\/b>)?\s*([\s\S]*?)(?:\s+)(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?C[\.\):](?:\*{0,2}|<\/b>)?\s*([\s\S]*?)(?:\s+)(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?D[\.\):](?:\*{0,2}|<\/b>)?\s*([\s\S]*)$/i);
+        // Kiểm tra xem A. B. C. D. có nằm chung dòng không (chỉ quét ngoài khối $...$/$$...$$ để bảo vệ $(SAD)$, $(BCD)$)
+        const searchableStem = stemLine.replace(/\$\$[\s\S]*?\$\$|\$(?:\\.|[^\$\\\n])+?\$/g, (m) => 'M'.repeat(m.length));
+        const mcMatch = searchableStem.match(/^(.*?)(?:\s+)(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?A[\.\):](?:\*{0,2}|<\/b>)?(?:\s+|(?=\$))([\s\S]*?)(?:\s+)(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?B[\.\):](?:\*{0,2}|<\/b>)?(?:\s+|(?=\$))([\s\S]*?)(?:\s+)(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?C[\.\):](?:\*{0,2}|<\/b>)?(?:\s+|(?=\$))([\s\S]*?)(?:\s+)(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?D[\.\):](?:\*{0,2}|<\/b>)?(?:\s+|(?=\$))([\s\S]*)$/);
         if (mcMatch) {
-          const stem = mcMatch[1].trim();
-          const optA = cleanOpt(mcMatch[2]);
-          const optB = cleanOpt(mcMatch[3]);
-          const optC = cleanOpt(mcMatch[4]);
-          const optD = cleanOpt(mcMatch[5]);
+          const idxB = searchableStem.indexOf(mcMatch[3], mcMatch[1].length);
+          const idxC = searchableStem.indexOf(mcMatch[4], idxB + mcMatch[3].length);
+          const idxD = searchableStem.indexOf(mcMatch[5], idxC + mcMatch[4].length);
+          const idxA = searchableStem.indexOf(mcMatch[2], mcMatch[1].length);
+          const stem = stemLine.slice(0, mcMatch[1].length).trim();
+          const optA = cleanOpt(stemLine.slice(idxA, idxA + mcMatch[2].length));
+          const optB = cleanOpt(stemLine.slice(idxB, idxB + mcMatch[3].length));
+          const optC = cleanOpt(stemLine.slice(idxC, idxC + mcMatch[4].length));
+          const optD = cleanOpt(stemLine.slice(idxD));
           result.push(stem);
           result.push("");
           result.push(`- **A.** ${optA}`);
@@ -2226,18 +2264,19 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
 
         // Kiểm tra nếu stemLine bị dính phương án A ở đuôi (ví dụ: "... là A. 15." hoặc "... bằng A. u_5 = 48.")
         // trong khi các phương án B, C, D nằm ở các dòng tiếp theo
-        const trailingAMatch = stemLine.match(/^(.*?)\s+(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?A[\.\):](?:\*{0,2}|<\/b>)?\s*([^\n]+)$/i);
+        const trailingAMatch = searchableStem.match(/^(.*?)\s+(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?A[\.\):](?:\*{0,2}|<\/b>)?(?:\s+|(?=\$))([^\n]+)$/);
         if (trailingAMatch) {
           let hasNextB = false;
           for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
-            if (/^\s*(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?B[\.\):]/i.test(lines[j].trim())) {
+            if (/^\s*(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?B[\.\):](?:\*{0,2}|<\/b>)?(?:\s+|(?=\$))/.test(lines[j].trim())) {
               hasNextB = true;
               break;
             }
           }
           if (hasNextB) {
-            const cleanStem = trailingAMatch[1].trim();
-            const optA = cleanOpt(trailingAMatch[2]);
+            const optAStart = stemLine.length - trailingAMatch[2].length;
+            const cleanStem = stemLine.slice(0, trailingAMatch[1].length).trim();
+            const optA = cleanOpt(stemLine.slice(optAStart));
             result.push(cleanStem);
             result.push("");
             result.push(`- **A.** ${optA}`);
@@ -2321,7 +2360,7 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
         }
       }
 
-      const singleOptMatch = trimmed.match(/^(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?([A-D])[\.\):](?:\*{0,2}|<\/b>)?\s*([\s\S]+)$/);
+      const singleOptMatch = trimmed.match(/^(?:[-*•●]\s*)?(?:\*{0,2}|<b>)?([A-D])[\.\):](?:\*{0,2}|<\/b>)?(?:\s+|(?=\$))([\s\S]+)$/);
       if (singleOptMatch) {
         const optLetter = singleOptMatch[1].toUpperCase();
         const optBody = cleanOpt(singleOptMatch[2]);

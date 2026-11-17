@@ -5962,6 +5962,248 @@ app.post("/api/isomorphic-exam/generate-exam", async (req, res) => {
       return clean;
     };
 
+    const wrapNakedServerLatex = (text: string): string => {
+      if (!text) return "";
+      let outText = String(text);
+      const vault: string[] = [];
+      outText = outText.replace(
+        /(```[\s\S]*?```|`[^`\n]+`|\$\$[\s\S]*?\$\$|(?<!\\)\$(?!\$)[^$\n]+(?<!\\)\$(?!\$)|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]|<svg[\s\S]*?<\/svg>|\\begin\s*\{(?:tikzpicture|cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}[\s\S]*?\\end\s*\{(?:tikzpicture|cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}|!\[[^\]]*\]\([^)]*\)|<[^>]+>)/gi,
+        (m) => {
+          const i = vault.length;
+          vault.push(m);
+          return `\uE000SRVWNL_${i}\uE001`;
+        }
+      );
+
+      const TRIG_RE =
+        /\\(?:log|ln|lg|exp|sin|cos|tan|cot|arcsin|arccos|arctan|sinh|cosh|tanh|lim|limsup|liminf|sum|prod|int|iint|oint|frac|dfrac|tfrac|sqrt|root|vec|overrightarrow|overline|underline|widehat|left|le|leq|ge|geq|ne|neq|approx|equiv|pm|mp|cdot|times|div|in|notin|subset|subseteq|supset|supseteq|setminus|cap|cup|emptyset|varnothing|forall|exists|Rightarrow|Leftrightarrow|Leftarrow|iff|implies|infty|pi|alpha|beta|gamma|delta|theta|varphi|phi|Delta|Sigma|Omega|mathbb|mathcal|mathbf|mathrm|perp|parallel|circ)(?![a-zA-Z])/;
+
+      outText = outText.replace(
+        /(?<![\\a-zA-ZÀ-ỹ\uE000\uE001])(arcsin|arccos|arctan|sin|cos|tan|cot|log|ln|lim)(?=\s*(?:[_^][\{0-9a-zA-Z\\]|\())/g,
+        "\\$1"
+      );
+
+      if (TRIG_RE.test(outText)) {
+        const VN_RE = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ]/;
+        const FNS = new Set(["sin", "cos", "tan", "cot", "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "log", "ln", "lg", "exp", "lim", "limsup", "liminf", "max", "min", "mod", "dx", "dy", "dz", "dt", "du", "dv"]);
+        const STOP_CAPS = new Set(["II", "III", "IV", "VI", "VII", "VIII", "IX", "XI", "XII", "THPT", "THCS", "BGD", "SGD", "OMML", "SVG", "PDF", "JSON", "ABCD"]);
+        const PAREN_PROSE = /\b(?:hoac|hay|voi|khi|thi|tai|trong|va|thoa|man|dieu|kien|loai|nhan|where|when|with|and|or|for|the|if|then|that|such|find|let|from|into|real|positive|integer|numbers?)\b/i;
+
+        const readBal = (line: string, openIdx: number, oCh: string, cCh: string): number => {
+          let d = 0;
+          let i = openIdx;
+          while (i < line.length) {
+            if (line[i] === "\\") { i += 2; continue; }
+            if (line[i] === oCh) d++;
+            else if (line[i] === cCh && --d === 0) return i + 1;
+            i++;
+          }
+          return -1;
+        };
+        const isCleanGrp = (inner: string): boolean => {
+          const cl = inner.replace(/\\(?:text|mathrm|textbf|textit)\s*\{[^{}]*\}/g, "");
+          if (VN_RE.test(cl) || PAREN_PROSE.test(cl)) return false;
+          const ws = cl.match(/[A-Za-z]{4,}/g) || [];
+          for (const w of ws) {
+            if (FNS.has(w.toLowerCase())) continue;
+            if (/^[A-Z]{2,5}$/.test(w) && !STOP_CAPS.has(w)) continue;
+            return false;
+          }
+          return true;
+        };
+
+        outText = outText
+          .split("\n")
+          .map((line) => {
+            if (!TRIG_RE.test(line)) return line;
+            const isTbl = /^\s*\|/.test(line);
+            let resLine = "";
+            let cur = 0;
+            while (cur < line.length) {
+              const m = TRIG_RE.exec(line.slice(cur));
+              if (!m || m.index === undefined) { resLine += line.slice(cur); break; }
+              const anchor = cur + m.index;
+              let start = anchor;
+              let lp = anchor;
+              let sawOp = false;
+              while (lp > cur) {
+                let p = lp - 1;
+                while (p >= cur && (line[p] === " " || line[p] === "\t")) p--;
+                if (p < cur) break;
+                const hadSp = p < lp - 1;
+                const ch = line[p];
+                if (ch === "\uE001" || ch === "\uE000" || ch === "$" || (isTbl && ch === "|")) break;
+                if ("=+-*/<>^_".includes(ch)) {
+                  if (ch === "-" && /^\s*$/.test(line.slice(0, p))) break;
+                  lp = p; start = lp; sawOp = true; continue;
+                }
+                if (ch === "'") { lp = p; start = lp; continue; }
+                if (/[0-9]/.test(ch)) {
+                  let ns = p;
+                  while (ns > cur && /[0-9]/.test(line[ns - 1])) ns--;
+                  if (ns >= cur + 2 && (line[ns - 1] === "." || line[ns - 1] === ",") && /[0-9]/.test(line[ns - 2])) {
+                    ns -= 2;
+                    while (ns > cur && /[0-9]/.test(line[ns - 1])) ns--;
+                  }
+                  if (hadSp && /^\s*\d+\.$/.test(line.slice(0, p + 2).trim())) break;
+                  lp = ns; start = lp; sawOp = true; continue;
+                }
+                if (ch === ")" || ch === "]" || ch === "}") {
+                  const oCh = ch === ")" ? "(" : ch === "]" ? "[" : "{";
+                  let d = 0; let gs = -1;
+                  for (let k = p; k >= cur; k--) {
+                    if (line[k] === ch) d++;
+                    else if (line[k] === oCh && --d === 0) { gs = k; break; }
+                  }
+                  if (gs !== -1 && isCleanGrp(line.slice(gs + 1, p))) {
+                    let ext = gs;
+                    if (ext > cur && /[A-Za-z]/.test(line[ext - 1])) {
+                      let ws = ext - 1;
+                      while (ws > cur && /[A-Za-zÀ-ỹ]/.test(line[ws - 1])) ws--;
+                      const w = line.slice(ws, ext);
+                      if (ws > cur && line[ws - 1] === "\\") ext = ws - 1;
+                      else if (!VN_RE.test(w) && (w.length === 1 || FNS.has(w.toLowerCase()))) ext = ws;
+                    }
+                    lp = ext; start = lp; continue;
+                  }
+                  break;
+                }
+                if (/[A-Za-z]/.test(ch)) {
+                  let ws = p;
+                  while (ws > cur && /[A-Za-zÀ-ỹ]/.test(line[ws - 1])) ws--;
+                  const w = line.slice(ws, p + 1);
+                  if (ws > cur && line[ws - 1] === "\\") { lp = ws - 1; start = lp; continue; }
+                  if (VN_RE.test(w)) break;
+                  if (w.length === 1 && (sawOp || !hadSp || (ws > cur && /[0-9\)]/.test(line[ws - 1])))) {
+                    lp = ws; start = lp; sawOp = false; continue;
+                  }
+                  if ((FNS.has(w.toLowerCase()) || (/^[A-Z]{2,5}$/.test(w) && !STOP_CAPS.has(w))) && sawOp) {
+                    lp = ws; start = lp; continue;
+                  }
+                  break;
+                }
+                break;
+              }
+              let pos = anchor;
+              let lastEnd = anchor;
+              while (pos < line.length) {
+                if (line[pos] === " " || line[pos] === "\t") { pos++; continue; }
+                const ch = line[pos];
+                if (ch === "\uE000" || ch === "\uE001" || ch === "$" || (isTbl && ch === "|")) break;
+                if (ch === "\\") {
+                  const cm = /^\\(?:[a-zA-Z]+|.)/.exec(line.slice(pos));
+                  if (!cm) break;
+                  pos += cm[0].length;
+                  if (/^\\(?:text|mathrm|textbf|textit)$/.test(cm[0])) {
+                    while (pos < line.length && (line[pos] === " " || line[pos] === "\t")) pos++;
+                    if (line[pos] === "{") {
+                      const eb = readBal(line, pos, "{", "}");
+                      if (eb !== -1) pos = eb;
+                    }
+                  } else if (cm[0] === "\\right") {
+                    if (pos < line.length && ".|)]}".includes(line[pos])) pos++;
+                    else if (line.slice(pos, pos + 2) === "\\}") pos += 2;
+                  }
+                  lastEnd = pos; continue;
+                }
+                if (ch === "{") {
+                  const eb = readBal(line, pos, "{", "}");
+                  if (eb === -1) break;
+                  if (VN_RE.test(line.slice(pos + 1, eb - 1).replace(/\\(?:text|mathrm|textbf|textit)\s*\{[^{}]*\}/g, ""))) break;
+                  pos = eb; lastEnd = pos; continue;
+                }
+                if (ch === "(") {
+                  const ep = readBal(line, pos, "(", ")");
+                  if (ep === -1 || !isCleanGrp(line.slice(pos + 1, ep - 1))) break;
+                  pos = ep; lastEnd = pos; continue;
+                }
+                if (ch === "[") {
+                  const ek = readBal(line, pos, "[", "]");
+                  if (ek === -1 || line[ek] === "(" || !isCleanGrp(line.slice(pos + 1, ek - 1))) break;
+                  pos = ek; lastEnd = pos; continue;
+                }
+                if (ch === "_" || ch === "^") {
+                  pos++;
+                  while (pos < line.length && (line[pos] === " " || line[pos] === "\t")) pos++;
+                  if (pos >= line.length) break;
+                  if (line[pos] === "{") {
+                    const eb = readBal(line, pos, "{", "}");
+                    if (eb === -1) break;
+                    pos = eb;
+                  } else if (line[pos] === "\\") {
+                    const cm = /^\\(?:[a-zA-Z]+|.)/.exec(line.slice(pos));
+                    pos += cm ? cm[0].length : 1;
+                  } else if (/[0-9A-Za-z+\-]/.test(line[pos])) { pos++; }
+                  else break;
+                  lastEnd = pos; continue;
+                }
+                if (ch === "'") { pos++; lastEnd = pos; continue; }
+                if ("=+-*/<>".includes(ch)) {
+                  pos += (ch === "<" || ch === ">") && line[pos + 1] === "=" ? 2 : 1;
+                  continue;
+                }
+                if (/[0-9]/.test(ch)) {
+                  const nm = /^\d+(?:[.,]\d+)?/.exec(line.slice(pos));
+                  if (!nm) break;
+                  pos += nm[0].length; lastEnd = pos; continue;
+                }
+                if (/[A-Za-z]/.test(ch)) {
+                  const wm = /^[A-Za-zÀ-ỹ]+/.exec(line.slice(pos));
+                  if (!wm) break;
+                  const w = wm[0];
+                  if (VN_RE.test(w)) break;
+                  const aw = line.slice(pos + w.length);
+                  if (w.length === 1 && (/^[ABCD](?:\.(?:\s|$))/.test(w + aw) || /^[a-d]\)/.test(w + aw))) break;
+                  if (w.length === 1 || FNS.has(w.toLowerCase())) {
+                    pos += w.length; lastEnd = pos; continue;
+                  }
+                  if (/^[A-Z]{2,5}$/.test(w) && !STOP_CAPS.has(w)) {
+                    const bf = line.slice(start, pos).trimEnd();
+                    if (/[=+\-*/<>(\\]$/.test(bf) || /^\s*(?:=|\+|\\perp|\\parallel|\\in|\\subset)/.test(aw)) {
+                      pos += w.length; lastEnd = pos; continue;
+                    }
+                  }
+                  break;
+                }
+                break;
+              }
+              if (lastEnd > anchor) {
+                const cand = line.slice(start, lastEnd).trim();
+                const plain = cand.replace(/\\(?:text|mathrm|textbf|textit)\s*\{[^{}]*\}/g, "");
+                if (cand.length >= 2 && TRIG_RE.test(cand) && !VN_RE.test(plain)) {
+                  resLine += line.slice(cur, start) + `$${cand}$`;
+                  cur = lastEnd;
+                  continue;
+                }
+              }
+              resLine += line.slice(cur, anchor + m[0].length);
+              cur = anchor + m[0].length;
+            }
+            return resLine;
+          })
+          .join("\n");
+      }
+
+      outText = outText.replace(/\uE000SRVWNL_(\d+)\uE001/g, (_m, idx) => vault[Number(idx)] || "");
+      outText = outText.replace(
+        /(?<!\$)\$(?!\$)([^$\n]+?)(?<!\$)\$(?!\$)[ \t]*(?<!\$)\$(?!\$)([=+\-*/<>][^$\n]*?)(?<!\$)\$(?!\$)/g,
+        (_m, a: string, b: string) => `$${a.trim()} ${b.trim()}$`
+      );
+      return outText.replace(
+        /\$\$([\s\S]*?)\$\$[ \t\r\n]*([.,;])(?!(?:\.|[0-9a-zA-Zà-ỹÀ-Ỹ]))(?=[ \t]*(?:\r?\n|$))/g,
+        (fullMatch, body: string, punct: string) => {
+          const trimmed = body.trim();
+          if (!trimmed) return fullMatch;
+          const isBlk =
+            trimmed.includes("\n") ||
+            /\\begin\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)/i.test(trimmed) ||
+            /\\left\s*\[/.test(trimmed);
+          if (!isBlk && !fullMatch.includes("\n")) return `$$${trimmed}${/[.,;]$/.test(trimmed) ? "" : punct}$$`;
+          return `\n\n$$\n${/[.,;]$/.test(trimmed) ? trimmed : `${trimmed}${punct}`}\n$$\n\n`;
+        }
+      );
+    };
+
     const normalizeServerLatex = (raw: string): string => {
       if (!raw) return "";
       let s = stripCodeFenceWrapper(raw);
@@ -5979,6 +6221,7 @@ app.post("/api/isomorphic-exam/generate-exam", async (req, res) => {
         );
         return f.replace(/@@SRV_TX_(\d+)@@/g, (_m, i) => tv[Number(i)] || "");
       };
+      s = wrapNakedServerLatex(s);
       s = s.replace(/\$\$([\s\S]*?)\$\$/g, (_m, body) => `$$${fixInner(body)}$$`);
       s = s.replace(/(?<!\$)\$(?!\$)([^$\n]+?)(?<!\$)\$(?!\$)/g, (_m, body) => `$${fixInner(body)}$`);
       return s;
@@ -6052,8 +6295,9 @@ ${customNotes ? `- YÊU CẦU BẮT BUỘC CỦA NGƯỜI DÙNG: "${customNotes}
 - TUYỆT ĐỐI CẤM viết tóm tắt, cấm viết "(Các câu hỏi về... tương đương đề gốc)", cấm viết gợi ý vắn tắt kiểu "(a) Tính cạnh chóp. (b) Bài toán trải phẳng...". MỌI câu hỏi từ Câu 1 đến câu cuối cùng PHẢI là đề bài hoàn chỉnh, đầy đủ dữ kiện sẵn sàng in phát cho thí sinh làm bài!
 
 4. CHUẨN ĐỊNH DẠNG MARKDOWN & LATEX 100%:
-- Tất cả công thức, hàm số, biến đơn lẻ ($x$, $y$, $m$, $t$, $S$...) BẮT BUỘC đặt trong $...$ hoặc $$...$$.
+- Tất cả công thức, hàm số, phương trình, bất phương trình (kể cả phương trình dài chứa \\log, \\ln, \\sin, \\cos, phân số), biến đơn lẻ ($x$, $y$, $m$, $t$, $S$...) BẮT BUỘC đặt trọn vẹn trong $...$ hoặc $$...$$. CẤM tuyệt đối để sót \\log_b^2 a + ... = 0 bên ngoài dấu $...$!
 - BẮT BUỘC dùng lệnh LaTeX chuẩn có dấu gạch chéo: \\log, \\ln, \\sin, \\cos, \\tan, \\cot, \\lim, \\frac{a}{b} (LUÔN dùng \\frac thay cho \\dfrac, KHÔNG viết $log$, $ln$, hay $2/3$ thô trong câu toán học trừ khi cần thiết, dùng $\\frac{2}{3}$).
+- Nếu kết thúc hệ phương trình $$\\begin{cases} ... \\end{cases}$$ là hết câu, đặt dấu chấm vào bên trong trước dấu đóng ($$\\begin{cases} ... \\end{cases}.$$) để dấu chấm không bị rớt xuống thành một dòng trống riêng.
 - TUYỆT ĐỐI KHÔNG đặt chữ tiếng Việt có dấu hoặc thẻ <br/> bên trong cặp dấu $...$.
 - BẢNG MARKDOWN: Mọi bảng (bảng số liệu ghép nhóm, bảng tần số, BBT, bảng ma trận, bảng HDC) BẮT BUỘC có 1 dòng trống phía trước và 1 dòng trống phía sau, và MỖI HÀNG CỦA BẢNG PHẢI NẰM TRÊN 1 DÒNG RIÊNG BIỆT (TUYỆT ĐỐI KHÔNG viết cả bảng trên cùng 1 dòng với câu dẫn!).`;
 
@@ -6491,6 +6735,19 @@ app.post("/api/on-thi-tn-thpt/generate", async (req, res) => {
 
       s = s.replace(/\$\$([\s\S]*?)\$\$/g, (_m, body) => `$$${fixInner(body)}$$`);
       s = s.replace(/(?<!\$)\$(?!\$)([^$\n]+?)(?<!\$)\$(?!\$)/g, (_m, body) => `$${fixInner(body)}$`);
+      s = s.replace(
+        /\$\$([\s\S]*?)\$\$[ \t\r\n]*([.,;])(?!(?:\.|[0-9a-zA-Zà-ỹÀ-Ỹ]))(?=[ \t]*(?:\r?\n|$))/g,
+        (fullMatch, body: string, punct: string) => {
+          const trimmed = body.trim();
+          if (!trimmed) return fullMatch;
+          const isBlk =
+            trimmed.includes("\n") ||
+            /\\begin\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)/i.test(trimmed) ||
+            /\\left\s*\[/.test(trimmed);
+          if (!isBlk && !fullMatch.includes("\n")) return `$$${trimmed}${/[.,;]$/.test(trimmed) ? "" : punct}$$`;
+          return `\n\n$$\n${/[.,;]$/.test(trimmed) ? trimmed : `${trimmed}${punct}`}\n$$\n\n`;
+        }
+      );
       return s;
     };
 

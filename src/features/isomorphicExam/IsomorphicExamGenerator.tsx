@@ -30,6 +30,7 @@ import { MarkdownRenderer, typesetMathJax } from "../../components/MarkdownRende
 import { exportHtmlToWord } from "../../lib/exportUtils";
 import { printElement } from "../../lib/print";
 import { unflattenMarkdownTables } from "../../lib/bbtRenderer";
+import { wrapNakedLatexExpressions, fixDisplayMathTrailingPunctuation } from "../../lib/utils";
 import {
   ISOMORPHIC_PRESETS,
   IsomorphicPresetId,
@@ -71,6 +72,9 @@ export function cleanIsomorphicMarkdown(raw: string): string {
 
   // Unflatten any Markdown tables (BBT or statistical/frequency tables jammed on one line or glued after ':')
   s = unflattenMarkdownTables(s);
+
+  // Wrap any naked LaTeX equations outside $...$/$$...$$ (e.g. \log_b^2 a + 5\log_b^2 c - ... = 0) before inner normalization
+  s = wrapNakedLatexExpressions(s);
 
   // Normalize LaTeX inside $...$ and $$...$$: \dfrac -> \frac, naked log/ln/trig -> \log/\ln/\sin..., rescue trapped Vietnamese
   const fixMathBody = (inner: string): string => {
@@ -158,6 +162,7 @@ export function cleanIsomorphicMarkdown(raw: string): string {
   // Restore SVG blocks
   s = s.replace(/@@ISO_SVG_BLOCK_(\d+)@@/g, (_m, idx) => svgVault[Number(idx)] || "");
 
+  s = fixDisplayMathTrailingPunctuation(s);
   return s.replace(/\n{3,}/g, "\n\n").trim();
 }
 

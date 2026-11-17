@@ -212,7 +212,7 @@ export function Worksheets() {
 
       if (chapter && lesson) {
         if (selectedSemester === 'special_topic') {
-          const match = chapter.name.match(/^(Chuyên\s*đề\s*\d+)(?:\s*[:\-]\s*(.*))?$/i);
+          const match = chapter.name.match(/^(Chuyên\s*đề\s*\d+)(?:\s*[:.\-]\s*(.*))?$/i);
           const topicNum = match ? match[1].toUpperCase() : "CHUYÊN ĐỀ";
           const lessonText = lesson.name.toUpperCase();
           setCustomLessonName(`${topicNum} - ${lessonText}`);
@@ -1989,7 +1989,7 @@ export function Worksheets() {
                     const selectedChapter = chapters.find(c => c.id === cId) || chapters[0];
                     const lesson = selectedChapter?.lessons[0];
                     if (selectedChapter && lesson && selectedSemester === 'special_topic') {
-                      const match = selectedChapter.name.match(/^(Chuyên\s*đề\s*\d+)(?:\s*[:\-]\s*(.*))?$/i);
+                      const match = selectedChapter.name.match(/^(Chuyên\s*đề\s*\d+)(?:\s*[:.\-]\s*(.*))?$/i);
                       const topicNum = match ? match[1].toUpperCase() : "CHUYÊN ĐỀ";
                       const lessonText = lesson.name.toUpperCase();
                       setCustomLessonName(`${topicNum} - ${lessonText}`);
@@ -2022,7 +2022,7 @@ export function Worksheets() {
                     const lesson = selectedChapter?.lessons.find(l => l.id === lId);
                     if (selectedChapter && lesson) {
                       if (selectedSemester === 'special_topic') {
-                        const match = selectedChapter.name.match(/^(Chuyên\s*đề\s*\d+)(?:\s*[:\-]\s*(.*))?$/i);
+                        const match = selectedChapter.name.match(/^(Chuyên\s*đề\s*\d+)(?:\s*[:.\-]\s*(.*))?$/i);
                         const topicNum = match ? match[1].toUpperCase() : "CHUYÊN ĐỀ";
                         const lessonText = lesson.name.toUpperCase();
                         setCustomLessonName(`${topicNum} - ${lessonText}`);

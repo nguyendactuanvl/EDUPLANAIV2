@@ -500,50 +500,51 @@ export const KNTT_CURRICULUM: CurriculumData = {
       chapters: [
         {
           id: "g10_s1_c1",
-          name: "Chương I: Mệnh đề và tập hợp",
+          name: "Chương I. Mệnh đề và tập hợp",
           lessons: [
-            { id: "g10_s1_c1_l1", name: "Bài 1: Mệnh đề toán học" },
-            { id: "g10_s1_c1_l2", name: "Bài 2: Tập hợp và các phép toán trên tập hợp" },
-            { id: "g10_s1_c1_l3", name: "Ôn tập chương I" }
+            { id: "g10_s1_c1_l1", name: "Bài 1. Mệnh đề" },
+            { id: "g10_s1_c1_l2", name: "Bài 2. Tập hợp và các phép toán trên tập hợp" },
+            { id: "g10_s1_c1_l3", name: "Bài tập cuối chương I" }
           ]
         },
         {
           id: "g10_s1_c2",
-          name: "Chương II: Bất phương trình và hệ bất phương trình bậc nhất hai ẩn",
+          name: "Chương II. Bất phương trình và hệ bất phương trình bậc nhất hai ẩn",
           lessons: [
-            { id: "g10_s1_c2_l1", name: "Bài 3: Bất phương trình bậc nhất hai ẩn" },
-            { id: "g10_s1_c2_l2", name: "Bài 4: Hệ bất phương trình bậc nhất hai ẩn" },
-            { id: "g10_s1_c2_l3", name: "Ôn tập chương II" }
+            { id: "g10_s1_c2_l1", name: "Bài 3. Bất phương trình bậc nhất hai ẩn" },
+            { id: "g10_s1_c2_l2", name: "Bài 4. Hệ bất phương trình bậc nhất hai ẩn" },
+            { id: "g10_s1_c2_l3", name: "Bài tập cuối chương II" }
           ]
         },
         {
           id: "g10_s1_c3",
-          name: "Chương III: Hệ thức lượng trong tam giác",
+          name: "Chương III. Hệ thức lượng trong tam giác",
           lessons: [
-            { id: "g10_s1_c3_l1", name: "Bài 5: Giá trị lượng giác của một góc từ $0^\\circ$ đến $180^\\circ$" },
-            { id: "g10_s1_c3_l2", name: "Bài 6: Hệ thức lượng trong tam giác" },
-            { id: "g10_s1_c3_l3", name: "Ôn tập chương III" }
+            { id: "g10_s1_c3_l1", name: "Bài 5. Giá trị lượng giác của một góc từ 0° đến 180°" },
+            { id: "g10_s1_c3_l2", name: "Bài 6. Hệ thức lượng trong tam giác" },
+            { id: "g10_s1_c3_l3", name: "Bài tập cuối chương III" }
           ]
         },
         {
           id: "g10_s1_c4",
-          name: "Chương IV: Vectơ",
+          name: "Chương IV. Vectơ",
           lessons: [
-            { id: "g10_s1_c4_l1", name: "Bài 11: Khái niệm vectơ" },
-            { id: "g10_s1_c4_l2", name: "Bài 12: Tổng và hiệu của hai vectơ" },
-            { id: "g10_s1_c4_l3", name: "Bài 13: Tích của một số với một vectơ" },
-            { id: "g10_s1_c4_l4", name: "Bài 14: Tích vô hướng của hai vectơ" },
-            { id: "g10_s1_c4_l5", name: "Ôn tập chương IV" }
+            { id: "g10_s1_c4_l1", name: "Bài 7. Các khái niệm mở đầu" },
+            { id: "g10_s1_c4_l2", name: "Bài 8. Tổng và hiệu của hai vectơ" },
+            { id: "g10_s1_c4_l3", name: "Bài 9. Tích của một vectơ với một số" },
+            { id: "g10_s1_c4_l4", name: "Bài 10. Vectơ trong mặt phẳng toạ độ" },
+            { id: "g10_s1_c4_l5", name: "Bài 11. Tích vô hướng của hai vectơ" },
+            { id: "g10_s1_c4_l6", name: "Bài tập cuối chương IV" }
           ]
         },
         {
           id: "g10_s1_c5",
-          name: "Chương V: Các số đặc trưng của mẫu số liệu không ghép nhóm",
+          name: "Chương V. Các số đặc trưng của mẫu số liệu. Không ghép nhóm",
           lessons: [
-            { id: "g10_s1_c5_l1", name: "Bài 12: Số trung bình và trung vị của mẫu số liệu không ghép nhóm" },
-            { id: "g10_s1_c5_l2", name: "Bài 13: Mốt và tứ phân vị của mẫu số liệu không ghép nhóm" },
-            { id: "g10_s1_c5_l3", name: "Bài 14: Các số đặc trưng đo độ phân tán (Khoảng biến thiên, khoảng tứ phân vị, phương sai, độ lệch chuẩn)" },
-            { id: "g10_s1_c5_l4", name: "Ôn tập chương V: Các số đặc trưng của mẫu số liệu không ghép nhóm" }
+            { id: "g10_s1_c5_l1", name: "Bài 12. Số gần đúng và sai số" },
+            { id: "g10_s1_c5_l2", name: "Bài 13. Các số đặc trưng đo xu thế trung tâm" },
+            { id: "g10_s1_c5_l3", name: "Bài 14. Các số đặc trưng đo độ phân tán" },
+            { id: "g10_s1_c5_l4", name: "Bài tập cuối chương V" }
           ]
         }
       ]
@@ -552,43 +553,43 @@ export const KNTT_CURRICULUM: CurriculumData = {
       chapters: [
         {
           id: "g10_s2_c6",
-          name: "Chương VI: Hàm số, đồ thị và ứng dụng",
+          name: "Chương VI. Hàm số, đồ thị và ứng dụng",
           lessons: [
-            { id: "g10_s2_c6_l1", name: "Bài 15: Hàm số và đồ thị" },
-            { id: "g10_s2_c6_l2", name: "Bài 16: Hàm số bậc hai" },
-            { id: "g10_s2_c6_l3", name: "Bài 17: Dấu của tam thức bậc hai" },
-            { id: "g10_s2_c6_l4", name: "Bài 18: Phương trình quy về phương trình bậc hai" },
-            { id: "g10_s2_c6_l5", name: "Ôn tập chương VI: Hàm số, đồ thị và ứng dụng" }
+            { id: "g10_s2_c6_l1", name: "Bài 15. Hàm số" },
+            { id: "g10_s2_c6_l2", name: "Bài 16. Hàm số bậc hai" },
+            { id: "g10_s2_c6_l3", name: "Bài 17. Dấu của tam thức bậc hai" },
+            { id: "g10_s2_c6_l4", name: "Bài 18. Phương trình quy về phương trình bậc hai" },
+            { id: "g10_s2_c6_l5", name: "Bài tập cuối chương VI" }
           ]
         },
         {
           id: "g10_s2_c7",
-          name: "Chương VII: Phương pháp tọa độ trong mặt phẳng",
+          name: "Chương VII. Phương pháp toạ độ trong mặt phẳng",
           lessons: [
-            { id: "g10_s2_c7_l1", name: "Bài 19: Phương trình đường thẳng" },
-            { id: "g10_s2_c7_l2", name: "Bài 20: Vị trí tương đối giữa hai đường thẳng, góc và khoảng cách" },
-            { id: "g10_s2_c7_l3", name: "Bài 21: Đường tròn trong mặt phẳng tọa độ" },
-            { id: "g10_s2_c7_l4", name: "Bài 22: Ba đường conic" },
-            { id: "g10_s2_c7_l5", name: "Ôn tập chương VII: Phương pháp tọa độ trong mặt phẳng" }
+            { id: "g10_s2_c7_l1", name: "Bài 19. Phương trình đường thẳng" },
+            { id: "g10_s2_c7_l2", name: "Bài 20. Đường thẳng trong mặt phẳng toạ độ" },
+            { id: "g10_s2_c7_l3", name: "Bài 21. Đường tròn trong mặt phẳng toạ độ" },
+            { id: "g10_s2_c7_l4", name: "Bài 22. Ba đường conic" },
+            { id: "g10_s2_c7_l5", name: "Bài tập cuối chương VII" }
           ]
         },
         {
           id: "g10_s2_c8",
-          name: "Chương VIII: Đại số tổ hợp",
+          name: "Chương VIII. Đại số tổ hợp",
           lessons: [
-            { id: "g10_s2_c8_l1", name: "Bài 23: Quy tắc cộng và quy tắc nhân" },
-            { id: "g10_s2_c8_l2", name: "Bài 24: Hoán vị, chỉnh hợp và tổ hợp" },
-            { id: "g10_s2_c8_l3", name: "Bài 25: Nhị thức Newton" },
-            { id: "g10_s2_c8_l4", name: "Ôn tập chương VIII: Đại số tổ hợp" }
+            { id: "g10_s2_c8_l1", name: "Bài 23. Quy tắc đếm" },
+            { id: "g10_s2_c8_l2", name: "Bài 24. Hoán vị, chỉnh hợp và tổ hợp" },
+            { id: "g10_s2_c8_l3", name: "Bài 25. Nhị thức Newton" },
+            { id: "g10_s2_c8_l4", name: "Bài tập cuối chương VIII" }
           ]
         },
         {
           id: "g10_s2_c9",
-          name: "Chương IX: Tính toán xác suất",
+          name: "Chương IX. Tính xác suất theo định nghĩa cổ điển",
           lessons: [
-            { id: "g10_s2_c9_l1", name: "Bài 26: Biến cố và định nghĩa cổ điển của xác suất" },
-            { id: "g10_s2_c9_l2", name: "Bài 27: Thực hành tính xác suất theo định nghĩa cổ điển" },
-            { id: "g10_s2_c9_l3", name: "Ôn tập chương IX: Tính toán xác suất" }
+            { id: "g10_s2_c9_l1", name: "Bài 26. Biến cố và định nghĩa cổ điển của xác suất" },
+            { id: "g10_s2_c9_l2", name: "Bài 27. Thực hành tính xác suất theo định nghĩa cổ điển" },
+            { id: "g10_s2_c9_l3", name: "Bài tập cuối chương IX" }
           ]
         }
       ]
@@ -597,30 +598,30 @@ export const KNTT_CURRICULUM: CurriculumData = {
       chapters: [
         {
           id: "g10_st_c1",
-          name: "Chuyên đề 1: Hệ phương trình bậc nhất ba ẩn",
+          name: "Chuyên đề 1. Hệ phương trình bậc nhất ba ẩn",
           lessons: [
-            { id: "g10_st_c1_l1", name: "Bài 1: Hệ phương trình bậc nhất ba ẩn" },
-            { id: "g10_st_c1_l2", name: "Bài 2: Ứng dụng của hệ phương trình bậc nhất ba ẩn" },
+            { id: "g10_st_c1_l1", name: "Bài 1. Hệ phương trình bậc nhất ba ẩn" },
+            { id: "g10_st_c1_l2", name: "Bài 2. Ứng dụng của hệ phương trình bậc nhất ba ẩn" },
             { id: "g10_st_c1_l3", name: "Bài tập cuối chuyên đề 1" }
           ]
         },
         {
           id: "g10_st_c2",
-          name: "Chuyên đề 2: Phương pháp quy nạp toán học. Nhị thức Newton",
+          name: "Chuyên đề 2. Phương pháp quy nạp toán học, nhị thức Newton",
           lessons: [
-            { id: "g10_st_c2_l1", name: "Bài 3: Phương pháp quy nạp toán học" },
-            { id: "g10_st_c2_l2", name: "Bài 4: Nhị thức Newton" },
+            { id: "g10_st_c2_l1", name: "Bài 3. Phương pháp quy nạp toán học" },
+            { id: "g10_st_c2_l2", name: "Bài 4. Nhị thức Newton" },
             { id: "g10_st_c2_l3", name: "Bài tập cuối chuyên đề 2" }
           ]
         },
         {
           id: "g10_st_c3",
-          name: "Chuyên đề 3: Ba đường conic và ứng dụng",
+          name: "Chuyên đề 3. Ba đường conic và ứng dụng",
           lessons: [
-            { id: "g10_st_c3_l1", name: "Bài 5: Elip" },
-            { id: "g10_st_c3_l2", name: "Bài 6: Hypebol" },
-            { id: "g10_st_c3_l3", name: "Bài 7: Parabol" },
-            { id: "g10_st_c3_l4", name: "Bài 8: Sự thống nhất giữa ba đường conic" },
+            { id: "g10_st_c3_l1", name: "Bài 5. Elip" },
+            { id: "g10_st_c3_l2", name: "Bài 6. Hypebol" },
+            { id: "g10_st_c3_l3", name: "Bài 7. Parabol" },
+            { id: "g10_st_c3_l4", name: "Bài 8. Sự thống nhất giữa ba đường conic" },
             { id: "g10_st_c3_l5", name: "Bài tập cuối chuyên đề 3" }
           ]
         }
@@ -632,55 +633,54 @@ export const KNTT_CURRICULUM: CurriculumData = {
       chapters: [
         {
           id: "g11_s1_c1",
-          name: "Chương I: Hàm số lượng giác và phương trình lượng giác",
+          name: "Chương I. Hàm số lượng giác và phương trình lượng giác",
           lessons: [
-            { id: "g11_s1_c1_l1", name: "Bài 1: Góc lượng giác" },
-            { id: "g11_s1_c1_l2", name: "Bài 2: Giá trị lượng giác của góc lượng giác" },
-            { id: "g11_s1_c1_l3", name: "Bài 3: Công thức lượng giác" },
-            { id: "g11_s1_c1_l4", name: "Bài 4: Hàm số lượng giác và đồ thị" },
-            { id: "g11_s1_c1_l5", name: "Bài 5: Phương trình lượng giác cơ bản" },
-            { id: "g11_s1_c1_l6", name: "Ôn tập chương I" }
+            { id: "g11_s1_c1_l1", name: "Bài 1. Giá trị lượng giác của góc lượng giác" },
+            { id: "g11_s1_c1_l2", name: "Bài 2. Công thức lượng giác" },
+            { id: "g11_s1_c1_l3", name: "Bài 3. Hàm số lượng giác" },
+            { id: "g11_s1_c1_l4", name: "Bài 4. Phương trình lượng giác cơ bản" },
+            { id: "g11_s1_c1_l5", name: "Bài tập cuối chương I" }
           ]
         },
         {
           id: "g11_s1_c2",
-          name: "Chương II: Dãy số. Cấp số cộng và cấp số nhân",
+          name: "Chương II. Dãy số. Cấp số cộng và cấp số nhân",
           lessons: [
-            { id: "g11_s1_c2_l1", name: "Bài 6: Dãy số" },
-            { id: "g11_s1_c2_l2", name: "Bài 7: Cấp số cộng" },
-            { id: "g11_s1_c2_l3", name: "Bài 8: Cấp số nhân" },
-            { id: "g11_s1_c2_l4", name: "Ôn tập chương II" }
+            { id: "g11_s1_c2_l1", name: "Bài 5. Dãy số" },
+            { id: "g11_s1_c2_l2", name: "Bài 6. Cấp số cộng" },
+            { id: "g11_s1_c2_l3", name: "Bài 7. Cấp số nhân" },
+            { id: "g11_s1_c2_l4", name: "Bài tập cuối chương II" }
           ]
         },
         {
           id: "g11_s1_c3",
-          name: "Chương III: Giới hạn. Hàm số liên tục",
+          name: "Chương III. Các số đặc trưng đo xu thế trung tâm của mẫu số liệu ghép nhóm",
           lessons: [
-            { id: "g11_s1_c3_l1", name: "Bài 9: Giới hạn của dãy số" },
-            { id: "g11_s1_c3_l2", name: "Bài 10: Giới hạn của hàm số" },
-            { id: "g11_s1_c3_l3", name: "Bài 11: Hàm số liên tục" },
-            { id: "g11_s1_c3_l4", name: "Ôn tập chương III" }
+            { id: "g11_s1_c3_l1", name: "Bài 8. Mẫu số liệu ghép nhóm" },
+            { id: "g11_s1_c3_l2", name: "Bài 9. Các số đặc trưng đo xu thế trung tâm" },
+            { id: "g11_s1_c3_l3", name: "Bài tập cuối chương III" }
           ]
         },
         {
           id: "g11_s1_c4",
-          name: "Chương IV: Quan hệ song song trong không gian",
+          name: "Chương IV. Quan hệ song song trong không gian",
           lessons: [
-            { id: "g11_s1_c4_l1", name: "Bài 12: Đường thẳng và mặt phẳng trong không gian" },
-            { id: "g11_s1_c4_l2", name: "Bài 13: Hai đường thẳng song song" },
-            { id: "g11_s1_c4_l3", name: "Bài 14: Đường thẳng song song với mặt phẳng" },
-            { id: "g11_s1_c4_l4", name: "Bài 15: Hai mặt phẳng song song" },
-            { id: "g11_s1_c4_l5", name: "Bài 16: Phép chiếu song song" },
-            { id: "g11_s1_c4_l6", name: "Ôn tập chương IV" }
+            { id: "g11_s1_c4_l1", name: "Bài 10. Đường thẳng và mặt phẳng trong không gian" },
+            { id: "g11_s1_c4_l2", name: "Bài 11. Hai đường thẳng song song" },
+            { id: "g11_s1_c4_l3", name: "Bài 12. Đường thẳng và mặt phẳng song song" },
+            { id: "g11_s1_c4_l4", name: "Bài 13. Hai mặt phẳng song song" },
+            { id: "g11_s1_c4_l5", name: "Bài 14. Phép chiếu song song" },
+            { id: "g11_s1_c4_l6", name: "Bài tập cuối chương IV" }
           ]
         },
         {
           id: "g11_s1_c5",
-          name: "Chương V: Các số đặc trưng đo xu thế trung tâm của mẫu số liệu ghép nhóm",
+          name: "Chương V. Giới hạn. Hàm số liên tục",
           lessons: [
-            { id: "g11_s1_c5_l1", name: "Bài 17: Mẫu số liệu ghép nhóm, số trung bình và mốt" },
-            { id: "g11_s1_c5_l2", name: "Bài 18: Trung vị, tứ phân vị" },
-            { id: "g11_s1_c5_l3", name: "Ôn tập chương V" }
+            { id: "g11_s1_c5_l1", name: "Bài 15. Giới hạn của dãy số" },
+            { id: "g11_s1_c5_l2", name: "Bài 16. Giới hạn của hàm số" },
+            { id: "g11_s1_c5_l3", name: "Bài 17. Hàm số liên tục" },
+            { id: "g11_s1_c5_l4", name: "Bài tập cuối chương V" }
           ]
         }
       ]
@@ -689,44 +689,55 @@ export const KNTT_CURRICULUM: CurriculumData = {
       chapters: [
         {
           id: "g11_s2_c6",
-          name: "Chương VI: Phép tính lũy thừa, mũ và lôgarit",
+          name: "Chương VI. Hàm số mũ và hàm số lôgarit",
           lessons: [
-            { id: "g11_s2_c6_l1", name: "Bài 19: Lũy thừa với số mũ thực" },
-            { id: "g11_s2_c6_l2", name: "Bài 20: Lôgarit" },
-            { id: "g11_s2_c6_l3", name: "Bài 21: Hàm số mũ và hàm số lôgarit" },
-            { id: "g11_s2_c6_l4", name: "Bài 22: Phương trình và bất phương trình mũ, lôgarit" },
-            { id: "g11_s2_c6_l5", name: "Ôn tập chương VI" }
+            { id: "g11_s2_c6_l1", name: "Bài 18. Luỹ thừa với số mũ thực" },
+            { id: "g11_s2_c6_l2", name: "Bài 19. Lôgarit" },
+            { id: "g11_s2_c6_l3", name: "Bài 20. Hàm số mũ và hàm số lôgarit" },
+            { id: "g11_s2_c6_l4", name: "Bài 21. Phương trình, bất phương trình mũ và lôgarit" },
+            { id: "g11_s2_c6_l5", name: "Bài tập cuối chương VI" }
           ]
         },
         {
           id: "g11_s2_c7",
-          name: "Chương VII: Quan hệ vuông góc trong không gian",
+          name: "Chương VII. Quan hệ vuông góc trong không gian",
           lessons: [
-            { id: "g11_s2_c7_l1", name: "Bài 23: Hai đường thẳng vuông góc" },
-            { id: "g11_s2_c7_l2", name: "Bài 24: Đường thẳng vuông góc với mặt phẳng" },
-            { id: "g11_s2_c7_l3", name: "Bài 25: Phép chiếu vuông góc, góc giữa đường thẳng và mặt phẳng" },
-            { id: "g11_s2_c7_l4", name: "Bài 26: Hai mặt phẳng vuông góc" },
-            { id: "g11_s2_c7_l5", name: "Bài 27: Khoảng cách trong không gian" },
-            { id: "g11_s2_c7_l6", name: "Ôn tập chương VII" }
+            { id: "g11_s2_c7_l1", name: "Bài 22. Hai đường thẳng vuông góc" },
+            { id: "g11_s2_c7_l2", name: "Bài 23. Đường thẳng vuông góc với mặt phẳng" },
+            { id: "g11_s2_c7_l3", name: "Bài 24. Phép chiếu vuông góc. Góc giữa đường thẳng và mặt phẳng" },
+            { id: "g11_s2_c7_l4", name: "Bài 25. Hai mặt phẳng vuông góc" },
+            { id: "g11_s2_c7_l5", name: "Bài 26. Khoảng cách" },
+            { id: "g11_s2_c7_l6", name: "Bài 27. Thể tích" },
+            { id: "g11_s2_c7_l7", name: "Bài tập cuối chương VII" }
           ]
         },
         {
           id: "g11_s2_c8",
-          name: "Chương VIII: Quy tắc tính đạo hàm",
+          name: "Chương VIII. Các quy tắc tính xác suất",
           lessons: [
-            { id: "g11_s2_c8_l1", name: "Bài 28: Định nghĩa đạo hàm" },
-            { id: "g11_s2_c8_l2", name: "Bài 29: Các quy tắc tính đạo hàm" },
-            { id: "g11_s2_c8_l3", name: "Bài 30: Đạo hàm cấp hai" },
-            { id: "g11_s2_c8_l4", name: "Ôn tập chương VIII" }
+            { id: "g11_s2_c8_l1", name: "Bài 28. Biến cố hợp, biến cố giao, biến cố độc lập" },
+            { id: "g11_s2_c8_l2", name: "Bài 29. Công thức cộng xác suất" },
+            { id: "g11_s2_c8_l3", name: "Bài 30. Công thức nhân xác suất cho hai biến cố độc lập" },
+            { id: "g11_s2_c8_l4", name: "Bài tập cuối chương VIII" }
           ]
         },
         {
           id: "g11_s2_c9",
-          name: "Chương IX: Biến cố độc lập. Công thức tính xác suất",
+          name: "Chương IX. Đạo hàm",
           lessons: [
-            { id: "g11_s2_c9_l1", name: "Bài 31: Công thức cộng xác suất" },
-            { id: "g11_s2_c9_l2", name: "Bài 32: Công thức nhân xác suất" },
-            { id: "g11_s2_c9_l3", name: "Ôn tập chương IX" }
+            { id: "g11_s2_c9_l1", name: "Bài 31. Định nghĩa và ý nghĩa của đạo hàm" },
+            { id: "g11_s2_c9_l2", name: "Bài 32. Các quy tắc tính đạo hàm" },
+            { id: "g11_s2_c9_l3", name: "Bài 33. Đạo hàm cấp hai" },
+            { id: "g11_s2_c9_l4", name: "Bài tập cuối chương IX" }
+          ]
+        },
+        {
+          id: "g11_s2_hdtn",
+          name: "Hoạt động thực hành trải nghiệm",
+          lessons: [
+            { id: "g11_s2_hdtn_l1", name: "Một vài mô hình toán học sử dụng hàm số mũ và hàm số lôgarit" },
+            { id: "g11_s2_hdtn_l2", name: "Hoạt động thực hành trải nghiệm Hình học" },
+            { id: "g11_s2_hdtn_l3", name: "Bài tập ôn tập cuối năm" }
           ]
         }
       ]
@@ -735,33 +746,34 @@ export const KNTT_CURRICULUM: CurriculumData = {
       chapters: [
         {
           id: "g11_st_c1",
-          name: "Chuyên đề 1: Phép biến hình trong mặt phẳng",
+          name: "Chuyên đề 1. Phép biến hình trong mặt phẳng",
           lessons: [
-            { id: "g11_st_c1_l1", name: "Bài 1: Phép biến hình và phép dời hình" },
-            { id: "g11_st_c1_l2", name: "Bài 2: Phép tịnh tiến" },
-            { id: "g11_st_c1_l3", name: "Bài 3: Phép đối xứng trục" },
-            { id: "g11_st_c1_l4", name: "Bài 4: Phép đối xứng tâm" },
-            { id: "g11_st_c1_l5", name: "Bài 5: Phép quay" },
-            { id: "g11_st_c1_l6", name: "Bài 6: Phép đồng dạng và phép vị tự" },
-            { id: "g11_st_c1_l7", name: "Bài tập cuối chuyên đề 1" }
+            { id: "g11_st_c1_l1", name: "Bài 1. Phép biến hình" },
+            { id: "g11_st_c1_l2", name: "Bài 2. Phép tịnh tiến" },
+            { id: "g11_st_c1_l3", name: "Bài 3. Phép đối xứng trục" },
+            { id: "g11_st_c1_l4", name: "Bài 4. Phép quay và phép đối xứng tâm" },
+            { id: "g11_st_c1_l5", name: "Bài 5. Phép dời hình" },
+            { id: "g11_st_c1_l6", name: "Bài 6. Phép vị tự" },
+            { id: "g11_st_c1_l7", name: "Bài 7. Phép đồng dạng" },
+            { id: "g11_st_c1_l8", name: "Bài tập cuối chuyên đề 1" }
           ]
         },
         {
           id: "g11_st_c2",
-          name: "Chuyên đề 2: Làm quen với một vài khái niệm của lí thuyết đồ thị",
+          name: "Chuyên đề 2. Làm quen với một vài khái niệm của lí thuyết đồ thị",
           lessons: [
-            { id: "g11_st_c2_l1", name: "Bài 7: Một vài khái niệm cơ bản" },
-            { id: "g11_st_c2_l2", name: "Bài 8: Đường đi Euler và đường đi Hamilton" },
-            { id: "g11_st_c2_l3", name: "Bài 9: Bài toán tìm đường đi tối ưu trong một vài trường hợp đơn giản" },
+            { id: "g11_st_c2_l1", name: "Bài 8. Một số khái niệm cơ bản" },
+            { id: "g11_st_c2_l2", name: "Bài 9. Đường đi Euler và đường đi Hamilton" },
+            { id: "g11_st_c2_l3", name: "Bài 10. Bài toán tìm đường đi tối ưu trong một vài trường hợp đơn giản" },
             { id: "g11_st_c2_l4", name: "Bài tập cuối chuyên đề 2" }
           ]
         },
         {
           id: "g11_st_c3",
-          name: "Chuyên đề 3: Một số yếu tố vẽ kĩ thuật",
+          name: "Chuyên đề 3. Một số yếu tố vẽ kĩ thuật",
           lessons: [
-            { id: "g11_st_c3_l1", name: "Bài 10: Hình chiếu vuông góc và hình chiếu trục đo" },
-            { id: "g11_st_c3_l2", name: "Bài 11: Bản vẽ kĩ thuật" },
+            { id: "g11_st_c3_l1", name: "Bài 11. Hình chiếu vuông góc và hình chiếu trục đo" },
+            { id: "g11_st_c3_l2", name: "Bài 12. Bản vẽ kĩ thuật" },
             { id: "g11_st_c3_l3", name: "Bài tập cuối chuyên đề 3" }
           ]
         }
@@ -773,32 +785,33 @@ export const KNTT_CURRICULUM: CurriculumData = {
       chapters: [
         {
           id: "g12_s1_c1",
-          name: "Chương I: Ứng dụng đạo hàm để khảo sát và vẽ đồ thị hàm số",
+          name: "Chương I. Ứng dụng đạo hàm để khảo sát và vẽ đồ thị hàm số",
           lessons: [
-            { id: "g12_s1_c1_l1", name: "Bài 1: Tính đơn điệu và cực trị của hàm số" },
-            { id: "g12_s1_c1_l2", name: "Bài 2: Giá trị lớn nhất và giá trị nhỏ nhất của hàm số" },
-            { id: "g12_s1_c1_l3", name: "Bài 3: Đường tiệm cận của đồ thị hàm số" },
-            { id: "g12_s1_c1_l4", name: "Bài 4: Khảo sát sự biến thiên và vẽ đồ thị của hàm số" },
-            { id: "g12_s1_c1_l5", name: "Ôn tập chương I" }
+            { id: "g12_s1_c1_l1", name: "Bài 1. Tính đơn điệu và cực trị của hàm số" },
+            { id: "g12_s1_c1_l2", name: "Bài 2. Giá trị lớn nhất và giá trị nhỏ nhất của hàm số" },
+            { id: "g12_s1_c1_l3", name: "Bài 3. Đường tiệm cận của đồ thị hàm số" },
+            { id: "g12_s1_c1_l4", name: "Bài 4. Khảo sát sự biến thiên và vẽ đồ thị của hàm số" },
+            { id: "g12_s1_c1_l5", name: "Bài 5. Ứng dụng đạo hàm để giải quyết một số vấn đề liên quan đến thực tiễn" },
+            { id: "g12_s1_c1_l6", name: "Bài tập cuối chương I" }
           ]
         },
         {
           id: "g12_s1_c2",
-          name: "Chương II: Vectơ và hệ tọa độ trong không gian",
+          name: "Chương II. Vectơ và hệ trục toạ độ trong không gian",
           lessons: [
-            { id: "g12_s1_c2_l1", name: "Bài 5: Vectơ trong không gian" },
-            { id: "g12_s1_c2_l2", name: "Bài 6: Hệ tọa độ trong không gian" },
-            { id: "g12_s1_c2_l3", name: "Bài 7: Biểu thức tọa độ của các phép toán vectơ" },
-            { id: "g12_s1_c2_l4", name: "Ôn tập chương II" }
+            { id: "g12_s1_c2_l1", name: "Bài 6. Vectơ trong không gian" },
+            { id: "g12_s1_c2_l2", name: "Bài 7. Hệ trục toạ độ trong không gian" },
+            { id: "g12_s1_c2_l3", name: "Bài 8. Biểu thức toạ độ của các phép toán vectơ" },
+            { id: "g12_s1_c2_l4", name: "Bài tập cuối chương II" }
           ]
         },
         {
           id: "g12_s1_c3",
-          name: "Chương III: Các số đặc trưng đo mức độ phân tán của mẫu số liệu ghép nhóm",
+          name: "Chương III. Các số đặc trưng đo mức độ phân tán của mẫu số liệu ghép nhóm",
           lessons: [
-            { id: "g12_s1_c3_l1", name: "Bài 8: Khoảng biến thiên và khoảng tứ phân vị của mẫu số liệu ghép nhóm" },
-            { id: "g12_s1_c3_l2", name: "Bài 9: Phương sai và độ lệch chuẩn của mẫu số liệu ghép nhóm" },
-            { id: "g12_s1_c3_l3", name: "Ôn tập chương III" }
+            { id: "g12_s1_c3_l1", name: "Bài 9. Khoảng biến thiên và khoảng tứ phân vị" },
+            { id: "g12_s1_c3_l2", name: "Bài 10. Phương sai và độ lệch chuẩn" },
+            { id: "g12_s1_c3_l3", name: "Bài tập cuối chương III" }
           ]
         }
       ]
@@ -807,31 +820,42 @@ export const KNTT_CURRICULUM: CurriculumData = {
       chapters: [
         {
           id: "g12_s2_c4",
-          name: "Chương IV: Nguyên hàm và tích phân",
+          name: "Chương IV. Nguyên hàm và tích phân",
           lessons: [
-            { id: "g12_s2_c4_l1", name: "Bài 10: Nguyên hàm" },
-            { id: "g12_s2_c4_l2", name: "Bài 11: Tích phân" },
-            { id: "g12_s2_c4_l3", name: "Bài 12: Ứng dụng hình học của tích phân" },
-            { id: "g12_s2_c4_l4", name: "Ôn tập chương IV" }
+            { id: "g12_s2_c4_l1", name: "Bài 11. Nguyên hàm" },
+            { id: "g12_s2_c4_l2", name: "Bài 12. Tích phân" },
+            { id: "g12_s2_c4_l3", name: "Bài 13. Ứng dụng hình học của tích phân" },
+            { id: "g12_s2_c4_l4", name: "Bài tập cuối chương IV" }
           ]
         },
         {
           id: "g12_s2_c5",
-          name: "Chương V: Phương trình đường thẳng, mặt phẳng, mặt cầu trong không gian",
+          name: "Chương V. Phương pháp toạ độ trong không gian",
           lessons: [
-            { id: "g12_s2_c5_l1", name: "Bài 13: Phương trình mặt phẳng" },
-            { id: "g12_s2_c5_l2", name: "Bài 14: Phương trình đường thẳng" },
-            { id: "g12_s2_c5_l3", name: "Bài 15: Phương trình mặt cầu" },
-            { id: "g12_s2_c5_l4", name: "Ôn tập chương V" }
+            { id: "g12_s2_c5_l1", name: "Bài 14. Phương trình mặt phẳng" },
+            { id: "g12_s2_c5_l2", name: "Bài 15. Phương trình đường thẳng trong không gian" },
+            { id: "g12_s2_c5_l3", name: "Bài 16. Công thức tính góc trong không gian" },
+            { id: "g12_s2_c5_l4", name: "Bài 17. Phương trình mặt cầu" },
+            { id: "g12_s2_c5_l5", name: "Bài tập cuối chương V" }
           ]
         },
         {
           id: "g12_s2_c6",
-          name: "Chương VI: Xác suất có điều kiện",
+          name: "Chương VI. Xác suất có điều kiện",
           lessons: [
-            { id: "g12_s2_c6_l1", name: "Bài 16: Công thức xác suất trị số và độc lập" },
-            { id: "g12_s2_c6_l2", name: "Bài 17: Công thức xác suất toàn phần và công thức Bayes" },
-            { id: "g12_s2_c6_l3", name: "Ôn tập chương VI" }
+            { id: "g12_s2_c6_l1", name: "Bài 18. Xác suất có điều kiện" },
+            { id: "g12_s2_c6_l2", name: "Bài 19. Công thức xác suất toàn phần và công thức Bayes" },
+            { id: "g12_s2_c6_l3", name: "Bài tập cuối chương VI" }
+          ]
+        },
+        {
+          id: "g12_s2_hdtn",
+          name: "Hoạt động thực hành trải nghiệm",
+          lessons: [
+            { id: "g12_s2_hdtn_l1", name: "Tính nguyên hàm và tích phân với phần mềm GeoGebra" },
+            { id: "g12_s2_hdtn_l2", name: "Tính gần đúng tích phân bằng phương pháp hình thang" },
+            { id: "g12_s2_hdtn_l3", name: "Vẽ đồ hoạ 3D với phần mềm GeoGebra" },
+            { id: "g12_s2_hdtn_l4", name: "Bài tập ôn tập cuối năm" }
           ]
         }
       ]
@@ -840,30 +864,30 @@ export const KNTT_CURRICULUM: CurriculumData = {
       chapters: [
         {
           id: "g12_st_c1",
-          name: "Chuyên đề 1: Ứng dụng toán học giải các bài toán tối ưu",
+          name: "Chuyên đề 1. Biến ngẫu nhiên rời rạc. Các số đặc trưng của biến ngẫu nhiên rời rạc",
           lessons: [
-            { id: "g12_st_c1_l1", name: "Bài 1: Bài toán quy hoạch tuyến tính" },
-            { id: "g12_st_c1_l2", name: "Bài 2: Vận dụng đạo hàm để giải quyết một số bài toán tối ưu" },
+            { id: "g12_st_c1_l1", name: "Bài 1. Biến ngẫu nhiên rời rạc và các số đặc trưng" },
+            { id: "g12_st_c1_l2", name: "Bài 2. Biến ngẫu nhiên có phân bố nhị thức và áp dụng" },
             { id: "g12_st_c1_l3", name: "Bài tập cuối chuyên đề 1" }
           ]
         },
         {
           id: "g12_st_c2",
-          name: "Chuyên đề 2: Ứng dụng toán học trong một số vấn đề liên quan đến tài chính",
+          name: "Chuyên đề 2. Ứng dụng toán học để giải quyết một số bài toán tối ưu",
           lessons: [
-            { id: "g12_st_c2_l1", name: "Bài 3: Tiền tệ. Lãi suất" },
-            { id: "g12_st_c2_l2", name: "Bài 4: Tín dụng. Vay nợ" },
-            { id: "g12_st_c2_l3", name: "Bài 5: Đầu tư tài chính. Lập kế hoạch tài chính cá nhân" },
-            { id: "g12_st_c2_l4", name: "Bài tập cuối chuyên đề 2" }
+            { id: "g12_st_c2_l1", name: "Bài 3. Vận dụng hệ bất phương trình bậc nhất hai ẩn để giải quyết một số bài toán quy hoạch tuyến tính" },
+            { id: "g12_st_c2_l2", name: "Bài 4. Vận dụng đạo hàm để giải quyết một số bài toán tối ưu" },
+            { id: "g12_st_c2_l3", name: "Bài tập cuối chuyên đề 2" }
           ]
         },
         {
           id: "g12_st_c3",
-          name: "Chuyên đề 3: Biến ngẫu nhiên rời rạc. Các số đặc trưng của biến ngẫu nhiên rời rạc",
+          name: "Chuyên đề 3. Ứng dụng toán học trong một số vấn đề liên quan đến tài chính",
           lessons: [
-            { id: "g12_st_c3_l1", name: "Bài 6: Biến ngẫu nhiên rời rạc" },
-            { id: "g12_st_c3_l2", name: "Bài 7: Phân bố Bernoulli và phân bố nhị thức" },
-            { id: "g12_st_c3_l3", name: "Bài tập cuối chuyên đề 3" }
+            { id: "g12_st_c3_l1", name: "Bài 5. Tiền tệ. Lãi suất" },
+            { id: "g12_st_c3_l2", name: "Bài 6. Tín dụng. Vay nợ" },
+            { id: "g12_st_c3_l3", name: "Bài 7. Đầu tư tài chính. Lập kế hoạch tài chính cá nhân" },
+            { id: "g12_st_c3_l4", name: "Bài tập cuối chuyên đề 3" }
           ]
         }
       ]

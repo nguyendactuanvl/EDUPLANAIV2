@@ -30,7 +30,9 @@ import {
   rescueCodeAndNestedText,
   normalizePropositionQuotes,
   normalizeArrayAndTableEnvironments,
-  sanitizeSvgOrHtmlForReact
+  sanitizeSvgOrHtmlForReact,
+  wrapNakedLatexExpressions,
+  fixDisplayMathTrailingPunctuation
 } from '../lib/utils';
 
 export { 
@@ -844,6 +846,7 @@ export const MarkdownRenderer = React.memo(({
   processedContent = processedContent.replace(/\\\[([\s\S]*?)\\\]/g, (_, formula) => `\n\n$$${formula}$$\n\n`);
   // Bỏ các bộ tiền xử lý và regex thủ công chồng chéo, sử dụng bộ render chuẩn.
   processedContent = processedContent.replace(/\\(\$)/g, '$1');
+  processedContent = wrapNakedLatexExpressions(processedContent);
 
   // 3.5 Dọn sạch các dấu * đánh dấu đáp án trắc nghiệm ở đầu hoặc cuối phương án A, B, C, D
   processedContent = processedContent.replace(/^([ \t]*(?:[-*•]\s*)?)\*+\s*([A-D][\.\:\)])/gm, '$1$2');
@@ -861,8 +864,9 @@ export const MarkdownRenderer = React.memo(({
     return `\n\n$$\n${trimmed}\n$$\n\n`;
   });
 
-  // Xóa dấu chấm mồ côi ngay sau khối $$...$$ trước khi bắt đầu câu mới tiếng Việt
-  processedContent = processedContent.replace(/(\$\$[\s\S]*?\$\$)\s*\.\s*(?=[A-ZÀ-Ỹ])/g, '$1\n\n');
+  // Gắn dấu chấm/phẩy/chấm phẩy mồ côi ngay sau khối $$...$$ vào cuối khối toán để không rớt xuống dòng trống
+  processedContent = fixDisplayMathTrailingPunctuation(processedContent);
+  processedContent = processedContent.replace(/(\$\$[\s\S]*?\$\$)\s*\.\s*(?=(?:[A-ZÀ-Ỹ]|\*{1,2}(?:Câu|Bài)\s*\d))/g, '$1\n\n');
 
   // Đã xử lý tất cả các phần tử BBT, TikZ, và hình vẽ tại phần trên của MarkdownRenderer.
   // Không cần xử lý lại để tránh trùng lặp.

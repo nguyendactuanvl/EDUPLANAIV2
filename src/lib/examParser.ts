@@ -574,45 +574,45 @@ export function preprocessExamText(text: string): string {
   });
 
   // Pre-normalize: ensure section headers have preceding newlines
-  s = s.replace(/(?:^|[^\n])\s*(PHẦN\s*(?:[I|V|X\d]+|\d+)[:\.\-\s][^\n]*)/gi, '\n\n$1\n');
-  s = s.replace(/(?:^|[^\n])\s*(B\.?\s*TỰ\s*LUẬN[^\n]*|BÀI\s*TẬP\s*TỰ\s*LUẬN[^\n]*)/gi, '\n\n$1\n');
+  s = s.replace(/(^|[^\n])[ \t]*(PHẦN\s*(?:[I|V|X\d]+|\d+)[:\.\-\s][^\n]*)/gi, '$1\n\n$2\n');
+  s = s.replace(/(^|[^\n])[ \t]*(B\.?\s*TỰ\s*LUẬN[^\n]*|BÀI\s*TẬP\s*TỰ\s*LUẬN[^\n]*)/gi, '$1\n\n$2\n');
 
   // Ensure newlines before Câu \d+ or Bài \d+ (even if inside markdown bold/brackets or preceded by space/punctuation)
-  s = s.replace(/(?:^|[^\n])\s*(?=(?:\*\*|<b>|\[)?(?:Câu|Bài|Question|Q)\s*\d+[\.:\s\-\/\)])/gi, '\n\n');
-  s = s.replace(/(?:^|[^\n])\s*(?=\b\d+[\.:\)]\s+(?:Cho|Tính|Tìm|Trong|Biết|Xét|Đường|Hàm|Hình|Giá|Một|Có|Đồ|Phương|Tập))/gi, '\n\n');
+  s = s.replace(/(^|[^\n])[ \t]*(?=(?:\*\*|<b>|\[)?(?:Câu|Bài|Question|Q)\s*\d+[\.:\s\-\/\)])/gi, '$1\n\n');
+  s = s.replace(/(^|[^\n])[ \t]*(?<!(?:Câu|Bài|Question|Q)\s*)(?=\b\d+[\.:\)]\s+(?:Cho|Tính|Tìm|Trong|Biết|Xét|Đường|Hàm|Hình|Giá|Một|Có|Đồ|Phương|Tập))/gi, '$1\n\n');
 
   // Từ ngữ chỉ điểm/hình học/giới từ không được coi là phương án trắc nghiệm
   const geoWordPattern = /(?:tại|điểm|đỉnh|gọi|qua|với|từ|trên|của|cho|và|thuộc|đến|cạnh|đường|mặt\s*phẳng|chiếu\s*lên|tọa\s*độ|tâm|trọng\s*tâm|trực\s*tâm|bán\s*kính|vectơ|vector|tam\s*giác(?:\s+[a-zA-Z\.]+)?|tứ\s*diện(?:\s+[a-zA-Z\.]+)?|hình\s*chóp(?:\s+[a-zA-Z\.]+)?|đoạn\s*thẳng)$/i;
 
-  // Chuẩn hóa triệt để nhãn phương án dị dạng
-  s = s.replace(/[^a-zA-Z0-9\s]?\s*["'\u201C\u201D\u2018\u2019\.\*\s\(]*\b([A-D])\b["'\u201C\u201D\u2018\u2019\.\*\s\)\:]+\s*["'\u201C\u201D\u2018\u2019\.\*\s]*/g, (match, letter, offset) => {
+  // Chuẩn hóa triệt để nhãn phương án dị dạng (yêu cầu có dấu chấm/hai chấm/ngoặc và khoảng trắng theo sau)
+  s = s.replace(/(?:^|\s)["'\u201C\u201D\u2018\u2019\*]*\b([A-D])\b["'\u201C\u201D\u2018\u2019\*]*[\.\)\:]["'\u201C\u201D\u2018\u2019\*]*(?=\s)/g, (match, letter, offset) => {
     const before = s.slice(Math.max(0, offset - 25), offset);
     const after = s.slice(offset);
-    const hasMultipleChoices = /(?:\bB[\.\:\)]|\bC[\.\:\)]|\bD[\.\:\)])/.test(after);
+    const hasMultipleChoices = /(?:\bB[\.\:\)]\s|\bC[\.\:\)]\s|\bD[\.\:\)]\s)/.test(after);
     if (geoWordPattern.test(before.trim()) && !hasMultipleChoices) return match;
     return `\n${letter}. `;
   });
 
   // Tách các phương án B, C, D bị dính liền vào số/chữ/ký hiệu/math token trước đó (vd: 12B. 16, 17,6D. 18,4, ___MATH_BLOCK_0___. B.)
-  s = s.replace(/([0-9\$\)\}\],.:;?!_])\s*(?=(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?[B-D][\.:\)])/g, (match, p1, offset) => {
+  s = s.replace(/([0-9\$\)\}\],.:;?!_])\s*(?=(?:[-*]\s*)?(?:\*{0,2}|<b>)?[B-D][\.:\)](?:\*{0,2}|<\/b>)?(?:\s+|(?=\$|\u0000|___MATH_BLOCK_)))/g, (match, p1, offset) => {
     const before = s.slice(Math.max(0, offset - 25), offset + p1.length);
     const after = s.slice(offset);
-    const hasMultipleChoices = /(?:\bC[\.\:\)]|\bD[\.\:\)])/.test(after);
+    const hasMultipleChoices = /(?:\bC[\.\:\)]\s|\bD[\.\:\)]\s)/.test(after);
     if (geoWordPattern.test(before.trim()) && !hasMultipleChoices) return match;
     return `${p1}\n`;
   });
 
   // Tách phương án A bị dính vào đuôi đề bài (vd: $.A. 12, .A. 12, ?A. 12, :A. 12)
-  s = s.replace(/([0-9\$\)\}\],.:;?!_])\s*(?=(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?A[\.:\)])/g, (match, p1, offset) => {
+  s = s.replace(/([0-9\$\)\}\],.:;?!_])\s*(?=(?:[-*]\s*)?(?:\*{0,2}|<b>)?A[\.:\)](?:\*{0,2}|<\/b>)?(?:\s+|(?=\$|\u0000|___MATH_BLOCK_)))/g, (match, p1, offset) => {
     const before = s.slice(Math.max(0, offset - 25), offset + p1.length);
     const after = s.slice(offset);
-    const hasMultipleChoices = /(?:\bB[\.\:\)]|\bC[\.\:\)])/.test(after);
+    const hasMultipleChoices = /(?:\bB[\.\:\)]\s|\bC[\.\:\)]\s)/.test(after);
     if (geoWordPattern.test(before.trim()) && !hasMultipleChoices) return match;
     return `${p1}\n`;
   });
 
   // Tách các mệnh đề a), b), c), d) (chữ thường) của câu hỏi Đúng/Sai ra từng dòng riêng biệt
-  s = s.replace(/([^\n])\s*(?=(?:^|\s)(?:[-*]\s*)?(?:\(?\s*[a-d]\s*[\)\.]))\s*/g, '$1\n');
+  s = s.replace(/([^\n])\s+(?=(?:[-*]\s*)?(?:\*{0,2})[a-d]\)(?:\*{0,2})\s+)/g, '$1\n');
 
   // Restore math blocks
   s = s.replace(/___MATH_BLOCK_(\d+)___/g, (_m, idx) => mathTokens[Number(idx)] || "");
@@ -771,7 +771,8 @@ export function parseRawExamText(rawText: string): ParsedQuestion[] {
       // Tránh nhầm lẫn với các điểm hình học trong câu dẫn như "vuông tại A.", "điểm B."
       const geoWordStemPattern = /(?:tại|điểm|đỉnh|gọi|qua|với|từ|trên|của|cho|và|thuộc|đến|cạnh|đường|mặt\s*phẳng|chiếu\s*lên|tọa\s*độ|tâm|trọng\s*tâm|trực\s*tâm|bán\s*kính|vectơ|vector|tam\s*giác(?:\s+[a-zA-Z\.]+)?|tứ\s*diện(?:\s+[a-zA-Z\.]+)?|hình\s*chóp(?:\s+[a-zA-Z\.]+)?|đoạn\s*thẳng)\s*$/i;
 
-      const aMatches = [...mainBlock.matchAll(/(?:(?:\r?\n)+\s*|[.:;?!]\s*|\$|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?A(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/gi)];
+      const searchableMainBlock = mainBlock.replace(/\$\$[\s\S]*?\$\$|\$(?:\\.|[^\$\\\n])+?\$/g, (m) => 'M'.repeat(m.length));
+      const aMatches = [...searchableMainBlock.matchAll(/(?:(?:\r?\n)+\s*|[.:;?!]\s*|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?A(?:\*{0,2}|<\/b>)?[\.:\)](?:[ \t]+|(?=\$))/g)];
       let optMatchA = -1;
 
       if (aMatches.length > 0) {
@@ -782,10 +783,10 @@ export function parseRawExamText(rawText: string): ParsedQuestion[] {
 
           if (geoWordStemPattern.test(beforeA)) continue;
 
-          const afterA = mainBlock.substring(aIdx);
-          const hasB = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?B(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
-          const hasC = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?C(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
-          const hasD = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?D(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
+          const afterASearchable = searchableMainBlock.substring(aIdx);
+          const hasB = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?B(?:\*{0,2}|<\/b>)?[\.:\)](?:[ \t]+|(?=\$))/.test(afterASearchable);
+          const hasC = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?C(?:\*{0,2}|<\/b>)?[\.:\)](?:[ \t]+|(?=\$))/.test(afterASearchable);
+          const hasD = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?D(?:\*{0,2}|<\/b>)?[\.:\)](?:[ \t]+|(?=\$))/.test(afterASearchable);
 
           if (hasB && (hasC || hasD)) {
             optMatchA = aIdx;
@@ -811,16 +812,23 @@ export function parseRawExamText(rawText: string): ParsedQuestion[] {
           // Cắt bỏ phần header phân mục bị dính ở cuối phương án D (như ### PHẦN II...)
           optionsContent = optionsContent.replace(/(?:\r?\n\s*(?:###?\s*|\*\*)?(?:PHẦN\s*(?:[I|V|X\d]+|\d+)|B\.\s*TỰ\s*LUẬN|BÀI\s*TẬP\s*TỰ\s*LUẬN|Lời\s*giải|HDG)[\s\S]*)$/i, '');
 
+          const searchableOptions = optionsContent.replace(/\$\$[\s\S]*?\$\$|\$(?:\\.|[^\$\\\n])+?\$/g, (m) => 'M'.repeat(m.length));
           const options: string[] = [];
           let asteriskCorrectIdx = -1;
-          const optRegex = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?([A-D])(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*([\s\S]*?)(?=(?:(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?[A-D](?:\*{0,2}|<\/b>|\))?[\.:\)])|$)/gi;
-          let optMatch: RegExpExecArray | null;
-          while ((optMatch = optRegex.exec(optionsContent)) !== null) {
-            const marker = optMatch[0];
-            if (marker.includes('*') && !marker.includes('**')) {
+          const markerRegex = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?([A-D])(?:\*{0,2}|<\/b>)?[\.:\)](?:[ \t]+|(?=\$))/g;
+          const markerMatches: { index: number; fullLen: number; marker: string }[] = [];
+          let mm: RegExpExecArray | null;
+          while ((mm = markerRegex.exec(searchableOptions)) !== null) {
+            markerMatches.push({ index: mm.index, fullLen: mm[0].length, marker: mm[0] });
+          }
+          for (let k = 0; k < markerMatches.length; k++) {
+            const cur = markerMatches[k];
+            const bodyStart = cur.index + cur.fullLen;
+            const bodyEnd = k + 1 < markerMatches.length ? markerMatches[k + 1].index : optionsContent.length;
+            if (cur.marker.includes('*') && !cur.marker.includes('**')) {
               asteriskCorrectIdx = options.length;
             }
-            options.push(fixMath(cleanOptionText(optMatch[2])));
+            options.push(fixMath(cleanOptionText(optionsContent.slice(bodyStart, bodyEnd))));
           }
 
           while (options.length < 4) {

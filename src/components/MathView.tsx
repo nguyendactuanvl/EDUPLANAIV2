@@ -257,7 +257,7 @@ const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
       );
       const isChoiceList = cleanListChildren.length >= 2 && cleanListChildren.length <= 4 && cleanListChildren.some((child: any) => {
         const text = getNodePlainText(child?.props?.children);
-        return /^\s*(?:\*{0,2}|[-*•])*\s*[A-D][\.\)]/i.test(text) || /\b[A-D][\.\)]/.test(text);
+        return /^\s*(?:\*{0,2}|[-*•])*\s*[A-D][\.\)](?:\*{0,2})?(?:\s+|(?=\$))/.test(text);
       });
 
       if (isChoiceList) {
@@ -286,7 +286,7 @@ const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
       );
       const text = getNodePlainText(cleanItemChildren);
       if (!text.trim()) return null;
-      const isChoice = /^\s*(?:\*{0,2}|[-*•])*\s*[A-D][\.\)]/i.test(text) || /\b[A-D][\.\)]/.test(text);
+      const isChoice = /^\s*(?:\*{0,2}|[-*•])*\s*[A-D][\.\)](?:\*{0,2})?(?:\s+|(?=\$))/.test(text);
       if (isChoice) {
         return (
           <li className="py-1 px-1 text-slate-900 list-none m-0 whitespace-normal [&>div]:inline [&>div]:my-0 [&>p]:inline [&>p]:my-0" {...cleanProps(props)}>

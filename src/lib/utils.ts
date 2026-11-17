@@ -853,6 +853,429 @@ export function wrapNakedMathEnvironments(text: string): string {
     return isBlock ? `\n\n$$\n${env.trim()}\n$$\n\n` : ` $${env.trim()}$ `;
   });
 
+  return fixDisplayMathTrailingPunctuation(s);
+}
+
+/**
+ * Gắn dấu câu đơn lẻ (., , ;) đứng mồ côi ngay sau khối display math $$...$$ vào cuối khối toán
+ * để không bị rớt xuống thành một dòng chỉ có dấu chấm duy nhất.
+ */
+export function fixDisplayMathTrailingPunctuation(text: string): string {
+  if (!text || !text.includes('$$')) return text;
+  return text.replace(
+    /\$\$([\s\S]*?)\$\$[ \t\r\n]*([.,;])(?!(?:\.|[0-9a-zA-Zà-ỹÀ-Ỹ]))(?=[ \t]*(?:\r?\n|$))/g,
+    (fullMatch, body: string, punct: string) => {
+      const trimmed = body.trim();
+      if (!trimmed) return fullMatch;
+      const isDisplayBlock =
+        trimmed.includes('\n') ||
+        /\\begin\s*\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)/i.test(trimmed) ||
+        /\\left\s*\[/.test(trimmed);
+      if (!isDisplayBlock && !fullMatch.includes('\n')) {
+        return `$$${trimmed}${/[.,;]$/.test(trimmed) ? '' : punct}$$`;
+      }
+      const nextBody = /[.,;]$/.test(trimmed) ? trimmed : `${trimmed}${punct}`;
+      return `\n\n$$\n${nextBody}\n$$\n\n`;
+    }
+  );
+}
+
+/**
+ * Quét theo token (O(n), an toàn tuyệt đối với bảng/SVG/tiếng Việt) để tự động bọc `$...$`
+ * cho các biểu thức/phương trình LaTeX trần nằm ngoài `$...$`/`$$...$$`, đặc biệt như:
+ * `\log_b^2 a + 5\log_b^2 c - 4\log_b a \log_b c + 8\log_b a - 22\log_b c + 25 = 0`
+ */
+export function wrapNakedLatexExpressions(text: string): string {
+  if (!text) return '';
+  let s = String(text);
+
+  const vault: string[] = [];
+  const putVault = (m: string) => {
+    const idx = vault.length;
+    vault.push(m);
+    return `\uE000WNL_${idx}\uE001`;
+  };
+
+  // Bảo vệ code block, khối math sẵn có, SVG, TikZ, bảng ảnh Markdown và thẻ HTML
+  s = s.replace(
+    /(```[\s\S]*?```|`[^`\n]+`|\$\$[\s\S]*?\$\$|(?<!\\)\$(?!\$)[^$\n]+(?<!\\)\$(?!\$)|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]|<svg[\s\S]*?<\/svg>|<svg-wrapper[\s\S]*?<\/svg-wrapper>|<tikz-diagram[\s\S]*?<\/tikz-diagram>|\\begin\s*\{(?:tikzpicture|cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}[\s\S]*?\\end\s*\{(?:tikzpicture|cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|split|gather|align)\*?\}|!\[[^\]]*\]\([^)]*\)|<[^>]+>)/gi,
+    putVault
+  );
+
+  const MATH_TRIGGER_RE =
+    /\\(?:log|ln|lg|exp|sin|cos|tan|cot|arcsin|arccos|arctan|sinh|cosh|tanh|lim|limsup|liminf|sum|prod|int|iint|oint|frac|dfrac|tfrac|sqrt|root|vec|overrightarrow|overline|underline|widehat|left|le|leq|ge|geq|ne|neq|approx|equiv|pm|mp|cdot|times|div|in|notin|subset|subseteq|supset|supseteq|setminus|cap|cup|emptyset|varnothing|forall|exists|Rightarrow|Leftrightarrow|Leftarrow|iff|implies|infty|pi|alpha|beta|gamma|delta|theta|varphi|phi|Delta|Sigma|Omega|mathbb|mathcal|mathbf|mathrm|perp|parallel|circ)(?![a-zA-Z])/;
+
+  const hasPotentialNakedMath =
+    MATH_TRIGGER_RE.test(s) ||
+    /(?<![\\a-zA-ZÀ-ỹ\uE000\uE001])(?:arcsin|arccos|arctan|sin|cos|tan|cot|log|ln|lim)\s*(?:[_^][\{0-9a-zA-Z\\]|\()/.test(s);
+
+  if (!hasPotentialNakedMath) {
+    return s.replace(/\uE000WNL_(\d+)\uE001/g, (_m, idx) => vault[Number(idx)] || '');
+  }
+
+  // Khôi phục dấu \ bị rớt trước hàm lượng giác/logarit nếu có chỉ số/ngoặc theo sau: log_b^2 a -> \log_b^2 a
+  s = s.replace(
+    /(?<![\\a-zA-ZÀ-ỹ\uE000\uE001])(arcsin|arccos|arctan|sin|cos|tan|cot|log|ln|lim)(?=\s*(?:[_^][\{0-9a-zA-Z\\]|\())/g,
+    '\\$1'
+  );
+
+  const VN_DIACRITIC_RE = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ]/;
+  const ALLOWED_ASCII_FNS = new Set([
+    'sin', 'cos', 'tan', 'cot', 'arcsin', 'arccos', 'arctan', 'sinh', 'cosh', 'tanh',
+    'log', 'ln', 'lg', 'exp', 'lim', 'limsup', 'liminf', 'max', 'min', 'mod', 'gcd', 'lcm', 'det', 'sgn',
+    'dx', 'dy', 'dz', 'dt', 'du', 'dv', 'dr'
+  ]);
+  const GEOM_STOP_WORDS = new Set(['II', 'III', 'IV', 'VI', 'VII', 'VIII', 'IX', 'XI', 'XII', 'THPT', 'THCS', 'BGD', 'SGD', 'OMML', 'SVG', 'PDF', 'JSON', 'ABCD']);
+  const PAREN_PROSE_STOP_RE = /\b(?:hoac|hay|voi|khi|thi|tai|trong|va|thoa|man|dieu|kien|loai|nhan|where|when|with|and|or|for|the|if|then|that|such|find|let|from|into|real|positive|integer|numbers?)\b/i;
+
+  const readBalanced = (line: string, openIdx: number, openCh: string, closeCh: string): number => {
+    let depth = 0;
+    let i = openIdx;
+    while (i < line.length) {
+      const ch = line[i];
+      if (ch === '\\') {
+        i += 2;
+        continue;
+      }
+      if (ch === openCh) depth++;
+      else if (ch === closeCh) {
+        depth--;
+        if (depth === 0) return i + 1;
+      }
+      i++;
+    }
+    return -1;
+  };
+
+  const isCleanMathGroup = (inner: string): boolean => {
+    const clean = inner.replace(/\\(?:text|mathrm|textbf|textit)\s*\{[^{}]*\}/g, '');
+    if (VN_DIACRITIC_RE.test(clean)) return false;
+    if (PAREN_PROSE_STOP_RE.test(clean)) return false;
+    const words = clean.match(/[A-Za-z]{4,}/g) || [];
+    for (const w of words) {
+      if (ALLOWED_ASCII_FNS.has(w.toLowerCase())) continue;
+      if (/^[A-Z]{2,5}$/.test(w) && !GEOM_STOP_WORDS.has(w)) continue;
+      return false;
+    }
+    return true;
+  };
+
+  const wrapLine = (line: string): string => {
+    if (!MATH_TRIGGER_RE.test(line)) return line;
+    const isTableLine = /^\s*\|/.test(line);
+    let out = '';
+    let cursor = 0;
+
+    while (cursor < line.length) {
+      const slice = line.slice(cursor);
+      const anchorMatch = MATH_TRIGGER_RE.exec(slice);
+      if (!anchorMatch || anchorMatch.index === undefined) {
+        out += slice;
+        break;
+      }
+      const anchorIdx = cursor + anchorMatch.index;
+
+      // 1. Expand LEFT for algebraic LHS / coefficients (e.g. P = ..., 2x + ..., f(x) = ..., 5\log...)
+      let start = anchorIdx;
+      let leftPos = anchorIdx;
+      let sawOperatorToRight = false;
+      while (leftPos > cursor) {
+        let p = leftPos - 1;
+        while (p >= cursor && (line[p] === ' ' || line[p] === '\t')) p--;
+        if (p < cursor) break;
+        const hadSpace = p < leftPos - 1;
+        const ch = line[p];
+        if (ch === '\uE001' || ch === '\uE000' || ch === '$' || (isTableLine && ch === '|')) break;
+
+        // Binary/relation operators or sub/sup glue
+        if ('=+-*/<>^_'.includes(ch)) {
+          // Do not consume a Markdown list dash at line start
+          if (ch === '-' && /^\s*$/.test(line.slice(0, p))) break;
+          leftPos = p;
+          start = leftPos;
+          sawOperatorToRight = true;
+          continue;
+        }
+
+        // Prime derivative mark y', f'(x)
+        if (ch === "'") {
+          leftPos = p;
+          start = leftPos;
+          continue;
+        }
+
+        // Digits (integers or decimals like 2.5 or 0,5)
+        if (/[0-9]/.test(ch)) {
+          let numStart = p;
+          while (numStart > cursor && /[0-9]/.test(line[numStart - 1])) numStart--;
+          if (numStart >= cursor + 2 && (line[numStart - 1] === '.' || line[numStart - 1] === ',') && /[0-9]/.test(line[numStart - 2])) {
+            numStart -= 2;
+            while (numStart > cursor && /[0-9]/.test(line[numStart - 1])) numStart--;
+          }
+          // Skip leading list numbering "1. "
+          if (hadSpace && /^\s*\d+\.$/.test(line.slice(0, p + 2).trim())) break;
+          leftPos = numStart;
+          start = leftPos;
+          sawOperatorToRight = true;
+          continue;
+        }
+
+        // Closing group ) ] } on the left
+        if (ch === ')' || ch === ']' || ch === '}') {
+          const openCh = ch === ')' ? '(' : ch === ']' ? '[' : '{';
+          let depth = 0;
+          let gStart = -1;
+          for (let k = p; k >= cursor; k--) {
+            if (line[k] === ch) depth++;
+            else if (line[k] === openCh) {
+              depth--;
+              if (depth === 0) {
+                gStart = k;
+                break;
+              }
+            }
+          }
+          if (gStart !== -1 && isCleanMathGroup(line.slice(gStart + 1, p))) {
+            // Also include leading function/command identifier attached immediately to '(' / '{' e.g. f(x), \frac{1}{2}
+            let ext = gStart;
+            if (ext > cursor && /[A-Za-z]/.test(line[ext - 1])) {
+              let wStart = ext - 1;
+              while (wStart > cursor && /[A-Za-zÀ-ỹ]/.test(line[wStart - 1])) wStart--;
+              const word = line.slice(wStart, ext);
+              const isCmd = wStart > cursor && line[wStart - 1] === '\\';
+              if (isCmd) {
+                ext = wStart - 1;
+              } else if (!VN_DIACRITIC_RE.test(word) && (word.length === 1 || ALLOWED_ASCII_FNS.has(word.toLowerCase()))) {
+                ext = wStart;
+              }
+            }
+            leftPos = ext;
+            start = leftPos;
+            continue;
+          }
+          break;
+        }
+
+        // Identifier / word on the left
+        if (/[A-Za-z]/.test(ch)) {
+          let wStart = p;
+          while (wStart > cursor && /[A-Za-zÀ-ỹ]/.test(line[wStart - 1])) wStart--;
+          const word = line.slice(wStart, p + 1);
+          const isTex = wStart > cursor && line[wStart - 1] === '\\';
+          if (isTex) {
+            leftPos = wStart - 1;
+            start = leftPos;
+            continue;
+          }
+          if (VN_DIACRITIC_RE.test(word)) break;
+          // Single variable (P, y, x, a...) joined via operator or direct attachment (x\log, 2x \sin)
+          if (word.length === 1 && (sawOperatorToRight || !hadSpace || (wStart > cursor && /[0-9\)]/.test(line[wStart - 1])))) {
+            leftPos = wStart;
+            start = leftPos;
+            sawOperatorToRight = false;
+            continue;
+          }
+          if (ALLOWED_ASCII_FNS.has(word.toLowerCase()) && sawOperatorToRight) {
+            leftPos = wStart;
+            start = leftPos;
+            continue;
+          }
+          if (/^[A-Z]{2,5}$/.test(word) && !GEOM_STOP_WORDS.has(word) && sawOperatorToRight) {
+            leftPos = wStart;
+            start = leftPos;
+            continue;
+          }
+          break;
+        }
+
+        break;
+      }
+
+      // 2. Expand RIGHT across the full naked math expression / equation
+      let pos = anchorIdx;
+      let lastValidEnd = anchorIdx;
+
+      while (pos < line.length) {
+        if (line[pos] === ' ' || line[pos] === '\t') {
+          pos++;
+          continue;
+        }
+
+        const ch = line[pos];
+        if (ch === '\uE000' || ch === '\uE001' || ch === '$' || (isTableLine && ch === '|')) break;
+
+        // TeX command
+        if (ch === '\\') {
+          const cmdMatch = /^\\(?:[a-zA-Z]+|.)/.exec(line.slice(pos));
+          if (!cmdMatch) break;
+          const cmd = cmdMatch[0];
+          pos += cmd.length;
+          // Keep \text{...} / \mathrm{...} / \textbf{...} whole
+          if (/^\\(?:text|mathrm|textbf|textit)$/.test(cmd)) {
+            while (pos < line.length && (line[pos] === ' ' || line[pos] === '\t')) pos++;
+            if (line[pos] === '{') {
+              const endB = readBalanced(line, pos, '{', '}');
+              if (endB !== -1) pos = endB;
+            }
+          } else if (cmd === '\\right') {
+            if (pos < line.length && '.|)]}'.includes(line[pos])) {
+              pos++;
+            } else if (line.slice(pos, pos + 2) === '\\}') {
+              pos += 2;
+            }
+          }
+          lastValidEnd = pos;
+          continue;
+        }
+
+        // Braced group {...}
+        if (ch === '{') {
+          const endB = readBalanced(line, pos, '{', '}');
+          if (endB === -1) break;
+          const inner = line.slice(pos + 1, endB - 1);
+          const clean = inner.replace(/\\(?:text|mathrm|textbf|textit)\s*\{[^{}]*\}/g, '');
+          if (VN_DIACRITIC_RE.test(clean)) break;
+          pos = endB;
+          lastValidEnd = pos;
+          continue;
+        }
+
+        // Parenthesized group (...)
+        if (ch === '(') {
+          const endP = readBalanced(line, pos, '(', ')');
+          if (endP === -1) break;
+          if (!isCleanMathGroup(line.slice(pos + 1, endP - 1))) break;
+          pos = endP;
+          lastValidEnd = pos;
+          continue;
+        }
+
+        // Bracketed group [...] (not Markdown link)
+        if (ch === '[') {
+          const endK = readBalanced(line, pos, '[', ']');
+          if (endK === -1 || line[endK] === '(') break;
+          if (!isCleanMathGroup(line.slice(pos + 1, endK - 1))) break;
+          pos = endK;
+          lastValidEnd = pos;
+          continue;
+        }
+
+        // Subscript / Superscript
+        if (ch === '_' || ch === '^') {
+          pos++;
+          while (pos < line.length && (line[pos] === ' ' || line[pos] === '\t')) pos++;
+          if (pos >= line.length) break;
+          if (line[pos] === '{') {
+            const endB = readBalanced(line, pos, '{', '}');
+            if (endB === -1) break;
+            pos = endB;
+          } else if (line[pos] === '\\') {
+            const cm = /^\\(?:[a-zA-Z]+|.)/.exec(line.slice(pos));
+            pos += cm ? cm[0].length : 1;
+          } else if (/[0-9A-Za-z+\-]/.test(line[pos])) {
+            pos++;
+          } else {
+            break;
+          }
+          lastValidEnd = pos;
+          continue;
+        }
+
+        // Prime
+        if (ch === "'") {
+          pos++;
+          lastValidEnd = pos;
+          continue;
+        }
+
+        // Relational & arithmetic operators (consume provisionally; only valid if followed by operand)
+        if ('=+-*/<>'.includes(ch)) {
+          if ((ch === '<' || ch === '>') && line[pos + 1] === '=') {
+            pos += 2;
+          } else {
+            pos++;
+          }
+          continue;
+        }
+
+        // Numbers (including tight decimals 0.5 / 0,5)
+        if (/[0-9]/.test(ch)) {
+          const numMatch = /^\d+(?:[.,]\d+)?/.exec(line.slice(pos));
+          if (!numMatch) break;
+          pos += numMatch[0].length;
+          lastValidEnd = pos;
+          continue;
+        }
+
+        // Word / variable
+        if (/[A-Za-z]/.test(ch)) {
+          const wMatch = /^[A-Za-zÀ-ỹ]+/.exec(line.slice(pos));
+          if (!wMatch) break;
+          const word = wMatch[0];
+          if (VN_DIACRITIC_RE.test(word)) break;
+          // Stop before option prefixes A. B. C. D. or a) b) c) d)
+          const afterW = line.slice(pos + word.length);
+          if (word.length === 1 && (/^[ABCD](?:\.(?:\s|$))/.test(word + afterW) || /^[a-d]\)/.test(word + afterW))) {
+            break;
+          }
+          if (word.length === 1) {
+            pos += 1;
+            lastValidEnd = pos;
+            continue;
+          }
+          if (ALLOWED_ASCII_FNS.has(word.toLowerCase())) {
+            pos += word.length;
+            lastValidEnd = pos;
+            continue;
+          }
+          if (/^[A-Z]{2,5}$/.test(word) && !GEOM_STOP_WORDS.has(word)) {
+            const beforeSlice = line.slice(start, pos).trimEnd();
+            if (/[=+\-*/<>(\\]$/.test(beforeSlice) || /^\s*(?:=|\+|\\perp|\\parallel|\\in|\\subset)/.test(afterW)) {
+              pos += word.length;
+              lastValidEnd = pos;
+              continue;
+            }
+          }
+          break;
+        }
+
+        // Sentence punctuation or anything else ends the naked formula
+        break;
+      }
+
+      if (lastValidEnd > anchorIdx) {
+        const candidate = line.slice(start, lastValidEnd).trim();
+        const plainCheck = candidate.replace(/\\(?:text|mathrm|textbf|textit)\s*\{[^{}]*\}/g, '');
+        if (
+          candidate.length >= 2 &&
+          MATH_TRIGGER_RE.test(candidate) &&
+          !VN_DIACRITIC_RE.test(plainCheck)
+        ) {
+          out += line.slice(cursor, start) + `$${candidate}$`;
+          cursor = lastValidEnd;
+          continue;
+        }
+      }
+
+      // Advance past failed trigger safely
+      out += line.slice(cursor, anchorIdx + anchorMatch[0].length);
+      cursor = anchorIdx + anchorMatch[0].length;
+    }
+
+    return out;
+  };
+
+  s = s.split('\n').map(wrapLine).join('\n');
+
+  // Restore protected vault tokens
+  s = s.replace(/\uE000WNL_(\d+)\uE001/g, (_m, idx) => vault[Number(idx)] || '');
+
+  // Merge adjacent inline math chunks connected directly by a binary/relation operator (e.g. "$\log_b^2 a$ $+ 5\log_b^2 c$" -> "$\log_b^2 a + 5\log_b^2 c$")
+  s = s.replace(
+    /(?<!\$)\$(?!\$)([^$\n]+?)(?<!\$)\$(?!\$)[ \t]*(?<!\$)\$(?!\$)([=+\-*/<>][^$\n]*?)(?<!\$)\$(?!\$)/g,
+    (_m, a: string, b: string) => `$${a.trim()} ${b.trim()}$`
+  );
+
   return s;
 }
 
@@ -870,14 +1293,40 @@ export function normalizeOcrChoicesAndFormatting(text: string): string {
   // 1. Xóa sạch &nbsp;, &ensp;, &emsp;
   s = s.replace(/&(?:nbsp|ensp|emsp);+/gi, ' ');
 
+  // 1.1 Bảo vệ tuyệt đối khối toán ($$...$$, $...$, \(...\), \[...\]), code, SVG/HTML trước khi tách phương án
+  // để các ký hiệu hình học như $(SAD)$, $(BCD)$, $(ABCD)$ hoặc phân số không bao giờ bị cắt nhầm thành đáp án B., C., D.
+  const protectedBlocks: string[] = [];
+  const maskToken = (match: string) => {
+    const idx = protectedBlocks.length;
+    protectedBlocks.push(match);
+    return `\uE000OCR_PROT_${idx}\uE001`;
+  };
+  s = s.replace(/(```[\s\S]*?```|`[^`\n]+`|<svg-wrapper[\s\S]*?<\/svg-wrapper>|<tikz-diagram[\s\S]*?<\/tikz-diagram>|<svg[\s\S]*?<\/svg>|<img\b[^>]*>|\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|(?<!\\)\$(?!\$)(?:\\.|[^\$\\\n])+?(?<!\\)\$)/gi, maskToken);
+
   // 1.5 Tách các phương án trắc nghiệm bị dính liền vào nhau hoặc dính vào đuôi câu hỏi
   // Chỉ tách khi KHÔNG nằm sau các từ ngữ hình học hoặc giới từ (vd: "tại A.", "điểm B.", "từ C.")
+  // và PHẢI có khoảng trắng (hoặc $) theo sau dấu chấm/ngoặc của nhãn phương án để tránh cắt nhầm "(D)." hay "A.BCD"
   const geoWordPattern = /(?:tại|điểm|đỉnh|gọi|qua|với|từ|trên|của|cho|và|thuộc|đến|cạnh|đường|mặt\s*phẳng|chiếu\s*lên|tọa\s*độ|tâm|trọng\s*tâm|trực\s*tâm|bán\s*kính|vectơ|vector|tam\s*giác(?:\s+[a-zA-Z\.]+)?|tứ\s*diện(?:\s+[a-zA-Z\.]+)?|hình\s*chóp(?:\s+[a-zA-Z\.]+)?|đoạn\s*thẳng)$/i;
 
-  s = s.replace(/([0-9\$\)\}\],.:;?!])\s*(?=(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?[B-D][\.:\)])/g, (match, p1, offset) => {
+  s = s.replace(/([0-9\$\)\}\],.:;?!\uE001])\s*(?=(?:[-*]\s*)?(?:\*{0,2}|<b>)?[B-D]([\.\:\)])(?:\*{0,2}|<\/b>)?(?:\s+|(?=\$|\uE000)))/g, (match, p1, delim, offset) => {
     const before = s.slice(Math.max(0, offset - 35), offset + p1.length);
     if (geoWordPattern.test(before.trim())) return match;
-    // Không tách nếu là đáp án nhanh dạng "12.C." hoặc "1.B, 2.C" (số đi liền dấu chấm không có khoảng trắng trước chữ cái đáp án)
+    // Không tách nếu là đáp án nhanh dạng "12.C." hoặc "1.B, 2.C"
+    if (/\b\d+\.$/.test(before) && match.length === p1.length) return match;
+    const lineStart = s.lastIndexOf('\n', offset) + 1;
+    const linePrefix = s.slice(lineStart, offset + p1.length);
+    if (/(?:\b\d+\s*[\.\):-]?\s*[A-D]\s*[,;]\s*){1,}/i.test(linePrefix)) return match;
+    if (delim === ')') {
+      const openParens = (linePrefix.match(/\(/g) || []).length;
+      const closeParens = (linePrefix.match(/\)/g) || []).length;
+      if (openParens > closeParens) return match;
+    }
+    return `${p1}\n`;
+  });
+
+  s = s.replace(/([0-9\$\)\}\],.:;?!\uE001])\s*(?=(?:[-*]\s*)?(?:\*{0,2}|<b>)?A[\.:\)](?:\*{0,2}|<\/b>)?(?:\s+|(?=\$|\uE000)))/g, (match, p1, offset) => {
+    const before = s.slice(Math.max(0, offset - 35), offset + p1.length);
+    if (geoWordPattern.test(before.trim())) return match;
     if (/\b\d+\.$/.test(before) && match.length === p1.length) return match;
     const lineStart = s.lastIndexOf('\n', offset) + 1;
     const linePrefix = s.slice(lineStart, offset + p1.length);
@@ -885,18 +1334,8 @@ export function normalizeOcrChoicesAndFormatting(text: string): string {
     return `${p1}\n`;
   });
 
-  s = s.replace(/([0-9\$\)\}\],.:;?!])\s*(?=(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?A[\.:\)])/g, (match, p1, offset) => {
-    const before = s.slice(Math.max(0, offset - 35), offset + p1.length);
-    if (geoWordPattern.test(before.trim())) return match;
-    if (/\b\d+\.$/.test(before) && match.length === p1.length) return match;
-    const lineStart = s.lastIndexOf('\n', offset) + 1;
-    const linePrefix = s.slice(lineStart, offset + p1.length);
-    if (/(?:\b\d+\s*[\.\):-]?\s*[A-D]\s*[,;]\s*){1,}/i.test(linePrefix)) return match;
-    return `${p1}\n`;
-  });
-
-  // Tách các mệnh đề a), b), c), d) của câu hỏi Đúng/Sai ra từng dòng riêng biệt
-  s = s.replace(/([^\n])\s*(?=(?:^|\s)(?:[-*]\s*)?(?:\(?\s*[a-d]\s*\)))\s*/g, '$1\n');
+  // Tách các mệnh đề a), b), c), d) của câu hỏi Đúng/Sai ra từng dòng riêng biệt (chỉ tách ngoài vùng toán, tránh "(a)")
+  s = s.replace(/([^\n])\s+(?=(?:[-*]\s*)?(?:\*{0,2})[a-d]\)(?:\*{0,2})\s+)/g, '$1\n');
 
   // 2. Tách các phương án trắc nghiệm A., B., C., D. đứng cùng một dòng thành các dòng độc lập
   // Ngoại trừ các dòng bảng Markdown (| ... |)
@@ -909,12 +1348,23 @@ export function normalizeOcrChoicesAndFormatting(text: string): string {
       continue;
     }
 
-    // Nếu dòng chứa nhiều phương án trắc nghiệm dính liền nhau (ví dụ: A. ... B. ... C. ... D. ...)
-    if (/(?:^|\s+)(?:[-*]\s*)?(?:\*{0,2})A[\.\)](?:\*{0,2})\s*[\s\S]*?(?:[-*]\s*)?(?:\*{0,2})B[\.\)](?:\*{0,2})\s*/i.test(line) ||
-        /(?:^|\s+)(?:[-*]\s*)?(?:\*{0,2})B[\.\)](?:\*{0,2})\s*[\s\S]*?(?:[-*]\s*)?(?:\*{0,2})C[\.\)](?:\*{0,2})\s*/i.test(line) ||
-        /(?:^|\s+)(?:[-*]\s*)?(?:\*{0,2})C[\.\)](?:\*{0,2})\s*[\s\S]*?(?:[-*]\s*)?(?:\*{0,2})D[\.\)](?:\*{0,2})\s*/i.test(line)) {
-      let splitLine = line.replace(/(\s*)(?=(?:[-*]\s*)?(?:\*{0,2})[B-D][\.\)](?:\*{0,2})\s*)/g, '\n');
-      splitLine = splitLine.replace(/([^\n])\s*(?=(?:[-*]\s*)?(?:\*{0,2})A[\.\)](?:\*{0,2})\s*(?!Trắc nghiệm|Tự luận|Khẳng định|Mệnh đề))/g, '$1\n');
+    // Nếu dòng chứa nhiều phương án trắc nghiệm đứng liền nhau (ví dụ: A. ... B. ... C. ... D. ...)
+    // BẮT BUỘC có khoảng trắng đứng trước B/C/D và khoảng trắng (hoặc \uE000) theo sau dấu chấm/ngoặc của nhãn
+    if (/(?:^|\s+)(?:[-*]\s*)?(?:\*{0,2})A[\.\)](?:\*{0,2})(?:\s+|(?=\uE000))[\s\S]*?\s+(?:[-*]\s*)?(?:\*{0,2})B[\.\)](?:\*{0,2})(?:\s+|(?=\uE000))/.test(line) ||
+        /(?:^|\s+)(?:[-*]\s*)?(?:\*{0,2})B[\.\)](?:\*{0,2})(?:\s+|(?=\uE000))[\s\S]*?\s+(?:[-*]\s*)?(?:\*{0,2})C[\.\)](?:\*{0,2})(?:\s+|(?=\uE000))/.test(line) ||
+        /(?:^|\s+)(?:[-*]\s*)?(?:\*{0,2})C[\.\)](?:\*{0,2})(?:\s+|(?=\uE000))[\s\S]*?\s+(?:[-*]\s*)?(?:\*{0,2})D[\.\)](?:\*{0,2})(?:\s+|(?=\uE000))/.test(line)) {
+      let splitLine = line.replace(/\s+(?=(?:[-*]\s*)?(?:\*{0,2})[B-D]([\.\)])(?:\*{0,2})(?:\s+|(?=\uE000)))/g, (full, delim, offset) => {
+        const before = line.slice(0, offset);
+        if (geoWordPattern.test(before.trim())) return full;
+        // Nếu dùng dấu ')' và đang nằm bên trong dấu '(' chưa đóng (vd: "(A, B, C, D) "), không tách
+        if (delim === ')') {
+          const openParens = (before.match(/\(/g) || []).length;
+          const closeParens = (before.match(/\)/g) || []).length;
+          if (openParens > closeParens) return full;
+        }
+        return '\n';
+      });
+      splitLine = splitLine.replace(/([^\n])\s+(?=(?:[-*]\s*)?(?:\*{0,2})A[\.\)](?:\*{0,2})\s+(?!Trắc nghiệm|Tự luận|Khẳng định|Mệnh đề))/g, '$1\n');
       processedLines.push(splitLine);
     } else {
       processedLines.push(line);
@@ -922,6 +1372,12 @@ export function normalizeOcrChoicesAndFormatting(text: string): string {
   }
 
   s = processedLines.join('\n');
+
+  // Khôi phục toàn bộ khối toán/HTML đã bảo vệ
+  let restoreIter = 0;
+  while (s.includes('\uE000OCR_PROT_') && restoreIter++ < 5) {
+    s = s.replace(/\uE000OCR_PROT_(\d+)\uE001/g, (_m, id) => protectedBlocks[Number(id)] ?? '');
+  }
   return s;
 }
 
@@ -2207,24 +2663,32 @@ export const normalizeMathLatex = (rawText: string): string => {
 
   // BƯỚC 2: Tự động khôi phục dấu backslash (\) bị mất bên trong công thức
   // Áp dụng cho nội dung nằm trong cặp dấu $...$ (inline math, không ảnh hưởng display block $$...$$)
-  text = text.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)(?<!\$)\$(?!\$)/g, (match, formula) => {
-    let fixed = formula
+  text = text.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)(?<!\$)\$(?!\$)/g, (_match, formula) => {
+    const tv: string[] = [];
+    let fixed = formula.replace(/\\(?:text|mathrm|textbf|textit)\s*\{[^{}]*\}/g, (m: string) => {
+      tv.push(m);
+      return `\uE000NML_TX_${tv.length - 1}\uE001`;
+    });
+    fixed = fixed
       // Khôi phục các toán tử tập hợp & quan hệ
       .replace(/(?<!\\)\b(cap|cup|in|notin|subset|supset|subseteq|supseteq|setminus|emptyset|varnothing|forall|exists)\b/g, '\\$1')
       .replace(/(?<!\\)\b(mathbb|mathbf|mathcal)\b/g, '\\$1')
       .replace(/(?<!\\)\b(mid)\b/g, '\\mid ')
-      // Khôi phục lượng giác & hàm số
-      .replace(/(?<!\\)\b(sin|cos|tan|cot|lim)\b/g, '\\$1')
+      // Khôi phục lượng giác, logarit & giới hạn
+      .replace(/(?<![\\a-zA-Z])(arcsin|arccos|arctan|sin|cos|tan|cot|log|ln|lim)(?!h\b)(?=\s*[\(\[_^0-9a-zA-Z\\])/g, '\\$1')
       // Khôi phục ký hiệu phép toán & so sánh
       .replace(/(?<!\\)\b(sqrt|frac|left|right|le|ge|ne|times|pm|cdot)\b/g, '\\$1');
+    fixed = fixed.replace(/\uE000NML_TX_(\d+)\uE001/g, (_m, idx) => tv[Number(idx)] || '');
     return `$${fixed}$`;
   });
 
   // BƯỚC 3: Xử lý trường hợp chuỗi toán không bọc dấu $ nhưng bị dính chữ (ví dụ: xinmathbbZmid, BsetminusA, forallx)
   text = normalizeLogicAndSetSymbols(text);
 
-  // BƯỚC 4: Tự động bọc an toàn cho các môi trường toán trần (nếu chưa nằm trong $ hoặc $$)
+  // BƯỚC 4: Tự động bọc an toàn cho các môi trường toán trần và biểu thức LaTeX trần ngoài $...$
   text = wrapNakedMathEnvironments(text);
+  text = wrapNakedLatexExpressions(text);
+  text = fixDisplayMathTrailingPunctuation(text);
   // Khắc phục triệt để lỗi double-backslash (\\ thay vì \) do tàn dư KaTeX cũ hoặc escape thừa:
   // Đổi \\frac, \\sqrt, \\begin, \\alpha, \\le, \\in, \\infty... thành \frac, \sqrt, \begin, \alpha, \le, \in, \infty...
   // (CHỈ collapse trên tên lệnh chữ cái, không collapse trước ngoặc đơn ( để bảo toàn ngắt dòng \\ trong cases)
@@ -2526,7 +2990,9 @@ export function cleanQuestionStem(content: any, options?: any[], tfStatements?: 
   if (Array.isArray(options) && options.length >= 2) {
     const geoWordPattern = /(?:tại|điểm|đỉnh|gọi|qua|với|từ|trên|của|cho|và|thuộc|đến|cạnh|đường|mặt\s*phẳng|chiếu\s*lên|tọa\s*độ|tâm|trọng\s*tâm|trực\s*tâm|bán\s*kính|vectơ|vector|tam\s*giác(?:\s+[a-zA-Z\.]+)?|tứ\s*diện(?:\s+[a-zA-Z\.]+)?|hình\s*chóp(?:\s+[a-zA-Z\.]+)?|đoạn\s*thẳng|tam\s*giác|tứ\s*giác|hình\s*thoi|hình\s*vuông|hình\s*chữ\s*nhật|hình\s*hộp|hình\s*lăng\s*trụ|ba\s*điểm|bốn\s*điểm|các\s*điểm)\s*$/i;
 
-    const aMatches = [...text.matchAll(/(?:(?:\r?\n)+\s*|[.:;?!]\s*)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?A(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/gi)];
+    // Tạo bản sao cùng độ dài nhưng ẩn nội dung trong $...$ / $$...$$ để không khớp nhầm ký hiệu hình học như $(SAD)$, $(A)$
+    const searchableText = text.replace(/\$\$[\s\S]*?\$\$|\$(?:\\.|[^\$\\\n])+?\$/g, (m) => 'M'.repeat(m.length));
+    const aMatches = [...searchableText.matchAll(/(?:(?:\r?\n)+\s*|[.:;?!]\s*)(?:[-*]\s*)?(?:\*{0,2}|<b>)?A(?:\*{0,2}|<\/b>)?[\.:\)](?:\s+|(?=\$))/g)];
     if (aMatches.length > 0) {
       for (let i = aMatches.length - 1; i >= 0; i--) {
         const m = aMatches[i];
@@ -2536,10 +3002,11 @@ export function cleanQuestionStem(content: any, options?: any[], tfStatements?: 
         // Check geoWordPattern FIRST to avoid treating geometric point "A." or "điểm A." as start of options
         if (geoWordPattern.test(beforeA)) continue;
 
+        const afterASearchable = searchableText.substring(aIdx);
         const afterA = text.substring(aIdx);
-        const hasB = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?B(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
-        const hasC = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?C(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
-        const hasD = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>|\()?D(?:\*{0,2}|<\/b>|\))?[\.:\)]\s*/i.test(afterA);
+        const hasB = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?B(?:\*{0,2}|<\/b>)?[\.:\)](?:\s+|(?=\$))/.test(afterASearchable);
+        const hasC = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?C(?:\*{0,2}|<\/b>)?[\.:\)](?:\s+|(?=\$))/.test(afterASearchable);
+        const hasD = /(?:^|\n|\s+)(?:[-*]\s*)?(?:\*{0,2}|<b>)?D(?:\*{0,2}|<\/b>)?[\.:\)](?:\s+|(?=\$))/.test(afterASearchable);
 
         const opt0 = String(options[0] || '').trim().replace(/^\$|\$$/g, '').slice(0, 8);
         const matchesOption0 = opt0 && afterA.includes(opt0);
@@ -3151,23 +3618,47 @@ export function formatMultipleChoiceInMarkdown(content: string): string {
   text = text.replace(/(?:^|\n)\s*(?:\*\*)?\(?([a-d])\)(?:\*\*)?\s+/gu, '\n\n**$1)** ');
   text = text.replace(/([^\n])\s*(?:\r?\n)?(?<![\p{L}\p{N}\$_\*])([a-d]\))[ \t]+/gu, '$1\n\n**$2** ');
 
+  // Bảo vệ các khối toán & SVG để không tách nhầm ký hiệu hình học như $(SAD)$, $(BCD)$
+  const mcProtected: string[] = [];
+  const protectMcBlock = (m: string) => {
+    const idx = mcProtected.length;
+    mcProtected.push(m);
+    return `\uE000MC_PROT_${idx}\uE001`;
+  };
+  const restoreMcTokens = (str: string) => {
+    let out = str;
+    let it = 0;
+    while (out.includes('\uE000MC_PROT_') && it++ < 5) {
+      out = out.replace(/\uE000MC_PROT_(\d+)\uE001/g, (_m, id) => mcProtected[Number(id)] ?? '');
+    }
+    return out;
+  };
+  text = text.replace(/(```[\s\S]*?```|`[^`\n]+`|<svg-wrapper[\s\S]*?<\/svg-wrapper>|<tikz-diagram[\s\S]*?<\/tikz-diagram>|<svg[\s\S]*?<\/svg>|\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|(?<!\\)\$(?!\$)(?:\\.|[^\$\\\n])+?(?<!\\)\$)/gi, protectMcBlock);
+
   // 3. TÁCH DÒNG ĐỀ BÀI VÀ 4 PHƯƠNG ÁN LỰA CHỌN (PHẦN I):
   const geoWordCheck = /(?:tại|điểm|đỉnh|gọi|qua|với|từ|trên|của|cho|và|thuộc|đến|cạnh|đường|mặt\s*phẳng|chiếu\s*lên|tọa\s*độ|tâm|trọng\s*tâm|trực\s*tâm|bán\s*kính|vectơ|vector|tam\s*giác(?:\s+[a-zA-Z\.]+)?|tứ\s*diện(?:\s+[a-zA-Z\.]+)?|hình\s*chóp(?:\s+[a-zA-Z\.]+)?|đoạn\s*thẳng)\s*$/i;
 
-  text = text.replace(/([^\n])\s+(?=(?:[-*]\s*)?(?:\*{0,2})A[\.\:\)](?:\*{0,2})\s+(?!Trắc nghiệm|Tự luận|Khẳng định|Mệnh đề))/gi, (match, p1, offset) => {
+  text = text.replace(/([^\n])\s+(?=(?:[-*]\s*)?(?:\*{0,2})A[\.\:\)](?:\*{0,2})(?:\s+|(?=\uE000))(?!Trắc nghiệm|Tự luận|Khẳng định|Mệnh đề))/g, (match, p1, offset) => {
     const before = text.slice(Math.max(0, offset - 25), offset + p1.length);
     if (geoWordCheck.test(before.trim())) return match;
     return `${p1}\n\n`;
   });
 
-  text = text.replace(/([^\n])\s+(?=(?:[-*]\s*)?(?:\*{0,2})[B-D][\.\:\)](?:\*{0,2})\s+)/gi, (match, p1, offset) => {
+  text = text.replace(/([^\n])\s+(?=(?:[-*]\s*)?(?:\*{0,2})[B-D]([\.\:\)])(?:\*{0,2})(?:\s+|(?=\uE000)))/g, (match, p1, delim, offset) => {
     const before = text.slice(Math.max(0, offset - 25), offset + p1.length);
     if (geoWordCheck.test(before.trim())) return match;
+    if (delim === ')') {
+      const lineStart = text.lastIndexOf('\n', offset) + 1;
+      const beforeOnLine = text.slice(lineStart, offset + p1.length);
+      const openParens = (beforeOnLine.match(/\(/g) || []).length;
+      const closeParens = (beforeOnLine.match(/\)/g) || []).length;
+      if (openParens > closeParens) return match;
+    }
     return `${p1}\n`;
   });
 
-  // 4. CHUẨN HÓA TIỀN TỐ PHƯƠNG ÁN Ở ĐẦU DÒNG THÀNH MARKDOWN ĐẸP:
-  text = text.replace(/(?:^|\n)[ \t]*(?:[-*−]\s*)?(?:\*\*)?([A-D])[\.\:\)](?:\*\*)?[ \t]*/g, '\n\n**$1.** ');
+  // 4. CHUẨN HÓA TIỀN TỐ PHƯƠNG ÁN Ở ĐẦU DÒNG THÀNH MARKDOWN ĐẸP (yêu cầu có khoảng trắng hoặc math token theo sau):
+  text = text.replace(/(?:^|\n)[ \t]*(?:[-*−]\s*)?(?:\*\*)?([A-D])[\.\:\)](?:\*\*)?(?:[ \t]+|(?=\uE000|\n|$))/g, '\n\n**$1.** ');
 
   // 5. CHUẨN HÓA 4 ĐÁP ÁN (PHẦN I) SANG CÚ PHÁP MARKDOWN THUẦN TÚY:
   const choicePattern = /(?:(?:\r?\n)+\s*|^\s*)((?:[-*]\s*)?(?:\*{0,2})A[\.\)](?:\*{0,2})\s+(?!Trắc nghiệm|Tự luận|Khẳng định|Mệnh đề)(?:(?!(?:\r?\n)\s*(?:###?\s*|\*\*)?(?:Câu\s*\d+|Bài\s*\d+|\d+\.))[\s\S])*?)(?:(?:\r?\n)+\s*|\s+|\t)(?:[-*]\s*)?(?:\*{0,2})B[\.\)](?:\*{0,2})\s+((?:(?!(?:\r?\n)\s*(?:###?\s*|\*\*)?(?:Câu\s*\d+|Bài\s*\d+|\d+\.))[\s\S])*?)(?:(?:\r?\n)+\s*|\s+|\t)(?:[-*]\s*)?(?:\*{0,2})(?<!\()C[\.\)](?:\*{0,2})\s+((?:(?!(?:\r?\n)\s*(?:###?\s*|\*\*)?(?:Câu\s*\d+|Bài\s*\d+|\d+\.))[\s\S])*?)(?:(?:\r?\n)+\s*|\s+|\t)(?:[-*]\s*)?(?:\*{0,2})(?<!\()D[\.\)](?:\*{0,2})\s+((?:(?!(?:\r?\n)\s*(?:###?\s*|\*\*)?(?:Câu\s*\d+|Bài\s*\d+|\d+\.))[\s\S])*?)(?=(?:\r?\n\s*(?:(?:###?\s*|\*\*)?(?:Câu\s*\d+|Bài\s*\d+|\d+\.)|Lời giải|Hướng dẫn|Đáp án|\*\*Lời giải|\*\*Hướng dẫn|\*\*Đáp án|---)|(?:\r?\n){2,}|$))/g;
@@ -3180,10 +3671,10 @@ export function formatMultipleChoiceInMarkdown(content: string): string {
         .trim();
     };
 
-    let optA = stripOptionPrefix(rawA);
-    let optB = stripOptionPrefix(rawB);
-    let optC = stripOptionPrefix(rawC);
-    let optD = stripOptionPrefix(rawD);
+    let optA = stripOptionPrefix(restoreMcTokens(rawA));
+    let optB = stripOptionPrefix(restoreMcTokens(rawB));
+    let optC = stripOptionPrefix(restoreMcTokens(rawC));
+    let optD = stripOptionPrefix(restoreMcTokens(rawD));
 
     const cleanOption = (s: string) => {
       let trimmed = s.replace(/[;,]+$/, '').trim();
@@ -3198,6 +3689,8 @@ export function formatMultipleChoiceInMarkdown(content: string): string {
 
     return `\n\n**A.** ${optA}\n**B.** ${optB}\n**C.** ${optC}\n**D.** ${optD}\n\n`;
   });
+
+  text = restoreMcTokens(text);
 
   // Xóa các dòng trống thừa
   text = text.replace(/\n{3,}/g, '\n\n');
