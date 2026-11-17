@@ -18,6 +18,7 @@ import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
 import { saveExamToCloud, fetchExamFromCloud, saveExamToWebhook } from "../lib/cloudExamStore";
 import { registerExamUrlMapping } from "../lib/smartRouter";
 import { safePrompt, getPublicAppUrl } from "../lib/utils";
+import { apiFetch } from "../lib/apiFetch";
 
 // Types for Exam Configuration
 interface Part1Key {
@@ -391,11 +392,10 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
         });
       }
 
-      const response = await fetch("/api/extract-answers-pdf", {
+      const response = await apiFetch("/api/extract-answers-pdf", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("custom_gemini_api_key") || localStorage.getItem("eduplan_gemini_api_key_v2") || ""}`
         },
         body: JSON.stringify({
           file: base64,
@@ -1371,11 +1371,10 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
         reader.onerror = error => reject(error);
       });
 
-      const response = await fetch("/api/extract-answers-pdf", {
+      const response = await apiFetch("/api/extract-answers-pdf", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("custom_gemini_api_key") || localStorage.getItem("eduplan_gemini_api_key_v2") || ""}`
         },
         body: JSON.stringify({
           file: base64,

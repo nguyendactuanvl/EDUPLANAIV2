@@ -179,15 +179,15 @@ export function postProcessOmml(omml: string): string {
 
   let res = omml
     .replace(
-      /(?:<m:r[^>]*>[\s\S]*?<m:t[^>]*>\s*\{\s*<\/m:t>[\s\S]*?<\/m:r>\s*)(<(?:m:eqArr|m:m)[\s\S]*?<\/(?:m:eqArr|m:m)>)/g,
+      /(?:<m:r(?:\s[^>]*)?>(?:(?!<\/m:r>)[\s\S])*?<m:t(?:\s[^>]*)?>\s*\{\s*<\/m:t>(?:(?!<\/m:r>)[\s\S])*?<\/m:r>\s*)(<(?:m:eqArr|m:m)\b(?:(?!<\/(?:m:eqArr|m:m)>)[\s\S])*?<\/(?:m:eqArr|m:m)>)/g,
       '<m:d><m:dPr><m:begChr m:val="{"/><m:endChr m:val=""/><m:grow m:val="1"/></m:dPr><m:e>$1</m:e></m:d>'
     )
     .replace(
-      /(?:<m:r[^>]*>[\s\S]*?<m:t[^>]*>\s*\[\s*<\/m:t>[\s\S]*?<\/m:r>\s*)(<(?:m:eqArr|m:m)[\s\S]*?<\/(?:m:eqArr|m:m)>)/g,
+      /(?:<m:r(?:\s[^>]*)?>(?:(?!<\/m:r>)[\s\S])*?<m:t(?:\s[^>]*)?>\s*\[\s*<\/m:t>(?:(?!<\/m:r>)[\s\S])*?<\/m:r>\s*)(<(?:m:eqArr|m:m)\b(?:(?!<\/(?:m:eqArr|m:m)>)[\s\S])*?<\/(?:m:eqArr|m:m)>)/g,
       '<m:d><m:dPr><m:begChr m:val="["/><m:endChr m:val=""/><m:grow m:val="1"/></m:dPr><m:e>$1</m:e></m:d>'
     )
-    .replace(/(<m:dPr><m:begChr m:val="[\{\[]"[\s\S]*?<m:mcJc m:val=")center(")/g, '$1left$2')
-    .replace(/<m:dPr>((?:(?!<m:grow)[\s\S])*?)<\/m:dPr>/g, '<m:dPr><m:grow m:val="1"/>$1</m:dPr>');
+    .replace(/(<m:dPr><m:begChr m:val="[\{\[]"(?:(?!<\/m:d>)[\s\S])*?<m:mcJc m:val=")center(")/g, '$1left$2')
+    .replace(/<m:dPr>((?:(?!<m:grow|<\/m:dPr>)[\s\S])*?)<\/m:dPr>/g, '<m:dPr><m:grow m:val="1"/>$1</m:dPr>');
 
   const fixGroupChr = (input: string): string => {
     let out = '';
@@ -357,13 +357,21 @@ function latexToOmmlComponent(rawTex: string, isBlock: boolean = false): any {
         const convertFn = typeof mml2omml === 'function' ? mml2omml : ((mml2omml as any)?.mml2omml || (mml2omml as any)?.default || mml2omml);
         let omml = convertFn(match[0]);
         if (omml && omml.includes('m:oMath')) {
-          omml = postProcessOmml(omml);
-
-          if (activeOmmlXmlCache && activeOmmlXmlCache.size < 800) {
-            activeOmmlXmlCache.set(cacheKey, omml);
+          const rawOmml = omml;
+          const processedOmml = postProcessOmml(omml);
+          let comp: any = null;
+          let validOmml = processedOmml;
+          try {
+            comp = ImportedXmlComponent.fromXmlString(processedOmml);
+          } catch {
+            comp = ImportedXmlComponent.fromXmlString(rawOmml);
+            validOmml = rawOmml;
           }
 
-          const comp = ImportedXmlComponent.fromXmlString(omml);
+          if (activeOmmlXmlCache && activeOmmlXmlCache.size < 800) {
+            activeOmmlXmlCache.set(cacheKey, validOmml);
+          }
+
           const root = comp && (comp as any).root && (comp as any).root[0] ? (comp as any).root[0] : comp;
           return root;
         }
@@ -402,13 +410,21 @@ function mathmlToOmmlComponent(mathmlHtml: string): ParagraphChild | null {
     const convertFn = typeof mml2omml === 'function' ? mml2omml : ((mml2omml as any)?.mml2omml || (mml2omml as any)?.default || mml2omml);
     let omml = convertFn(match[0]);
     if (omml && omml.includes('m:oMath')) {
-      omml = postProcessOmml(omml);
-
-      if (activeMathmlOmmlCache && activeMathmlOmmlCache.size < 800) {
-        activeMathmlOmmlCache.set(match[0], omml);
+      const rawOmml = omml;
+      const processedOmml = postProcessOmml(omml);
+      let comp: any = null;
+      let validOmml = processedOmml;
+      try {
+        comp = ImportedXmlComponent.fromXmlString(processedOmml);
+      } catch {
+        comp = ImportedXmlComponent.fromXmlString(rawOmml);
+        validOmml = rawOmml;
       }
 
-      const comp = ImportedXmlComponent.fromXmlString(omml);
+      if (activeMathmlOmmlCache && activeMathmlOmmlCache.size < 800) {
+        activeMathmlOmmlCache.set(match[0], validOmml);
+      }
+
       const root = comp && (comp as any).root && (comp as any).root[0] ? (comp as any).root[0] : comp;
       return root;
     }
@@ -1029,7 +1045,11 @@ function tokensToRuns(
               size: style.size || 24,
             })
           );
-          let rest = optMatch[3].replace(/^[\s\*_•●]+/, '').replace(/[\s\*_]+$/, '');
+          const hadTrailingSpace = /[ \t]$/.test(optMatch[3]);
+          let rest = optMatch[3].replace(/^[\s\*_•●]+/, '').replace(/[\*_]+$/, '');
+          if (hadTrailingSpace && rest && !/\s$/.test(rest)) {
+            rest += ' ';
+          }
           if (rest) {
             pushMarkdownFormattedTextRuns(rest, style, runs);
           }
@@ -1209,21 +1229,22 @@ function parseInlineContent(
 
       const isBlock = el.classList.contains('katex-display') || el.getAttribute('display') === 'true' || el.getAttribute('data-block') === '1' || (tagName === 'MJX-CONTAINER' && el.getAttribute('display') === 'true');
 
-      if (tex) {
-        if (options.mathFormat === 'latex') {
-          const mathText = isBlock ? `\n$$${tex}$$\n` : ` $${tex}$ `;
-          return createTextRunsWithMathFont(mathText, {
-            ...style,
-            italics: true,
-            font: style.font || 'Times New Roman',
-          });
-        }
-        return [latexToOmmlComponent(tex, isBlock)];
+      if (tex && options.mathFormat === 'latex') {
+        const mathText = isBlock ? `\n$$${tex}$$\n` : ` $${tex}$ `;
+        return createTextRunsWithMathFont(mathText, {
+          ...style,
+          italics: true,
+          font: style.font || 'Times New Roman',
+        });
       }
 
       if (mathml) {
         const comp = mathmlToOmmlComponent(mathml);
         if (comp) return [comp];
+      }
+
+      if (tex) {
+        return [latexToOmmlComponent(tex, isBlock)];
       }
     }
 
@@ -2457,6 +2478,9 @@ async function parseDomToDocxChildren(
       const splitNodesByBr = (container: HTMLElement): Node[][] => {
         const lines: Node[][] = [[]];
         const childArr = Array.from(container.childNodes);
+        const isPreLine =
+          container.classList.contains('whitespace-pre-line') ||
+          !!container.closest('.whitespace-pre-line, .export-solution-block');
         const NEW_BLOCK_HEAD_RE = /^\s*(?:\*{0,2}(?:Câu|Bài)\s+\d+\s*[:.]|PHẦN\s+(?:I{1,3}|IV|[1-4])\b|[a-d]\)\s*(?:Đúng|Sai|\*{0,2}[A-ZÀ-Ỹ]))/;
 
         for (let idx = 0; idx < childArr.length; idx++) {
@@ -2470,11 +2494,11 @@ async function parseDomToDocxChildren(
             for (let sIdx = 0; sIdx < segs.length; sIdx++) {
               const seg = segs[sIdx];
               if (sIdx > 0) {
-                const prevTail = segs[sIdx - 1] || '';
+                const prevTail = segs[sIdx - 1] || (sIdx === 1 && idx > 0 ? (childArr[idx - 1]?.textContent || '') : '');
                 const isPrepositionRef = /(?:^|\s)(?:từ|theo|ở|tại|xem|như|của|trong|với|sau|trước|giống)\s*$/i.test(prevTail);
                 const nextSiblingText = sIdx === segs.length - 1 ? (childArr[idx + 1]?.textContent || '') : '';
                 const candidateHead = seg.trim() ? seg : nextSiblingText;
-                if (!isPrepositionRef && NEW_BLOCK_HEAD_RE.test(candidateHead)) {
+                if (!isPrepositionRef && (isPreLine || NEW_BLOCK_HEAD_RE.test(candidateHead))) {
                   lines.push([]);
                 } else {
                   lines[lines.length - 1].push(document.createTextNode(' '));
@@ -2488,7 +2512,15 @@ async function parseDomToDocxChildren(
           }
           lines[lines.length - 1].push(child);
         }
-        return lines.filter(group => group.some(n => (n.textContent || '').trim() !== '' || (n.nodeType === Node.ELEMENT_NODE && !!(n as HTMLElement).querySelector('img, .omml-math-node'))));
+        return lines.filter(group =>
+          group.some(
+            n =>
+              (n.textContent || '').trim() !== '' ||
+              (n.nodeType === Node.ELEMENT_NODE &&
+                ((n as HTMLElement).matches?.('img, .omml-math-node') ||
+                  !!(n as HTMLElement).querySelector?.('img, .omml-math-node')))
+          )
+        );
       };
 
       const hasImgs = !!el.querySelector('img');
@@ -2602,9 +2634,11 @@ async function parseDomToDocxChildren(
           continue;
         }
 
+        const inSolutionBlock = !!el.closest('.export-solution-block');
+
         // Check embedded True/False statements a) ... b) ... c) ... d) ... inside single line
         const tfRegex = /^(.*?)\s*(?:[-*]\s*)?(?:\*{0,2})a[\.\)](?:\*{0,2})\s+([\s\S]*?)(?:[-*]\s*)?(?:\*{0,2})b[\.\)](?:\*{0,2})\s+([\s\S]*?)(?:[-*]\s*)?(?:\*{0,2})(?<![a-zA-Z0-9_\$\\\(])c[\.\)](?:\*{0,2})\s+([\s\S]*?)(?:[-*]\s*)?(?:\*{0,2})(?<![a-zA-Z0-9_\$\\\(])d[\.\)](?:\*{0,2})\s+([\s\S]*)$/;
-        const tfMatch = rawText.match(tfRegex);
+        const tfMatch = !inSolutionBlock ? rawText.match(tfRegex) : null;
         if (tfMatch && !/Mục\s*tiêu|Nội\s*dung|Sản\s*phẩm|Tổ\s*chức/i.test(rawText)) {
           const stemText = stripInternalTags(tfMatch[1].trim());
           if (stemText) {
@@ -2629,8 +2663,8 @@ async function parseDomToDocxChildren(
           continue;
         }
 
-        // Check individual True/False statement (starts with lowercase a), b), c), d)) - NOT activity subheaders (a) Mục tiêu:)
-        const singleTfMatch = rawText.match(/^\s*(?:\*{0,2})([a-d])\)[\.\:]?(?:\*{0,2})\s+([\s\S]*)$/);
+        // Check individual True/False statement (starts with lowercase a), b), c), d)) - NOT activity subheaders (a) Mục tiêu:) and NOT inside solution blocks where essay sub-parts a), b) have multi-line steps at margin 0
+        const singleTfMatch = !inSolutionBlock ? rawText.match(/^\s*(?:\*{0,2})([a-d])\)[\.\:]?(?:\*{0,2})\s+([\s\S]*)$/) : null;
         if (singleTfMatch && !/^(?:Mục\s*tiêu|Nội\s*dung|Sản\s*phẩm|Tổ\s*chức\s*thực\s*hiện|Kỹ\s*năng|Nhận\s*diện)\s*:/i.test(singleTfMatch[2])) {
           const label = `${singleTfMatch[1].toLowerCase()})`;
           const stmtText = singleTfMatch[2];
@@ -2815,7 +2849,7 @@ export async function exportHtmlToWord(
       const firstChild = qHeader.firstElementChild;
       if (!firstChild) return;
       const firstText = (firstChild.textContent || '').trim();
-      const qMatch = firstText.match(/^\s*(?:\*\*)?(?:Câu|Bài|Question|Q)\s*\d+[:\.]?/i);
+      const qMatch = firstText.match(/^\s*(?:\*\*)?(?:Câu|Bài|Question|Q)\s*\d+[:\.]?(?:\*\*)?\s*$/i);
       if (qMatch) {
         const qNumText = qMatch[0].replace(/\*+/g, '').trim();
         const mathContainer = qHeader.querySelector('.math-view-container, div, p');
@@ -2835,7 +2869,7 @@ export async function exportHtmlToWord(
       const firstChild = tfItem.firstElementChild;
       if (!firstChild) return;
       const firstText = (firstChild.textContent || '').trim();
-      const tfMatch = firstText.match(/^\s*(?:\*\*)?[a-d][\)\.]/i);
+      const tfMatch = firstText.match(/^\s*(?:\*\*)?[a-d][\)\.](?:\*\*)?\s*$/i);
       if (tfMatch) {
         const tfLabel = tfMatch[0].replace(/\*+/g, '').trim();
         const contentContainer = tfItem.querySelector('.math-view-container, div, p');
@@ -2933,8 +2967,10 @@ export async function exportHtmlToWord(
             ) {
               continue;
             }
-            const hadLeadWs = /^[ \t]+/.test(text);
-            const hadTrailWs = /[ \t]+$/.test(text);
+            const hadLeadNl = /^[ \t]*\r?\n/.test(text);
+            const hadTrailNl = /\r?\n[ \t]*$/.test(text);
+            const hadLeadWs = !hadLeadNl && /^[ \t]+/.test(text);
+            const hadTrailWs = !hadTrailNl && /[ \t]+$/.test(text);
             const normalizedOnce = cachedNormalizeAndFixArrows(text);
             // Chỉ chuẩn hóa nhãn phương án A-D đầu dòng (KHÔNG xóa dấu ngoặc mở '(' trong câu văn như (A. 90°, B. 0°))
             const afterLabels = normalizedOnce
@@ -2942,8 +2978,10 @@ export async function exportHtmlToWord(
               .replace(/(?<=\b[A-D][\.\:\)])\s*\*\*+(?=\s|$)/g, '')
               .replace(/\*\*+(?=[A-D][\.\:\)])/g, '');
             let updated = afterLabels !== normalizedOnce ? fixAndMergeMathArrows(afterLabels) : normalizedOnce;
-            if (hadLeadWs && updated && !/^\s/.test(updated)) updated = ' ' + updated;
-            if (hadTrailWs && updated && !/\s$/.test(updated)) updated = updated + ' ';
+            if (hadLeadNl && updated && !/^\r?\n/.test(updated)) updated = '\n' + updated;
+            else if (hadLeadWs && updated && !/^\s/.test(updated)) updated = ' ' + updated;
+            if (hadTrailNl && updated && !/\r?\n$/.test(updated)) updated = updated + '\n';
+            else if (hadTrailWs && updated && !/\s$/.test(updated)) updated = updated + ' ';
             if (updated !== text) {
               node.textContent = updated;
             }

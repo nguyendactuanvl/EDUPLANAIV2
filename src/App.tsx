@@ -9,7 +9,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SettingsModal } from "./components/SettingsModal";
 import { UserGuideModal } from "./components/UserGuideModal";
 import { getInitialTheme, applyTheme, ThemeMode } from "./lib/theme";
-import { generateContent, getApiKey } from "./services/geminiService";
+import { generateContent, getApiKey, getActiveApiKeyPool, hasActiveApiKey } from "./services/geminiService";
 import { Worksheets } from "./pages/Worksheets";
 import { EduAiAssistantWorkspace } from "./pages/EduAiAssistantWorkspace";
 
@@ -119,12 +119,12 @@ export default function App() {
   // Theme State
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [isFocusMode, setIsFocusMode] = useState(false);
-  const [hasApiKey, setHasApiKey] = useState<boolean>(() => {
-    return !!(getApiKey() || localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim();
-  });
+  const [hasApiKey, setHasApiKey] = useState<boolean>(() => hasActiveApiKey());
+  const [activeKeyCount, setActiveKeyCount] = useState<number>(() => getActiveApiKeyPool().length);
 
   const checkApiKeyStatus = () => {
-    setHasApiKey(!!(getApiKey() || localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim());
+    setHasApiKey(hasActiveApiKey());
+    setActiveKeyCount(getActiveApiKeyPool().length);
   };
 
   useEffect(() => {
@@ -207,11 +207,12 @@ export default function App() {
     window.addEventListener('open-exam-stats', handleOpenStats);
     window.addEventListener('switch-tab', handleSwitchTab);
     window.addEventListener('storage', checkApiKeyStatus);
+    window.addEventListener('api-key-updated', checkApiKeyStatus);
+    window.addEventListener('api-key-pool-updated', checkApiKeyStatus);
 
     // Auto-prompt API Key modal on first visit if no key is set
-    const userKey = (localStorage.getItem("eduplan_gemini_api_key_v2") || "").trim();
     const hasPrompted = sessionStorage.getItem("eduplan_apikey_first_prompted");
-    if (!userKey && !hasPrompted) {
+    if (!hasActiveApiKey() && !hasPrompted) {
       sessionStorage.setItem("eduplan_apikey_first_prompted", "true");
       setTimeout(() => {
         setSettingsDefaultTab("apikey");
@@ -229,6 +230,8 @@ export default function App() {
       window.removeEventListener('open-exam-stats', handleOpenStats);
       window.removeEventListener('switch-tab', handleSwitchTab);
       window.removeEventListener('storage', checkApiKeyStatus);
+      window.removeEventListener('api-key-updated', checkApiKeyStatus);
+      window.removeEventListener('api-key-pool-updated', checkApiKeyStatus);
     };
   }, []);
 
@@ -384,10 +387,10 @@ export default function App() {
                 setIsSettingsOpen(true);
               }} 
               className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 rounded-lg text-xs font-medium hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors cursor-pointer"
-              title="Cài đặt API Key"
+              title="Quản lý danh sách API Key (Xoay vòng & Dự phòng)"
             >
               <Key className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">API Key</span>
+              <span className="hidden sm:inline">API Key{activeKeyCount > 0 ? ` (${activeKeyCount})` : ""}</span>
             </button>
           </div>
         </header>

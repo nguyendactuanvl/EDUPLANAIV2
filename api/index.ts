@@ -117,6 +117,83 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: Date.now() });
 });
 
+app.post("/api/test-gemini-key", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
+
+  const rawKey = req.body?.apiKey || getCustomAiApiKey(req);
+  if (!isValidGeminiApiKey(rawKey)) {
+    return res.status(400).json({
+      valid: false,
+      status: 'invalid',
+      error: 'API Key không hợp lệ (trống hoặc sai định dạng).',
+    });
+  }
+
+  let cleanKey = rawKey.trim();
+  if (cleanKey.startsWith('Bearer ')) cleanKey = cleanKey.substring(7).trim();
+  try {
+    cleanKey = decodeURIComponent(cleanKey);
+  } catch (_) {}
+  cleanKey = cleanKey.replace(/[^\x20-\x7E]/g, '').trim();
+
+  const client = new GoogleGenAI({
+    apiKey: cleanKey,
+    httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+  });
+
+  const testModels = ['gemini-3.1-flash-lite', 'gemini-4-hydrogen'];
+  let lastErr: any = null;
+
+  for (const model of testModels) {
+    try {
+      await client.models.generateContent({
+        model,
+        contents: 'OK',
+        config: { maxOutputTokens: 4 },
+      });
+      return res.status(200).json({
+        valid: true,
+        status: 'valid',
+        message: 'Sẵn sàng',
+      });
+    } catch (err: any) {
+      lastErr = err;
+      const errMsg = String(err?.message || '').toLowerCase();
+      // Only try next test model if 404 model not found
+      if (err?.status === 404 || errMsg.includes('not found')) {
+        continue;
+      }
+      break;
+    }
+  }
+
+  const errMsg = String(lastErr?.message || lastErr || '');
+  const lower = errMsg.toLowerCase();
+  const status = lastErr?.status || 0;
+
+  if (
+    status === 429 ||
+    lower.includes('429') ||
+    lower.includes('resource_exhausted') ||
+    lower.includes('quota') ||
+    lower.includes('rate limit')
+  ) {
+    return res.status(429).json({
+      valid: false,
+      status: 'rate_limited',
+      error: 'Tạm quá tải 429 (Đã chạm giới hạn request của Google)',
+    });
+  }
+
+  return res.status(400).json({
+    valid: false,
+    status: 'invalid',
+    error: 'Key lỗi hoặc không hợp lệ (Lỗi xác thực 400/403)',
+  });
+});
+
 const chunkStore = new Map<string, { chunks: string[], type: string, name?: string, total: number, timestamp: number }>();
 
 app.post("/api/upload-chunk", (req, res) => {
@@ -420,6 +497,7 @@ function getAiApiKey(req?: any): string {
 function getAiClients(req?: any): { client: GoogleGenAI; isCustom: boolean }[] {
   const customKey = getCustomAiApiKey(req);
   const envKey = getEnvAiApiKey();
+  const disableEnvFallback = req?.headers?.['x-disable-env-fallback'] === '1';
   const clients: { client: GoogleGenAI; isCustom: boolean }[] = [];
 
   if (customKey) {
@@ -432,7 +510,7 @@ function getAiClients(req?: any): { client: GoogleGenAI; isCustom: boolean }[] {
     });
   }
 
-  if (envKey && envKey !== customKey) {
+  if (envKey && envKey !== customKey && (!customKey || !disableEnvFallback)) {
     clients.push({
       client: new GoogleGenAI({
         apiKey: envKey,
@@ -1004,7 +1082,20 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
         if (isCustom) {
           customKeyFailed = true;
         }
-        if (e?.status !== 404 && !String(e?.message || "").toLowerCase().includes("not found")) {
+        const errLower = String(e?.message || "").toLowerCase();
+        // If key itself is invalid or unauthorized, do not waste time retrying other models with the same key
+        if (
+          e?.status === 401 ||
+          e?.status === 403 ||
+          errLower.includes("api_key_invalid") ||
+          errLower.includes("api key not valid") ||
+          errLower.includes("api key expired") ||
+          errLower.includes("permission_denied") ||
+          errLower.includes("unauthenticated")
+        ) {
+          break;
+        }
+        if (e?.status !== 404 && !errLower.includes("not found")) {
           await delay(150);
         }
         continue;
@@ -1016,9 +1107,13 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
     if (lastFailedIsCustom) {
       const errMsg = primaryError?.message || "";
       if (errMsg.includes("429") || errMsg.includes("quota") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("Free Tier")) {
-        throw new Error("API Key cá nhân của bạn đã chạm ngưỡng hạn mức miễn phí trong ngày của Google (Lỗi 429 Quota Exceeded). Vui lòng xóa API Key trong ô cài đặt để dùng khóa mặc định của hệ thống hoặc đổi sang API Key khác.");
+        const quotaErr: any = new Error("API Key cá nhân của bạn đã chạm ngưỡng hạn mức miễn phí trong ngày của Google (Lỗi 429 Quota Exceeded). Hệ thống sẽ tự động xoay vòng sang Key tiếp theo hoặc bạn có thể thêm Key mới trong Cài đặt.");
+        quotaErr.status = 429;
+        throw quotaErr;
       }
-      throw new Error(`Lỗi từ API Key cá nhân của bạn: ${errMsg}`);
+      const customErr: any = new Error(`Lỗi từ API Key cá nhân của bạn: ${errMsg}`);
+      customErr.status = primaryError?.status || 401;
+      throw customErr;
     }
     throw primaryError;
   }
@@ -2281,18 +2376,7 @@ app.all(["/api/list-gemini-models"], async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
-    const authHeader = req.headers['authorization'] as string;
-    let customKey = '';
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      customKey = authHeader.substring(7);
-    } else {
-      customKey = req.headers['x-gemini-api-key'] as string;
-    }
-    if (customKey) {
-      try { customKey = decodeURIComponent(customKey); } catch (e) {}
-      customKey = customKey.replace(/[^\x20-\x7E]/g, '').trim();
-    }
-    const activeKey = customKey || process.env.GEMINI_API_KEY || "";
+    const activeKey = getAiApiKey(req);
     if (!activeKey) {
       return res.status(400).json({ error: "Chưa cấu hình API Key" });
     }

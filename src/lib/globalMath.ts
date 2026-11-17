@@ -1429,10 +1429,10 @@ export function normalizeMathText(text: any): string {
     return res.trim();
   });
 
-  // 0.4 Sửa gạch chéo ngược đơn \ trong \begin{cases} ... \end{cases} thành \\ ngắt dòng chuẩn TeX
+  // 0.4 Sửa gạch chéo ngược đơn \ trong \begin{cases} ... \end{cases} thành \\ ngắt dòng chuẩn TeX (tuyệt đối không cắt nhầm lệnh TeX \[a-zA-Z])
   text = text.replace(/\\begin\s*\{cases\*?\}([\s\S]*?)\\end\s*\{cases\*?\}/gi, (_match, body) => {
     let cleanBody = body
-      .replace(/(?<!\\)\\(?!\\|\{|\}|begin|end|frac|sqrt|text|ge|le|neq|in|notin|mathbb|vec|alpha|beta|pi)/g, ' \\\\ ')
+      .replace(/(?<!\\)\\(?![\\\{\}a-zA-Z])/g, ' \\\\ ')
       .replace(/\s*\\{2,}\s*/g, ' \\\\ ')
       .replace(/\\\\(?:\s*\\\\)+/g, ' \\\\ ')
       .replace(/\\\\(?=\s*$)/, '');

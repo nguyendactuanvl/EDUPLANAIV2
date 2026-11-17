@@ -1403,9 +1403,7 @@ export function Worksheets() {
         })
       });
 
-      if (response.headers.get('x-custom-key-failed') === 'true') {
-        localStorage.removeItem('eduplan_gemini_api_key_v2');
-      }
+      // Key status and auto-fallback rotation are managed centrally by apiFetch & Key Pool
 
       if (!response.ok || !response.body) {
         let errMessage = "";
