@@ -2659,24 +2659,33 @@ export function syntheticBbtFromQuestion(block: string, options?: string[]): BBT
 export function generateSyntheticGraphSvg(block: string, options?: string[]): string | null {
   if (!block) return null;
 
+  // Strip page separators before inspection so '/' in 'Hết Trang X / Sang Trang Y' never triggers rational graph fallback
+  const cleanedBlock = block.replace(/---\s*\[Hết Trang \d+\s*\/\s*Sang Trang \d+\]\s*---/gi, '').trim();
+  const lower = cleanedBlock.toLowerCase();
+
+  // Tuyệt đối không vẽ đồ thị hàm số cho bài toán hình học, lượng giác chưa rõ phương trình, bài toán thực tế, vật lý, thống kê
+  if (/(?:hình\s*chóp|lăng\s*trụ|tứ\s*diện|tam\s*giác|hình\s*vuông|hình\s*chữ\s*nhật|hình\s*thang|đường\s*tròn|mặt\s*cầu|hình\s*nón|hình\s*trụ|lượng\s*giác|con\s*lắc|tường|vận\s*động\s*viên|thực\s*tế|mẫu\s*số\s*liệu|bảng\s*tần\s*số|chiều\s*cao\s*\(|số\s*cây|góc\s*bắn|khoảng\s*cách)/i.test(cleanedBlock)) {
+    return null;
+  }
+
   // 1. Kiểm tra nếu có công thức trong các phương án Lựa chọn (từ options truyền vào hoặc trong thân block)
   if (Array.isArray(options) && options.length > 0) {
     for (const opt of options) {
-      let rawOpt = opt.replace(/^[A-Da-d][\.\:\)]\s*/, '').replace(/^\$|\$$/g, '').trim();
+      const rawOpt = opt.replace(/^[A-Da-d][\.\:\)]\s*/, '').replace(/^\$|\$$/g, '').trim();
       const optMatch = rawOpt.match(/(?:y|f\(x\))\s*=\s*([^,;.\n$]+)/i) || rawOpt.match(/([^$]+)/);
       if (optMatch && (optMatch[1].includes('x') || optMatch[1].includes('X')) && !/nào\s*dưới\s*đây/i.test(optMatch[1])) {
         const expr = optMatch[1].replace(/^[A-Da-d][\.\:\)]\s*/, '').replace(/^y\s*=\s*/i, '').trim();
-        const svg = generateFunctionGraphSvg(expr, block);
+        const svg = generateFunctionGraphSvg(expr, cleanedBlock);
         if (svg) return svg;
       }
     }
   }
 
-  const optAMatch = block.match(/(?:^|\n)\s*(?:\*{0,2}|[-*]\s*)?A[\.\:\)]\s*(?:\$)?(?:y\s*=\s*)?([^,\n\$\|]+)/i);
+  const optAMatch = cleanedBlock.match(/(?:^|\n)\s*(?:\*{0,2}|[-*]\s*)?A[\.\:\)]\s*(?:\$)?(?:y\s*=\s*)?([^,\n\$\|]+)/i);
   if (optAMatch) {
     const candidate = optAMatch[1].replace(/^[A-Da-d][\.\:\)]\s*/, '').replace(/^y\s*=\s*/i, '').trim();
     if ((candidate.includes('x') || candidate.includes('X')) && !/nào\s*dưới\s*đây/i.test(candidate)) {
-      const svg = generateFunctionGraphSvg(candidate, block);
+      const svg = generateFunctionGraphSvg(candidate, cleanedBlock);
       if (svg) return svg;
     }
   }
@@ -2685,10 +2694,10 @@ export function generateSyntheticGraphSvg(block: string, options?: string[]): st
   const ptRegex = /\(\s*([-–—]?\d+(?:\.\d+)?)\s*;\s*([-–—]?\d+(?:\.\d+)?)\s*\)/g;
   const pts: [number, number][] = [];
   let m: RegExpExecArray | null;
-  while ((m = ptRegex.exec(block)) !== null) {
+  while ((m = ptRegex.exec(cleanedBlock)) !== null) {
     pts.push([parseFloat(m[1].replace(/[−–—]/g, '-')), parseFloat(m[2].replace(/[−–—]/g, '-'))]);
   }
-  if (pts.length >= 2 && (/cực\s*trị|cực\s*đại|cực\s*tiểu|chữ\s*N|bậc\s*3|bậc\s*ba/i.test(block))) {
+  if (pts.length >= 2 && (/cực\s*trị|cực\s*đại|cực\s*tiểu|chữ\s*N|bậc\s*3|bậc\s*ba/i.test(cleanedBlock))) {
     const p1 = pts[0];
     const p2 = pts.find(p => Math.abs(p[0] - p1[0]) > 0.1);
     if (p2) {
@@ -2705,40 +2714,38 @@ export function generateSyntheticGraphSvg(block: string, options?: string[]): st
       const cStr = c === 0 ? '' : (c > 0 ? `+ ${c === 1 ? '' : Number(c.toFixed(2))}x` : `- ${Math.abs(c) === 1 ? '' : Number(Math.abs(c).toFixed(2))}x`);
       const dStr = d === 0 ? '' : (d > 0 ? `+ ${Number(d.toFixed(2))}` : `- ${Number(Math.abs(d).toFixed(2))}`);
       const cubicExpr = `${aStr}x^3 ${bStr} ${cStr} ${dStr}`.replace(/\s+/g, ' ').trim();
-      const svg = generateFunctionGraphSvg(cubicExpr, block);
+      const svg = generateFunctionGraphSvg(cubicExpr, cleanedBlock);
       if (svg) return svg;
     }
   }
 
   // 3. Xử lý hàm phân thức dạng tổng quát $y = \frac{ax+b}{cx+d}$ dựa trên các thông số tiệm cận và giao điểm từ đề bài
-  const lower = block.toLowerCase();
-  if (lower.includes('phân thức') || lower.includes('tiệm cận') || lower.includes('/') || lower.includes('ax+b')) {
-    const xAsymMatch = block.match(/(?:tiệm\s*cận\s*đứng|x\s*=)\s*([-–—]?\d+(?:\.\d+)?)/i);
-    const yAsymMatch = block.match(/(?:tiệm\s*cận\s*ngang|y\s*=)\s*([-–—]?\d+(?:\.\d+)?)/i);
-    const yIntMatch = block.match(/(?:trục\s*tung|cắt\s*trục\s*tung|điểm)\s*\(\s*0\s*;\s*([-–—]?\d+(?:\.\d+)?)\s*\)/i);
+  if (lower.includes('phân thức') || lower.includes('tiệm cận') || lower.includes('ax+b')) {
+    const xAsymMatch = cleanedBlock.match(/(?:tiệm\s*cận\s*đứng|x\s*=)\s*([-–—]?\d+(?:\.\d+)?)/i);
+    const yAsymMatch = cleanedBlock.match(/(?:tiệm\s*cận\s*ngang|y\s*=)\s*([-–—]?\d+(?:\.\d+)?)/i);
+    const yIntMatch = cleanedBlock.match(/(?:trục\s*tung|cắt\s*trục\s*tung|điểm)\s*\(\s*0\s*;\s*([-–—]?\d+(?:\.\d+)?)\s*\)/i);
 
     const x0 = xAsymMatch ? parseFloat(xAsymMatch[1].replace(/[−–—]/g, '-')) : 1;
     const y0 = yAsymMatch ? parseFloat(yAsymMatch[1].replace(/[−–—]/g, '-')) : 1;
     const yInt = yIntMatch ? parseFloat(yIntMatch[1].replace(/[−–—]/g, '-')) : 2;
 
     if (!isNaN(x0) && !isNaN(y0) && !isNaN(yInt) && x0 !== 0) {
-      // y = (y0 * x - yInt * x0) / (x - x0)
       const numConst = -yInt * x0;
       const numStr = numConst >= 0 ? `${y0 === 1 ? '' : y0}x + ${numConst}` : `${y0 === 1 ? '' : y0}x - ${Math.abs(numConst)}`;
       const denStr = x0 >= 0 ? `x - ${x0}` : `x + ${Math.abs(x0)}`;
       const ratioExpr = `(${numStr})/(${denStr})`;
-      const svg = generateFunctionGraphSvg(ratioExpr, block);
+      const svg = generateFunctionGraphSvg(ratioExpr, cleanedBlock);
       if (svg) return svg;
     }
 
-    return generateFunctionGraphSvg('(x-2)/(x-1)', block);
+    return generateFunctionGraphSvg('(x-2)/(x-1)', cleanedBlock);
   }
 
   // 4. Xử lý hàm số liên tục trên đoạn [a; b] với cực trị trong đề bài
-  const domainMatch = block.match(/(?:trên\s*đoạn|liên\s*tục\s*trên)\s*\[\s*([-–—]?\d+)\s*;\s*([-–—]?\d+)\s*\]/i);
+  const domainMatch = cleanedBlock.match(/(?:trên\s*đoạn|liên\s*tục\s*trên)\s*\[\s*([-–—]?\d+)\s*;\s*([-–—]?\d+)\s*\]/i);
   if (domainMatch) {
-    const cdMatch = block.match(/(?:lớn\s*nhất|cực\s*đại)\s*tại\s*x\s*=\s*([-–—]?\d+)\s*bằng\s*([-–—]?\d+)/i);
-    const ctMatch = block.match(/(?:nhỏ\s*nhất|cực\s*tiểu)\s*tại\s*x\s*=\s*([-–—]?\d+)\s*bằng\s*([-–—]?\d+)/i);
+    const cdMatch = cleanedBlock.match(/(?:lớn\s*nhất|cực\s*đại)\s*tại\s*x\s*=\s*([-–—]?\d+)\s*bằng\s*([-–—]?\d+)/i);
+    const ctMatch = cleanedBlock.match(/(?:nhỏ\s*nhất|cực\s*tiểu)\s*tại\s*x\s*=\s*([-–—]?\d+)\s*bằng\s*([-–—]?\d+)/i);
     if (cdMatch && ctMatch) {
       const xMax = parseFloat(cdMatch[1].replace(/[−–—]/g, '-'));
       const yMax = parseFloat(cdMatch[2].replace(/[−–—]/g, '-'));
@@ -2749,21 +2756,25 @@ export function generateSyntheticGraphSvg(block: string, options?: string[]): st
         const k = (yMax - yMin) / Math.pow(xMax - xMin, 2);
         const kStr = Number(k.toFixed(3));
         const quadExpr = `${yMax} - ${kStr}*(x - ${xMax})^2`;
-        const svg = generateFunctionGraphSvg(quadExpr, block);
+        const svg = generateFunctionGraphSvg(quadExpr, cleanedBlock);
         if (svg) return svg;
       }
     }
   }
 
   if (lower.includes('trùng phương') || lower.includes('bậc 4') || lower.includes('x^4') || lower.includes('x⁴')) {
-    return generateFunctionGraphSvg('x^4 - 2*x^2', block);
+    return generateFunctionGraphSvg('x^4 - 2*x^2', cleanedBlock);
   }
 
   if (lower.includes('parabol') || lower.includes('bậc 2') || lower.includes('bậc hai')) {
-    return generateFunctionGraphSvg('x^2 - 2*x - 1', block);
+    return generateFunctionGraphSvg('x^2 - 2*x - 1', cleanedBlock);
   }
 
-  return generateFunctionGraphSvg('x^3 - 3*x', block);
+  if (lower.includes('bậc 3') || lower.includes('bậc ba')) {
+    return generateFunctionGraphSvg('x^3 - 3*x', cleanedBlock);
+  }
+
+  return null;
 }
 
 export function autoEnrichTextWithVisuals(text: string, isSolution: boolean = false, options?: string[]): string {
@@ -2849,7 +2860,7 @@ export function autoEnrichTextWithVisuals(text: string, isSolution: boolean = fa
             : Buffer.from(svg, 'utf8').toString('base64');
           if (b64) {
             const svgTag = `<svg-wrapper data-svg="${b64}"></svg-wrapper>`;
-            const placeholderRegex = /!\[([^\]]*)\]\([^)]*\)|<img[^>]*src=["'](?!data:|http|\/)[^"']*["'][^>]*>|\[(?:HINH_ANH|BBT|Hình\s*vẽ|Bảng\s*biến\s*thiên|Đồ\s*thị(?:\s*hàm\s*số)?)[^\]]*\]/gi;
+            const placeholderRegex = /!\[([^\]]*)\]\([^)]*\)|<img[^>]*src=["'](?!data:|http|\/)[^"']*["'][^>]*>|\[(?:HINH_ANH|BBT|Hình\s*vẽ|Bảng\s*biến\s*thiên|Đồ\s*thị(?:\s*hàm\s*số)?)(?:\[[^\]]*\]|[^\]])*\]/gi;
             if (placeholderRegex.test(b)) {
               b = b.replace(placeholderRegex, svgTag);
             }
@@ -2908,7 +2919,7 @@ export function autoEnrichTextWithVisuals(text: string, isSolution: boolean = fa
           : Buffer.from(graphSvg, 'utf8').toString('base64');
         if (b64) {
           const svgTag = `<svg-wrapper data-svg="${b64}"></svg-wrapper>`;
-          const placeholderRegex = /!\[([^\]]*)\]\([^)]*\)|<img[^>]*src=["'](?!data:|http|\/)[^"']*["'][^>]*>|\[(?:HINH_ANH|BBT|Hình\s*vẽ|Bảng\s*biến\s*thiên|Đồ\s*thị(?:\s*hàm\s*số)?)[^\]]*\]/gi;
+          const placeholderRegex = /!\[([^\]]*)\]\([^)]*\)|<img[^>]*src=["'](?!data:|http|\/)[^"']*["'][^>]*>|\[(?:HINH_ANH|BBT|Hình\s*vẽ|Bảng\s*biến\s*thiên|Đồ\s*thị(?:\s*hàm\s*số)?)(?:\[[^\]]*\]|[^\]])*\]/gi;
           if (placeholderRegex.test(b)) {
             b = b.replace(placeholderRegex, svgTag);
           } else if (/(\n\s*(?:\*{0,2}|[-*]\s*)?(?:[Aa][\.\:\)]|[Aa]\)))/i.test(b)) {

@@ -127,6 +127,269 @@ export function cleanDocumentContent(content: string, lessonName?: string, skipV
   return cleaned.trim();
 }
 
+export type WorksheetPartType = 'mc' | 'tf' | 'sa' | 'essay';
+
+/**
+ * Ước lượng số dòng chấm (......) cần thiết dưới mỗi câu hỏi dựa trên độ dài & cấu trúc lời giải của câu đó.
+ */
+export function estimateDottedLineCountFromSolution(
+  solutionText: string,
+  partType: WorksheetPartType = 'essay',
+  questionStem: string = ''
+): number {
+  const stemSubParts = (questionStem.match(/(?:^|\n|\s)[a-d]\)\s+/gi) || []).length;
+
+  if (!solutionText || !solutionText.trim()) {
+    if (partType === 'mc') return 2;
+    if (partType === 'tf') return 4;
+    if (partType === 'sa') return Math.min(6, Math.max(3, 3 + stemSubParts));
+    return Math.min(14, Math.max(6, 5 + stemSubParts * 2));
+  }
+
+  const raw = solutionText.trim();
+  const visualCount = Math.min(2, (raw.match(/<svg(?:-wrapper)?|<img\b/gi) || []).length);
+  const tableRowCount = (raw.match(/^[ \t]*\|[^\n]+\|/gm) || []).length;
+  const tableBonus = tableRowCount >= 2 ? 2 : 0;
+  const displayMathCount = Math.min(
+    4,
+    (raw.match(/\$\$[\s\S]*?\$\$|\\begin\{(?:cases|aligned|align\*?|array)\}/g) || []).length
+  );
+  const fracCount = Math.min(6, (raw.match(/\\frac\b/g) || []).length);
+
+  // Chuẩn hóa độ dài text thuần để tính số dòng chữ thực tế
+  const stripped = raw
+    .replace(/<svg[\s\S]*?<\/svg>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\$\$?/g, '')
+    .replace(/\\(?:begin|end)\{[^}]+\}/g, '\n')
+    .replace(/\\\\/g, '\n')
+    .replace(/\\(?:frac|sqrt|cdot|times|left|right|text|mathrm|mathbf|Rightarrow|Leftrightarrow|quad|qquad)/g, ' ');
+
+  const nonEmptyLines = stripped
+    .split('\n')
+    .map((l) => l.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  let wrappedLines = 0;
+  for (const line of nonEmptyLines) {
+    wrappedLines += Math.max(1, Math.ceil(line.length / 66));
+  }
+
+  const subStepMarkers = (raw.match(/(?:^|\n|\s)(?:[a-d]\)|Bước\s*\d+|TH\s*\d+|\+)/gi) || []).length;
+  const baseLines = Math.max(wrappedLines, Math.min(8, subStepMarkers));
+  const weighted =
+    baseLines +
+    visualCount * 2 +
+    tableBonus +
+    displayMathCount * 1.35 +
+    fracCount * 0.35;
+
+  if (partType === 'mc') {
+    return Math.min(5, Math.max(2, Math.round(weighted * 0.72)));
+  }
+  if (partType === 'tf') {
+    return Math.min(8, Math.max(3, Math.round(weighted * 0.85)));
+  }
+  if (partType === 'sa') {
+    return Math.min(9, Math.max(3, Math.round(weighted * 0.92)));
+  }
+  return Math.min(18, Math.max(5, Math.round(weighted * 1.2)));
+}
+
+/**
+ * Tách phần hướng dẫn giải chi tiết thành map theo dạng `${part}:${qNum}` và `ANY:${qNum}`.
+ */
+function parseSolutionsByPartAndQuestion(solutionText: string): Record<string, string> {
+  const map: Record<string, string> = {};
+  if (!solutionText || !solutionText.trim()) return map;
+
+  const lines = solutionText.split('\n');
+  let currentPart = 0;
+  let activeKey: string | null = null;
+  let activeNum: number | null = null;
+  let buffer: string[] = [];
+
+  const flush = () => {
+    if (activeKey && activeNum !== null) {
+      const content = buffer.join('\n').trim();
+      if (content) {
+        map[activeKey] = content;
+        if (!map[`ANY:${activeNum}`]) {
+          map[`ANY:${activeNum}`] = content;
+        }
+      }
+    }
+    activeKey = null;
+    activeNum = null;
+    buffer = [];
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^(?:#{1,4}|\*{1,3})?\s*(?:PHẦN|Phần)\s*(?:IV\b|4\b)/i.test(trimmed)) {
+      flush();
+      currentPart = 4;
+      continue;
+    }
+    if (/^(?:#{1,4}|\*{1,3})?\s*(?:PHẦN|Phần)\s*(?:III\b|3\b)/i.test(trimmed)) {
+      flush();
+      currentPart = 3;
+      continue;
+    }
+    if (/^(?:#{1,4}|\*{1,3})?\s*(?:PHẦN|Phần)\s*(?:II\b|2\b)/i.test(trimmed)) {
+      flush();
+      currentPart = 2;
+      continue;
+    }
+    if (/^(?:#{1,4}|\*{1,3})?\s*(?:PHẦN|Phần)\s*(?:I\b|1\b)/i.test(trimmed)) {
+      flush();
+      currentPart = 1;
+      continue;
+    }
+
+    const qMatch = trimmed.match(/^(?:#{1,4}\s*)?(?:\*{0,2})(?:Câu|Bài)\s*(\d+)\s*(?:[:.]\s*|\*{2}\s*|$)([\s\S]*)$/i);
+    if (qMatch) {
+      flush();
+      const qNum = parseInt(qMatch[1], 10);
+      activeNum = qNum;
+      activeKey = `${currentPart}:${qNum}`;
+      const rest = (qMatch[2] || '').replace(/^\*{1,2}\s*/, '').trim();
+      if (rest) buffer.push(rest);
+      continue;
+    }
+
+    if (activeKey) {
+      buffer.push(line);
+    }
+  }
+  flush();
+  return map;
+}
+
+/**
+ * Chèn khối dòng chấm (<div data-docx-dotted-lines="N">) ngay sau mỗi câu hỏi trong tài liệu Phiếu học tập.
+ * Độ dài số dòng chấm được tính tỷ lệ theo lời giải chi tiết tương ứng của câu hỏi đó.
+ */
+export function injectDottedLinesIntoWorksheetMarkdown(
+  mainMarkdown: string,
+  solutionMarkdown: string
+): string {
+  if (!mainMarkdown || !mainMarkdown.trim()) return mainMarkdown;
+
+  const solMap = parseSolutionsByPartAndQuestion(solutionMarkdown);
+  const lines = mainMarkdown.split('\n');
+  const out: string[] = [];
+
+  let currentPart: 0 | 1 | 2 | 3 | 4 = 0;
+  let inExerciseSection = false;
+  let inSvgOrTable = false;
+  let inDisplayMath = false;
+  let currentQuestion: { part: 0 | 1 | 2 | 3 | 4; num: number; lines: string[] } | null = null;
+
+  const isPlainDotLine = (s: string) => /^[.\s…_]{6,}$/.test(s.trim());
+
+  const flushQuestion = () => {
+    if (!currentQuestion) return;
+    const qLines = [...currentQuestion.lines];
+
+    // Bỏ dòng chấm text thừa hoặc dòng trống ở cuối câu để tránh trùng lặp
+    while (qLines.length > 0) {
+      const last = qLines[qLines.length - 1].trim();
+      if (!last || isPlainDotLine(last)) {
+        qLines.pop();
+      } else {
+        break;
+      }
+    }
+
+    const qBodyText = qLines.join('\n');
+    let partType: WorksheetPartType = 'essay';
+    if (currentQuestion.part === 1) partType = 'mc';
+    else if (currentQuestion.part === 2) partType = 'tf';
+    else if (currentQuestion.part === 3) partType = 'sa';
+    else if (currentQuestion.part === 4) partType = 'essay';
+    else if (/(?:^|\n)\s*-\s*\*\*[A-D]\.\*\*/m.test(qBodyText)) partType = 'mc';
+    else if (/(?:^|\n)\s*(?:[-*]\s*)?[a-d]\)\s+/m.test(qBodyText)) partType = 'tf';
+
+    const solText =
+      solMap[`${currentQuestion.part}:${currentQuestion.num}`] ||
+      solMap[`ANY:${currentQuestion.num}`] ||
+      '';
+    const lineCount = estimateDottedLineCountFromSolution(solText, partType, qBodyText);
+
+    out.push(...qLines);
+    out.push('');
+    out.push(`<div data-docx-dotted-lines="${lineCount}" class="worksheet-dotted-lines"></div>`);
+    out.push('');
+
+    currentQuestion = null;
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Theo dõi trạng thái khối HTML/SVG hoặc $$...$$ để không cắt ngang công thức/hình vẽ
+    const dollarPairs = (trimmed.match(/\$\$/g) || []).length;
+    if (dollarPairs % 2 === 1) {
+      inDisplayMath = !inDisplayMath;
+    }
+    if (/<(?:svg|table)\b/i.test(trimmed) && !/<\/(?:svg|table)>/i.test(trimmed)) {
+      inSvgOrTable = true;
+    }
+    if (inSvgOrTable && /<\/(?:svg|table)>/i.test(trimmed)) {
+      if (currentQuestion) currentQuestion.lines.push(line);
+      else out.push(line);
+      inSvgOrTable = false;
+      continue;
+    }
+
+    if (!inSvgOrTable && !inDisplayMath) {
+      const isPartHeader = /^(?:#{1,4}|\*{2,3})?\s*(?:PHẦN|Phần)\s*(I{1,3}|IV|[1-4])\b/i.exec(trimmed);
+      if (isPartHeader) {
+        flushQuestion();
+        const tag = isPartHeader[1].toUpperCase();
+        currentPart = tag === 'I' || tag === '1' ? 1 : tag === 'II' || tag === '2' ? 2 : tag === 'III' || tag === '3' ? 3 : 4;
+        inExerciseSection = true;
+        out.push(line);
+        continue;
+      }
+
+      if (/^#{1,4}\s*(?:PHẦN\s*BÀI\s*TẬP|BÀI\s*TẬP|LUYỆN\s*TẬP|CÂU\s*HỎI)/i.test(trimmed)) {
+        flushQuestion();
+        inExerciseSection = true;
+        out.push(line);
+        continue;
+      }
+
+      if (/^---+$/.test(trimmed) && currentQuestion) {
+        flushQuestion();
+        out.push(line);
+        continue;
+      }
+
+      const qStartMatch = trimmed.match(/^(?:#{1,4}\s*)?(?:\*{0,2})(?:Câu|Bài)\s*(\d+)\s*[:.](?:\*{0,2})(?:\s+|$)/i);
+      if (qStartMatch && (inExerciseSection || !trimmed.startsWith('-'))) {
+        const qNum = parseInt(qStartMatch[1], 10);
+        // Chỉ xem là câu hỏi nếu đã vào phần bài tập hoặc nội dung là đề câu hỏi thực sự (không phải bullet lý thuyết)
+        if (inExerciseSection || currentPart > 0) {
+          flushQuestion();
+          currentQuestion = { part: currentPart, num: qNum, lines: [line] };
+          continue;
+        }
+      }
+    }
+
+    if (currentQuestion) {
+      currentQuestion.lines.push(line);
+    } else {
+      out.push(line);
+    }
+  }
+
+  flushQuestion();
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 interface LayoutStyleOption {
   id: LayoutStyle;
   title: string;
@@ -234,6 +497,7 @@ export function Worksheets() {
   
   // Tùy chọn Lời giải chi tiết & Hiển thị (Mặc định mở sẵn lời giải khi giáo viên chọn kèm lời giải)
   const [includeDetailedSolution, setIncludeDetailedSolution] = useState<boolean>(true);
+  const [includeDottedLines, setIncludeDottedLines] = useState<boolean>(false);
   const [showAllSolutions, setShowAllSolutions] = useState<boolean>(true);
   const [openSolutions, setOpenSolutions] = useState<Record<string | number, boolean>>({ 'doc-solution': true });
   const [worksheetQuestions, setWorksheetQuestions] = useState<any[]>([]);
@@ -1399,7 +1663,8 @@ export function Worksheets() {
           numPartIII,
           numPartIV,
           realWorldPercent,
-          hasParametric
+          hasParametric,
+          includeDottedLines
         })
       });
 
@@ -1433,7 +1698,7 @@ export function Worksheets() {
               subject,
               grade: selectedGrade,
               type: worksheetType, layoutStyle, answerMode, additionalNotes,
-              numPartI, numPartII, numPartIII, numPartIV, realWorldPercent, hasParametric
+              numPartI, numPartII, numPartIII, numPartIV, realWorldPercent, hasParametric, includeDottedLines
             })
           });
           const data = await resNonStream.json();
@@ -1803,6 +2068,9 @@ export function Worksheets() {
       }
     }
 
+    // Lưu bản lời giải thô trước khi lọc để ước lượng độ dài dòng chấm cho bản HS (nếu bật tùy chọn dòng chấm)
+    const rawSolForLines = solPart;
+
     if (!includeDetailedSolution) {
       mainPart = mainPart.replace(/<details[\s\S]*?(?:<\/details>|$)/gi, "").trim();
       solPart = "";
@@ -1810,8 +2078,15 @@ export function Worksheets() {
 
     const cleanedMain = cleanDocumentContent(mainPart, customLessonName, false, false);
     const cleanedSol = solPart ? cleanDocumentContent(solPart, customLessonName, false, true) : "";
-    return { mainDocContent: cleanedMain, solutionDocContent: cleanedSol };
-  }, [suggestion, includeDetailedSolution, customLessonName, isLoading]);
+    const cleanedSolForLines = rawSolForLines
+      ? (cleanedSol || cleanDocumentContent(rawSolForLines, customLessonName, true, true))
+      : "";
+    const finalMain = includeDottedLines
+      ? injectDottedLinesIntoWorksheetMarkdown(cleanedMain, cleanedSolForLines)
+      : cleanedMain;
+
+    return { mainDocContent: finalMain, solutionDocContent: cleanedSol };
+  }, [suggestion, includeDetailedSolution, includeDottedLines, customLessonName, isLoading]);
 
   const infographicSplit = useMemo(() => {
     if (layoutStyle !== 'infographic' || !mainDocContent) {
@@ -2408,6 +2683,22 @@ export function Worksheets() {
                     <option value="none">Không kèm đáp án (cho học sinh làm bài)</option>
                   </select>
                 </div>
+
+                {/* Dotted lines option */}
+                <label className="flex items-start gap-2.5 bg-white p-2.5 border border-slate-200 rounded-lg cursor-pointer hover:border-emerald-300 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={includeDottedLines}
+                    onChange={(e) => setIncludeDottedLines(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer shrink-0"
+                  />
+                  <div className="text-xs leading-snug">
+                    <div className="font-bold text-slate-700">Tạo dòng chấm theo lời giải của phiếu</div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Chèn sẵn các dòng kẻ chấm chấm dưới mỗi câu (số dòng căn theo độ dài lời giải) để HS làm trực tiếp khi in hoặc xuất Word.
+                    </p>
+                  </div>
+                </label>
               </div>
             </div>
           </div>
@@ -3407,6 +3698,17 @@ export function Worksheets() {
                 Không kèm lời giải chi tiết (Bản dành cho Học sinh)
               </span>
             </label>
+            <label className="flex items-center gap-1.5 cursor-pointer ml-auto px-2.5 py-1 rounded-md border border-slate-200 bg-white hover:border-emerald-300 transition-colors">
+              <input
+                type="checkbox"
+                checked={includeDottedLines}
+                onChange={(e) => setIncludeDottedLines(e.target.checked)}
+                className="w-3.5 h-3.5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300"
+              />
+              <span className="font-semibold text-slate-700">
+                Tạo dòng chấm làm bài trên phiếu
+              </span>
+            </label>
           </div>
         )}
         
@@ -3844,6 +4146,34 @@ export function Worksheets() {
                                 <span className="font-semibold text-emerald-800">Đáp án:</span> <MathView inline content={q.correctAnswer || ''} />
                               </div>
                             )}
+
+                            {/* Tùy chọn dòng chấm làm bài trên phiếu cho học sinh */}
+                            {includeDottedLines && (() => {
+                              const qPartType: WorksheetPartType =
+                                q.type === 'mc'
+                                  ? 'mc'
+                                  : q.type === 'tf'
+                                  ? 'tf'
+                                  : q.type === 'sa' || q.type === 'short_answer'
+                                  ? 'sa'
+                                  : 'essay';
+                              const qDottedCount = estimateDottedLineCountFromSolution(
+                                q.solution || q.explanation || '',
+                                qPartType,
+                                q.content || (q as any).question || ''
+                              );
+                              return (
+                                <div data-docx-dotted-lines={qDottedCount} className="worksheet-dotted-lines my-2.5 space-y-0.5">
+                                  {Array.from({ length: qDottedCount }).map((_, dIdx) => (
+                                    <div
+                                      key={dIdx}
+                                      className="worksheet-dotted-line"
+                                      style={{ borderBottom: '1px dotted #94a3b8', height: '22px', width: '100%' }}
+                                    />
+                                  ))}
+                                </div>
+                              );
+                            })()}
 
                             {/* Lời giải chi tiết - Accordion toggle & BBT/Đồ thị buttons */}
                             <div className="mt-3 pl-2 no-print">

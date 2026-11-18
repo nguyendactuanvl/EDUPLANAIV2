@@ -151,11 +151,31 @@ const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
         {children}
       </div>
     ),
-    div: ({ children, ...props }: any) => (
-      <div {...cleanProps(props)}>
-        {children}
-      </div>
-    ),
+    div: ({ node, children, ...props }: any) => {
+      const dottedRaw =
+        props['data-docx-dotted-lines'] ??
+        node?.properties?.['data-docx-dotted-lines'] ??
+        node?.properties?.dataDocxDottedLines;
+      if (dottedRaw !== undefined) {
+        const count = Math.max(1, Math.min(20, parseInt(String(dottedRaw), 10) || 3));
+        return (
+          <div data-docx-dotted-lines={count} className="worksheet-dotted-lines my-2 space-y-0.5">
+            {Array.from({ length: count }).map((_, idx) => (
+              <div
+                key={idx}
+                className="worksheet-dotted-line"
+                style={{ borderBottom: '1px dotted #94a3b8', height: '22px', width: '100%' }}
+              />
+            ))}
+          </div>
+        );
+      }
+      return (
+        <div {...cleanProps(props)}>
+          {children}
+        </div>
+      );
+    },
     span: ({ node, children, className, ...props }: any) => {
       if (className && className.includes('math-inline')) {
         const text = String(children || '').trim();

@@ -4,15 +4,14 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   Upload, X, FileText, Loader2, Download, AlertCircle, 
   Clipboard, CheckCircle2, Clock, Layers, Sliders, Sparkles, Zap, Wand2,
-  Image as ImageIcon, Scissors, PlusCircle, FileCode, Palette, BarChart2, TrendingUp
+  Image as ImageIcon, Scissors, FileCode, Palette, TrendingUp
 } from 'lucide-react';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { parseApiResponse, normalizeOcrChoicesAndFormatting, normalizeMathText } from '../lib/utils';
 import { run1ClickMathFix } from '../components/math-tools/MathFormulaFixer';
-import { getPdfTotalPages, renderPdfPageRange, renderPdfPageToDataUrl } from '../lib/pdfUtils';
+import { getPdfTotalPages, renderPdfPageToDataUrl } from '../lib/pdfUtils';
 import { ImageCropperModal } from '../components/ImageCropperModal';
 import { QuestionVisualizerPanel } from '../components/math-tools/QuestionVisualizerPanel';
-import { autoEnrichTextWithVisuals } from '../lib/bbtRenderer';
 import mammoth from 'mammoth';
 import { FeatureQuickGuideBanner } from '../components/FeatureQuickGuideBanner';
 import { ApiErrorBanner } from '../components/ApiErrorBanner';
@@ -75,8 +74,224 @@ const optimizeImageForOcr = async (file: File): Promise<{ data: string; type: st
   });
 };
 
+const cropFigureFromDataUrl = (
+  pageDataUrl: string,
+  boxStr: string
+): Promise<{ dataUrl: string; displayW: number; displayH: number } | null> => {
+  return new Promise((resolve) => {
+    if (!pageDataUrl || !boxStr) {
+      resolve(null);
+      return;
+    }
+    const parts = boxStr
+      .split(',')
+      .map((s) => parseFloat(s.trim()))
+      .filter((n) => !Number.isNaN(n));
+    if (parts.length !== 4) {
+      resolve(null);
+      return;
+    }
+
+    let [ymin, xmin, ymax, xmax] = parts;
+    if (ymin >= ymax || xmin >= xmax) {
+      resolve(null);
+      return;
+    }
+    const boxH = ymax - ymin;
+    const boxW = xmax - xmin;
+    // Reject tiny noise or accidental full-page bounding boxes
+    if (boxH < 22 || boxW < 22 || (boxH > 860 && boxW > 860)) {
+      resolve(null);
+      return;
+    }
+
+    // Add gentle 1.2% margin padding so axis ticks/labels are never clipped
+    const pad = 12;
+    ymin = Math.max(0, ymin - pad);
+    xmin = Math.max(0, xmin - pad);
+    ymax = Math.min(1000, ymax + pad);
+    xmax = Math.min(1000, xmax + pad);
+
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const natW = img.naturalWidth || img.width;
+        const natH = img.naturalHeight || img.height;
+        if (!natW || !natH) {
+          resolve(null);
+          return;
+        }
+        const sx = Math.max(0, Math.floor((xmin / 1000) * natW));
+        const sy = Math.max(0, Math.floor((ymin / 1000) * natH));
+        const sw = Math.min(natW - sx, Math.max(10, Math.ceil(((xmax - xmin) / 1000) * natW)));
+        const sh = Math.min(natH - sy, Math.max(10, Math.ceil(((ymax - ymin) / 1000) * natH)));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = sw;
+        canvas.height = sh;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, sw, sh);
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+
+        const displayW = Math.max(240, Math.min(540, Math.round(sw * 0.52)));
+        const displayH = Math.max(80, Math.round(sh * (displayW / sw)));
+
+        resolve({
+          dataUrl: canvas.toDataURL('image/png'),
+          displayW,
+          displayH,
+        });
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = pageDataUrl;
+  });
+};
+
+const measureImageDisplaySize = (
+  dataUrl: string
+): Promise<{ displayW: number; displayH: number }> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const natW = img.naturalWidth || 480;
+      const natH = img.naturalHeight || 300;
+      const displayW = Math.max(220, Math.min(560, Math.round(natW * 0.6)));
+      const displayH = Math.max(60, Math.round(natH * (displayW / Math.max(1, natW))));
+      resolve({ displayW, displayH });
+    };
+    img.onerror = () => resolve({ displayW: 480, displayH: 300 });
+    img.src = dataUrl;
+  });
+};
+
+const sanitizeHtmlTableInlineMarkdown = (tableHtml: string): string => {
+  const mathParts: string[] = [];
+  let s = tableHtml.replace(/(\$\$[\s\S]*?\$\$|\$[^\$\n]*?\$)/g, (m) => {
+    const idx = mathParts.length;
+    mathParts.push(m);
+    return `\uE000TBL_M_${idx}\uE001`;
+  });
+  s = s
+    .replace(/\*\*([^\*\n]+?)\*\*\*([^\*\n]+?)\*/g, '<strong>$1</strong><br/><em>$2</em>')
+    .replace(/\*\*([^\*\n<>]+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[>\s])\*([^\*\n<>]+?)\*(?=$|[<\s.,;:])/g, '$1<em>$2</em>')
+    .replace(/(<\/table>)[ \t]*(?!\n\n)/i, '$1\n\n');
+  return s.replace(/\uE000TBL_M_(\d+)\uE001/g, (_m, idx) => mathParts[Number(idx)] || '');
+};
+
+const cleanAndNormalizePageMarkdown = (rawText: string): string => {
+  if (!rawText) return '';
+  let text = rawText;
+  text = text.replace(/```(?:tikz|latex)?\s*\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}\s*```/gi, '\n[Hình vẽ minh họa]\n');
+  text = text.replace(/```tikz[\s\S]*?```/gi, '\n[Hình vẽ minh họa]\n');
+  text = text.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/gi, '\n[Hình vẽ minh họa]\n');
+
+  const cropTokens: string[] = [];
+  text = text.replace(/\[CROP_FIG\b[^\]]*\]/gi, (m) => {
+    const idx = cropTokens.length;
+    cropTokens.push(m);
+    return `\uE000CROP_TOK_${idx}\uE001`;
+  });
+
+  // Protect HTML <table> blocks (e.g. 2-column borderless exam headers) from math/OCR line-splitting regexes
+  const htmlTableTokens: string[] = [];
+  text = text.replace(/<table\b[\s\S]*?<\/table>/gi, (m) => {
+    const idx = htmlTableTokens.length;
+    htmlTableTokens.push(sanitizeHtmlTableInlineMarkdown(m));
+    return `\n\n\uE000TBL_TOK_${idx}\uE001\n\n`;
+  });
+
+  // Fix colliding markdown bold/italic markers like **Môn thi: TOÁN***Thời gian:...* or **A****B**
+  text = text.replace(/\*\*([^\*\n]+?)\*\*\*([^\*\n]+?)\*/g, '**$1**\n\n*$2*');
+  text = text.replace(/\*\*([^\*\n]+?)\*\*\*\*/g, '**$1**\n\n**');
+  text = text.replace(/(\)|\*)[ \t]*(?=(?:\*\*|\*)?(?:SỞ\s+GIÁO\s+DỤC|ĐỀ\s+(?:THAM\s+KHẢO|KIỂM\s+TRA|THI|CHÍNH\s+THỨC)|\(Đề\s+thi\s+gồm|K[ÌỲ]\s+THI\b|CẤP\s+(?:THÀNH\s+PHỐ|TỈNH|HUYỆN|QUẬN|TRƯỜNG)|NĂM\s+HỌC\b|Môn\s*thi\s*:|Thời\s*gian\s*:))/g, '$1\n\n');
+
+  // Separate known plain-text exam header & footer lines when separated only by a single newline
+  const headerLineRe = /^[ \t]*(?:\*{1,2}|<em>|<strong>)?(?:UBND\b|SỞ\s+GIÁO\s+DỤC|PHÒNG\s+GIÁO\s+DỤC|TRƯỜNG\s+|ĐỀ\s+(?:THAM\s+KHẢO|KIỂM\s+TRA|THI|CHÍNH\s+THỨC)|\(Đề\s+thi\s+gồm|K[ÌỲ]\s+THI\b|CẤP\s+(?:THÀNH\s+PHỐ|TỈNH|HUYỆN|QUẬN|TRƯỜNG)|NĂM\s+HỌC\b|Môn\s*thi\s*:|Thời\s*gian\s*:|[-–—]{2,}\s*HẾT|Họ\s+và\s+tên\s+thí\s+sinh\s*:)/i;
+  const rawLines = text.split('\n');
+  const spacedLines: string[] = [];
+  for (let i = 0; i < rawLines.length; i++) {
+    const cur = rawLines[i];
+    const prev = spacedLines.length > 0 ? spacedLines[spacedLines.length - 1] : '';
+    if (
+      i > 0 &&
+      prev.trim() !== '' &&
+      cur.trim() !== '' &&
+      (headerLineRe.test(cur) || headerLineRe.test(prev)) &&
+      !/^\|.*\|$/.test(cur.trim()) &&
+      !/^\|.*\|$/.test(prev.trim())
+    ) {
+      spacedLines.push('');
+    }
+    spacedLines.push(cur);
+  }
+  text = spacedLines.join('\n');
+
+  // Ensure line break before PHẦN I / PHẦN II / PHẦN III if glued to title
+  text = text.replace(/([^\n])(PHẦN\s+[IVX]+[\.\:\s])/g, '$1\n\n$2');
+  text = normalizeMathText(normalizeOcrChoicesAndFormatting(text));
+
+  text = text.replace(/\uE000TBL_TOK_(\d+)\uE001/g, (_m, idx) => htmlTableTokens[Number(idx)] || '');
+  text = text.replace(/\uE000CROP_TOK_(\d+)\uE001/g, (_m, idx) => cropTokens[Number(idx)] || '');
+  return text.trim();
+};
+
+const resolveCropFigMarkers = async (
+  text: string,
+  pageImagesMap: { [pageNum: number]: string },
+  autoCropEnabled: boolean
+): Promise<string> => {
+  const regex = /\[CROP_FIG\b([^\]]*)\]/gi;
+  const matches = Array.from(text.matchAll(regex));
+  if (matches.length === 0) return text;
+
+  let output = '';
+  let lastIndex = 0;
+
+  for (const m of matches) {
+    const fullMatch = m[0];
+    const attrs = m[1] || '';
+    const matchIndex = m.index ?? 0;
+    output += text.slice(lastIndex, matchIndex);
+    lastIndex = matchIndex + fullMatch.length;
+
+    const pageMatch = attrs.match(/page=["']?(\d+)["']?/i);
+    const boxMatch = attrs.match(/box=["']?([0-9.,\s]+)["']?/i);
+    const descMatch = attrs.match(/desc=["']([^"']*)["']/i);
+
+    const page = pageMatch ? Number(pageMatch[1]) : 1;
+    const box = boxMatch ? boxMatch[1].trim() : '';
+    const rawDesc = (descMatch ? descMatch[1] : 'Hình vẽ minh họa')
+      .replace(/[\[\]]/g, '')
+      .replace(/"/g, "'")
+      .trim();
+
+    let replacement = `\n\n[Hình vẽ (Trang ${page}): ${rawDesc || 'Hình vẽ minh họa'}]\n\n`;
+
+    if (autoCropEnabled && box && pageImagesMap[page]) {
+      const cropped = await cropFigureFromDataUrl(pageImagesMap[page], box);
+      if (cropped) {
+        replacement = `\n\n<img src="${cropped.dataUrl}" alt="${rawDesc || 'Hình vẽ minh họa đề thi'}" data-page="${page}" data-width="${cropped.displayW}" data-height="${cropped.displayH}" class="max-w-[520px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm block" />\n\n`;
+      }
+    }
+
+    output += replacement;
+  }
+
+  output += text.slice(lastIndex);
+  return output;
+};
+
 type PageMode = 'recommended' | 'range' | 'all';
-type VisualMode = 'auto_redraw' | 'crop_original' | 'manual_visualizer';
+type VisualMode = 'auto_crop' | 'crop_manual' | 'tables_only';
 
 export function PdfToWord() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -88,8 +303,8 @@ export function PdfToWord() {
   const [fromPage, setFromPage] = useState<number>(1);
   const [toPage, setToPage] = useState<number>(5);
 
-  // BBT & Graph redraw options
-  const [visualMode, setVisualMode] = useState<VisualMode>('auto_redraw');
+  // Visual extraction options (auto-crop original figures & keep tables as tables)
+  const [visualMode, setVisualMode] = useState<VisualMode>('auto_crop');
 
   // Conversion state & Progress tracking
   const [isUploading, setIsUploading] = useState(false);
@@ -114,6 +329,21 @@ export function PdfToWord() {
   const exportRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const progressIntervalRef = useRef<any>(null);
+  const pdfPageImagesRef = useRef<{ [pageNum: number]: string }>({});
+  const resultTextRef = useRef<string>('');
+  const fromPageRef = useRef<number>(1);
+
+  useEffect(() => {
+    pdfPageImagesRef.current = pdfPageImages;
+  }, [pdfPageImages]);
+
+  useEffect(() => {
+    resultTextRef.current = resultText;
+  }, [resultText]);
+
+  useEffect(() => {
+    fromPageRef.current = fromPage;
+  }, [fromPage]);
 
   // Clean up progress timer
   useEffect(() => {
@@ -207,6 +437,28 @@ export function PdfToWord() {
     }
   };
 
+  const detectPageForPlaceholder = (text: string, placeholderTag?: string): number => {
+    if (placeholderTag) {
+      const explicitMatch = placeholderTag.match(/Trang\s*(\d+)/i);
+      if (explicitMatch) {
+        const p = Number(explicitMatch[1]);
+        if (pdfPageImagesRef.current[p]) return p;
+      }
+      const idx = text.indexOf(placeholderTag);
+      if (idx !== -1) {
+        const prefix = text.slice(0, idx);
+        const sepMatches = Array.from(prefix.matchAll(/---\s*\[Hết Trang \d+\s*\/\s*Sang Trang (\d+)\]\s*---/gi));
+        if (sepMatches.length > 0) {
+          const lastPage = Number(sepMatches[sepMatches.length - 1][1]);
+          if (pdfPageImagesRef.current[lastPage]) return lastPage;
+        }
+      }
+    }
+    const availablePages = Object.keys(pdfPageImagesRef.current).map(Number).sort((a, b) => a - b);
+    if (availablePages.includes(fromPageRef.current)) return fromPageRef.current;
+    return availablePages[0] || 1;
+  };
+
   useEffect(() => {
     const onGlobalPaste = (e: ClipboardEvent) => {
       const target = e.target as HTMLElement;
@@ -220,7 +472,8 @@ export function PdfToWord() {
 
     const onOpenPdfCropper = (e: any) => {
       const placeholder = e.detail?.placeholder;
-      handleOpenCropper(1, placeholder);
+      const targetPage = detectPageForPlaceholder(resultTextRef.current, placeholder);
+      handleOpenCropper(targetPage, placeholder);
     };
 
     window.addEventListener('paste', onGlobalPaste);
@@ -356,10 +609,8 @@ export function PdfToWord() {
               let pageText = typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || '');
               
               if (pageText) {
-                pageText = pageText.replace(/```(?:tikz|latex)?\s*\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}\s*```/gi, '\n[Hình vẽ minh họa]\n');
-                pageText = pageText.replace(/```tikz[\s\S]*?```/gi, '\n[Hình vẽ minh họa]\n');
-                pageText = pageText.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/gi, '\n[Hình vẽ minh họa]\n');
-                pageText = normalizeMathText(normalizeOcrChoicesAndFormatting(pageText));
+                pageText = cleanAndNormalizePageMarkdown(pageText);
+                pageText = await resolveCropFigMarkers(pageText, pageImagesMap, visualMode === 'auto_crop');
               }
               pageResults[batchIdx] = pageText.trim();
             }));
@@ -407,26 +658,19 @@ export function PdfToWord() {
           const text = await response.text();
           const data = parseApiResponse<any>(text);
           let rawRes = typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(data.result));
-          if (rawRes) {
-            rawRes = rawRes.replace(/```(?:tikz|latex)?\s*\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}\s*```/gi, '\n[Hình vẽ minh họa]\n');
-            rawRes = rawRes.replace(/```tikz[\s\S]*?```/gi, '\n[Hình vẽ minh họa]\n');
-            rawRes = rawRes.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/gi, '\n[Hình vẽ minh họa]\n');
-          }
-          finalResult = rawRes;
+          finalResult = cleanAndNormalizePageMarkdown(rawRes);
           pageConversionSuccess = true;
         }
 
-        if (finalResult) {
-          finalResult = normalizeMathText(normalizeOcrChoicesAndFormatting(finalResult));
-          if (visualMode === 'auto_redraw') {
-            finalResult = autoEnrichTextWithVisuals(finalResult);
-          }
-        }
+        // Tuyệt đối không tự bịa đồ thị vector bằng autoEnrichTextWithVisuals khi chuyển PDF sang Word
 
       } else {
         // Single Image or DOCX
         let fileListForApi: { data: string; type: string; name: string }[] = [];
-        if (selectedFile.name.endsWith('.docx')) {
+        const isDocx = selectedFile.name.toLowerCase().endsWith('.docx');
+        const singlePageImages: { [pageNum: number]: string } = {};
+
+        if (isDocx) {
           const text = await processDocx(selectedFile);
           const fileData = btoa(unescape(encodeURIComponent(text)));
           fileListForApi = [{ data: fileData, type: 'text/plain', name: selectedFile.name }];
@@ -434,13 +678,16 @@ export function PdfToWord() {
           // Optimize image (downscale to max 1800px if large, keeping math/text razor sharp)
           const optimized = await optimizeImageForOcr(selectedFile);
           fileListForApi = [optimized];
+          singlePageImages[1] = `data:${optimized.type};base64,${optimized.data}`;
+          setPdfPageImages(singlePageImages);
         }
 
         let response = await apiFetch('/api/pdf-to-word', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            files: fileListForApi
+            files: fileListForApi,
+            ...(isDocx ? {} : { pageNum: 1, totalPages: 1 })
           })
         });
 
@@ -465,19 +712,20 @@ export function PdfToWord() {
           response = await apiFetch('/api/pdf-to-word', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ files: fileListForApi })
+            body: JSON.stringify({
+              files: fileListForApi,
+              ...(isDocx ? {} : { pageNum: 1, totalPages: 1 })
+            })
           });
           text = await response.text();
         }
 
         const data = parseApiResponse<any>(text);
         let rawRes = typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(data.result));
-        if (rawRes) {
-          rawRes = rawRes.replace(/```(?:tikz|latex)?\s*\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}\s*```/gi, '\n[Hình vẽ minh họa]\n');
-          rawRes = rawRes.replace(/```tikz[\s\S]*?```/gi, '\n[Hình vẽ minh họa]\n');
-          rawRes = rawRes.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/gi, '\n[Hình vẽ minh họa]\n');
+        finalResult = cleanAndNormalizePageMarkdown(rawRes);
+        if (!isDocx) {
+          finalResult = await resolveCropFigMarkers(finalResult, singlePageImages, visualMode === 'auto_crop');
         }
-        finalResult = normalizeMathText(normalizeOcrChoicesAndFormatting(rawRes));
       }
 
       // Stop progress timer & jump to 100%
@@ -511,7 +759,9 @@ export function PdfToWord() {
   };
 
   const handleOpenCropper = (pageNum: number, placeholderTag?: string) => {
-    const src = pdfPageImages[pageNum] || (selectedFile && selectedFile.type.startsWith('image/') ? Object.values(pdfPageImages)[0] : '');
+    const map = pdfPageImagesRef.current;
+    const fallbackSrc = Object.values(map)[0] || '';
+    const src = map[pageNum] || fallbackSrc;
     if (src) {
       setCropperSourceImage(src);
       setTargetReplacePlaceholder(placeholderTag || null);
@@ -519,16 +769,18 @@ export function PdfToWord() {
     }
   };
 
-  const handleCropComplete = (croppedDataUrl: string) => {
+  const handleCropComplete = async (croppedDataUrl: string) => {
     setIsCropperOpen(false);
     if (!croppedDataUrl) return;
 
-    const imgTag = `\n\n<img src="${croppedDataUrl}" alt="Hình vẽ minh họa đề thi" class="w-full max-w-[600px] min-w-[360px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm block" data-width="580" data-height="340" />\n\n`;
+    const { displayW, displayH } = await measureImageDisplaySize(croppedDataUrl);
+    const imgTag = `\n\n<img src="${croppedDataUrl}" alt="Hình vẽ minh họa đề thi" class="max-w-[540px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm block" data-width="${displayW}" data-height="${displayH}" />\n\n`;
 
-    if (targetReplacePlaceholder && resultText.includes(targetReplacePlaceholder)) {
-      setResultText(prev => prev.replace(targetReplacePlaceholder, imgTag));
-    } else if (/\[Hình (?:vẽ|ảnh)[^\]]*\]/i.test(resultText)) {
-      setResultText(prev => prev.replace(/\[Hình (?:vẽ|ảnh)[^\]]*\]/i, imgTag));
+    if (targetReplacePlaceholder && resultTextRef.current.includes(targetReplacePlaceholder)) {
+      const target = targetReplacePlaceholder;
+      setResultText(prev => prev.replace(target, imgTag));
+    } else if (/\[(?:Hình\s*(?:vẽ|ảnh)|Đồ\s*thị|Bảng\s*biến\s*thiên|BBT)[^\]]*\]/i.test(resultTextRef.current)) {
+      setResultText(prev => prev.replace(/\[(?:Hình\s*(?:vẽ|ảnh)|Đồ\s*thị|Bảng\s*biến\s*thiên|BBT)[^\]]*\]/i, imgTag));
     } else {
       setResultText(prev => prev + imgTag);
     }
@@ -738,67 +990,67 @@ export function PdfToWord() {
                 </div>
               )}
 
-              {/* BBT & Graph Redraw Options */}
+              {/* Visual & Table Conversion Options */}
               <div className="p-4 bg-white rounded-xl border border-slate-200/80 space-y-3">
                 <div className="flex items-center gap-2 text-sm font-bold text-slate-800 pb-2 border-b border-slate-100">
                   <TrendingUp className="w-4 h-4 text-indigo-600" />
-                  <span>Tùy chọn vẽ lại Bảng biến thiên (BBT) & Đồ thị như đề gốc (GV tự chọn)</span>
+                  <span>Tùy chọn xử lý Hình ảnh, Đồ thị & Bảng biểu từ PDF gốc</span>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-xs font-semibold">
-                  <label className={`flex items-start gap-2.5 p-3 rounded-lg border transition-all cursor-pointer ${visualMode === 'auto_redraw' ? 'bg-indigo-50/80 border-indigo-400 text-indigo-950 shadow-2xs' : 'bg-slate-50/50 border-slate-200 hover:bg-slate-100/60'}`}>
+                  <label className={`flex items-start gap-2.5 p-3 rounded-lg border transition-all cursor-pointer ${visualMode === 'auto_crop' ? 'bg-indigo-50/80 border-indigo-400 text-indigo-950 shadow-2xs' : 'bg-slate-50/50 border-slate-200 hover:bg-slate-100/60'}`}>
                     <input 
                       type="radio" 
                       name="visualMode" 
-                      checked={visualMode === 'auto_redraw'}
-                      onChange={() => setVisualMode('auto_redraw')}
+                      checked={visualMode === 'auto_crop'}
+                      onChange={() => setVisualMode('auto_crop')}
                       className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
                     />
                     <div>
                       <div className="font-bold text-indigo-950 flex items-center gap-1">
                         <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>Tự động vẽ lại BBT & Đồ thị Vector (Khuyên dùng)</span>
+                        <span>Tự cắt ảnh gốc & Vẽ bảng biểu (Khuyên dùng)</span>
                       </div>
                       <div className="font-normal text-slate-500 text-[11px] mt-1 leading-relaxed">
-                        Hệ thống tự động phát hiện hàm số và tái tạo BBT/Đồ thị dạng bảng vector sắc nét chuẩn 100% SGK.
+                        Tự động cắt chính xác đồ thị, hình vẽ từ PDF gốc chèn vào Word; chỉ chuyển bảng số liệu/BBT sang dạng bảng biểu chuẩn, không vẽ đồ thị giả.
                       </div>
                     </div>
                   </label>
 
-                  <label className={`flex items-start gap-2.5 p-3 rounded-lg border transition-all cursor-pointer ${visualMode === 'crop_original' ? 'bg-indigo-50/80 border-indigo-400 text-indigo-950 shadow-2xs' : 'bg-slate-50/50 border-slate-200 hover:bg-slate-100/60'}`}>
+                  <label className={`flex items-start gap-2.5 p-3 rounded-lg border transition-all cursor-pointer ${visualMode === 'crop_manual' ? 'bg-indigo-50/80 border-indigo-400 text-indigo-950 shadow-2xs' : 'bg-slate-50/50 border-slate-200 hover:bg-slate-100/60'}`}>
                     <input 
                       type="radio" 
                       name="visualMode" 
-                      checked={visualMode === 'crop_original'}
-                      onChange={() => setVisualMode('crop_original')}
+                      checked={visualMode === 'crop_manual'}
+                      onChange={() => setVisualMode('crop_manual')}
                       className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
                     />
                     <div>
                       <div className="font-bold text-indigo-950 flex items-center gap-1">
                         <Scissors className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>Giữ vị trí [Hình vẽ] để tự Cắt ảnh gốc PDF</span>
+                        <span>Giữ thẻ [Hình vẽ] để tự Cắt ảnh gốc PDF</span>
                       </div>
                       <div className="font-normal text-slate-500 text-[11px] mt-1 leading-relaxed">
-                        Giữ thẻ đánh dấu hình vẽ/đồ thị để thầy/cô kéo cắt ảnh trực tiếp từ trang PDF đính kèm.
+                        Giữ các thẻ đánh dấu đúng vị trí từng trang để thầy/cô tự kéo cắt từng ảnh trực tiếp từ trang PDF gốc.
                       </div>
                     </div>
                   </label>
 
-                  <label className={`flex items-start gap-2.5 p-3 rounded-lg border transition-all cursor-pointer ${visualMode === 'manual_visualizer' ? 'bg-indigo-50/80 border-indigo-400 text-indigo-950 shadow-2xs' : 'bg-slate-50/50 border-slate-200 hover:bg-slate-100/60'}`}>
+                  <label className={`flex items-start gap-2.5 p-3 rounded-lg border transition-all cursor-pointer ${visualMode === 'tables_only' ? 'bg-indigo-50/80 border-indigo-400 text-indigo-950 shadow-2xs' : 'bg-slate-50/50 border-slate-200 hover:bg-slate-100/60'}`}>
                     <input 
                       type="radio" 
                       name="visualMode" 
-                      checked={visualMode === 'manual_visualizer'}
-                      onChange={() => setVisualMode('manual_visualizer')}
+                      checked={visualMode === 'tables_only'}
+                      onChange={() => setVisualMode('tables_only')}
                       className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
                     />
                     <div>
                       <div className="font-bold text-indigo-950 flex items-center gap-1">
                         <Palette className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>Tự chọn vẽ lại BBT / Đồ thị tương tác</span>
+                        <span>Chỉ xuất văn bản & Bảng biểu chuẩn</span>
                       </div>
                       <div className="font-normal text-slate-500 text-[11px] mt-1 leading-relaxed">
-                        Mở bộ công cụ vẽ BBT/Đồ thị tương tác để tự chọn dạng hàm số, tùy chỉnh tham số theo ý muốn.
+                        Chỉ số hóa văn bản, công thức LaTeX và bảng biểu/BBT dạng bảng; có thể mở công cụ tự vẽ BBT/đồ thị khi cần.
                       </div>
                     </div>
                   </label>
@@ -860,12 +1112,12 @@ export function PdfToWord() {
           <div className="flex items-start gap-3 p-4 bg-amber-50 text-amber-900 rounded-xl text-xs sm:text-sm border border-amber-200">
             <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-600" />
             <div className="space-y-1 leading-relaxed">
-              <p className="font-bold text-amber-950">Lưu ý về hình ảnh & quy chuẩn số hóa:</p>
+              <p className="font-bold text-amber-950">Lưu ý về hình ảnh &amp; quy chuẩn số hóa:</p>
               <p>
-                - AI được tối ưu đặc biệt để nhận diện và gõ lại chuẩn 100% công thức Toán/Lý/Hóa LaTeX, phân đoạn trang dạng <i>--- [Hết Trang X / Sang Trang Y] ---</i> và giữ nguyên các phương án $A, B, C, D$.
+                - AI được tối ưu để nhận diện và gõ lại chuẩn 100% công thức Toán/Lý/Hóa LaTeX, giữ nguyên số thứ tự câu hỏi, loại bỏ header/footer thừa và phân đoạn trang dạng <i>--- [Hết Trang X / Sang Trang Y] ---</i>.
               </p>
               <p>
-                - Với hình vẽ/đồ thị, thầy/cô có thể dùng thanh công cụ <b>Cắt hình từ trang PDF gốc</b> bên dưới để nhúng trực tiếp đồ thị sắc nét vào tài liệu Word.
+                - Với hình vẽ, đồ thị, sơ đồ: hệ thống <b>tự động cắt ảnh trực tiếp từ trang PDF gốc</b> đúng vị trí câu hỏi (không tự bịa hay chèn đồ thị sai bản gốc). Các bảng số liệu thống kê và Bảng biến thiên được trình bày chuẩn dạng bảng biểu. Thầy/cô vẫn có thể bấm <b>Cắt Trang</b> bên dưới để tinh chỉnh lại vùng ảnh nếu muốn.
               </p>
             </div>
           </div>
@@ -902,21 +1154,10 @@ export function PdfToWord() {
                   setIsVisualizerOpen(true);
                 }}
                 className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-lg transition-all shadow-sm font-bold text-xs cursor-pointer active:scale-95"
-                title="Mở công cụ tự chọn vẽ lại Bảng biến thiên hoặc Đồ thị hàm số tương tác"
+                title="Mở công cụ tự chọn vẽ Bảng biến thiên hoặc Đồ thị hàm số theo thông số chính xác"
               >
                 <Palette className="w-4 h-4 text-purple-200" />
-                <span>🎨 Tự chọn vẽ lại BBT / Đồ thị</span>
-              </button>
-
-              <button 
-                onClick={() => {
-                  setResultText(prev => autoEnrichTextWithVisuals(prev));
-                }}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-lg transition-all shadow-sm font-bold text-xs cursor-pointer active:scale-95"
-                title="Tự động bóc tách và vẽ lại 100% BBT và Đồ thị vector sắc nét"
-              >
-                <Sparkles className="w-4 h-4 text-cyan-200" />
-                <span>⚡ Tái tạo BBT & Đồ thị Vector</span>
+                <span>🎨 Tự vẽ BBT / Đồ thị</span>
               </button>
 
               <button 
@@ -970,14 +1211,15 @@ export function PdfToWord() {
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
                     <AlertCircle className="w-4 h-4 text-amber-600" />
-                    <span>Phát hiện {matches.length} vị trí hình vẽ / đồ thị / BBT cần hoàn thiện trong văn bản:</span>
+                    <span>Phát hiện {matches.length} vị trí hình vẽ / đồ thị cần cắt bổ sung từ file gốc:</span>
                   </h4>
-                  <span className="text-[11px] text-amber-800 font-medium">Chọn thao tác để thay thế hình minh họa ngay vị trí đó:</span>
+                  <span className="text-[11px] text-amber-800 font-medium">Bấm cắt từ đúng trang PDF để chèn ảnh gốc:</span>
                 </div>
 
                 <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                   {matches.map((m, idx) => {
                     const tag = m[0];
+                    const targetPage = detectPageForPlaceholder(resultText, tag);
                     return (
                       <div key={idx} className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-amber-200/80 text-xs gap-2">
                         <span className="font-semibold text-slate-800 truncate max-w-md">{tag}</span>
@@ -994,11 +1236,11 @@ export function PdfToWord() {
                             <span>🎨 Tự vẽ BBT/Đồ thị</span>
                           </button>
                           <button
-                            onClick={() => handleOpenCropper(1, tag)}
+                            onClick={() => handleOpenCropper(targetPage, tag)}
                             className="px-2.5 py-1 bg-amber-100 hover:bg-amber-600 hover:text-white text-amber-800 rounded font-bold border border-amber-300 flex items-center gap-1 transition-all"
                           >
                             <Scissors className="w-3.5 h-3.5" />
-                            <span>✂️ Cắt từ trang PDF</span>
+                            <span>✂️ Cắt từ Trang {targetPage}</span>
                           </button>
                         </div>
                       </div>
@@ -1021,7 +1263,7 @@ export function PdfToWord() {
                     <span>Cắt hình vẽ / Đồ thị từ trang PDF gốc chèn vào Word:</span>
                     <span className="text-[10px] px-2 py-0.5 bg-blue-100 text-blue-700 font-semibold rounded-full">Tiện ích</span>
                   </h4>
-                  <p className="text-[11px] text-slate-500 mt-0.5">Bấm chọn trang dưới đây để mở công cụ kéo chọn hình vẽ và nhúng trực tiếp vào văn bản:</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Nếu cần chỉnh vùng cắt ảnh, bấm chọn trang dưới đây để cắt lại và nhúng trực tiếp vào văn bản:</p>
                 </div>
               </div>
 
@@ -1044,7 +1286,7 @@ export function PdfToWord() {
           )}
 
           <div className="bg-slate-50/70 rounded-xl p-6 lg:p-8 border border-slate-200">
-            <div ref={exportRef}>
+            <div ref={exportRef} data-no-auto-graph="true">
               <MarkdownRenderer content={resultText} />
             </div>
           </div>

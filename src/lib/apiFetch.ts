@@ -27,13 +27,34 @@ function generateKeyId(index = 0): string {
   return `key_${Date.now()}_${index}_${Math.random().toString(36).substring(2, 7)}`;
 }
 
+const INVALID_KEY_PLACEHOLDERS = new Set([
+  'gemini_api_key',
+  'api_key',
+  'vite_gemini_api_key',
+  'your_api_key',
+  'your_gemini_api_key',
+  'null',
+  'undefined',
+  'missing',
+  'none',
+  'false',
+  'true',
+]);
+
 export function sanitizeSingleKeyString(raw: string): string {
   if (!raw || typeof raw !== 'string') return '';
   let clean = raw.trim();
   if (clean.startsWith('Bearer ')) {
     clean = clean.substring(7).trim();
   }
-  return clean.replace(/[^\x20-\x7E]/g, '').trim();
+  try {
+    clean = decodeURIComponent(clean);
+  } catch (_) {}
+  clean = clean.replace(/[^\x20-\x7E]/g, '').trim();
+  if (!clean || clean.length < 10) return '';
+  if (INVALID_KEY_PLACEHOLDERS.has(clean.toLowerCase())) return '';
+  if (/^your[_-]/i.test(clean) || /placeholder/i.test(clean)) return '';
+  return clean;
 }
 
 export function maskApiKey(rawKey: string): string {
@@ -45,16 +66,272 @@ export function maskApiKey(rawKey: string): string {
   return `${clean.slice(0, 6)}...${clean.slice(-4)}`;
 }
 
+const UNSAFE_BROWSER_HEADERS = new Set([
+  'user-agent',
+  'host',
+  'content-length',
+  'connection',
+  'accept-encoding',
+  'origin',
+  'referer',
+]);
+
+/**
+ * Direct browser fetch that bypasses `_aistudio-iframe.js`'s `window.fetch` proxy when running
+ * inside an iframe (using `XMLHttpRequest` with streaming `ReadableStream` support), so real
+ * personal Gemini API keys from `eduplan_api_key_pool` never hit `PROXY_GENERATION_DISABLED`.
+ */
+export async function directBrowserFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response> {
+  const isIframeWithXhr = (() => {
+    if (typeof window === 'undefined' || typeof XMLHttpRequest === 'undefined') return false;
+    try {
+      return window.self !== window.top;
+    } catch (_) {
+      return true;
+    }
+  })();
+
+  if (!isIframeWithXhr) {
+    return window.fetch(input, init);
+  }
+
+  let url = '';
+  let method = 'GET';
+  const mergedHeaders = new Headers();
+  let bodyPayload: any = undefined;
+  let signal: AbortSignal | undefined = init?.signal ?? undefined;
+
+  if (typeof Request !== 'undefined' && input instanceof Request) {
+    url = input.url;
+    method = init?.method || input.method || 'GET';
+    input.headers.forEach((v, k) => mergedHeaders.set(k, v));
+    if (init?.headers) {
+      new Headers(init.headers).forEach((v, k) => mergedHeaders.set(k, v));
+    }
+    if (!signal && input.signal) {
+      signal = input.signal;
+    }
+    if (init?.body !== undefined) {
+      bodyPayload = init.body;
+    } else if (method !== 'GET' && method !== 'HEAD') {
+      try {
+        const cloned = input.clone();
+        const buf = await cloned.arrayBuffer();
+        if (buf.byteLength > 0) {
+          bodyPayload = buf;
+        }
+      } catch (_) {}
+    }
+  } else {
+    url = typeof input === 'string' ? input : input.toString();
+    method = init?.method || 'GET';
+    if (init?.headers) {
+      new Headers(init.headers).forEach((v, k) => mergedHeaders.set(k, v));
+    }
+    if (init?.body !== undefined) {
+      bodyPayload = init.body;
+    }
+  }
+
+  if (bodyPayload instanceof Blob) {
+    bodyPayload = await bodyPayload.arrayBuffer();
+  }
+
+  return new Promise<Response>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, url, true);
+    xhr.responseType = 'text';
+
+    mergedHeaders.forEach((val, key) => {
+      if (!UNSAFE_BROWSER_HEADERS.has(key.toLowerCase())) {
+        try {
+          xhr.setRequestHeader(key, val);
+        } catch (_) {}
+      }
+    });
+
+    const encoder = new TextEncoder();
+    let lastOffset = 0;
+    let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
+    let settled = false;
+    let streamClosed = false;
+
+    const closeStream = () => {
+      if (streamController && !streamClosed) {
+        streamClosed = true;
+        try {
+          streamController.close();
+        } catch (_) {}
+      }
+    };
+
+    const errorStream = (err: any) => {
+      if (streamController && !streamClosed) {
+        streamClosed = true;
+        try {
+          streamController.error(err);
+        } catch (_) {}
+      }
+    };
+
+    const pumpIncrementalText = () => {
+      if (!streamController || streamClosed) return;
+      try {
+        const txt = xhr.responseText || '';
+        if (txt.length > lastOffset) {
+          const delta = txt.slice(lastOffset);
+          lastOffset = txt.length;
+          streamController.enqueue(encoder.encode(delta));
+        }
+      } catch (_) {}
+    };
+
+    const parseRawHeaders = (): Headers => {
+      const respHeaders = new Headers();
+      try {
+        const raw = xhr.getAllResponseHeaders() || '';
+        raw.split(/\r?\n/).forEach(line => {
+          const idx = line.indexOf(':');
+          if (idx > 0) {
+            const name = line.slice(0, idx).trim();
+            const value = line.slice(idx + 1).trim();
+            if (name) {
+              try {
+                respHeaders.append(name, value);
+              } catch (_) {}
+            }
+          }
+        });
+      } catch (_) {}
+      return respHeaders;
+    };
+
+    const readableStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        streamController = controller;
+      },
+      cancel() {
+        try {
+          xhr.abort();
+        } catch (_) {}
+      },
+    });
+
+    const onAbort = () => {
+      try {
+        xhr.abort();
+      } catch (_) {}
+    };
+    if (signal) {
+      if (signal.aborted) {
+        reject(new DOMException('The operation was aborted.', 'AbortError'));
+        return;
+      }
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState >= 2 && !settled && xhr.status > 0) {
+        settled = true;
+        resolve(
+          new Response(readableStream, {
+            status: xhr.status,
+            statusText: xhr.statusText || 'OK',
+            headers: parseRawHeaders(),
+          })
+        );
+      }
+    };
+
+    xhr.onprogress = () => {
+      pumpIncrementalText();
+    };
+
+    xhr.onload = () => {
+      if (signal) signal.removeEventListener('abort', onAbort);
+      if (!settled) {
+        settled = true;
+        resolve(
+          new Response(readableStream, {
+            status: xhr.status || 200,
+            statusText: xhr.statusText || 'OK',
+            headers: parseRawHeaders(),
+          })
+        );
+      }
+      pumpIncrementalText();
+      closeStream();
+    };
+
+    xhr.onerror = () => {
+      if (signal) signal.removeEventListener('abort', onAbort);
+      const netErr = new TypeError('Failed to fetch');
+      if (!settled) {
+        settled = true;
+        reject(netErr);
+      } else {
+        errorStream(netErr);
+      }
+    };
+
+    xhr.onabort = () => {
+      if (signal) signal.removeEventListener('abort', onAbort);
+      const abortErr = new DOMException('The operation was aborted.', 'AbortError');
+      if (!settled) {
+        settled = true;
+        reject(abortErr);
+      } else {
+        errorStream(abortErr);
+      }
+    };
+
+    try {
+      xhr.send(bodyPayload ?? null);
+    } catch (sendErr) {
+      if (signal) signal.removeEventListener('abort', onAbort);
+      if (!settled) {
+        settled = true;
+        reject(sendErr);
+      }
+    }
+  });
+}
+
 export function getEnvDefaultApiKey(): string {
   let key = '';
   try {
     if (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GEMINI_API_KEY) {
-      key = (import.meta as any).env.VITE_GEMINI_API_KEY;
+      const candidate = sanitizeSingleKeyString((import.meta as any).env.VITE_GEMINI_API_KEY);
+      if (candidate) key = candidate;
+    }
+  } catch (_) {}
+  try {
+    if (!key && typeof window !== 'undefined') {
+      const w = window as any;
+      const candidates = [
+        w.VITE_GEMINI_API_KEY,
+        w.GEMINI_API_KEY,
+        w.API_KEY,
+        w.process?.env?.VITE_GEMINI_API_KEY,
+        w.process?.env?.GEMINI_API_KEY,
+        w.process?.env?.API_KEY,
+      ];
+      for (const c of candidates) {
+        const clean = sanitizeSingleKeyString(c || '');
+        if (clean) {
+          key = clean;
+          break;
+        }
+      }
     }
   } catch (_) {}
   try {
     if (!key && typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) {
-      key = process.env.GEMINI_API_KEY;
+      const candidate = sanitizeSingleKeyString(process.env.GEMINI_API_KEY);
+      if (candidate) key = candidate;
     }
   } catch (_) {}
   return sanitizeSingleKeyString(key);
@@ -531,12 +808,39 @@ export function getApiHeaders(options: RequestInit = {}, skipCustomKey = false, 
   return headers;
 }
 
+const inMemoryUploadStore = new Map<string, { data: string; type: string; name?: string; timestamp: number }>();
+
+export function getUploadedFileById(fileId: string): { data: string; type: string; name?: string } | null {
+  if (!fileId) return null;
+  if (inMemoryUploadStore.has(fileId)) {
+    const entry = inMemoryUploadStore.get(fileId)!;
+    inMemoryUploadStore.delete(fileId);
+    return { data: entry.data, type: entry.type, name: entry.name };
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(`upload_chunk_${fileId}`);
+      if (raw) {
+        localStorage.removeItem(`upload_chunk_${fileId}`);
+        return { data: raw, type: 'application/pdf' };
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
 export async function uploadFileChunked(fileData: string, type: string, extraHeaders?: Headers, name?: string): Promise<string> {
   const fileId = Math.random().toString(36).substring(2) + Date.now().toString(36);
+  inMemoryUploadStore.set(fileId, {
+    data: fileData,
+    type: type || 'application/pdf',
+    name,
+    timestamp: Date.now(),
+  });
   try {
     localStorage.setItem(`upload_chunk_${fileId}`, fileData);
   } catch (e) {
-    console.warn('Local storage limit reached during chunk save fallback', e);
+    // In-memory store already holds the full file data for large PDFs
   }
   return fileId;
 }
@@ -571,24 +875,116 @@ export function parseGeminiStreamChunk(chunk: string): string {
   return result;
 }
 
+export interface RotationKeyMeta {
+  id?: string;
+  label: string;
+  key: string;
+  isFromPool: boolean;
+}
+
 /**
- * CLIENT-SIDE API FETCH ROUTER WITH ROUND-ROBIN & AUTO-FALLBACK RETRY LOOP ACROSS ACTIVE KEY POOL
+ * Executes an async AI operation with Round-Robin key selection (`getOrderedRotationKeys`)
+ * and Auto-Fallback retry across all active keys in the pool when a key returns 429 or 400/401/403.
+ */
+export async function generateWithKeyRotation<T>(
+  operation: (
+    apiKey: string,
+    keyMeta: RotationKeyMeta,
+    attempt: number,
+    totalKeys: number
+  ) => Promise<T>
+): Promise<T> {
+  const rotationKeys = getOrderedRotationKeys();
+  const effectiveKeys: RotationKeyMeta[] =
+    rotationKeys.length > 0
+      ? rotationKeys
+      : [{ label: 'Mặc định (ENV)', key: getNextApiKey(), isFromPool: false }];
+
+  const maxAttempts = effectiveKeys.length;
+  let lastError: any = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const currentKeyObj = effectiveKeys[attempt];
+    try {
+      const result = await operation(
+        currentKeyObj.key,
+        currentKeyObj,
+        attempt,
+        maxAttempts
+      );
+      if (currentKeyObj.isFromPool && currentKeyObj.id) {
+        updateApiKeyStatus(currentKeyObj.id, 'valid');
+      }
+      return result;
+    } catch (err: any) {
+      lastError = err;
+      const httpStatus = typeof err?.status === 'number' ? err.status : 0;
+      const errMsg = err?.message || String(err || '');
+      const errType = classifyApiErrorStatus(httpStatus, errMsg);
+      const hasNextKey = attempt + 1 < maxAttempts;
+
+      if (errType) {
+        if (currentKeyObj.isFromPool && currentKeyObj.id) {
+          updateApiKeyStatus(currentKeyObj.id, errType);
+        }
+        console.warn(
+          `[EduPlan Key Pool] Key "${currentKeyObj.label}" gặp lỗi (${errType}).` +
+            (hasNextKey
+              ? ` Đang tự động chuyển sang key dự phòng "${effectiveKeys[attempt + 1].label}" (${attempt + 2}/${maxAttempts})...`
+              : ' Đã thử hết tất cả các key đang bật trong danh sách.')
+        );
+
+        if (hasNextKey && typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('api-retry-status', {
+              detail: {
+                attempt: attempt + 1,
+                maxRetries: maxAttempts,
+                message: `Key "${currentKeyObj.label}" gặp lỗi (${errType === 'rate_limited' ? 'Quá tải 429' : 'Lỗi key'}), tự động chuyển sang "${effectiveKeys[attempt + 1].label}"...`,
+              },
+            })
+          );
+          continue;
+        }
+      } else if (hasNextKey && err?.isNetworkError) {
+        console.warn(
+          `[EduPlan Key Pool] Lỗi kết nối với key "${currentKeyObj.label}", đang thử key kế tiếp (${attempt + 2}/${maxAttempts})...`
+        );
+        continue;
+      }
+
+      throw err;
+    }
+  }
+
+  throw lastError || new Error('Tất cả các API Key trong danh sách đều thất bại.');
+}
+
+/**
+ * CLIENT-SIDE API FETCH ROUTER WITH ROUND-ROBIN & AUTO-FALLBACK RETRY LOOP ACROSS ACTIVE KEY POOL.
+ * All Gemini AI content generation routes execute 100% client-side in the browser via `clientAiEngine`
+ * to avoid the 10-second Vercel Serverless Function timeout on `/api/index`.
  */
 export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const incomingHeaders = new Headers(options.headers || {});
   const skipRotation = incomingHeaders.get('x-skip-key-rotation') === '1';
   incomingHeaders.delete('x-skip-key-rotation');
 
-  // Non-AI endpoints or explicit single-key test calls bypass rotation
-  const isNonAiEndpoint =
-    skipRotation ||
-    url.startsWith('/api/health') ||
-    url.startsWith('/api/circulars') ||
-    url.startsWith('/api/upload-chunk') ||
-    url.startsWith('/api/exams') ||
-    url.startsWith('/api/test-gemini-key');
+  const { isClientAiRoute, dispatchClientAiRoute } = await import('../services/clientAiEngine');
+  const isAiRoute = isClientAiRoute(url);
 
-  if (isNonAiEndpoint) {
+  // Explicit single-key test calls execute directly in the browser without advancing Round-Robin
+  if (isAiRoute && (skipRotation || url.startsWith('/api/test-gemini-key'))) {
+    const explicitKey = incomingHeaders.get('x-gemini-api-key') || undefined;
+    const headers = getApiHeaders({ ...options, headers: incomingHeaders }, false, explicitKey);
+    if (options.body && typeof options.body === 'string' && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+    return dispatchClientAiRoute(url, { ...options, headers }, explicitKey);
+  }
+
+  // Non-AI lightweight server endpoints (/api/health, /api/circulars, /api/exams/*, /api/webhook, /api/export-docx)
+  if (!isAiRoute) {
     const explicitKey = incomingHeaders.get('x-gemini-api-key') || undefined;
     const headers = getApiHeaders({ ...options, headers: incomingHeaders }, false, explicitKey);
     if (options.body && typeof options.body === 'string' && !headers.has('Content-Type')) {
@@ -600,40 +996,44 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
     });
   }
 
-  const rotationKeys = getOrderedRotationKeys();
-  const maxAttempts = Math.max(1, rotationKeys.length);
   let lastResponse: Response | null = null;
-  let lastError: any = null;
 
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const currentKeyObj = rotationKeys[attempt];
-    const headers = getApiHeaders(
-      { ...options, headers: incomingHeaders },
-      !currentKeyObj,
-      currentKeyObj?.key
-    );
+  try {
+    return await generateWithKeyRotation(async (apiKey, _keyMeta, attempt, totalKeys) => {
+      const headers = getApiHeaders(
+        { ...options, headers: incomingHeaders },
+        !apiKey,
+        apiKey
+      );
 
-    if (options.body && typeof options.body === 'string' && !headers.has('Content-Type')) {
-      headers.set('Content-Type', 'application/json');
-    }
+      if (options.body && typeof options.body === 'string' && !headers.has('Content-Type')) {
+        headers.set('Content-Type', 'application/json');
+      }
 
-    // If there are more active keys in the pool after this one, instruct server not to mask failure with env key yet
-    if (attempt + 1 < rotationKeys.length) {
-      headers.set('x-disable-env-fallback', '1');
-    } else {
-      headers.delete('x-disable-env-fallback');
-    }
+      if (attempt + 1 < totalKeys) {
+        headers.set('x-disable-env-fallback', '1');
+      } else {
+        headers.delete('x-disable-env-fallback');
+      }
 
-    try {
-      const response = await window.fetch(url, {
-        ...options,
-        headers,
-      });
+      let response: Response;
+      try {
+        response = await dispatchClientAiRoute(
+          url,
+          {
+            ...options,
+            headers,
+          },
+          apiKey
+        );
+      } catch (networkErr: any) {
+        if (networkErr && typeof networkErr === 'object') {
+          networkErr.isNetworkError = true;
+        }
+        throw networkErr;
+      }
 
       if (response.ok) {
-        if (currentKeyObj?.isFromPool && currentKeyObj.id) {
-          updateApiKeyStatus(currentKeyObj.id, 'valid');
-        }
         return response;
       }
 
@@ -644,47 +1044,22 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
       } catch (_) {}
 
       const errType = classifyApiErrorStatus(response.status, errText);
-      if (errType) {
-        if (currentKeyObj?.isFromPool && currentKeyObj.id) {
-          updateApiKeyStatus(currentKeyObj.id, errType);
-        }
-        const hasNextKey = attempt + 1 < rotationKeys.length;
-        console.warn(
-          `[EduPlan Key Pool] Key "${currentKeyObj?.label || 'Mặc định'}" gặp lỗi HTTP ${response.status} (${errType}).` +
-            (hasNextKey
-              ? ` Đang tự động chuyển sang key dự phòng "${rotationKeys[attempt + 1].label}" (${attempt + 2}/${rotationKeys.length})...`
-              : ' Đã thử hết tất cả các key đang bật trong danh sách.')
-        );
+      if (errType && attempt + 1 < totalKeys) {
+        const retryableErr: any = new Error(errText || `HTTP ${response.status}`);
+        retryableErr.status = response.status;
+        throw retryableErr;
+      }
 
-        if (hasNextKey && typeof window !== 'undefined') {
-          window.dispatchEvent(
-            new CustomEvent('api-retry-status', {
-              detail: {
-                attempt: attempt + 1,
-                maxRetries: rotationKeys.length,
-                message: `Key "${currentKeyObj?.label}" gặp lỗi (${errType === 'rate_limited' ? 'Quá tải 429' : 'Lỗi key'}), tự động chuyển sang "${rotationKeys[attempt + 1].label}"...`,
-              },
-            })
-          );
-          continue;
-        }
+      if (errType && _keyMeta.isFromPool && _keyMeta.id) {
+        updateApiKeyStatus(_keyMeta.id, errType);
       }
 
       return response;
-    } catch (networkErr: any) {
-      lastError = networkErr;
-      if (attempt + 1 < rotationKeys.length) {
-        console.warn(
-          `[EduPlan Key Pool] Lỗi kết nối với key "${currentKeyObj?.label}", đang thử key kế tiếp (${attempt + 2}/${rotationKeys.length})...`
-        );
-        continue;
-      }
-      throw networkErr;
+    });
+  } catch (err: any) {
+    if (lastResponse) {
+      return lastResponse;
     }
+    throw err;
   }
-
-  if (lastResponse) {
-    return lastResponse;
-  }
-  throw lastError || new Error('Tất cả các API Key trong danh sách đều không thể kết nối.');
 }

@@ -5,7 +5,8 @@ import {
   Copy, Save, Upload, X, Sparkles, Loader2, Download, Presentation, 
   ChevronLeft, ChevronRight, Maximize2, FileText, BookmarkPlus, Camera, 
   Image as ImageIcon, Send, ArrowLeft, Crop, CheckCircle2, ImagePlus, 
-  Clipboard, Eye, EyeOff, RefreshCw, Trash2, Scissors, Calculator, Wand2
+  Clipboard, Eye, EyeOff, RefreshCw, Trash2, Scissors, Calculator, Wand2,
+  ShieldCheck, AlertTriangle, XCircle, Check
 } from 'lucide-react';
 
 import { MarkdownRenderer, fixMath } from "../components/MarkdownRenderer";
@@ -157,6 +158,19 @@ export function ExerciseSolver() {
   const [solution, setSolution] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
+
+  // AI Verification state
+  const [isVerifyingSolution, setIsVerifyingSolution] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [verifyResult, setVerifyResult] = useState<{
+    isCorrect: boolean;
+    confidenceScore: number;
+    summary: string;
+    checks: { criterion: string; passed: boolean; detail: string }[];
+    issues: { step: string; issue: string; correction: string }[];
+    correctedSolution?: string;
+  } | null>(null);
+  const [hasAppliedCorrection, setHasAppliedCorrection] = useState(false);
 
   // Cropper and visual aids state
   const [croppedImage, setCroppedImage] = useState<string | null>(null);
@@ -408,6 +422,9 @@ export function ExerciseSolver() {
         newSimilar = injectCroppedImageIntoSolution(newSimilar, croppedImage, showInBothQuestionAndAnswer);
       }
       setSolution(newSimilar);
+      setVerifyResult(null);
+      setVerifyError(null);
+      setHasAppliedCorrection(false);
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Đã xảy ra lỗi khi tạo bài tập tương tự. Vui lòng thử lại.');
@@ -425,6 +442,9 @@ export function ExerciseSolver() {
     setIsUploading(true);
     setError(null);
     setSolution('');
+    setVerifyResult(null);
+    setVerifyError(null);
+    setHasAppliedCorrection(false);
 
     try {
       let fileData = '';
@@ -516,6 +536,83 @@ export function ExerciseSolver() {
     exportHtmlToWord(exportRef.current, `LoiGiai_${new Date().getTime()}${keepLatex ? '_LaTeX' : ''}.doc`, keepLatex);
   };
 
+  const handleVerifySolution = async () => {
+    if (!solution || isVerifyingSolution) return;
+
+    setIsVerifyingSolution(true);
+    setVerifyError(null);
+    setVerifyResult(null);
+    setHasAppliedCorrection(false);
+
+    try {
+      let filesPayload: { data: string; type: string; name: string }[] = [];
+      if (selectedFile) {
+        let fileData = '';
+        let mimeType = selectedFile.type || 'image/png';
+        if (selectedFile.name.endsWith('.docx')) {
+          const text = await processDocx(selectedFile);
+          fileData = btoa(unescape(encodeURIComponent(text)));
+          mimeType = 'text/plain';
+        } else {
+          fileData = await fileToBase64(selectedFile);
+        }
+        if (fileData) {
+          filesPayload = [{ data: fileData, type: mimeType, name: selectedFile.name || 'de_bai.png' }];
+        }
+      }
+
+      const response = await apiFetch('/api/verify-exercise-solution', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          solutionText: solution,
+          files: filesPayload,
+          croppedImage: croppedImage || undefined
+        })
+      });
+
+      const text = await response.text();
+      if (!text || !text.trim()) {
+        throw new Error('Không nhận được phản hồi kiểm tra từ máy chủ AI. Thầy cô vui lòng bấm thử lại.');
+      }
+
+      const data = parseApiResponse<any>(text);
+      if (!response.ok) {
+        throw new Error(data?.error || 'Có lỗi xảy ra khi kiểm tra lời giải.');
+      }
+
+      const result = data?.result;
+      if (!result || typeof result !== 'object') {
+        throw new Error('Dữ liệu kết quả kiểm tra chưa hợp lệ.');
+      }
+
+      setVerifyResult(result);
+    } catch (err: any) {
+      console.error('Verify solution error:', err);
+      setVerifyError(err?.message || 'Không thể kiểm tra lời giải lúc này. Vui lòng thử lại.');
+    } finally {
+      setIsVerifyingSolution(false);
+    }
+  };
+
+  const handleApplyCorrectedSolution = () => {
+    if (!verifyResult?.correctedSolution) return;
+    let updated = verifyResult.correctedSolution.trim();
+    if (croppedImage) {
+      updated = injectCroppedImageIntoSolution(updated, croppedImage, showInBothQuestionAndAnswer);
+    }
+    setSolution(updated);
+    setHasAppliedCorrection(true);
+    saveToHistory({
+      type: 'GBT',
+      grade: 0,
+      subject: 'Chung',
+      lessonName: selectedFile ? 'Giải bài tập (Đã kiểm tra): ' + selectedFile.name : 'Giải bài tập (Đã kiểm tra)',
+      content: updated
+    });
+    setHistoryItems(getHistory().filter(item => item.type === 'GBT'));
+  };
+
   
 
   // Presentation slides logic
@@ -573,6 +670,9 @@ export function ExerciseSolver() {
                   const item = historyItems.find(h => h.id === e.target.value);
                   if (item) {
                     setSolution(item.content);
+                    setVerifyResult(null);
+                    setVerifyError(null);
+                    setHasAppliedCorrection(false);
                   }
                 }
               }}
@@ -878,8 +978,13 @@ export function ExerciseSolver() {
             <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => { setSolution(''); }}
-                  className="px-3 py-1.5 border border-slate-300 text-slate-700 hover:bg-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                  onClick={() => {
+                    setSolution('');
+                    setVerifyResult(null);
+                    setVerifyError(null);
+                    setHasAppliedCorrection(false);
+                  }}
+                  className="px-3 py-1.5 border border-slate-300 text-slate-700 hover:bg-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" /> Làm bài khác
                 </button>
@@ -923,6 +1028,21 @@ export function ExerciseSolver() {
                     {showInBothQuestionAndAnswer ? 'Hiện ở cả Đề & Đáp án' : 'Chỉ hiện ở Đề bài'}
                   </button>
                 )}
+
+                <button 
+                  type="button"
+                  onClick={handleVerifySolution}
+                  disabled={isVerifyingSolution}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-60 text-white transition-all rounded-lg shadow-xs text-xs font-bold cursor-pointer active:scale-95"
+                  title="Dùng AI kiểm tra độc lập lại đề bài, từng bước tính toán và đáp số để tránh sai sót"
+                >
+                  {isVerifyingSolution ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-200" />
+                  ) : (
+                    <ShieldCheck className="w-4 h-4 text-amber-300" />
+                  )}
+                  <span>{isVerifyingSolution ? 'AI đang kiểm tra...' : 'AI Kiểm tra lời giải'}</span>
+                </button>
 
                 <button 
                   onClick={() => {
@@ -1012,6 +1132,194 @@ export function ExerciseSolver() {
                     <Trash2 className="w-3 h-3" />
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* AI Verification Loading / Error / Result Panel */}
+            {isVerifyingSolution && (
+              <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center gap-3 text-sm text-indigo-900 shadow-2xs">
+                <Loader2 className="w-5 h-5 animate-spin text-indigo-600 shrink-0" />
+                <div>
+                  <p className="font-bold">AI đang kiểm tra độc lập lời giải bài tập...</p>
+                  <p className="text-xs text-indigo-700 mt-0.5">
+                    Đang đối chiếu giả thiết đề gốc, tính toán lại từng bước biến đổi, kiểm tra điều kiện xác định và đáp số cuối cùng.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {verifyError && !isVerifyingSolution && (
+              <ApiErrorBanner
+                error={verifyError}
+                onDismiss={() => setVerifyError(null)}
+                onRetry={handleVerifySolution}
+              />
+            )}
+
+            {verifyResult && !isVerifyingSolution && (
+              <div
+                className={`rounded-xl border p-4 lg:p-5 space-y-4 shadow-xs ${
+                  verifyResult.isCorrect
+                    ? 'bg-emerald-50/70 border-emerald-300'
+                    : 'bg-amber-50/80 border-amber-300'
+                }`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`p-2 rounded-xl shrink-0 ${
+                        verifyResult.isCorrect
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-amber-100 text-amber-700'
+                      }`}
+                    >
+                      {verifyResult.isCorrect ? (
+                        <CheckCircle2 className="w-5 h-5" />
+                      ) : (
+                        <AlertTriangle className="w-5 h-5" />
+                      )}
+                    </div>
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4
+                          className={`text-sm font-bold ${
+                            verifyResult.isCorrect ? 'text-emerald-950' : 'text-amber-950'
+                          }`}
+                        >
+                          {verifyResult.isCorrect
+                            ? 'Kết quả AI Kiểm tra: Lời giải chính xác'
+                            : 'Kết quả AI Kiểm tra: Phát hiện điểm cần rà soát / chỉnh sửa'}
+                        </h4>
+                        <span
+                          className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
+                            verifyResult.isCorrect
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                              : 'bg-amber-100 text-amber-800 border-amber-300'
+                          }`}
+                        >
+                          Độ tin cậy: {verifyResult.confidenceScore}%
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-700 mt-1 leading-relaxed">
+                        <ErrorBoundary>
+                          <MathView content={verifyResult.summary} />
+                        </ErrorBoundary>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleVerifySolution}
+                      className="px-2.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Chạy kiểm tra lại"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      Kiểm tra lại
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVerifyResult(null)}
+                      className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-white/70 rounded-lg transition-colors cursor-pointer"
+                      title="Đóng bảng kiểm tra"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* 4-point checklist */}
+                {verifyResult.checks && verifyResult.checks.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                    {verifyResult.checks.map((chk, idx) => (
+                      <div
+                        key={idx}
+                        className={`p-3 rounded-lg border text-xs bg-white/90 flex items-start gap-2 ${
+                          chk.passed ? 'border-emerald-200' : 'border-rose-200'
+                        }`}
+                      >
+                        {chk.passed ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                        ) : (
+                          <XCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="font-bold text-slate-800">{chk.criterion}</div>
+                          <div className="text-slate-600 mt-0.5 leading-relaxed">
+                            <ErrorBoundary>
+                              <MathView content={chk.detail} />
+                            </ErrorBoundary>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Detected issues */}
+                {verifyResult.issues && verifyResult.issues.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold text-rose-800">
+                      Chi tiết các lỗi / điểm cần điều chỉnh ({verifyResult.issues.length}):
+                    </p>
+                    <div className="space-y-2">
+                      {verifyResult.issues.map((item, idx) => (
+                        <div
+                          key={idx}
+                          className="p-3 rounded-lg bg-white border border-rose-200 text-xs space-y-1"
+                        >
+                          <div className="font-bold text-rose-700">
+                            {idx + 1}. {item.step}
+                          </div>
+                          <div className="text-slate-700">
+                            <span className="font-semibold text-rose-800">Vấn đề: </span>
+                            <ErrorBoundary>
+                              <MathView content={item.issue} />
+                            </ErrorBoundary>
+                          </div>
+                          <div className="text-emerald-800">
+                            <span className="font-semibold">Cách sửa chuẩn: </span>
+                            <ErrorBoundary>
+                              <MathView content={item.correction} />
+                            </ErrorBoundary>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Apply corrected solution action */}
+                {verifyResult.correctedSolution && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-200/80">
+                    <span className="text-xs text-slate-700 font-medium">
+                      AI đã biên soạn lại bản lời giải chuẩn xác để thay thế các điểm sai sót vừa phát hiện.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleApplyCorrectedSolution}
+                      disabled={hasAppliedCorrection}
+                      className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer ${
+                        hasAppliedCorrection
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 cursor-default'
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95'
+                      }`}
+                    >
+                      {hasAppliedCorrection ? (
+                        <>
+                          <Check className="w-4 h-4" />
+                          Đã cập nhật lời giải chuẩn
+                        </>
+                      ) : (
+                        <>
+                          <Wand2 className="w-4 h-4" />
+                          Áp dụng bản sửa chuẩn vào lời giải
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 

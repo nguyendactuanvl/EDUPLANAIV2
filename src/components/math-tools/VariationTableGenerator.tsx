@@ -14,7 +14,7 @@ import {
   ensureCompleteBbtPoints, 
   parseMarkdownBbtTable 
 } from "../../lib/bbtRenderer";
-import { apiFetch } from "../../lib/apiFetch";
+import { apiFetch, getNextApiKey, setCustomApiKey } from "../../lib/apiFetch";
 import { generateContent } from "../../services/geminiService";
 
 // ============================================================================
@@ -529,9 +529,7 @@ export const VariationTableView: React.FC<VariationTableViewProps> = ({ data, co
 // MAIN COMPONENT & WORKFLOW CONTROLLER
 // ============================================================================
 export const VariationTableGenerator: React.FC = () => {
-  const [apiKey, setApiKey] = useState<string>(() => {
-    return localStorage.getItem("custom_gemini_api_key") || localStorage.getItem("eduplan_gemini_api_key_v2") || localStorage.getItem("gemini_user_api_key") || "";
-  });
+  const [apiKey, setApiKey] = useState<string>(() => getNextApiKey());
   const [showApiKey, setShowApiKey] = useState(false);
   const [userPrompt, setUserPrompt] = useState<string>("Khảo sát và vẽ Bảng biến thiên hàm số bậc ba: y = x^3 - 3x^2 + 4");
   
@@ -563,13 +561,11 @@ export const VariationTableGenerator: React.FC = () => {
 
   const bbtContainerRef = useRef<HTMLDivElement>(null);
 
-  // Lưu API Key cá nhân vào localStorage
+  // Lưu API Key cá nhân vào API Key Pool
   const handleSaveApiKey = (newKey: string) => {
     const clean = newKey.trim();
     setApiKey(clean);
-    localStorage.setItem("custom_gemini_api_key", clean);
-    localStorage.setItem("eduplan_gemini_api_key_v2", clean);
-    localStorage.setItem("gemini_user_api_key", clean);
+    setCustomApiKey(clean);
   };
 
   // ============================================================================
@@ -587,8 +583,6 @@ export const VariationTableGenerator: React.FC = () => {
     // Tiền tố vai trò chuyên gia bắt buộc theo yêu cầu hệ thống
     const finalPrompt = `Bạn là chuyên gia toán học sư phạm và lập trình SVG chuẩn SGK GDPT Việt Nam. Hãy phân tích hàm số và trả về dữ liệu cấu trúc JSON chuẩn xác để vẽ Bảng biến thiên.\n\nYêu cầu: ${userPrompt}`;
 
-    const effectiveKey = apiKey.trim() || localStorage.getItem("custom_gemini_api_key") || localStorage.getItem("eduplan_gemini_api_key_v2") || "";
-
     try {
       let jsonText = "";
 
@@ -596,7 +590,7 @@ export const VariationTableGenerator: React.FC = () => {
       // (VD: y = (2x-3)/(x-1), y = (2x+1)/(x-1), y = x^3 - 3x^2 + 2, y = ax^2+bx+c...)
       const directMathBbt = analyzeFunctionToBbt(userPrompt);
 
-        // Sử dụng apiFetch để tự động xử lý key cá nhân hoặc fallback máy chủ
+        // Sử dụng apiFetch (tự động đi qua generateWithKeyRotation)
         const res = await apiFetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

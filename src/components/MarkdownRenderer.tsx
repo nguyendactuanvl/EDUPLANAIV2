@@ -329,32 +329,8 @@ const CustomImageRenderer: React.FC<{ cleanSrc: string; alt?: string; [key: stri
 
   const isBase64 = imgSrc.startsWith('data:image/');
 
-  // Nếu cleanSrc rỗng hoặc không hợp lệ:
-  // Chỉ tự động sinh đồ thị/BBT vector SVG khi altText yêu cầu RÕ RÀNG về đồ thị/BBT.
-  // Tuyệt đối KHÔNG tự động sinh đồ thị hàm số cho các câu hỏi hình học, que diêm, hình thang, bài toán thực tế.
-  const isExplicitGraph = /đồ\s*thị\s*hàm\s*số|đồ\s*thị\s*y\s*=|bảng\s*biến\s*thiên/i.test(altText);
-  const isNonGraphProblem = /que\s*diêm|hình\s*thang|tứ\s*diện|chóp|lăng\s*trụ|tam\s*giác|vuông|chữ\s*nhật|đường\s*tròn|cầu|trụ|nón|diện\s*tích|thể\s*tích/i.test(altText);
-
   if (!imgSrc || imgSrc === 'undefined' || imgSrc === 'null' || imgSrc.trim() === '' || (hasError && !isBase64)) {
-    let fallbackSvg = '';
-    if (!isNonGraphProblem && (isBbt || isExplicitGraph)) {
-      try {
-        const { generateFunctionGraphSvg, generateSyntheticGraphSvg, generateBbtSvg, analyzeFunctionToBbt } = require('../lib/bbtRenderer');
-        if (isBbt) {
-          const bbt = analyzeFunctionToBbt('x^3 - 3*x');
-          fallbackSvg = bbt ? generateBbtSvg(bbt) : '';
-        } else {
-          fallbackSvg = generateSyntheticGraphSvg(altText) || generateFunctionGraphSvg('x^3 - 3*x', altText);
-        }
-      } catch (e) {}
-    }
-
-    if (fallbackSvg) {
-      return <SvgImageRenderer svgCode={fallbackSvg} />;
-    }
-
-    // Đối với các câu hỏi không có đồ thị (như câu hỏi que diêm, hình học, thực tế):
-    // Hiển thị ô placeholder gọn gàng kèm nút "Cắt ảnh PDF gốc" thay vì vẽ đồ thị cubic sai.
+    // Tuyệt đối không tự bịa đồ thị hàm số thay cho ảnh bị thiếu; hiển thị khung gợi ý cắt ảnh gốc PDF.
     return (
       <div className="no-print my-4 p-4 rounded-xl border-2 border-dashed border-indigo-200 bg-indigo-50/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left max-w-[600px] mx-auto">
         <div className="flex items-center gap-3">
@@ -570,6 +546,27 @@ const markdownFullComponents = {
       </div>
     );
   },
+  div: ({ node, children, ...props }: any) => {
+    const dottedRaw =
+      props['data-docx-dotted-lines'] ??
+      node?.properties?.['data-docx-dotted-lines'] ??
+      node?.properties?.dataDocxDottedLines;
+    if (dottedRaw !== undefined) {
+      const count = Math.max(1, Math.min(20, parseInt(String(dottedRaw), 10) || 3));
+      return (
+        <div data-docx-dotted-lines={count} className="worksheet-dotted-lines my-2 space-y-0.5">
+          {Array.from({ length: count }).map((_, idx) => (
+            <div
+              key={idx}
+              className="worksheet-dotted-line"
+              style={{ borderBottom: '1px dotted #94a3b8', height: '22px', width: '100%' }}
+            />
+          ))}
+        </div>
+      );
+    }
+    return <div {...cleanProps(props)}>{children}</div>;
+  },
   span: markdownSpanRenderer,
   code: markdownCodeRenderer,
   // @ts-ignore
@@ -640,15 +637,41 @@ const markdownFullComponents = {
       />
     );
   },
-  table: ({ node, children, ...props }: any) => (
-    <div className="overflow-x-auto my-4 max-w-full">
-      <table className="min-w-fit w-full mx-auto border-collapse border border-slate-300 text-sm shadow-xs rounded-md overflow-hidden bg-white" {...cleanProps(props)}>
-        {children}
-      </table>
-    </div>
-  ),
+  table: ({ node, children, ...props }: any) => {
+    const cls = String(props.className || '');
+    const isBorderless =
+      cls.includes('borderless') ||
+      props.style?.border === 'none' ||
+      props.style?.border === '0' ||
+      props.style?.borderStyle === 'none';
+    if (isBorderless) {
+      return (
+        <div className="overflow-x-auto my-3 max-w-full">
+          <table
+            {...cleanProps(props)}
+            className={`borderless w-full mx-auto border-collapse !border-0 bg-transparent text-sm shadow-none [&_tr]:!border-0 [&_th]:!border-0 [&_th]:bg-transparent [&_td]:!border-0 [&_td]:bg-transparent [&_td]:px-2 [&_td]:py-1 [&_td]:align-top [&_td]:whitespace-normal ${cls}`}
+          >
+            {children}
+          </table>
+        </div>
+      );
+    }
+    return (
+      <div className="overflow-x-auto my-4 max-w-full">
+        <table
+          {...cleanProps(props)}
+          className={`min-w-fit w-full mx-auto border-collapse border border-slate-300 text-sm shadow-xs rounded-md overflow-hidden bg-white ${cls}`}
+        >
+          {children}
+        </table>
+      </div>
+    );
+  },
   th: ({ node, children, ...props }: any) => (
-    <th className="border border-slate-300 bg-blue-50/90 px-3.5 py-2 font-semibold text-slate-800 text-center whitespace-normal" {...cleanProps(props)}>
+    <th
+      {...cleanProps(props)}
+      className={`border border-slate-300 bg-blue-50/90 px-3.5 py-2 font-semibold text-slate-800 text-center whitespace-normal ${String(props.className || '')}`}
+    >
       {children}
     </th>
   ),
@@ -661,12 +684,23 @@ const markdownFullComponents = {
       return 0;
     };
     const isLongOrMultiline = extractLen(children) > 28 || (Array.isArray(children) && children.some((c: any) => React.isValidElement(c) && c.type === 'br'));
+    const isBorderlessCell =
+      props.style?.border === 'none' ||
+      props.style?.border === '0' ||
+      props.style?.borderStyle === 'none' ||
+      String(props.className || '').includes('borderless');
+    const alignClass =
+      props.style?.textAlign === 'center'
+        ? 'text-center whitespace-normal leading-relaxed'
+        : props.style?.textAlign === 'right'
+        ? 'text-right whitespace-normal leading-relaxed'
+        : isLongOrMultiline
+        ? 'text-left align-top whitespace-normal leading-relaxed'
+        : 'text-center whitespace-nowrap';
     return (
       <td
-        className={`border border-slate-300 px-3.5 py-2 text-slate-800 ${
-          isLongOrMultiline ? 'text-left align-top whitespace-normal leading-relaxed' : 'text-center whitespace-nowrap'
-        }`}
         {...cleanProps(props)}
+        className={`${isBorderlessCell ? 'border-0 px-2 py-1' : 'border border-slate-300 px-3.5 py-2'} text-slate-800 ${alignClass} ${String(props.className || '')}`}
       >
         {children}
       </td>

@@ -958,8 +958,6 @@ export function cleanMathAndUnwrapHeadings(text: string): string {
   s = s.replace(/\\frac\s*\{\s*u_?1\s*\(\s*q\s*\^?\s*\{?n\}?\s*-\s*1\s*\)\s*\}\s*\{\s*1\s*\}\s*-\s*q\s*\}/g, '\\frac{u_1(q^n-1)}{q-1}');
   s = s.replace(/\\frac\s*\{([^{}]+)\}\s*\{\s*1\s*\}\s*-\s*q\s*\}/gi, '\\frac{$1}{1-q}');
   s = s.replace(/\\frac\s*\{([^{}]+)\}\s*\{\s*q\s*\}\s*-\s*1\s*\}/gi, '\\frac{$1}{q-1}');
-  s = s.replace(/\{\s*1\s*\}\s*-\s*q\s*\}/g, '{1 - q}');
-  s = s.replace(/\{\s*q\s*\}\s*-\s*1\s*\}/g, '{q - 1}');
 
   // 4. Loại bỏ các ký hiệu ngoặc rác \left[ \right. hoặc \left. \right.
   s = s.replace(/\\left\s*\[\s*\\right\s*\./gi, ' ');
@@ -973,8 +971,13 @@ export function cleanMathAndUnwrapHeadings(text: string): string {
   s = s.replace(/([SV]_\{[^{}]+)\}\s*([A-Z']{2,6})\}/g, '$1 $2}');
   s = s.replace(/\^\}\s*(\d+)\}/g, '^$1}');
 
-  // 4.2 Khắc phục lỗi rách ngoặc trong \sqrt{...} và \frac{...}{...} (ví dụ: \sqrt{1} + 9 + 4} -> \sqrt{1 + 9 + 4}, \frac -1+5}{2} -> \frac{-1+5}{2})
-  s = s.replace(/\\sqrt\s*\{([^{}\$\n]+)\}\s*((?:[\+\-]\s*[0-9a-zA-Z_\^\(\)]+\s*)+)\}/g, '\\sqrt{$1 $2}');
+  // 4.2 Khắc phục lỗi rách ngoặc trong \sqrt{...} và \frac{...}{...} CHỈ khi trong khối toán thực sự dư ngoặc đóng } (không bao giờ ăn ngoặc đóng của \frac{x\sqrt{x}+1}{x-1})
+  s = s.replace(/(\$\$[\s\S]*?\$\$|\$[^\$\n]+?\$)/g, (mathToken) => {
+    const delim = mathToken.startsWith('$$') ? '$$' : '$';
+    const inner = mathToken.slice(delim.length, -delim.length);
+    const repaired = repairUnbalancedMathBraces(inner);
+    return `${delim}${repaired}${delim}`;
+  });
   s = s.replace(/\\frac\s+([\+\-]?[0-9a-zA-Z_\^\(\)\+\-\s]+)\}\s*\{([^{}\$\n]+)\}/g, '\\frac{$1}{$2}');
   s = s.replace(/\\frac\s*\{([^{}\$\n]+)\}\s+([\+\-]?[0-9a-zA-Z_\^\(\)\+\-\s]+)\}/g, '\\frac{$1}{$2}');
 
@@ -2631,6 +2634,39 @@ export function preprocessMathText(text: any): string {
  * Hàm tiền xử lý nhẹ dành riêng cho chuỗi LaTeX bên trong cặp dấu $...$ của MathJax preFilter.
  * TUYỆT ĐỐI KHÔNG tự chèn thêm dấu $ hay chạy định dạng văn bản Markdown để tránh làm hỏng cú pháp TeX hoặc treo trình duyệt.
  */
+function repairUnbalancedMathBraces(tex: string): string {
+  if (!tex || !tex.includes('}')) return tex;
+  const openCount = (tex.match(/(?<!\\)\{/g) || []).length;
+  const closeCount = (tex.match(/(?<!\\)\}/g) || []).length;
+  if (closeCount <= openCount) return tex;
+
+  let out = tex
+    .replace(/\{\s*1\s*\}\s*-\s*q\s*\}/g, '{1 - q}')
+    .replace(/\{\s*q\s*\}\s*-\s*1\s*\}/g, '{q - 1}');
+
+  const sqrtRe = /\\sqrt\s*\{([^{}\$\n]+)\}\s*((?:[\+\-]\s*[0-9a-zA-Z_\^\(\)]+\s*)+)\}/g;
+  let res = '';
+  let lastIdx = 0;
+  let m: RegExpExecArray | null;
+  while ((m = sqrtRe.exec(out)) !== null) {
+    let depth = 0;
+    for (let i = 0; i < m.index; i++) {
+      if (out[i] === '\\' && (out[i + 1] === '{' || out[i + 1] === '}')) {
+        i++;
+        continue;
+      }
+      if (out[i] === '{') depth++;
+      else if (out[i] === '}' && depth > 0) depth--;
+    }
+    if (depth === 0) {
+      res += out.slice(lastIdx, m.index) + `\\sqrt{${m[1]} ${m[2]}}`;
+      lastIdx = m.index + m[0].length;
+    }
+  }
+  res += out.slice(lastIdx);
+  return res;
+}
+
 export function cleanInnerMathLatex(tex: any): string {
   if (tex === null || tex === undefined) return '';
   let s = String(tex);
@@ -2642,8 +2678,7 @@ export function cleanInnerMathLatex(tex: any): string {
   s = s.replace(/\b([uSa-zA-Z])_([a-zA-Z0-9]+)\s*-\s*(\d+)\}/g, '$1_{$2-$3}');
   s = s.replace(/\\frac\s*\{\s*u_?1\s*\(\s*1\s*-\s*q\s*\^?\s*\{?n\}?\s*\)\s*\}\s*\{\s*1\s*\}\s*-\s*q\s*\}/g, '\\frac{u_1(1-q^n)}{1-q}');
   s = s.replace(/\\frac\s*\{\s*u_?1\s*\(\s*q\s*\^?\s*\{?n\}?\s*-\s*1\s*\)\s*\}\s*\{\s*1\s*\}\s*-\s*q\s*\}/g, '\\frac{u_1(q^n-1)}{q-1}');
-  s = s.replace(/\{\s*1\s*\}\s*-\s*q\s*\}/g, '{1 - q}');
-  s = s.replace(/\\sqrt\s*\{([^{}\$\n]+)\}\s*((?:[\+\-]\s*[0-9a-zA-Z_\^\(\)]+\s*)+)\}/g, '\\sqrt{$1 $2}');
+  s = repairUnbalancedMathBraces(s);
   s = s.replace(/\\frac\s+([\+\-]?[0-9a-zA-Z_\^\(\)\+\-\s]+)\}\s*\{([^{}\$\n]+)\}/g, '\\frac{$1}{$2}');
   s = s.replace(/\\frac\s*\{([^{}\$\n]+)\}\s+([\+\-]?[0-9a-zA-Z_\^\(\)\+\-\s]+)\}/g, '\\frac{$1}{$2}');
 

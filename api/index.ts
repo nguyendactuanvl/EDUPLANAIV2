@@ -3522,36 +3522,50 @@ app.all("/api/pdf-to-word", async (req, res) => {
       }
 
       const isSinglePageMode = typeof pageNum === 'number';
+      const figureInstruction = isSinglePageMode
+        ? `- KHI GẶP BẤT KỲ HÌNH ẢNH, ĐỒ THỊ HÀM SỐ, SƠ ĐỒ, HÌNH VẼ HÌNH HỌC, HOẶC HÌNH MINH HỌA NÀO (KHÔNG áp dụng cho bảng số liệu thống kê, bảng giá trị, bảng đáp án hay bảng biến thiên vì các bảng đó đã viết thành Markdown Table ở mục 3):
+  + TUYỆT ĐỐI KHÔNG tự vẽ bằng TikZ, ASCII hay bịa công thức đồ thị.
+  + HÃY xác định khung bao hình chữ nhật chính xác chứa toàn bộ hình vẽ/đồ thị đó trên trang (bao gồm cả các nhãn trục $O, x, y$, nhãn số trên trục, tên điểm $A, B, C...$, nhãn độ dài, chú thích bên trong hoặc sát mép hình, nhưng KHÔNG bao trùm phần văn bản đề bài hay đáp án A, B, C, D xung quanh).
+  + Xuất ĐÚNG MỘT thẻ đánh dấu ngay tại đúng vị trí xuất hiện hình vẽ theo cú pháp chuẩn sau (hệ tọa độ chuẩn hóa 0..1000 của ảnh trang: ymin,xmin,ymax,xmax với 0 là mép trên/trái, 1000 là mép dưới/phải; mô tả ngắn gọn KHÔNG chứa ký tự ngoặc vuông [ hoặc ] hay dấu ngoặc kép "):
+    [CROP_FIG page="${pageNum}" box="ymin,xmin,ymax,xmax" desc="Mô tả ngắn gọn hình vẽ"]
+  + Ví dụ: [CROP_FIG page="${pageNum}" box="240,220,510,780" desc="Đồ thị hàm số lượng giác trên đoạn từ -2pi đến 2pi"]`
+        : `- Khi gặp biểu đồ, hình vẽ, đồ thị, hình lăng trụ, hình chóp hay hình ảnh minh họa, CHỈ ghi chú thích ngắn gọn không chứa ngoặc vuông lồng nhau bên trong: [Hình vẽ: mô tả ngắn gọn] hoặc [Đồ thị: mô tả ngắn gọn] để người dùng cắt ảnh gốc chèn vào.`;
+
       const prompt = `Bạn là một trợ lý AI chuyên gia số hóa tài liệu giáo dục và chuyển đổi định dạng từ PDF/Hình ảnh sang văn bản Word (.docx).
 Nhiệm vụ của bạn là đọc toàn bộ nội dung từ ${isSinglePageMode ? `Trang ${pageNum}/${totalPages || 1} của tài liệu đính kèm` : 'tất cả các trang của tài liệu đính kèm'} và xuất ra văn bản chính xác 100%, tuân thủ nghiêm ngặt toàn bộ các quy tắc sau:
 
 1. QUY TẮC SỐ HÓA & ĐẦY ĐỦ 100% (BẮT BUỘC):
-- Đọc và số hóa 100% toàn bộ nội dung trên trang từ dòng đầu tiên đến dòng cuối cùng.
-- TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG CẮT XÉN, KHÔNG BỎ QUA BẤT KỲ CÂU HỎI NÀO VÌ BẤT KỲ LÝ DO GÌ. Quét trọn vẹn từng câu hỏi (Câu 1, Câu 2, Câu 3, Câu 4, Câu 5, Câu 6...), các câu trắc nghiệm Đúng/Sai a), b), c), d), các lựa chọn A, B, C, D, bảng biến thiên, bảng đáp án.
-- Nếu trang có phần chuyển tiếp từ trang trước (ví dụ câu hỏi tiếp diễn từ đầu trang), PHẢI gõ đầy đủ các câu chữ tiếp theo đó.
-${!isSinglePageMode ? '- Ở ranh giới chuyển tiếp giữa các trang, bắt buộc đánh dấu bằng dòng: "--- [Hết Trang X / Sang Trang Y] ---" (thay X và Y bằng số trang tương ứng).' : ''}
+- Đọc và số hóa 100% toàn bộ nội dung chính của đề thi/tài liệu trên trang (tiêu đề đề thi, đề mục PHẦN I/II/III, tất cả câu hỏi, các ý a), b), c), d), các phương án A, B, C, D, bảng biểu, lời giải).
+- TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG CẮT XÉN, KHÔNG BỎ QUA BẤT KỲ CÂU HỎI NÀO.
+- LOẠI BỎ HEADER / FOOTER LẶP LẠI: Bỏ qua các dòng tiêu đề đầu trang hoặc chân trang mang tính trang trí/lề trang (ví dụ tên giảng viên, số điện thoại liên hệ ở mép trên/dưới, dòng "Trang X/Y", dòng chú thích chân trang lặp lại ở mỗi trang) nếu không thuộc nội dung đề bài.
+- TRÌNH BÀY TIÊU ĐỀ ĐỀ THI & CHÂN ĐỀ (QUAN TRỌNG):
+  + Nếu đầu trang có phần tiêu đề đề thi chia 2 cột (cột trái thường ghi: UBND / SỞ GIÁO DỤC / PHÒNG GIÁO DỤC / TRƯỜNG / ĐỀ THI / (Đề thi gồm ... trang); cột phải thường ghi: KÌ THI / KỲ THI / NĂM HỌC / Môn thi / Thời gian làm bài...), BẮT BUỘC xuất dưới dạng bảng HTML không viền 2 cột đúng cấu trúc sau:
+<table class="borderless" style="width: 100%; border: none;"><tbody><tr><td style="text-align: center; border: none; width: 45%; vertical-align: top;">DÒNG 1 CỘT TRÁI<br/>DÒNG 2 CỘT TRÁI<br/>...</td><td style="text-align: center; border: none; width: 55%; vertical-align: top;">DÒNG 1 CỘT PHẢI<br/>DÒNG 2 CỘT PHẢI<br/>...</td></tr></tbody></table>
+  + Bên trong các ô bảng tiêu đề đó, dùng thẻ <strong>...</strong> (in đậm), <em>...</em> (in nghiêng) và <br/> để ngắt từng dòng chính xác (TUYỆT ĐỐI KHÔNG viết dính **...***...*). Sau thẻ </table> phải xuống 2 dòng (\\n\\n) trước khi sang Câu 1. hoặc PHẦN I.
+  + Nếu tiêu đề chỉ có 1 cột hoặc ở phần cuối đề thi (như ------ HẾT ------, Họ và tên thí sinh: ...), PHẢI đặt dòng trống (\\n\\n) tách biệt từng dòng để không bao giờ bị dồn thành một đoạn văn dính chữ.
+- LUÔN xuống hai dòng (\\n\\n) tách biệt rõ ràng giữa tên đề thi/tiêu đề với các đề mục như PHẦN I., PHẦN II., PHẦN III., Câu 1. (tuyệt đối không viết dính chữ vào nhau).
+- Nếu trang có phần chuyển tiếp từ trang trước, PHẢI gõ đầy đủ các câu chữ tiếp theo đó.
+${!isSinglePageMode ? '- Ở ranh giới chuyển tiếp giữa các trang, đánh dấu bằng dòng: "--- [Hết Trang X / Sang Trang Y] ---".' : ''}
 
 2. CHUẨN HÓA CÔNG THỨC TOÁN / LÝ / HÓA (CHUẨN LATEX NGHIÊM NGẶT):
-- MỌI biến số, số liệu, biểu thức đại số, hàm số, phương trình, bất phương trình, tọa độ, ký hiệu hình học, vectơ, và 100% các phương án A, B, C, D BẮT BUỘC phải đặt trong dấu đô la: $công_thức$.
-- TUYỆT ĐỐI KHÔNG ĐỂ BẤT PHƯƠNG TRÌNH HAY ĐẲNG THỨC NÀO Ở DẠNG TEXT THƯỜNG THIẾU $: Ví dụ: BẮT BUỘC viết $x - 1 \ge 0$, $a \ge 1$, $b \ge 1$, $a + b \ge 0$, $a + b \le 0$, $x^2 + y \ge 1$, $xy \ge 1$, $x \ge y$, $x + 2y \le 0$, $-\\frac{1}{2} < x \le 3$. KHÔNG BAO GIỜ viết x - 1\\geq0 hay a\\geq1 không có dấu $.
-- LUÔN CÓ KHOẢNG TRẮNG sau các lệnh so sánh: \\ge 0, \\le 0, \\neq 0 (không dính liền \\geq0 hay \\leq0).
-- CÁC PHƯƠNG ÁN A, B, C, D: Mọi phương án chứa toán học đều phải bọc gọn gàng trong $...$: A. $x - 1 \ge 0$, B. $a \ge 1$, C. $P = \\sin x$, D. $P = \\cos x$.
-- TẬP HỢP: viết chuẩn $A = \\{x \\in \\mathbb{R} \\mid x + 2y \\le 0\\}$, có dấu gạch chéo trước ngoặc nhọn \\{ và \\}.
-- ĐIỀU KIỆN TRONG NGOẶC: $(x \\neq \\frac{\\pi}{2} + k\\pi, k \\in \\mathbb{Z})$, luôn viết \\neq chuẩn xác.
+- MỌI biến số, số liệu toán học, biểu thức đại số, hàm số, phương trình, bất phương trình, tọa độ, ký hiệu hình học, vectơ, và 100% các phương án A, B, C, D chứa toán học BẮT BUỘC phải đặt trong dấu đô la: $công_thức$.
+- TUYỆT ĐỐI KHÔNG ĐỂ BẤT PHƯƠNG TRÌNH HAY ĐẲNG THỨC NÀO Ở DẠNG TEXT THƯỜNG THIẾU $: Ví dụ $x - 1 \\ge 0$, $a \\ge 1$, $-\\frac{1}{2} < x \\le 3$.
+- LUÔN CÓ KHOẢNG TRẮNG sau các lệnh so sánh: \\ge 0, \\le 0, \\neq 0.
+- TẬP HỢP: viết chuẩn $A = \\{x \\in \\mathbb{R} \\mid x + 2y \\le 0\\}$.
 - KHÔNG BAO GIỜ bọc cả câu tiếng Việt (như "ta được:", "với:") vào bên trong dấu $. Dấu $ chỉ bọc riêng biểu thức toán.
 - LUÔN DÙNG \\frac thay cho \\dfrac. DÙNG \\ge thay cho \\geq, \\le thay cho \\leq.
 
-3. GIỮ NGUYÊN CẤU TRÚC ĐỀ THI VÀ VĂN BẢN:
-- Giữ nguyên số thứ tự đề mục, bài tập (ví dụ: Câu 1:, Câu 2:, Bài 1:).
-- Với các phương án trắc nghiệm: trình bày rõ ràng A., B., C., D. trên từng dòng độc lập; không tự ý thêm các ký hiệu bullet (chấm tròn, gạch đầu dòng) phía trước chữ cái phương án.
-- BẢNG BIẾN THIÊN / BẢNG XÉT DẤU: Trình bày bằng Markdown Table chuẩn có đầy đủ hàng $x$, $y'$, $y$ và các mũi tên $\\nearrow, \\searrow$, dấu $+$, $-$, giá trị $0$.
-- BẢNG ĐÁP ÁN: Trình bày bằng Markdown Table chuẩn tương ứng đúng với bảng trong tài liệu gốc.
+3. GIỮ NGUYÊN CẤU TRÚC, SỐ THỨ TỰ CÂU & BẢNG BIỂU:
+- BẮT BUỘC GIỮ NGUYÊN CHÍNH XÁC 100% SỐ THỨ TỰ CÂU HỎI như bản gốc (ví dụ: nếu bản gốc ghi Câu 17., Câu 18., Câu 19., Câu 20., Câu 21., Câu 22. thì PHẢI giữ đúng Câu 17., Câu 18.,... TUYỆT ĐỐI KHÔNG tự ý đánh số lại thành Câu 1., Câu 2.).
+- Với các phương án trắc nghiệm: trình bày rõ ràng A., B., C., D. trên từng dòng độc lập; không thêm ký hiệu bullet phía trước.
+- Với các ý Đúng/Sai hoặc tự luận nhỏ: trình bày a), b), c), d) rõ ràng trên từng dòng.
+- MỌI BẢNG BIỂU (bảng số liệu thống kê, bảng tần số ghép nhóm, bảng giá trị, bảng đáp án, Bảng biến thiên / Bảng xét dấu): PHẢI trình bày dưới dạng Markdown Table chuẩn (| ... |) đúng chính xác các hàng và cột như bản gốc. Với Bảng biến thiên, ghi đầy đủ hàng $x$, $y'$, $y$ và các mũi tên $\\nearrow, \\searrow$, dấu $+$, $-$, giá trị $0$.
 
-4. TUYỆT ĐỐI CẤM SINH MÃ TIKZ / CODE ĐỒ HỌA:
-- Do xuất ra văn bản Word (.docx), TUYỆT ĐỐI KHÔNG sinh mã TikZ (không viết \\begin{tikzpicture}, không viết từ khóa "tikz" hay bất kỳ khối mã đồ họa nào vào văn bản).
-- Khi gặp biểu đồ, hình vẽ, đồ thị, hình lăng trụ, hình chóp hay hình ảnh minh họa, CHỈ CẦN ghi chú thích duy nhất dạng chữ trong ngoặc vuông: [Hình vẽ: ...] hoặc [Đồ thị: ...] (Ví dụ: [Hình vẽ: Hình lăng trụ tam giác $ABC.A'B'C'$], [Hình vẽ: Hình chóp đều $S.ABCD$ trong hệ trục $Oxyz$], [Đồ thị: Đồ thị hàm số $y = f(x)$]) để người dùng biết vị trí cần chèn lại ảnh gốc.
+4. TUYỆT ĐỐI CẤM SINH MÃ TIKZ / TỰ VẼ ĐỒ THỊ SAI LỆCH:
+- TUYỆT ĐỐI KHÔNG sinh mã TikZ (\\begin{tikzpicture}), không tự bịa hay suy đoán đồ thị hàm số.
+${figureInstruction}
 
-Đầu ra của bạn phải hoàn toàn là nội dung tài liệu đã được số hóa dạng Markdown chuẩn, không thêm các câu chào hỏi thừa hay giải thích ngoài lề!`;
+Đầu ra của bạn phải hoàn toàn là nội dung tài liệu đã được số hóa dạng Markdown chuẩn, không thêm lời chào hay giải thích ngoài lề!`;
 
       const response = await generateWithFallback(req, {
         contents: [
@@ -3567,7 +3581,7 @@ ${!isSinglePageMode ? '- Ở ranh giới chuyển tiếp giữa các trang, bắ
         ],
         config: {
           temperature: 0.1,
-          maxOutputTokens: 8192,
+          maxOutputTokens: 16384,
         }
       });
       
@@ -3580,7 +3594,9 @@ ${!isSinglePageMode ? '- Ở ranh giới chuyển tiếp giữa các trang, bắ
 
       if (croppedImage) {
         const imgTag = `\n\n<img src="${croppedImage}" alt="Hình vẽ minh họa tài liệu" class="max-w-[480px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm" />\n\n`;
-        if (/\[Hình (?:vẽ|ảnh)[^\]]*\]/i.test(resultText)) {
+        if (/\[CROP_FIG\b[^\]]*\]/i.test(resultText)) {
+          resultText = resultText.replace(/\[CROP_FIG\b[^\]]*\]/i, imgTag);
+        } else if (/\[Hình (?:vẽ|ảnh)[^\]]*\]/i.test(resultText)) {
           resultText = resultText.replace(/\[Hình (?:vẽ|ảnh)[^\]]*\]/i, imgTag);
         }
       }
@@ -3701,6 +3717,151 @@ ${MATH_FORMATTING_RULES}
 
       return { result: resultText, customKeyFailed: response.customKeyFailed };
     });
+});
+
+app.all("/api/verify-exercise-solution", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: 'Method not allowed' });
+  }
+
+  return keepAliveExecute(req, res, async () => {
+    const { solutionText, croppedImage, croppedImageFileId } = req.body || {};
+    const files = resolveFiles(req.body || {});
+
+    let resolvedCroppedImage = croppedImage;
+    if (croppedImageFileId && chunkStore.has(croppedImageFileId)) {
+      const entry = chunkStore.get(croppedImageFileId)!;
+      resolvedCroppedImage = entry.chunks.join('');
+      chunkStore.delete(croppedImageFileId);
+    }
+
+    if (!solutionText || typeof solutionText !== 'string' || !solutionText.trim()) {
+      throw new Error("Chưa có nội dung lời giải để kiểm tra.");
+    }
+
+    // Strip huge inline base64 data URIs from markdown text before sending to LLM; actual image/file is passed via inlineData
+    const cleanedSolutionText = solutionText
+      .replace(/<img[^>]*src=["']data:[^"']+["'][^>]*\/?>/gi, '[HÌNH_ẢNH_ĐÍNH_KÈM]')
+      .replace(/!\[[^\]]*\]\(data:[^)]+\)/gi, '[HÌNH_ẢNH_ĐÍNH_KÈM]')
+      .trim();
+
+    const fileList = [...(files || []).filter(f => f && f.data && f.data.length > 0)];
+    if (resolvedCroppedImage && typeof resolvedCroppedImage === 'string') {
+      const cleanBase64 = resolvedCroppedImage.replace(/^data:[^;]+;base64,/, '').trim();
+      if (cleanBase64) {
+        fileList.unshift({
+          data: cleanBase64,
+          type: 'image/png',
+          name: 'cropped_figure.png'
+        });
+      }
+    }
+
+    const hasOriginalAttachment = fileList.length > 0;
+    const processedAttachments = hasOriginalAttachment ? await processFilesForAI(fileList) : [];
+
+    const verifyPrompt = `Bạn là Chuyên gia Phản biện & Giám khảo chấm thi Toán - Khoa học Tự nhiên khắt khe nhất.
+Hãy kiểm tra ĐỘC LẬP từ đầu đến cuối lời giải bài tập dưới đây để phát hiện mọi sai sót (nếu có) trước khi giáo viên sử dụng giảng dạy cho học sinh.
+
+${hasOriginalAttachment ? 'Đính kèm là FILE/HÌNH ẢNH ĐỀ BÀI GỐC: Hãy đối chiếu thật kỹ các con số, dấu (+/-/nhân/chia), số mũ, chỉ số, điều kiện xác định và thông số trên hình vẽ/đồ thị gốc xem phần "## Đề bài" đã đọc đúng 100% chưa.\n' : ''}
+NỘI DUNG ĐỀ BÀI VÀ LỜI GIẢI CẦN KIỂM TRA:
+"""
+${cleanedSolutionText.slice(0, 40000)}
+"""
+
+NHIỆM VỤ KIỂM TRA 4 LỚP BẮT BUỘC:
+1. "Đọc đề & Giả thiết": Đối chiếu đề bài trích xuất với đề gốc (nếu có file/ảnh) và kiểm tra điều kiện xác định của bài toán.
+2. "Tính toán & Biến đổi": Tự giải lại độc lập từng bước (đạo hàm, tích phân, phương trình, hệ phương trình, hình học, hóa học, vật lí...) để soát lỗi tính nhẩm, lỗi đổi dấu, lỗi quên trường hợp hoặc thiếu nghiệm/nhận nghiệm ngoại lai.
+3. "Kết luận & Đáp số": Kiểm tra đáp số cuối cùng có khớp với yêu cầu câu hỏi và phương án trắc nghiệm (nếu là câu hỏi trắc nghiệm) hay không.
+4. "Công thức & Trình bày": Kiểm tra cú pháp LaTeX ($...$, $$...$$, \\frac, \\sqrt, bảng biến thiên) và chính tả tiếng Việt.
+
+${MATH_FORMATTING_RULES}
+
+YÊU CẦU ĐẦU RA JSON:
+- isCorrect: true nếu lời giải hoàn toàn chính xác cả về đề bài, tính toán và đáp số; false nếu phát hiện bất kỳ sai sót, nhầm lẫn số liệu, thiếu trường hợp hoặc kết luận sai nào.
+- confidenceScore: điểm tin cậy từ 0 đến 100 (ví dụ 100 nếu hoàn toàn chuẩn xác).
+- summary: Tóm tắt ngắn gọn kết luận thẩm định bằng tiếng Việt (mọi công thức toán phải bọc trong $...$).
+- checks: Mảng gồm đúng 4 tiêu chí kiểm tra tương ứng với 4 lớp trên ({ criterion, passed, detail }).
+- issues: Mảng các lỗi phát hiện được ({ step, issue, correction }). Nếu isCorrect = true và không có lỗi, trả về mảng rỗng [].
+- correctedSolution: Nếu isCorrect = false (hoặc cần chỉnh sửa lại cho chuẩn xác hơn), BẮT BUỘC viết lại ĐẦY ĐỦ toàn bộ bài giải chuẩn xác gồm 2 phần "## Đề bài" và "## Lời giải chi tiết" theo chuẩn LaTeX $...$/$$...$$${resolvedCroppedImage ? ' (giữ nguyên thẻ [HÌNH_ẢNH_ĐỀ_BÀI] trong phần Đề bài và [HÌNH_ẢNH_ĐÁP_ÁN] ở đầu phần Lời giải chi tiết)' : ''}. Nếu isCorrect = true và không cần sửa gì, trả về chuỗi rỗng "".`;
+
+    const response = await generateWithFallback(req, {
+      model: 'gemini-4-hydrogen',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            ...processedAttachments,
+            { text: verifyPrompt }
+          ]
+        }
+      ],
+      config: {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            isCorrect: { type: Type.BOOLEAN },
+            confidenceScore: { type: Type.INTEGER },
+            summary: { type: Type.STRING },
+            checks: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  criterion: { type: Type.STRING },
+                  passed: { type: Type.BOOLEAN },
+                  detail: { type: Type.STRING }
+                },
+                required: ['criterion', 'passed', 'detail']
+              }
+            },
+            issues: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  step: { type: Type.STRING },
+                  issue: { type: Type.STRING },
+                  correction: { type: Type.STRING }
+                },
+                required: ['step', 'issue', 'correction']
+              }
+            },
+            correctedSolution: { type: Type.STRING }
+          },
+          required: ['isCorrect', 'confidenceScore', 'summary', 'checks', 'issues', 'correctedSolution']
+        }
+      }
+    }, res);
+
+    const parsed = safeJsonParse<any>(response.text || '{}', null);
+    if (!parsed || typeof parsed !== 'object') {
+      throw new Error("Không thể phân tích kết quả kiểm tra từ AI. Thầy cô vui lòng bấm kiểm tra lại.");
+    }
+
+    const result = {
+      isCorrect: Boolean(parsed.isCorrect),
+      confidenceScore: typeof parsed.confidenceScore === 'number'
+        ? Math.max(0, Math.min(100, Math.round(parsed.confidenceScore)))
+        : (parsed.isCorrect ? 100 : 60),
+      summary: typeof parsed.summary === 'string' && parsed.summary.trim()
+        ? parsed.summary.trim()
+        : (parsed.isCorrect ? 'Lời giải đã được AI kiểm tra độc lập và không phát hiện sai sót.' : 'AI phát hiện một số điểm cần điều chỉnh trong lời giải.'),
+      checks: Array.isArray(parsed.checks) ? parsed.checks : [],
+      issues: Array.isArray(parsed.issues) ? parsed.issues : [],
+      correctedSolution: typeof parsed.correctedSolution === 'string' ? parsed.correctedSolution.trim() : ''
+    };
+
+    return { result, customKeyFailed: response.customKeyFailed };
+  });
 });
 
 app.all("/api/extract-file-text", async (req, res) => {

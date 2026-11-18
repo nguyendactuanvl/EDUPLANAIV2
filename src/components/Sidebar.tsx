@@ -81,6 +81,9 @@ export function Sidebar({
         <p className="text-xs text-slate-400 mt-2 leading-relaxed">
           Ứng dụng đa năng cho GV
         </p>
+        <p className="text-xs text-emerald-400/90 mt-1 font-medium leading-relaxed">
+          Hỗ trợ app: 0835606162
+        </p>
       </div>
 
       <nav className="flex-1 py-4 overflow-y-auto custom-scrollbar">

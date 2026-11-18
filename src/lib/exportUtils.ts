@@ -1308,6 +1308,12 @@ function parseInlineContent(
             finalH = Math.round(finalH * downScale);
           }
 
+          if (finalH > 460) {
+            const hScale = 460 / finalH;
+            finalH = 460;
+            finalW = Math.max(180, Math.round(finalW * hScale));
+          }
+
           return [
             new ImageRun({
               type: 'png',
@@ -1950,6 +1956,40 @@ async function parseDomToDocxChildren(
       }
     }
 
+    // 0.7. Worksheet Dotted Answer Lines (.worksheet-dotted-lines / data-docx-dotted-lines)
+    if (el.hasAttribute('data-docx-dotted-lines') || el.classList.contains('worksheet-dotted-lines')) {
+      const attrCount = parseInt(el.getAttribute('data-docx-dotted-lines') || '0', 10);
+      const childLines = el.querySelectorAll('.worksheet-dotted-line').length;
+      const lineCount = Math.max(1, Math.min(20, attrCount || childLines || 3));
+      const label = el.getAttribute('data-label')?.trim();
+      if (label) {
+        result.push(
+          new Paragraph({
+            spacing: { line: 260, before: 60, after: 40 },
+            children: [
+              new TextRun({ text: label, bold: true, italics: true, font: 'Times New Roman', size: 22, color: '475569' }),
+            ],
+          })
+        );
+      }
+      for (let i = 0; i < lineCount; i++) {
+        result.push(
+          new Paragraph({
+            spacing: {
+              line: 340,
+              before: i === 0 && !label ? 40 : 0,
+              after: i === lineCount - 1 ? 100 : 80,
+            },
+            border: {
+              bottom: { style: BorderStyle.DOTTED, size: 6, color: '64748B' },
+            },
+            children: [new TextRun({ text: ' ', font: 'Times New Roman', size: 22 })],
+          })
+        );
+      }
+      return;
+    }
+
     // 1. Headings
     if (/^H[1-6]$/.test(tagName)) {
       const level = parseInt(tagName[1], 10);
@@ -2076,9 +2116,9 @@ async function parseDomToDocxChildren(
       const rows: TableRow[] = [];
       const isDenseTable = maxCols >= 8;
 
-      // Compute smart column widths for 2-column / 3-column CV 5512 knowledge & solution tables
+      // Compute smart column widths for 2-column / 3-column CV 5512 knowledge & solution tables (skip for borderless exam headers)
       let twoColWeights: [number, number] | null = null;
-      if (maxCols === 2) {
+      if (maxCols === 2 && !isBorderless) {
         let col0Max = 0;
         let col1Max = 0;
         for (let rr = 0; rr < numRows; rr++) {
@@ -2096,7 +2136,7 @@ async function parseDomToDocxChildren(
         if (r > 0 && r % 4 === 0) await yieldToMain();
         const rowCells: TableCell[] = [];
         const tr = trElements[r];
-        const isHeader = r < 3 || tr.closest('thead') !== null;
+        const isHeader = !isBorderless && (r < 3 || tr.closest('thead') !== null);
 
         let c = 0;
         while (c < maxCols) {
@@ -2121,7 +2161,11 @@ async function parseDomToDocxChildren(
 
           // Calculate percentage width for this cell (sum of widths of spanned columns)
           let cellWidthPct = 0;
-          if (maxCols >= 18) {
+          const cellStyleAttr = cellEl.getAttribute('style') || '';
+          const explicitWidthMatch = cellStyleAttr.match(/(?:^|;)\s*width\s*:\s*(\d+(?:\.\d+)?)%/i);
+          if (explicitWidthMatch && colSpan === 1) {
+            cellWidthPct = Math.round(parseFloat(explicitWidthMatch[1]));
+          } else if (maxCols >= 18) {
             // Proportional distribution for 19-column Vinh Loc Matrix:
             // TT (4%), Chu de (16%), Noi dung (16%), 12 question levels (3.6% each = 43.2%), 3 Totals (4.6% each = 13.8%), Tile (7%)
             const colWeights = [4, 16, 16, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 4.6, 4.6, 4.6, 7];
@@ -2159,7 +2203,7 @@ async function parseDomToDocxChildren(
             const cellClass = cellEl.className || '';
             const textContent = (cellEl.textContent || '').trim();
             const isCenter =
-              cellStyle.includes('text-align: center') ||
+              /text-align\s*:\s*center/i.test(cellStyle) ||
               cellClass.includes('text-center') ||
               cellEl.tagName === 'TH' ||
               (isDenseTable && textContent.length <= 15);
@@ -2244,6 +2288,8 @@ async function parseDomToDocxChildren(
                 shading: isHeaderCell && !isBorderless ? { fill: 'EFF6FF', type: ShadingType.CLEAR } : undefined,
                 margins: isDenseTable
                   ? { top: 30, bottom: 30, left: (c === 0 ? 20 : 30), right: (c === 0 ? 20 : 30) }
+                  : isBorderless
+                  ? { top: 40, bottom: 40, left: 60, right: 60 }
                   : { top: 80, bottom: 80, left: 100, right: 100 },
                 children: cellParagraphs.length > 0 ? cellParagraphs : [new Paragraph({})],
               })
@@ -2481,7 +2527,7 @@ async function parseDomToDocxChildren(
         const isPreLine =
           container.classList.contains('whitespace-pre-line') ||
           !!container.closest('.whitespace-pre-line, .export-solution-block');
-        const NEW_BLOCK_HEAD_RE = /^\s*(?:\*{0,2}(?:Câu|Bài)\s+\d+\s*[:.]|PHẦN\s+(?:I{1,3}|IV|[1-4])\b|[a-d]\)\s*(?:Đúng|Sai|\*{0,2}[A-ZÀ-Ỹ]))/;
+        const NEW_BLOCK_HEAD_RE = /^\s*(?:\*{0,2}(?:Câu|Bài)\s+\d+\s*[:.]|PHẦN\s+(?:I{1,3}|IV|[1-4])\b|[a-d]\)\s*(?:Đúng|Sai|\*{0,2}[A-ZÀ-Ỹ])|(?:UBND\b|SỞ\s+GIÁO\s+DỤC|PHÒNG\s+GIÁO\s+DỤC|TRƯỜNG\s+|ĐỀ\s+(?:THAM\s+KHẢO|KIỂM\s+TRA|THI|CHÍNH\s+THỨC)|\(Đề\s+thi\s+gồm|[Kk][ÌìỲỳ]\s+THI\b|CẤP\s+(?:THÀNH\s+PHỐ|TỈNH|HUYỆN|QUẬN|TRƯỜNG)|NĂM\s+HỌC\b|[Mm]ôn\s*thi\s*:|[Tt]hời\s*gian\s*:|[-–—]{2,}\s*HẾT|[Hh]ọ\s+và\s+tên\s+thí\s+sinh\s*:))/;
 
         for (let idx = 0; idx < childArr.length; idx++) {
           const child = childArr[idx];
@@ -2559,7 +2605,7 @@ async function parseDomToDocxChildren(
       for (let liIdx = 0; liIdx < lineGroups.length; liIdx++) {
         const groupNodes = lineGroups[liIdx];
         const rawText = stripInternalTags(getNodesLatexOrText(groupNodes));
-        if (!rawText || /^[.,:;?!]+$/.test(rawText)) continue;
+        if (!rawText || (rawText.length < 6 && /^[.,:;?!]+$/.test(rawText))) continue;
 
         // Check 4 consecutive lines inside same DIV/P for A. B. C. D.
         if (liIdx + 3 < lineGroups.length && /^\s*(?:[-*]\s*)?(?:\*{0,2})A[\.\)]/.test(rawText)) {
@@ -3003,10 +3049,11 @@ export async function exportHtmlToWord(
             continue;
           }
 
-          // Chỉ tự động bổ sung BBT / Đồ thị cho khối thô chưa qua MarkdownRenderer / Step 0.1
+          // Chỉ tự động bổ sung BBT / Đồ thị cho khối thô chưa qua MarkdownRenderer / Step 0.1 (bỏ qua nếu vùng đã đánh dấu data-no-auto-graph)
           if (
             (el.classList.contains('question-block') || el.classList.contains('question-stem') || el.classList.contains('math-view-container')) &&
-            !el.classList.contains('markdown-body')
+            !el.classList.contains('markdown-body') &&
+            !el.closest('[data-no-auto-graph="true"]')
           ) {
             const html = el.innerHTML;
             if (
@@ -3189,7 +3236,7 @@ export async function exportHtmlToWord(
         }
       } else if (node.nodeType === Node.ELEMENT_NODE) {
         const el = node as HTMLElement;
-        if (el.tagName === 'TABLE') {
+        if (el.tagName === 'TABLE' && !el.classList.contains('borderless')) {
           const text = el.textContent || '';
           if (/(?:y'|f'\(x\)|\\searrow|\\nearrow)/i.test(text) && /\b(?:x|y)\b/i.test(text)) {
             // This is a BBT table! Convert it to a vector BBT SVG -> PNG image
@@ -3599,6 +3646,7 @@ export async function downloadAllExamImagesFromElement(
   // 0. Chuyển đổi các bảng BBT / Bảng xét dấu dạng HTML table sang SVG trước khi trích xuất
   const tables = Array.from(element.querySelectorAll('table'));
   for (const tableEl of tables) {
+    if (tableEl.classList.contains('borderless')) continue;
     const text = tableEl.textContent || '';
     if (/(?:y'|f'\(x\)|\\searrow|\\nearrow|\+|\-)/i.test(text) && /\b(?:x|y)\b/i.test(text)) {
       try {
