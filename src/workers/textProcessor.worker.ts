@@ -151,25 +151,32 @@ function calculateMatrixTotals(matrixRows: any[]): any {
   let totalVd = 0;
 
   matrixRows.forEach(r => {
-    if (r.nlc) {
-      totalBiet += countCommands(r.nlc.biet);
-      totalHieu += countCommands(r.nlc.hieu);
-      totalVd += countCommands(r.nlc.vd);
-    }
-    if (r.ds) {
-      totalBiet += countCommands(r.ds.biet);
-      totalHieu += countCommands(r.ds.hieu);
-      totalVd += countCommands(r.ds.vd);
-    }
-    if (r.tln) {
-      totalBiet += countCommands(r.tln.biet);
-      totalHieu += countCommands(r.tln.hieu);
-      totalVd += countCommands(r.tln.vd);
-    }
-    if (r.tl) {
-      totalBiet += countCommands(r.tl.biet);
-      totalHieu += countCommands(r.tl.hieu);
-      totalVd += countCommands(r.tl.vd);
+    if (!r) return;
+    if (r.nlc || r.ds || r.tln || r.tl) {
+      if (r.nlc) {
+        totalBiet += countCommands(r.nlc.biet);
+        totalHieu += countCommands(r.nlc.hieu);
+        totalVd += countCommands(r.nlc.vd);
+      }
+      if (r.ds) {
+        totalBiet += countCommands(r.ds.biet);
+        totalHieu += countCommands(r.ds.hieu);
+        totalVd += countCommands(r.ds.vd);
+      }
+      if (r.tln) {
+        totalBiet += countCommands(r.tln.biet);
+        totalHieu += countCommands(r.tln.hieu);
+        totalVd += countCommands(r.tln.vd);
+      }
+      if (r.tl) {
+        totalBiet += countCommands(r.tl.biet);
+        totalHieu += countCommands(r.tl.hieu);
+        totalVd += countCommands(r.tl.vd);
+      }
+    } else {
+      totalBiet += countCommands(r.gqvd?.biet) + countCommands(r.tuduy?.biet) + countCommands(r.mohinh?.biet);
+      totalHieu += countCommands(r.gqvd?.hieu) + countCommands(r.tuduy?.hieu) + countCommands(r.mohinh?.hieu);
+      totalVd += countCommands(r.gqvd?.vd) + countCommands(r.tuduy?.vd) + countCommands(r.mohinh?.vd);
     }
   });
 

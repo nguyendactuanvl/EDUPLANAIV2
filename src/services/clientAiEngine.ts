@@ -1,12 +1,26 @@
 import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
-import mammoth from "mammoth";
-import * as XLSX from "xlsx";
 import {
   getNextApiKey,
   getEnvDefaultApiKey,
   getUploadedFileById,
   directBrowserFetch,
 } from "../lib/apiFetch";
+
+let mammothPromise: Promise<any> | null = null;
+async function getMammoth() {
+  if (!mammothPromise) {
+    mammothPromise = import("mammoth").then((m: any) => m?.default || m);
+  }
+  return mammothPromise;
+}
+
+let xlsxPromise: Promise<typeof import("xlsx")> | null = null;
+async function getXlsx() {
+  if (!xlsxPromise) {
+    xlsxPromise = import("xlsx");
+  }
+  return xlsxPromise;
+}
 
 class BrowserBuffer {
   readonly bytes: Uint8Array;
@@ -493,6 +507,7 @@ async function processFilesForAI(files: any[]) {
 
       if (isExcel) {
         try {
+          const XLSX = await getXlsx();
           const buffer = Buffer.from(rawBase64, "base64");
           const workbook = XLSX.read(buffer.bytes, { type: "array" });
           let excelText = "";
@@ -512,6 +527,7 @@ async function processFilesForAI(files: any[]) {
           console.error("Excel parse error in processFilesForAI:", xlsErr);
         }
       } else if (isDocx) {
+        const mammoth = await getMammoth();
         const buffer = Buffer.from(rawBase64, "base64");
         const result = await mammoth.convertToHtml({ arrayBuffer: buffer.toArrayBuffer() });
         processedFiles.push({
@@ -1139,15 +1155,13 @@ function getValidGeminiModels(requestedModel?: string): string[] {
     primary.includes("latest") ||
     primary === "gemini-pro"
   ) {
-    primary = "gemini-2.5-flash";
+    primary = "gemini-4-hydrogen";
   }
   const list = [
     primary,
-    "gemini-2.5-flash",
-    "gemini-3-flash-preview",
-    "gemini-3.1-flash-lite-preview",
     "gemini-4-hydrogen",
-    "gemini-3.1-flash-lite"
+    "gemini-3.1-flash-lite",
+    "gemini-2.5-flash"
   ];
   return Array.from(new Set(list));
 }
@@ -1201,86 +1215,125 @@ async function generateWithFallback(req: any, payloadOptions: any, _res?: any) {
     return text;
   };
 
+  const isTransientError = (err: any): boolean => {
+    const status = err?.status;
+    const msg = String(err?.message || "").toLowerCase();
+    return (
+      status === 503 ||
+      status === 429 ||
+      status === 500 ||
+      msg.includes("503") ||
+      msg.includes("unavailable") ||
+      msg.includes("high demand") ||
+      msg.includes("spikes in demand") ||
+      msg.includes("overloaded") ||
+      msg.includes("resource_exhausted") ||
+      msg.includes("try again later")
+    );
+  };
+
   for (const { client, isCustom } of clients) {
     for (const model of models) {
-      try {
-        const rawConfig = { ...(payloadOptions.config || {}) };
-        if (model.includes("3.8") || model.includes("4-") || model.includes("3.1")) {
-          delete rawConfig.temperature;
-          delete rawConfig.topP;
-          delete rawConfig.topK;
-          delete rawConfig.candidateCount;
-        } else if (rawConfig.temperature === undefined) {
-          rawConfig.temperature = 0.7;
-        }
-        if (model.includes("lite")) {
-          delete rawConfig.thinkingConfig;
-        } else if (model === "gemini-4-hydrogen" && !rawConfig.thinkingConfig) {
-          rawConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
-        }
-
-        const requestedMaxTokens = rawConfig.maxOutputTokens || 32768;
-        const basePayload = {
-          ...payloadOptions,
-          contents: normalizeGeminiContents(payloadOptions.contents),
-          model,
-          config: {
-            ...rawConfig,
-            maxOutputTokens: requestedMaxTokens,
-            systemInstruction: rawConfig.systemInstruction || defaultSystemInstruction
-          }
-        };
-        delete (basePayload as any).preferredModels;
-
-        let response: any;
+      const maxModelAttempts = model === models[0] ? 2 : 1;
+      for (let attempt = 0; attempt < maxModelAttempts; attempt++) {
         try {
-          response = await client.models.generateContent(basePayload);
-        } catch (tokenErr: any) {
-          const errStr = String(tokenErr?.message || "");
-          if (/thinkingConfig|thinkingBudget|thinkingLevel/i.test(errStr)) {
-            const noThinkConfig = { ...basePayload.config };
-            delete (noThinkConfig as any).thinkingConfig;
-            response = await client.models.generateContent({ ...basePayload, config: noThinkConfig });
-          } else if (requestedMaxTokens > 32768 && /maxOutputTokens|token|invalid|argument/i.test(errStr)) {
-            basePayload.config.maxOutputTokens = 32768;
-            response = await client.models.generateContent(basePayload);
-          } else {
-            throw tokenErr;
+          const rawConfig = { ...(payloadOptions.config || {}) };
+          if (model.includes("3.8") || model.includes("4-") || model.includes("3.1")) {
+            delete rawConfig.temperature;
+            delete rawConfig.topP;
+            delete rawConfig.topK;
+            delete rawConfig.candidateCount;
+          } else if (rawConfig.temperature === undefined) {
+            rawConfig.temperature = 0.7;
           }
-        }
-        const normText = extractTextFromResponse(response);
-        if (!normText) {
-          continue;
-        }
-        return {
-          text: normText,
-          candidates: response.candidates ? response.candidates.map((c: any) => ({ finishReason: c.finishReason, index: c.index })) : undefined,
-          customKeyFailed
-        } as any;
-      } catch (e: any) {
-        primaryError = e;
-        lastFailedIsCustom = isCustom;
-        if (isCustom) {
-          customKeyFailed = true;
-        }
-        const errLower = String(e?.message || "").toLowerCase();
-        // If key itself is invalid or unauthorized, do not waste time retrying other models with the same key
-        if (
-          e?.status === 401 ||
-          e?.status === 403 ||
-          errLower.includes("api_key_invalid") ||
-          errLower.includes("api key not valid") ||
-          errLower.includes("api key expired") ||
-          errLower.includes("permission_denied") ||
-          errLower.includes("unauthenticated") ||
-          errLower.includes("proxy_generation_disabled")
-        ) {
+          if (model.includes("lite")) {
+            delete rawConfig.thinkingConfig;
+          } else if (model === "gemini-4-hydrogen") {
+            if (!rawConfig.thinkingConfig) {
+              rawConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
+            } else if (attempt > 0 && rawConfig.thinkingConfig?.thinkingLevel === ThinkingLevel.HIGH) {
+              rawConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.MEDIUM };
+            }
+          }
+
+          const requestedMaxTokens = rawConfig.maxOutputTokens || 32768;
+          const basePayload = {
+            ...payloadOptions,
+            contents: normalizeGeminiContents(payloadOptions.contents),
+            model,
+            config: {
+              ...rawConfig,
+              maxOutputTokens: requestedMaxTokens,
+              systemInstruction: rawConfig.systemInstruction || defaultSystemInstruction
+            }
+          };
+          delete (basePayload as any).preferredModels;
+
+          let response: any;
+          try {
+            response = await client.models.generateContent(basePayload);
+          } catch (tokenErr: any) {
+            const errStr = String(tokenErr?.message || "");
+            if (/thinkingConfig|thinkingBudget|thinkingLevel/i.test(errStr)) {
+              const noThinkConfig = { ...basePayload.config };
+              delete (noThinkConfig as any).thinkingConfig;
+              response = await client.models.generateContent({ ...basePayload, config: noThinkConfig });
+            } else if (requestedMaxTokens > 32768 && /maxOutputTokens|token|invalid|argument/i.test(errStr)) {
+              basePayload.config.maxOutputTokens = 32768;
+              response = await client.models.generateContent(basePayload);
+            } else {
+              throw tokenErr;
+            }
+          }
+          const normText = extractTextFromResponse(response);
+          if (!normText) {
+            break;
+          }
+          return {
+            text: normText,
+            candidates: response.candidates ? response.candidates.map((c: any) => ({ finishReason: c.finishReason, index: c.index })) : undefined,
+            customKeyFailed
+          } as any;
+        } catch (e: any) {
+          primaryError = e;
+          lastFailedIsCustom = isCustom;
+          if (isCustom) {
+            customKeyFailed = true;
+          }
+          const errLower = String(e?.message || "").toLowerCase();
+          // If key itself is invalid or unauthorized, do not waste time retrying other models with the same key
+          if (
+            e?.status === 401 ||
+            e?.status === 403 ||
+            errLower.includes("api_key_invalid") ||
+            errLower.includes("api key not valid") ||
+            errLower.includes("api key expired") ||
+            errLower.includes("permission_denied") ||
+            errLower.includes("unauthenticated") ||
+            errLower.includes("proxy_generation_disabled")
+          ) {
+            break;
+          }
+          if (isTransientError(e)) {
+            await delay(attempt === 0 ? 650 : 900);
+            continue;
+          }
           break;
         }
-        if (e?.status !== 404 && !errLower.includes("not found")) {
-          await delay(150);
-        }
-        continue;
+      }
+      // If auth failed on this client, break outer model loop to rotate client
+      const pLower = String(primaryError?.message || "").toLowerCase();
+      if (
+        primaryError?.status === 401 ||
+        primaryError?.status === 403 ||
+        pLower.includes("api_key_invalid") ||
+        pLower.includes("api key not valid") ||
+        pLower.includes("api key expired") ||
+        pLower.includes("permission_denied") ||
+        pLower.includes("unauthenticated") ||
+        pLower.includes("proxy_generation_disabled")
+      ) {
+        break;
       }
     }
   }
@@ -3045,8 +3098,10 @@ ${MATH_FORMATTING_RULES}`;
 async function buildFallbackExerciseSolution(
   fileList: any[],
   croppedImage?: string,
-  isSimilarMode = false
+  isSimilarMode = false,
+  language: 'vi' | 'en' = 'vi'
 ): Promise<string> {
+  const isEnglish = language === 'en';
   let extractedText = "";
   for (const f of fileList || []) {
     if (!f?.data) continue;
@@ -3064,6 +3119,7 @@ async function buildFallbackExerciseSolution(
         const txt = await extractTextFromPdf(buf);
         if (txt && txt.trim()) extractedText += txt.trim() + "\n\n";
       } else if (isDocx) {
+        const mammoth = await getMammoth();
         const buf = Buffer.from(rawBase64, "base64");
         const res = await mammoth.extractRawText({ arrayBuffer: buf.toArrayBuffer() });
         if (res?.value && res.value.trim()) extractedText += res.value.trim() + "\n\n";
@@ -3077,6 +3133,36 @@ async function buildFallbackExerciseSolution(
 
   const cleanExtracted = extractedText.trim();
   const hasImage = Boolean(croppedImage) || (fileList || []).some(f => f?.type?.startsWith("image/"));
+
+  if (isEnglish) {
+    if (isSimilarMode) {
+      return `## Similar Problem
+${cleanExtracted ? `**Original reference problem:**\n${cleanExtracted.slice(0, 1200)}\n\n` : ""}**Sample Practice Problem:**
+Consider the cubic function $y = f(x) = x^3 - 3x^2 + 2$ with graph $(C)$.
+a) Find the intervals of monotonicity and local extrema of $f(x)$ on $\\mathbb{R}$.
+b) Find all real values of the parameter $m$ such that the equation $x^3 - 3x^2 + 2 - m = 0$ has $3$ distinct real roots.
+${croppedImage ? "\n[HÌNH_ẢNH_ĐỀ_BÀI]\n" : ""}
+## Detailed Solution
+${croppedImage ? "[HÌNH_ẢNH_ĐÁP_ÁN]\n" : ""}> **AI API Key Required:** Please add an active **Gemini API Key** in **API Key Manager** (top-right **API Key** button) and click **Generate Similar Problem** again to generate a custom problem from your uploaded file.
+
+**Sample Step-by-Step Solution:**
+- **Part a):** The domain is $D = \\mathbb{R}$. Differentiating gives $f'(x) = 3x^2 - 6x = 3x(x - 2)$.
+  Setting $f'(x) = 0$ yields $x = 0$ (where $f(0) = 2$) or $x = 2$ (where $f(2) = -2$).
+  Thus $f(x)$ is increasing on $(-\\infty; 0)$ and $(2; +\\infty)$, and decreasing on $(0; 2)$.
+- **Part b):** The equation $x^3 - 3x^2 + 2 = m$ has $3$ distinct real roots if and only if the horizontal line $y = m$ intersects $(C)$ at $3$ distinct points, i.e., $y_{\\min} < m < y_{\\max} \\Leftrightarrow -2 < m < 2$.`;
+    }
+
+    return `## Problem Statement
+${cleanExtracted ? cleanExtracted.slice(0, 2000) : hasImage ? "Problem extracted from the uploaded image/document:" : "Problem statement:"}
+${croppedImage ? "\n[HÌNH_ẢNH_ĐỀ_BÀI]\n" : ""}
+## Detailed Solution
+${croppedImage ? "[HÌNH_ẢNH_ĐÁP_ÁN]\n" : ""}> **Activate AI English Math Solver:** No active **Gemini API Key** was found in your browser Key Pool. Please add your Gemini API Key via the **API Key** button at the top right, then click **Solve Now** again to obtain full step-by-step English solutions.
+
+**General Problem-Solving Framework:**
+1. **Step 1 (Identify Hypotheses & Domain Conditions):** Carefully list all given conditions and domain restrictions (denominators $B(x) \\ne 0$, even radicals $A(x) \\ge 0$).
+2. **Step 2 (Apply Theorems & Algebraic Transformations):** Differentiate, factor, substitute, or apply trigonometric/geometric identities step by step.
+3. **Step 3 (Verify & State Final Answer):** Cross-check candidate solutions against domain constraints and state the exact numerical answer or multiple-choice option.`;
+  }
 
   if (isSimilarMode) {
     return `## Đề bài tương tự
@@ -3124,7 +3210,8 @@ app.all("/api/generate-similar", async (req, res) => {
     return keepAliveExecute(req, res, async () => {
 
       const files = resolveFiles(req.body);
-      let { croppedImage, croppedImageFileId } = req.body || {};
+      let { croppedImage, croppedImageFileId, language = 'vi' } = req.body || {};
+      const isEnglish = language === 'en';
       if (croppedImageFileId) {
         const entry = getUploadedFileById(croppedImageFileId);
         if (entry) {
@@ -3133,7 +3220,7 @@ app.all("/api/generate-similar", async (req, res) => {
       }
 
       if ((!files || files.length === 0) && !croppedImage) {
-        throw new Error("Vui lòng cung cấp bài tập hoặc ảnh để tạo đề tương tự.");
+        throw new Error(isEnglish ? "Please provide an exercise file or image to generate a similar problem." : "Vui lòng cung cấp bài tập hoặc ảnh để tạo đề tương tự.");
       }
 
       const fileList = [...(files || [])];
@@ -3146,7 +3233,27 @@ app.all("/api/generate-similar", async (req, res) => {
         });
       }
 
-      const prompt = `Bạn là một chuyên gia giáo dục xuất sắc. Dưới đây là bài tập, đề thi hoặc tài liệu mà giáo viên cung cấp.
+      const prompt = isEnglish
+        ? `You are an accomplished Mathematics and Science educator fluent in academic English. Below is an exercise, exam paper, or problem image/document provided by the teacher.
+REQUIREMENTS:
+1. Analyze the mathematical topic, structure, difficulty level, and key concepts of the original problem(s).
+2. CREATE A SIMILAR PROBLEM (OR SET OF SIMILAR PROBLEMS) with the same structure, rigor, and difficulty, changing numerical values, functions, or context while remaining mathematically well-posed.
+3. PROVIDE A COMPLETE, STEP-BY-STEP DETAILED SOLUTION in clear academic English for the newly created similar problem(s).
+4. [VARIATION TABLES & DIAGRAMS]:
+   - If the original problem involves a table of variation or graph, include a clean Markdown Table variation table or TikZ diagram where appropriate.
+   - In the Detailed Solution section, focus on rigorous algebraic steps, theorems, and clear final answers.
+5. LANGUAGE & LATEX RULES (MANDATORY):
+   - Write 100% in natural, accurate academic English (NO Vietnamese text).
+   - ALL mathematical expressions, equations, single variables ($x$, $y$, $m$, $n$, $a$, $b$, $S$), intervals, and intermediate formulas MUST be strictly enclosed in \`$...$\` (inline) or \`$$...$$\` (display). Always use \`\\frac{a}{b}\` instead of \`\\dfrac\`.
+   - Do NOT output scratchpad thoughts, self-correction commentary, or off-topic notes.
+
+Output strictly in this Markdown structure:
+## Similar Problem
+[Full text of the newly generated problem(s) in English]
+
+## Detailed Solution
+[Step-by-step detailed mathematical solution and final answer in English]`
+        : `Bạn là một chuyên gia giáo dục xuất sắc. Dưới đây là bài tập, đề thi hoặc tài liệu mà giáo viên cung cấp.
 YÊU CẦU:
 1. Đọc và phân tích cấu trúc, độ khó, dạng bài, và kiến thức trọng tâm của tài liệu gốc.
 2. TẠO RA MỘT ĐỀ BÀI HOẶC BỘ BÀI TẬP TƯƠNG TỰ (cùng cấu trúc, độ khó, và dạng bài nhưng thay đổi số liệu, ngữ cảnh hoặc cách hỏi).
@@ -3179,7 +3286,11 @@ BẮT BUỘC kiểm tra và SỬA LỖI CHÍNH TẢ tiếng Việt thật cẩn 
                 }
               ]
             }
-          ]
+          ],
+          config: isEnglish ? {
+            maxOutputTokens: 65536,
+            systemInstruction: `You are an international Mathematics and STEM competition specialist. Always write 100% in clear academic English. Strictly enclose ALL mathematical formulas, variables ($x, y, m, a, b, S$), and equations in LaTeX delimiters $...$ or $$...$$. Always use \\frac instead of \\dfrac.`
+          } : undefined
         });
         resultText = response.text || "";
         customKeyFailed = Boolean(response.customKeyFailed);
@@ -3188,11 +3299,11 @@ BẮT BUỘC kiểm tra và SỬA LỖI CHÍNH TẢ tiếng Việt thật cẩn 
         if (typeof window !== 'undefined' && (aiErr?.isMissingKey || /api key/i.test(String(aiErr?.message || '')))) {
           window.dispatchEvent(new CustomEvent('open-api-key-modal'));
         }
-        resultText = await buildFallbackExerciseSolution(fileList, croppedImage, true);
+        resultText = await buildFallbackExerciseSolution(fileList, croppedImage, true, isEnglish ? 'en' : 'vi');
       }
 
       if (!resultText || !resultText.trim()) {
-        resultText = await buildFallbackExerciseSolution(fileList, croppedImage, true);
+        resultText = await buildFallbackExerciseSolution(fileList, croppedImage, true, isEnglish ? 'en' : 'vi');
       }
       return { result: resultText, customKeyFailed };
     
@@ -3815,20 +3926,24 @@ app.all("/api/pdf-to-word", async (req, res) => {
 
       const isSinglePageMode = typeof pageNum === 'number';
       const figureInstruction = isSinglePageMode
-        ? `- KHI GẶP BẤT KỲ HÌNH ẢNH, ĐỒ THỊ HÀM SỐ, SƠ ĐỒ, HÌNH VẼ HÌNH HỌC, HOẶC HÌNH MINH HỌA NÀO (KHÔNG áp dụng cho bảng số liệu thống kê, bảng giá trị, bảng đáp án hay bảng biến thiên vì các bảng đó đã viết thành Markdown Table ở mục 3):
-  + TUYỆT ĐỐI KHÔNG tự vẽ bằng TikZ, ASCII hay bịa công thức đồ thị.
-  + HÃY xác định khung bao hình chữ nhật chính xác chứa toàn bộ hình vẽ/đồ thị đó trên trang (bao gồm cả các nhãn trục $O, x, y$, nhãn số trên trục, tên điểm $A, B, C...$, nhãn độ dài, chú thích bên trong hoặc sát mép hình, nhưng KHÔNG bao trùm phần văn bản đề bài hay đáp án A, B, C, D xung quanh).
-  + Xuất ĐÚNG MỘT thẻ đánh dấu ngay tại đúng vị trí xuất hiện hình vẽ theo cú pháp chuẩn sau (hệ tọa độ chuẩn hóa 0..1000 của ảnh trang: ymin,xmin,ymax,xmax với 0 là mép trên/trái, 1000 là mép dưới/phải; mô tả ngắn gọn KHÔNG chứa ký tự ngoặc vuông [ hoặc ] hay dấu ngoặc kép "):
+        ? `- BẮT BUỘC PHÁT HIỆN & CẮT ẢNH GỐC CHO MỌI HÌNH VẼ / ĐỒ THỊ / SƠ ĐỒ (QUAN TRỌNG SỐ 1):
+  + KHI GẶP BẤT KỲ HÌNH ẢNH, ĐỒ THỊ HÀM SỐ, MẶT PHẲNG TỌA ĐỘ $Oxy$, MIỀN NGHIỆM GẠCH CHÉO/TÔ ĐẬM, HÌNH VẼ HÌNH HỌC (2D/3D), SƠ ĐỒ MẠCH ĐIỆN, BIỂU ĐỒ, HOẶC HÌNH MINH HỌA NÀO — KỂ CẢ KHI HÌNH NẰM CẠNH BÊN PHẢI/TRÁI ĐOẠN CHỮ ĐỀ BÀI HOẶC TRONG BẢNG HƯỚNG DẪN CHẤM (KHÔNG áp dụng cho bảng số liệu thống kê, bảng giá trị, bảng đáp án hay bảng biến thiên vì các bảng đó viết thành Markdown Table ở mục 3):
+  + TUYỆT ĐỐI CẤM bỏ qua hình vẽ ngay cả khi đề bài đã ghi sẵn tọa độ điểm trong ngoặc đơn (ví dụ dù đề ghi "(Biết $d$ đi qua $(-3;0)$ và $(0;2)$...)" mà bên cạnh có hình vẽ thì VẪN BẮT BUỘC phải xuất thẻ [CROP_FIG ...]!).
+  + TUYỆT ĐỐI KHÔNG tự vẽ bằng TikZ, SVG, ASCII hay bịa công thức đồ thị.
+  + HÃY xác định khung bao hình chữ nhật chính xác chứa TOÀN BỘ hình vẽ/đồ thị đó trên ảnh trang (bao gồm đầy đủ mũi tên trục, nhãn $O, x, y$, các số trên trục tọa độ, tên điểm $A, B, C, S...$, ký hiệu góc/độ dài, đường nét gạch chéo miền nghiệm; KHÔNG bao trùm dòng đề bài phía trên hay đáp án A, B, C, D phía dưới).
+  + Xuất ĐÚNG MỘT thẻ đánh dấu trên một dòng riêng ngay tại ĐÚNG VỊ TRÍ xuất hiện hình vẽ (ví dụ giữa câu dẫn và 4 phương án A, B, C, D) theo cú pháp chuẩn sau (hệ tọa độ chuẩn hóa 0..1000 của ảnh trang: ymin,xmin,ymax,xmax với 0 là mép trên/trái, 1000 là mép dưới/phải; mô tả ngắn gọn KHÔNG chứa ký tự [ hoặc ] hay dấu "):
     [CROP_FIG page="${pageNum}" box="ymin,xmin,ymax,xmax" desc="Mô tả ngắn gọn hình vẽ"]
-  + Ví dụ: [CROP_FIG page="${pageNum}" box="240,220,510,780" desc="Đồ thị hàm số lượng giác trên đoạn từ -2pi đến 2pi"]`
-        : `- Khi gặp biểu đồ, hình vẽ, đồ thị, hình lăng trụ, hình chóp hay hình ảnh minh họa, CHỈ ghi chú thích ngắn gọn không chứa ngoặc vuông lồng nhau bên trong: [Hình vẽ: mô tả ngắn gọn] hoặc [Đồ thị: mô tả ngắn gọn] để người dùng cắt ảnh gốc chèn vào.`;
+  + Ví dụ 1 (Đồ thị miền nghiệm bên phải câu hỏi): [CROP_FIG page="${pageNum}" box="330,620,475,895" desc="Đồ thị miền nghiệm bất phương trình trên mặt phẳng Oxy"]
+  + Ví dụ 2 (Hình học không gian): [CROP_FIG page="${pageNum}" box="180,260,440,740" desc="Hình chóp S.ABCD"]`
+        : `- Khi gặp biểu đồ, hình vẽ, đồ thị, mặt phẳng tọa độ, miền nghiệm gạch chéo, hình lăng trụ, hình chóp hay hình ảnh minh họa: TUYỆT ĐỐI KHÔNG bỏ qua và KHÔNG thay bằng mô tả trong ngoặc đơn; hãy ghi thẻ chú thích ngắn gọn ngay đúng vị trí hình vẽ: [Hình vẽ: mô tả ngắn gọn] hoặc [Đồ thị: mô tả ngắn gọn].`;
 
       const prompt = `Bạn là một trợ lý AI chuyên gia số hóa tài liệu giáo dục và chuyển đổi định dạng từ PDF/Hình ảnh sang văn bản Word (.docx).
 Nhiệm vụ của bạn là đọc toàn bộ nội dung từ ${isSinglePageMode ? `Trang ${pageNum}/${totalPages || 1} của tài liệu đính kèm` : 'tất cả các trang của tài liệu đính kèm'} và xuất ra văn bản chính xác 100%, tuân thủ nghiêm ngặt toàn bộ các quy tắc sau:
 
-1. QUY TẮC SỐ HÓA & ĐẦY ĐỦ 100% (BẮT BUỘC):
-- Đọc và số hóa 100% toàn bộ nội dung chính của đề thi/tài liệu trên trang (tiêu đề đề thi, đề mục PHẦN I/II/III, tất cả câu hỏi, các ý a), b), c), d), các phương án A, B, C, D, bảng biểu, lời giải).
-- TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG CẮT XÉN, KHÔNG BỎ QUA BẤT KỲ CÂU HỎI NÀO.
+1. QUY TẮC SỐ HÓA, GIỮ NGUYÊN HÌNH ẢNH & ĐẦY ĐỦ 100% (BẮT BUỘC):
+- Đọc và số hóa 100% toàn bộ nội dung chính của đề thi/tài liệu trên trang (tiêu đề đề thi, đề mục PHẦN I/II/III, tất cả câu hỏi, hình vẽ minh họa, các ý a), b), c), d), các phương án A, B, C, D, bảng biểu, lời giải).
+- Nếu đầu vào có chứa các mã đánh dấu ảnh sẵn dạng [DOCX_IMG_1], [DOCX_IMG_2]... thì PHẢI GIỮ NGUYÊN CHÍNH XÁC các mã [DOCX_IMG_N] đó tại đúng vị trí câu hỏi, TUYỆT ĐỐI KHÔNG xóa hay đổi tên!
+- TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG CẮT XÉN, KHÔNG BỎ QUA BẤT KỲ CÂU HỎI HOẶC HÌNH VẼ NÀO.
 - LOẠI BỎ HEADER / FOOTER LẶP LẠI: Bỏ qua các dòng tiêu đề đầu trang hoặc chân trang mang tính trang trí/lề trang (ví dụ tên giảng viên, số điện thoại liên hệ ở mép trên/dưới, dòng "Trang X/Y", dòng chú thích chân trang lặp lại ở mỗi trang) nếu không thuộc nội dung đề bài.
 - TRÌNH BÀY TIÊU ĐỀ ĐỀ THI & CHÂN ĐỀ (QUAN TRỌNG):
   + Nếu đầu trang có phần tiêu đề đề thi chia 2 cột (cột trái thường ghi: UBND / SỞ GIÁO DỤC / PHÒNG GIÁO DỤC / TRƯỜNG / ĐỀ THI / (Đề thi gồm ... trang); cột phải thường ghi: KÌ THI / KỲ THI / NĂM HỌC / Môn thi / Thời gian làm bài...), BẮT BUỘC xuất dưới dạng bảng HTML không viền 2 cột đúng cấu trúc sau:
@@ -3839,7 +3954,10 @@ Nhiệm vụ của bạn là đọc toàn bộ nội dung từ ${isSinglePageMod
 - Nếu trang có phần chuyển tiếp từ trang trước, PHẢI gõ đầy đủ các câu chữ tiếp theo đó.
 ${!isSinglePageMode ? '- Ở ranh giới chuyển tiếp giữa các trang, đánh dấu bằng dòng: "--- [Hết Trang X / Sang Trang Y] ---".' : ''}
 
-2. CHUẨN HÓA CÔNG THỨC TOÁN / LÝ / HÓA (CHUẨN LATEX NGHIÊM NGẶT):
+2. XỬ LÝ HÌNH VẼ, ĐỒ THỊ, SƠ ĐỒ TỪ FILE GỐC (BẮT BUỘC TUÂN THỦ):
+${figureInstruction}
+
+3. CHUẨN HÓA CÔNG THỨC TOÁN / LÝ / HÓA (CHUẨN LATEX NGHIÊM NGẶT):
 - MỌI biến số, số liệu toán học, biểu thức đại số, hàm số, phương trình, bất phương trình, tọa độ, ký hiệu hình học, vectơ, và 100% các phương án A, B, C, D chứa toán học BẮT BUỘC phải đặt trong dấu đô la: $công_thức$.
 - TUYỆT ĐỐI KHÔNG ĐỂ BẤT PHƯƠNG TRÌNH HAY ĐẲNG THỨC NÀO Ở DẠNG TEXT THƯỜNG THIẾU $: Ví dụ $x - 1 \\ge 0$, $a \\ge 1$, $-\\frac{1}{2} < x \\le 3$.
 - LUÔN CÓ KHOẢNG TRẮNG sau các lệnh so sánh: \\ge 0, \\le 0, \\neq 0.
@@ -3847,15 +3965,11 @@ ${!isSinglePageMode ? '- Ở ranh giới chuyển tiếp giữa các trang, đá
 - KHÔNG BAO GIỜ bọc cả câu tiếng Việt (như "ta được:", "với:") vào bên trong dấu $. Dấu $ chỉ bọc riêng biểu thức toán.
 - LUÔN DÙNG \\frac thay cho \\dfrac. DÙNG \\ge thay cho \\geq, \\le thay cho \\leq.
 
-3. GIỮ NGUYÊN CẤU TRÚC, SỐ THỨ TỰ CÂU & BẢNG BIỂU:
+4. GIỮ NGUYÊN CẤU TRÚC, SỐ THỨ TỰ CÂU & BẢNG BIỂU:
 - BẮT BUỘC GIỮ NGUYÊN CHÍNH XÁC 100% SỐ THỨ TỰ CÂU HỎI như bản gốc (ví dụ: nếu bản gốc ghi Câu 17., Câu 18., Câu 19., Câu 20., Câu 21., Câu 22. thì PHẢI giữ đúng Câu 17., Câu 18.,... TUYỆT ĐỐI KHÔNG tự ý đánh số lại thành Câu 1., Câu 2.).
 - Với các phương án trắc nghiệm: trình bày rõ ràng A., B., C., D. trên từng dòng độc lập; không thêm ký hiệu bullet phía trước.
 - Với các ý Đúng/Sai hoặc tự luận nhỏ: trình bày a), b), c), d) rõ ràng trên từng dòng.
 - MỌI BẢNG BIỂU (bảng số liệu thống kê, bảng tần số ghép nhóm, bảng giá trị, bảng đáp án, Bảng biến thiên / Bảng xét dấu): PHẢI trình bày dưới dạng Markdown Table chuẩn (| ... |) đúng chính xác các hàng và cột như bản gốc. Với Bảng biến thiên, ghi đầy đủ hàng $x$, $y'$, $y$ và các mũi tên $\\nearrow, \\searrow$, dấu $+$, $-$, giá trị $0$.
-
-4. TUYỆT ĐỐI CẤM SINH MÃ TIKZ / TỰ VẼ ĐỒ THỊ SAI LỆCH:
-- TUYỆT ĐỐI KHÔNG sinh mã TikZ (\\begin{tikzpicture}), không tự bịa hay suy đoán đồ thị hàm số.
-${figureInstruction}
 
 Đầu ra của bạn phải hoàn toàn là nội dung tài liệu đã được số hóa dạng Markdown chuẩn, không thêm lời chào hay giải thích ngoài lề!`;
 
@@ -3885,9 +3999,9 @@ ${figureInstruction}
       resultText = resultText.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/gi, '\n[Hình vẽ minh họa]\n');
 
       if (croppedImage) {
-        const imgTag = `\n\n<img src="${croppedImage}" alt="Hình vẽ minh họa tài liệu" class="max-w-[480px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm" />\n\n`;
-        if (/\[CROP_FIG\b[^\]]*\]/i.test(resultText)) {
-          resultText = resultText.replace(/\[CROP_FIG\b[^\]]*\]/i, imgTag);
+        const imgTag = `\n\n<img src="${croppedImage}" alt="Hình vẽ minh họa tài liệu" data-cropped-figure="true" class="max-w-[480px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm" />\n\n`;
+        if (/\[CROP_FIG\b(?:[^\[\]]|\[[0-9.,;\s]+\])*\]/i.test(resultText)) {
+          resultText = resultText.replace(/\[CROP_FIG\b(?:[^\[\]]|\[[0-9.,;\s]+\])*\]/i, imgTag);
         } else if (/\[Hình (?:vẽ|ảnh)[^\]]*\]/i.test(resultText)) {
           resultText = resultText.replace(/\[Hình (?:vẽ|ảnh)[^\]]*\]/i, imgTag);
         }
@@ -3900,6 +4014,108 @@ ${figureInstruction}
       return { result: resultText };
     
     });
+});
+
+app.all("/api/detect-page-figures", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: 'Method not allowed' });
+  }
+
+  return keepAliveExecute(req, res, async () => {
+    const { imageBase64, mimeType = 'image/png', pageNum = 1, pageMarkdown = '' } = req.body || {};
+    if (!imageBase64 || typeof imageBase64 !== 'string') {
+      return { figures: [] };
+    }
+    const cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
+    const questionSummary = String(pageMarkdown || '').slice(0, 4500);
+
+    const detectPrompt = `Hãy quan sát thật kỹ ảnh Trang ${pageNum} đính kèm và xác định CHÍNH XÁC tọa độ khung bao (bounding box) của TẤT CẢ các hình vẽ minh họa, đồ thị hàm số, hệ trục tọa độ Oxy, miền nghiệm bất phương trình (phần gạch chéo/tô đậm), hình học phẳng/không gian (tam giác, đường tròn, hình chóp, lăng trụ, hình nón, hình trụ, hình cầu), sơ đồ, biểu đồ hoặc hình ảnh minh họa xuất hiện trên trang — KỂ CẢ HÌNH NẰM BÊN PHẢI/TRÁI CHỮ ĐỀ BÀI HOẶC TRONG BẢNG HƯỚNG DẪN CHẤM.
+
+QUY TẮC BẮT BUỘC:
+1. CHỈ khoanh vùng các HÌNH VẼ / ĐỒ THỊ / SƠ ĐỒ / BIỂU ĐỒ trực quan. KHÔNG khoanh vùng đoạn văn bản thuần, KHÔNG khoanh vùng bảng số liệu/bảng biến thiên thuần chữ và KHÔNG khoanh cả trang.
+2. Mỗi box_2d là mảng đúng 4 số nguyên [ymin, xmin, ymax, xmax] theo hệ tọa độ chuẩn hóa 0..1000 (0 = mép trên/trái, 1000 = mép dưới/phải). Khung bao phải ôm trọn toàn bộ mũi tên trục, nhãn O, x, y, các số trên trục, tên đỉnh A, B, C, S và phần gạch chéo, nhưng KHÔNG dính dòng chữ đề bài ở trên hay đáp án A, B, C, D ở dưới.
+3. Ghi rõ "questionLabel" của câu hỏi chứa hình vẽ đó đúng như trên trang (ví dụ: "Câu 3", "Câu 4", "Bài 2", hoặc "" nếu hình không gắn với số câu cụ thể). Nếu 1 câu có 4 hình nhỏ tương ứng 4 phương án A, B, C, D thì trả về 4 phần tử riêng với questionLabel là "Câu X - A", "Câu X - B", "Câu X - C", "Câu X - D" hoặc 1 khung chung bao 4 hình nếu chúng nằm liền khối.
+4. Trong trường "description" chỉ dùng chữ tiếng Việt bình thường (KHÔNG dùng ký tự backslash LaTeX hay dấu ngoặc kép).
+5. Nếu trang hoàn toàn KHÔNG có hình vẽ/đồ thị/sơ đồ nào thì trả về {"figures": []}.
+${questionSummary ? `\nVăn bản đã OCR trên trang để bạn đối chiếu đúng số câu (questionLabel):\n${questionSummary}` : ''}`;
+
+    const response = await generateWithFallback(req, {
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              inlineData: {
+                mimeType: mimeType || 'image/png',
+                data: cleanBase64
+              }
+            },
+            { text: detectPrompt }
+          ]
+        }
+      ],
+      config: {
+        systemInstruction: "You are a precise document figure bounding-box detector. Always return strictly valid JSON matching the requested schema with plain text descriptions (no LaTeX backslashes).",
+        maxOutputTokens: 8192,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            figures: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  questionLabel: {
+                    type: Type.STRING,
+                    description: "Nhãn câu hỏi chứa hình vẽ, ví dụ 'Câu 3', 'Bài 1', hoặc chuỗi rỗng."
+                  },
+                  box_2d: {
+                    type: Type.ARRAY,
+                    items: { type: Type.NUMBER },
+                    description: "Tọa độ chuẩn hóa [ymin, xmin, ymax, xmax] trong thang 0..1000."
+                  },
+                  description: {
+                    type: Type.STRING,
+                    description: "Mô tả ngắn gọn nội dung hình vẽ bằng văn bản thường."
+                  }
+                },
+                required: ["questionLabel", "box_2d", "description"]
+              }
+            }
+          },
+          required: ["figures"]
+        }
+      }
+    });
+
+    const rawText = (response.text || '{"figures":[]}').trim();
+    const cleanedJson = rawText
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+    try {
+      const parsed = JSON.parse(cleanedJson);
+      const list = Array.isArray(parsed?.figures) ? parsed.figures : [];
+      return { figures: list };
+    } catch {
+      try {
+        const startIdx = cleanedJson.indexOf('{');
+        const endIdx = cleanedJson.lastIndexOf('}');
+        const slice = startIdx !== -1 && endIdx > startIdx ? cleanedJson.slice(startIdx, endIdx + 1) : cleanedJson;
+        const parsed = JSON.parse(sanitizeJsonString(slice));
+        const list = Array.isArray(parsed?.figures) ? parsed.figures : [];
+        return { figures: list };
+      } catch {
+        return { figures: [] };
+      }
+    }
+  });
 });
 
 app.all("/api/solve-exercise", async (req, res) => {
@@ -3916,7 +4132,8 @@ app.all("/api/solve-exercise", async (req, res) => {
     return keepAliveExecute(req, res, async () => {
 
       const files = resolveFiles(req.body);
-      let { croppedImage, croppedImageFileId } = req.body || {};
+      let { croppedImage, croppedImageFileId, language = 'vi' } = req.body || {};
+      const isEnglish = language === 'en';
       if (croppedImageFileId) {
         const entry = getUploadedFileById(croppedImageFileId);
         if (entry) {
@@ -3937,13 +4154,42 @@ app.all("/api/solve-exercise", async (req, res) => {
       }
 
       if (!fileList || fileList.length === 0) {
-        throw new Error("Vui lòng tải lên tệp bài tập hoặc ảnh đề bài.");
+        throw new Error(isEnglish ? "Please upload an exercise file or image." : "Vui lòng tải lên tệp bài tập hoặc ảnh đề bài.");
       }
 
-      const prompt = `Bạn là một giáo viên xuất sắc. Dưới đây là bài tập hoặc tài liệu học sinh đưa ra. 
+      const prompt = isEnglish
+        ? `You are an expert international Mathematics & Olympiad teacher fluent in academic English. Below is a mathematics problem, competition exam paper, or study document uploaded by a teacher.
+REQUIREMENTS:
+1. Carefully read and transcribe ALL problems/questions from the uploaded file/image (if it is a multi-page or multi-question paper such as PART I Multiple Choice and PART II Write Answers, transcribe and solve EVERY SINGLE QUESTION completely—do NOT skip, summarize, or omit any question).
+2. Restate each problem cleanly and accurately in English, preserving all given hypotheses, conditions, answer choices (A, B, C, D), and numerical data.
+3. Provide a complete, rigorous, step-by-step solution in clear academic English for every single question, clearly explaining formulas, theorems, algebraic transformations, and stating the final answer (including the exact option letter for multiple-choice questions).
+4. Format the output into 2 clear H2 Markdown sections:
+## Problem Statement
+[Accurate restatement of the problem(s) in English]
+${croppedImage ? '[HÌNH_ẢNH_ĐỀ_BÀI]' : ''}
+
+## Detailed Solution
+${croppedImage ? '[HÌNH_ẢNH_ĐÁP_ÁN]\n' : ''}[Step-by-step detailed solutions in English for every question, analyzing relevant coordinates, geometric features, or graphs]
+
+5. STRICT LANGUAGE & LATEX RULES:
+   - Write 100% in natural, accurate academic English (do NOT use Vietnamese explanations or Vietnamese labels).
+   - Enclose ALL mathematical formulas, expressions, equations, intervals, and standalone variables ($x$, $y$, $m$, $n$, $a$, $b$, $S$, $u_n$) in \`$...$\` (inline) or \`$$...$$\` (display).
+   - Always use standard LaTeX: \`\\frac{a}{b}\` (never \`\\dfrac\`), \`\\sqrt{...}\`, \`\\sin\`, \`\\cos\`, \`\\tan\`, \`\\lim\`, \`\\pi\`, \`\\Leftrightarrow\`, \`\\Rightarrow\`, \`\\ge\`, \`\\le\`, \`\\in\`.
+   - Do NOT output scratchpad thoughts, self-correction commentary ("Wait...", "Let me recheck..."), or off-topic remarks.
+6. [FIGURES, TABLES & DIAGRAMS]:
+${croppedImage
+  ? `   - An attached cropped image is provided: place \`[HÌNH_ẢNH_ĐỀ_BÀI]\` at the end of \`## Problem Statement\` and \`[HÌNH_ẢNH_ĐÁP_ÁN]\` at the beginning of \`## Detailed Solution\` for side-by-side reference.`
+  : `   - CRITICAL FOR ORIGINAL FIGURES: If the uploaded PDF/image contains ANY original diagram, graph, coordinate plane, shaded half-plane, geometry figure, circuit, or illustration (including figures placed side-by-side to the right or left of the question text), you MUST emit a crop tag right inside that question in \`## Problem Statement\` (between the question stem and choices A, B, C, D) using normalized 0..1000 coordinates:
+     \`[CROP_FIG page=1 box_2d=[ymin,xmin,ymax,xmax] desc="Short figure description"]\`
+     (for multi-page PDFs, set \`page=\` to the 1-based page number where the figure appears).
+   - Do NOT invent TikZ code to redraw an existing figure from the uploaded PDF/image — preserve the original figure via \`[CROP_FIG ...]\`.
+   - If the input text comes from a Word (.docx) file containing \`[DOCX_IMG_N]\` tokens, keep each \`[DOCX_IMG_N]\` token verbatim in its matching question.`}
+   - Analyze any geometric labels, dimensions, coordinates, vertices, or asymptotes shown in the figure accurately.
+   - For variation tables (if needed), draw a clean Markdown Table ($x$, $y'$, $y$ with arrows $\\nearrow$, $\\searrow$).`
+        : `Bạn là một giáo viên xuất sắc. Dưới đây là bài tập hoặc tài liệu học sinh đưa ra. 
 YÊU CẦU:
-1. Đọc kỹ nội dung bài tập từ file/ảnh.
-2. Viết lại đề bài rõ ràng, mạch lạc, đầy đủ các câu chữ và giả thiết.
+1. Đọc kỹ nội dung bài tập từ file/ảnh (nếu là đề nhiều câu, hãy trích xuất và giải ĐẦY ĐỦ tất cả các câu).
+2. Viết lại đề bài rõ ràng, mạch lạc, đầy đủ các câu chữ, phương án trắc nghiệm (nếu có) và giả thiết.
 3. Cung cấp lời giải chi tiết, giải thích cặn kẽ từng bước biến đổi để học sinh dễ hiểu.
 4. Định dạng đầu ra thành 2 phần rõ rệt (dùng tiêu đề H2):
 ## Đề bài
@@ -3955,11 +4201,16 @@ ${croppedImage ? '[HÌNH_ẢNH_ĐÁP_ÁN]\n' : ''}[Các bước giải chi tiế
 
 ${MATH_FORMATTING_RULES}
 5. BẮT BUỘC kiểm tra và SỬA LỖI CHÍNH TẢ tiếng Việt thật cẩn thận trước khi trả kết quả.
-6. [QUAN TRỌNG VỀ HÌNH VẼ & ĐỒ THỊ]:
-- Nếu đề bài có hình vẽ, đồ thị, bảng biến thiên (hoặc có ảnh cắt đính kèm): BẮT BUỘC chèn thẻ [HÌNH_ẢNH_ĐỀ_BÀI] vào cuối phần "## Đề bài" VÀ BẮT BUỘC chèn thẻ [HÌNH_ẢNH_ĐÁP_ÁN] vào ngay đầu phần "## Lời giải chi tiết" để học sinh và giáo viên vừa đọc lời giải vừa đối chiếu trực quan đồ thị / hình vẽ.
+6. [QUAN TRỌNG VỀ HÌNH VẼ & ĐỒ THỊ TỪ TÀI LIỆU GỐC]:
+${croppedImage
+  ? `- Đề bài có ảnh cắt đính kèm: BẮT BUỘC chèn thẻ [HÌNH_ẢNH_ĐỀ_BÀI] vào cuối phần "## Đề bài" VÀ BẮT BUỘC chèn thẻ [HÌNH_ẢNH_ĐÁP_ÁN] vào ngay đầu phần "## Lời giải chi tiết" để học sinh và giáo viên vừa đọc lời giải vừa đối chiếu trực quan.`
+  : `- BẮT BUỘC GIỮ NGUYÊN HÌNH ẢNH GỐC: Nếu trang PDF hoặc ảnh bài tập có BẤT KỲ hình vẽ, đồ thị hàm số, trục tọa độ $Oxy$, miền nghiệm gạch chéo, hình học phẳng/không gian, sơ đồ, hình minh họa nào (kể cả hình đặt SONG SONG bên phải hoặc bên trái chữ đề bài, hoặc đề đã ghi tọa độ trong ngoặc): BẮT BUỘC chèn thẻ cắt hình đúng vị trí ngay trong câu hỏi tương ứng ở phần "## Đề bài" (giữa thân đề bài và các phương án A, B, C, D) theo cú pháp tọa độ chuẩn hóa 0..1000:
+  \`[CROP_FIG page=1 box_2d=[ymin,xmin,ymax,xmax] desc="Mô tả ngắn hình vẽ"]\`
+  (với PDF nhiều trang, ghi đúng số trang 1-based vào \`page=\`).
+- TUYỆT ĐỐI KHÔNG tự vẽ lại bằng TikZ hay bỏ qua hình đã có sẵn trong file gốc — phải dùng thẻ \`[CROP_FIG ...]\` để hệ thống cắt nguyên bản hình sắc nét từ tài liệu gốc.
+- Nếu đầu vào là văn bản Word (.docx) có sẵn thẻ \`[DOCX_IMG_1]\`, \`[DOCX_IMG_2]\`...: BẮT BUỘC giữ nguyên các thẻ này đúng vị trí câu hỏi tương ứng.`}
 - Trong lời giải: Khai thác chi tiết các tọa độ điểm đặc biệt, giao điểm, đỉnh, tiệm cận, đường nét trên đồ thị/hình ảnh.
-- BẢNG BIẾN THIÊN (BBT): BẮT BUỘC vẽ bằng Markdown Table chuẩn trực quan (hàng $x$, $y'$, $y$ kèm mũi tên $\\nearrow$, $\\searrow$, dấu $+$, $-$, $0$, cực trị, tuyệt đối không để trống).
-- Nếu không có ảnh thực tế nhưng cần vẽ hình học không gian hay miền nghiệm: Hãy sinh code TikZ trong khối \`\`\`tikz ... \`\`\`.`;
+- BẢNG BIẾN THIÊN (BBT): BẮT BUỘC vẽ bằng Markdown Table chuẩn trực quan (hàng $x$, $y'$, $y$ kèm mũi tên $\\nearrow$, $\\searrow$, dấu $+$, $-$, $0$, cực trị, tuyệt đối không để trống).`;
 
       let resultText = "";
       let customKeyFailed = false;
@@ -3975,7 +4226,11 @@ ${MATH_FORMATTING_RULES}
                 }
               ]
             }
-          ]
+          ],
+          config: isEnglish ? {
+            maxOutputTokens: 65536,
+            systemInstruction: `You are an expert international Mathematics & STEM educator. You MUST solve all problems and write all explanations, headings, and final answers 100% in clear academic English. Enclose ALL mathematical formulas, symbols, and single variables ($x$, $y$, $m$, $a$, $b$, $S$) in $...$ or $$...$$. Always use \\frac instead of \\dfrac.`
+          } : { maxOutputTokens: 65536 }
         });
         resultText = response.text || "";
         customKeyFailed = Boolean(response.customKeyFailed);
@@ -3984,11 +4239,11 @@ ${MATH_FORMATTING_RULES}
         if (typeof window !== 'undefined' && (aiErr?.isMissingKey || /api key/i.test(String(aiErr?.message || '')))) {
           window.dispatchEvent(new CustomEvent('open-api-key-modal'));
         }
-        resultText = await buildFallbackExerciseSolution(fileList, croppedImage, false);
+        resultText = await buildFallbackExerciseSolution(fileList, croppedImage, false, isEnglish ? 'en' : 'vi');
       }
 
       if (!resultText || !resultText.trim()) {
-        resultText = await buildFallbackExerciseSolution(fileList, croppedImage, false);
+        resultText = await buildFallbackExerciseSolution(fileList, croppedImage, false, isEnglish ? 'en' : 'vi');
       }
 
       if (croppedImage) {
@@ -3997,30 +4252,562 @@ ${MATH_FORMATTING_RULES}
           cleanCroppedUrl = `data:image/png;base64,${cleanCroppedUrl}`;
         }
 
-        const imgTag = `\n\n<img src="${cleanCroppedUrl}" alt="Hình vẽ / Đồ thị bài toán" class="max-w-[480px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm" />\n\n`;
-        // 1. Chèn vào Đề bài
-        if (resultText.includes('[HÌNH_ẢNH_ĐỀ_BÀI]')) {
-          resultText = resultText.replace(/\[HÌNH_ẢNH_ĐỀ_BÀI\]/g, imgTag);
+        const imgTag = `\n\n<img src="${cleanCroppedUrl}" alt="${isEnglish ? 'Problem figure / graph' : 'Hình vẽ / Đồ thị bài toán'}" class="max-w-[480px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm" />\n\n`;
+        // 1. Inject into Problem Statement / Đề bài
+        if (/\[HÌNH_ẢNH_ĐỀ_BÀI\]|\[PROBLEM_IMAGE\]/.test(resultText)) {
+          resultText = resultText.replace(/\[HÌNH_ẢNH_ĐỀ_BÀI\]|\[PROBLEM_IMAGE\]/g, imgTag);
         } else {
-          resultText = resultText.replace(/(##\s*Đề bài[^\n]*\n)([\s\S]*?)(?=\n##\s*(?:Lời giải|Đáp án|Hướng dẫn giải)|$)/i, `$1$2\n${imgTag}`);
+          resultText = resultText.replace(/(##\s*(?:Đề bài|Đề thi|Câu hỏi|Problem(?:\s+Statement)?|Question(?:s)?)[^\n]*\n)([\s\S]*?)(?=\n##\s*(?:Lời giải|Đáp án|Hướng dẫn giải|(?:Detailed\s+)?Solution|Answer)|$)/i, `$1$2\n${imgTag}`);
         }
 
-        // 2. Chèn vào Lời giải chi tiết / Đáp án để đối chiếu trực quan
-        if (resultText.includes('[HÌNH_ẢNH_ĐÁP_ÁN]')) {
-          resultText = resultText.replace(/\[HÌNH_ẢNH_ĐÁP_ÁN\]/g, imgTag);
-        } else if (resultText.includes('[HÌNH_ẢNH_LỜI_GIẢI]')) {
-          resultText = resultText.replace(/\[HÌNH_ẢNH_LỜI_GIẢI\]/g, imgTag);
-        } else if (/##\s*(?:Lời giải|Đáp án|Hướng dẫn giải)/i.test(resultText)) {
-          const solIdx = resultText.search(/##\s*(?:Lời giải|Đáp án|Hướng dẫn giải)/i);
+        // 2. Inject into Detailed Solution / Lời giải chi tiết
+        if (/\[HÌNH_ẢNH_ĐÁP_ÁN\]|\[HÌNH_ẢNH_LỜI_GIẢI\]|\[SOLUTION_IMAGE\]/.test(resultText)) {
+          resultText = resultText.replace(/\[HÌNH_ẢNH_ĐÁP_ÁN\]|\[HÌNH_ẢNH_LỜI_GIẢI\]|\[SOLUTION_IMAGE\]/g, imgTag);
+        } else if (/##\s*(?:Lời giải|Đáp án|Hướng dẫn giải|(?:Detailed\s+)?Solution|Answer)/i.test(resultText)) {
+          const solIdx = resultText.search(/##\s*(?:Lời giải|Đáp án|Hướng dẫn giải|(?:Detailed\s+)?Solution|Answer)/i);
           const solPart = resultText.slice(solIdx);
           if (!solPart.includes(cleanCroppedUrl)) {
-            resultText = resultText.replace(/(##\s*(?:Lời giải|Đáp án|Hướng dẫn giải)[^\n]*\n)/i, `$1${imgTag}`);
+            resultText = resultText.replace(/(##\s*(?:Lời giải|Đáp án|Hướng dẫn giải|(?:Detailed\s+)?Solution|Answer)[^\n]*\n)/i, `$1${imgTag}`);
           }
         }
       }
 
       return { result: resultText, customKeyFailed };
     });
+});
+
+app.all("/api/verify-exercise-solution", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: 'Method not allowed' });
+  }
+
+  return keepAliveExecute(req, res, async () => {
+    const { solutionText, croppedImage, croppedImageFileId, language = 'vi' } = req.body || {};
+    const isEnglish = language === 'en';
+    const files = resolveFiles(req.body || {});
+
+    let resolvedCroppedImage = croppedImage;
+    if (croppedImageFileId) {
+      const entry = getUploadedFileById(croppedImageFileId);
+      if (entry) {
+        resolvedCroppedImage = entry.data;
+      }
+    }
+
+    if (!solutionText || typeof solutionText !== 'string' || !solutionText.trim()) {
+      throw new Error(isEnglish ? "No solution content available to verify." : "Chưa có nội dung lời giải để kiểm tra.");
+    }
+
+    const cleanedSolutionText = solutionText
+      .replace(/<img[^>]*src=["']data:[^"']+["'][^>]*\/?>/gi, isEnglish ? '[ATTACHED_IMAGE]' : '[HÌNH_ẢNH_ĐÍNH_KÈM]')
+      .replace(/!\[[^\]]*\]\(data:[^)]+\)/gi, isEnglish ? '[ATTACHED_IMAGE]' : '[HÌNH_ẢNH_ĐÍNH_KÈM]')
+      .trim();
+
+    const fileList = [...(files || []).filter(f => f && f.data && f.data.length > 0)];
+    if (resolvedCroppedImage && typeof resolvedCroppedImage === 'string') {
+      const cleanBase64 = resolvedCroppedImage.replace(/^data:[^;]+;base64,/, '').trim();
+      if (cleanBase64) {
+        fileList.unshift({
+          data: cleanBase64,
+          type: 'image/png',
+          name: 'cropped_figure.png'
+        });
+      }
+    }
+
+    const hasOriginalAttachment = fileList.length > 0;
+    const processedAttachments = hasOriginalAttachment ? await processFilesForAI(fileList) : [];
+
+    const verifyPrompt = isEnglish
+      ? `You are a rigorous Mathematics & STEM Olympiad Examiner and Peer Reviewer.
+Independently audit the problem statement and detailed solution below from start to finish to catch any mathematical, transcription, or formatting errors before classroom use.
+
+${hasOriginalAttachment ? 'The ORIGINAL PROBLEM FILE/IMAGE is attached: carefully cross-check every number, sign (+/-/times/divide), exponent, subscript, domain condition, and figure label to verify 100% accuracy.\n' : ''}
+PROBLEM & SOLUTION TO AUDIT:
+"""
+${cleanedSolutionText.slice(0, 40000)}
+"""
+
+MANDATORY 4-LAYER VERIFICATION:
+1. "Problem Transcription & Hypotheses": Cross-check the transcribed problem against the original attachment (if provided) and verify domain/validity conditions.
+2. "Calculations & Algebraic Steps": Independently re-solve every step (limits, derivatives, integrals, equations, combinatorics, probability, geometry) to detect arithmetic errors, sign errors, missing cases, or extraneous roots.
+3. "Final Answers & Choices": Verify that each final numeric result and multiple-choice letter (A, B, C, D) matches the question's exact requirement and rounding rule.
+4. "LaTeX & Academic English": Verify clean LaTeX syntax ($...$, $$...$$, \\frac, \\sqrt) and clear academic English grammar.
+
+JSON OUTPUT REQUIREMENTS (Write ALL fields in clear academic English, enclosing all math expressions in $...$ or $$...$$, using \\frac instead of \\dfrac):
+- isCorrect: true if the entire problem transcription, calculations, and final answers are accurate; false if any error, missing case, or wrong conclusion is found.
+- confidenceScore: integer from 0 to 100.
+- summary: concise summary of the verification verdict in English.
+- checks: array of exactly 4 items corresponding to the 4 layers above ({ criterion, passed, detail }).
+- issues: array of detected issues ({ step, issue, correction }). Return [] if isCorrect is true with no issues.
+- correctedSolution: If isCorrect is false (or improvements are needed), rewrite the COMPLETE corrected document in English with "## Problem Statement" and "## Detailed Solution" sections${resolvedCroppedImage ? ' (keeping [HÌNH_ẢNH_ĐỀ_BÀI] in Problem Statement and [HÌNH_ẢNH_ĐÁP_ÁN] at the start of Detailed Solution)' : ''}. If isCorrect is true and no correction is needed, return "".`
+      : `Bạn là Chuyên gia Phản biện & Giám khảo chấm thi Toán - Khoa học Tự nhiên khắt khe nhất.
+Hãy kiểm tra ĐỘC LẬP từ đầu đến cuối lời giải bài tập dưới đây để phát hiện mọi sai sót (nếu có) trước khi giáo viên sử dụng giảng dạy cho học sinh.
+
+${hasOriginalAttachment ? 'Đính kèm là FILE/HÌNH ẢNH ĐỀ BÀI GỐC: Hãy đối chiếu thật kỹ các con số, dấu (+/-/nhân/chia), số mũ, chỉ số, điều kiện xác định và thông số trên hình vẽ/đồ thị gốc xem phần "## Đề bài" đã đọc đúng 100% chưa.\n' : ''}
+NỘI DUNG ĐỀ BÀI VÀ LỜI GIẢI CẦN KIỂM TRA:
+"""
+${cleanedSolutionText.slice(0, 40000)}
+"""
+
+NHIỆM VỤ KIỂM TRA 4 LỚP BẮT BUỘC:
+1. "Đọc đề & Giả thiết": Đối chiếu đề bài trích xuất với đề gốc (nếu có file/ảnh) và kiểm tra điều kiện xác định của bài toán.
+2. "Tính toán & Biến đổi": Tự giải lại độc lập từng bước (đạo hàm, tích phân, phương trình, hệ phương trình, hình học, hóa học, vật lí...) để soát lỗi tính nhẩm, lỗi đổi dấu, lỗi quên trường hợp hoặc thiếu nghiệm/nhận nghiệm ngoại lai.
+3. "Kết luận & Đáp số": Kiểm tra đáp số cuối cùng có khớp với yêu cầu câu hỏi và phương án trắc nghiệm (nếu là câu hỏi trắc nghiệm) hay không.
+4. "Công thức & Trình bày": Kiểm tra cú pháp LaTeX ($...$, $$...$$, \\frac, \\sqrt, bảng biến thiên) và chính tả tiếng Việt.
+
+${MATH_FORMATTING_RULES}
+
+YÊU CẦU ĐẦU RA JSON:
+- isCorrect: true nếu lời giải hoàn toàn chính xác cả về đề bài, tính toán và đáp số; false nếu phát hiện bất kỳ sai sót, nhầm lẫn số liệu, thiếu trường hợp hoặc kết luận sai nào.
+- confidenceScore: điểm tin cậy từ 0 đến 100 (ví dụ 100 nếu hoàn toàn chuẩn xác).
+- summary: Tóm tắt ngắn gọn kết luận thẩm định bằng tiếng Việt (mọi công thức toán phải bọc trong $...$).
+- checks: Mảng gồm đúng 4 tiêu chí kiểm tra tương ứng với 4 lớp trên ({ criterion, passed, detail }).
+- issues: Mảng các lỗi phát hiện được ({ step, issue, correction }). Nếu isCorrect = true và không có lỗi, trả về mảng rỗng [].
+- correctedSolution: Nếu isCorrect = false (hoặc cần chỉnh sửa lại cho chuẩn xác hơn), BẮT BUỘC viết lại ĐẦY ĐỦ toàn bộ bài giải chuẩn xác gồm 2 phần "## Đề bài" và "## Lời giải chi tiết" theo chuẩn LaTeX $...$/$$...$$${resolvedCroppedImage ? ' (giữ nguyên thẻ [HÌNH_ẢNH_ĐỀ_BÀI] trong phần Đề bài và [HÌNH_ẢNH_ĐÁP_ÁN] ở đầu phần Lời giải chi tiết)' : ''}. Nếu isCorrect = true và không cần sửa gì, trả về chuỗi rỗng "".`;
+
+    const response = await generateWithFallback(req, {
+      model: 'gemini-4-hydrogen',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            ...processedAttachments,
+            { text: verifyPrompt }
+          ]
+        }
+      ],
+      config: {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+        responseMimeType: 'application/json',
+        ...(isEnglish ? {
+          systemInstruction: `You are an international Mathematics peer reviewer. All output fields including summary, checks, issues, and correctedSolution MUST be written in clear academic English with LaTeX delimiters $...$ or $$...$$ and \\frac.`
+        } : {}),
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            isCorrect: { type: Type.BOOLEAN },
+            confidenceScore: { type: Type.INTEGER },
+            summary: { type: Type.STRING },
+            checks: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  criterion: { type: Type.STRING },
+                  passed: { type: Type.BOOLEAN },
+                  detail: { type: Type.STRING }
+                },
+                required: ['criterion', 'passed', 'detail']
+              }
+            },
+            issues: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  step: { type: Type.STRING },
+                  issue: { type: Type.STRING },
+                  correction: { type: Type.STRING }
+                },
+                required: ['step', 'issue', 'correction']
+              }
+            },
+            correctedSolution: { type: Type.STRING }
+          },
+          required: ['isCorrect', 'confidenceScore', 'summary', 'checks', 'issues', 'correctedSolution']
+        }
+      }
+    });
+
+    const parsed = safeJsonParse<any>(response.text || '{}', null);
+    if (!parsed || typeof parsed !== 'object') {
+      throw new Error(isEnglish ? "Could not parse AI verification result. Please try verifying again." : "Không thể phân tích kết quả kiểm tra từ AI. Thầy cô vui lòng bấm kiểm tra lại.");
+    }
+
+    const result = {
+      isCorrect: Boolean(parsed.isCorrect),
+      confidenceScore: typeof parsed.confidenceScore === 'number'
+        ? Math.max(0, Math.min(100, Math.round(parsed.confidenceScore)))
+        : (parsed.isCorrect ? 100 : 60),
+      summary: typeof parsed.summary === 'string' && parsed.summary.trim()
+        ? parsed.summary.trim()
+        : (parsed.isCorrect
+            ? (isEnglish ? 'The solution has been independently verified by AI with no errors detected.' : 'Lời giải đã được AI kiểm tra độc lập và không phát hiện sai sót.')
+            : (isEnglish ? 'AI detected some steps or answers that need review.' : 'AI phát hiện một số điểm cần điều chỉnh trong lời giải.')),
+      checks: Array.isArray(parsed.checks) ? parsed.checks : [],
+      issues: Array.isArray(parsed.issues) ? parsed.issues : [],
+      correctedSolution: typeof parsed.correctedSolution === 'string' ? parsed.correctedSolution.trim() : ''
+    };
+
+    return { result, customKeyFailed: response.customKeyFailed };
+  });
+});
+
+app.all("/api/translate-exercise-solution", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: 'Method not allowed' });
+  }
+
+  return keepAliveExecute(req, res, async () => {
+    const { solutionText, targetLanguage = 'en', croppedImage } = req.body || {};
+    const toEnglish = targetLanguage === 'en';
+
+    if (!solutionText || typeof solutionText !== 'string' || !solutionText.trim()) {
+      throw new Error(toEnglish ? "No solution content available to translate." : "Chưa có nội dung lời giải để chuyển đổi ngôn ngữ.");
+    }
+
+    const cleanedSolutionText = solutionText
+      .replace(/<img[^>]*src=["']data:[^"']+["'][^>]*\/?>/gi, (match, offset, full) => {
+        const solHeaderIdx = full.search(/##\s*(?:Lời giải|Đáp án|Hướng dẫn giải|(?:Detailed\s+)?Solution(?:s)?|Answer(?:s)?)/i);
+        if (solHeaderIdx !== -1 && offset >= solHeaderIdx) {
+          return '\n[HÌNH_ẢNH_ĐÁP_ÁN]\n';
+        }
+        return '\n[HÌNH_ẢNH_ĐỀ_BÀI]\n';
+      })
+      .replace(/!\[[^\]]*\]\(data:[^)]+\)/gi, '[HÌNH_ẢNH_ĐỀ_BÀI]')
+      .trim();
+
+    const translatePrompt = toEnglish
+      ? `You are a bilingual International Mathematics & Olympiad Educator specializing in Vietnamese–English mathematical translation.
+TASK:
+Translate the complete mathematics problem & detailed solution below from Vietnamese (or mixed text) into 100% natural, rigorous academic English, accurately converting ALL Vietnamese mathematical vocabulary into standard English mathematical terminology.
+
+MATH TERMINOLOGY CONVERSION RULES (MANDATORY):
+- Tập xác định -> Domain; Tập giá trị -> Range; Điều kiện xác định -> Validity condition / Domain restriction
+- Đồng biến / Nghịch biến -> Strictly increasing / Strictly decreasing; Đơn điệu -> Monotonicity
+- Đạo hàm / Đạo hàm cấp hai -> Derivative / Second derivative; Cực trị / Cực đại / Cực tiểu -> Extrema / Local maximum / Local minimum
+- GTLN / GTNN -> Global (absolute) maximum / minimum; Điểm uốn -> Inflection point; Tiếp tuyến -> Tangent line
+- Tiệm cận đứng / ngang / xiên -> Vertical / Horizontal / Oblique asymptote; Bảng biến thiên -> Variation table
+- Nguyên hàm / Tích phân -> Antiderivative / Definite integral; Đổi biến số -> Integration by substitution; Từng phần -> Integration by parts
+- Phương trình / Bất phương trình / Hệ phương trình -> Equation / Inequality / System of equations
+- Vô nghiệm / Nghiệm duy nhất / Nghiệm ngoại lai -> No solution / Unique solution / Extraneous root
+- Cấp số cộng / Cấp số nhân / Công sai / Công bội -> Arithmetic progression / Geometric progression / Common difference / Common ratio
+- Không gian mẫu / Biến cố / Biến cố đối / Xác suất có điều kiện -> Sample space / Event / Complementary event / Conditional probability
+- Hoán vị / Chỉnh hợp / Tổ hợp -> Permutation / Variation (k-permutation) / Combination
+- Hình chóp / Lăng trụ / Mặt cầu / Hình nón / Hình trụ / Góc nhị diện -> Pyramid / Prism / Sphere / Cone / Cylinder / Dihedral angle
+- Hình chiếu vuông góc / Đường trung tuyến / Đường cao / Phân giác -> Orthogonal projection / Median / Altitude / Angle bisector
+- Vectơ pháp tuyến / Vectơ chỉ phương / Tích vô hướng / Tích có hướng -> Normal vector / Direction vector / Dot product / Cross product
+
+FORMATTING & PRESERVATION RULES:
+1. Structure sections cleanly with H2 Markdown headings: \`## Problem Statement\` and \`## Detailed Solution\`.
+2. Preserve 100% of numbers, mathematical expressions, equations, LaTeX delimiters (\`$...$\`, \`$$...$$\`), \`\\frac{a}{b}\` (never \`\\dfrac\`), Markdown tables (translate column/row words naturally), and \`\`\`tikz\`\`\` blocks intact.
+3. Preserve image placeholders \`[HÌNH_ẢNH_ĐỀ_BÀI]\` and \`[HÌNH_ẢNH_ĐÁP_ÁN]\` verbatim if present in the source text.
+4. Also extract 6 to 15 key mathematical terms/phrases that appear in this specific exercise along with their exact Vietnamese and English terminology pairs in the \`terminology\` array.
+
+SOURCE CONTENT TO TRANSLATE:
+"""
+${cleanedSolutionText.slice(0, 45000)}
+"""`
+      : `Bạn là Chuyên gia Song ngữ Toán học (Tiếng Anh – Tiếng Việt) và Giáo viên Toán giàu kinh nghiệm.
+NHIỆM VỤ:
+Chuyển đổi toàn bộ nội dung đề bài & lời giải dưới đây sang **100% Tiếng Việt chuẩn mực sư phạm**, dịch chính xác toàn bộ từ vựng & thuật ngữ Toán học Tiếng Anh sang thuật ngữ Toán học Tiếng Việt tương ứng theo chương trình phổ thông Việt Nam.
+
+QUY TẮC BẢO TOÀN & ĐỊNH DẠNG:
+1. Định dạng 2 tiêu đề H2 rõ ràng: \`## Đề bài\` và \`## Lời giải chi tiết\`.
+2. Giữ nguyên 100% số liệu, biểu thức toán học, dấu LaTeX (\`$...$\`, \`$$...$$\`), dùng \`\\frac{a}{b}\` (không dùng \`\\dfrac\`), giữ nguyên bảng Markdown và khối \`\`\`tikz\`\`\` (chỉ Việt hóa các từ tiếng Anh nếu có).
+3. Giữ nguyên vị trí thẻ ảnh \`[HÌNH_ẢNH_ĐỀ_BÀI]\` và \`[HÌNH_ẢNH_ĐÁP_ÁN]\` nếu có trong văn bản nguồn.
+4. Trích xuất 6 đến 15 từ vựng/thuật ngữ Toán học quan trọng xuất hiện trong bài toán này kèm cặp đối chiếu Tiếng Việt – Tiếng Anh vào mảng \`terminology\`.
+
+NỘI DUNG NGUỒN CẦN CHUYỂN NGÔN NGỮ:
+"""
+${cleanedSolutionText.slice(0, 45000)}
+"""`;
+
+    const response = await generateWithFallback(req, {
+      model: 'gemini-4-hydrogen',
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: translatePrompt }]
+        }
+      ],
+      config: {
+        responseMimeType: 'application/json',
+        maxOutputTokens: 65536,
+        ...(toEnglish ? {
+          systemInstruction: `You are an expert bilingual Mathematics educator. Translate the problem and solution into 100% natural academic English with accurate English mathematical terminology. Enclose all math formulas and single variables in $...$ or $$...$$ and always use \\frac instead of \\dfrac.`
+        } : {
+          systemInstruction: `Bạn là chuyên gia song ngữ Toán học. Hãy chuyển toàn bộ đề bài và lời giải sang tiếng Việt chuẩn thuật ngữ Toán học Việt Nam, giữ nguyên mọi công thức trong $...$ hoặc $$...$$ và luôn dùng \\frac thay cho \\dfrac.`
+        }),
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            translatedSolution: { type: Type.STRING },
+            terminology: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  vi: { type: Type.STRING },
+                  en: { type: Type.STRING },
+                  category: { type: Type.STRING }
+                },
+                required: ['vi', 'en']
+              }
+            }
+          },
+          required: ['translatedSolution', 'terminology']
+        }
+      }
+    });
+
+    const parsed = safeJsonParse<any>(response.text || '{}', null);
+    if (!parsed || typeof parsed !== 'object' || !parsed.translatedSolution || !String(parsed.translatedSolution).trim()) {
+      throw new Error(toEnglish ? "Could not translate the solution into English. Please try again." : "Không thể chuyển đổi ngôn ngữ lời giải lúc này. Thầy cô vui lòng thử lại.");
+    }
+
+    let translatedSolution = String(parsed.translatedSolution).trim();
+    if (croppedImage) {
+      let cleanCroppedUrl = String(croppedImage).trim().replace(/[\r\n]+/g, '');
+      if (cleanCroppedUrl && !cleanCroppedUrl.startsWith('http://') && !cleanCroppedUrl.startsWith('https://') && !cleanCroppedUrl.startsWith('data:') && !cleanCroppedUrl.startsWith('/')) {
+        cleanCroppedUrl = `data:image/png;base64,${cleanCroppedUrl}`;
+      }
+      const imgTag = `\n\n<img src="${cleanCroppedUrl}" alt="${toEnglish ? 'Problem figure / graph' : 'Hình vẽ / Đồ thị bài toán'}" class="max-w-[480px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm" />\n\n`;
+      if (/\[HÌNH_ẢNH_ĐỀ_BÀI\]|\[PROBLEM_IMAGE\]/.test(translatedSolution)) {
+        translatedSolution = translatedSolution.replace(/\[HÌNH_ẢNH_ĐỀ_BÀI\]|\[PROBLEM_IMAGE\]/g, imgTag);
+      }
+      if (/\[HÌNH_ẢNH_ĐÁP_ÁN\]|\[HÌNH_ẢNH_LỜI_GIẢI\]|\[SOLUTION_IMAGE\]/.test(translatedSolution)) {
+        translatedSolution = translatedSolution.replace(/\[HÌNH_ẢNH_ĐÁP_ÁN\]|\[HÌNH_ẢNH_LỜI_GIẢI\]|\[SOLUTION_IMAGE\]/g, imgTag);
+      }
+    }
+
+    const terminology = Array.isArray(parsed.terminology)
+      ? parsed.terminology
+          .filter((t: any) => t && typeof t.vi === 'string' && typeof t.en === 'string' && t.vi.trim() && t.en.trim())
+          .map((t: any) => ({
+            vi: t.vi.trim(),
+            en: t.en.trim(),
+            category: typeof t.category === 'string' && t.category.trim() ? t.category.trim() : 'Toán học'
+          }))
+      : [];
+
+    return {
+      result: {
+        translatedSolution,
+        terminology
+      },
+      customKeyFailed: response.customKeyFailed
+    };
+  });
+});
+
+app.all("/api/analyze-student-mistakes", async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: 'Method not allowed' });
+  }
+
+  return keepAliveExecute(req, res, async () => {
+    const {
+      solutionText,
+      croppedImage,
+      croppedImageFileId,
+      studentAttempt,
+      language = 'vi',
+    } = req.body || {};
+    const isEnglish = language === 'en';
+    const files = resolveFiles(req.body || {});
+
+    let resolvedCroppedImage = croppedImage;
+    if (croppedImageFileId) {
+      const entry = getUploadedFileById(croppedImageFileId);
+      if (entry) {
+        resolvedCroppedImage = entry.data;
+      }
+    }
+
+    const fileList = [...(files || []).filter(f => f && f.data && f.data.length > 0)];
+    if (resolvedCroppedImage && typeof resolvedCroppedImage === 'string') {
+      const cleanBase64 = resolvedCroppedImage.replace(/^data:[^;]+;base64,/, '').trim();
+      if (cleanBase64) {
+        fileList.unshift({
+          data: cleanBase64,
+          type: 'image/png',
+          name: 'cropped_figure.png'
+        });
+      }
+    }
+
+    const cleanedContextText = typeof solutionText === 'string' && solutionText.trim()
+      ? solutionText
+          .replace(/<img[^>]*src=["']data:[^"']+["'][^>]*\/?>/gi, isEnglish ? '[ATTACHED_IMAGE]' : '[HÌNH_ẢNH_ĐÍNH_KÈM]')
+          .replace(/!\[[^\]]*\]\(data:[^)]+\)/gi, isEnglish ? '[ATTACHED_IMAGE]' : '[HÌNH_ẢNH_ĐÍNH_KÈM]')
+          .trim()
+      : '';
+
+    if (fileList.length === 0 && !cleanedContextText) {
+      throw new Error(
+        isEnglish
+          ? "Please upload an exercise file/image or solve a problem first."
+          : "Vui lòng tải lên tệp/ảnh bài tập hoặc mở một bài toán trước khi phân tích."
+      );
+    }
+
+    const processedAttachments = fileList.length > 0 ? await processFilesForAI(fileList) : [];
+    const safeAttempt = typeof studentAttempt === 'string' ? studentAttempt.trim().slice(0, 4000) : '';
+
+    const prompt = isEnglish
+      ? `You are an expert Mathematics Pedagogical Coach specializing in error analysis and Socratic scaffolding (helping students discover the solution without spoiling the final answer).
+
+${cleanedContextText ? `REFERENCE EXERCISE / CONTEXT:\n"""\n${cleanedContextText.slice(0, 30000)}\n"""\n` : 'Carefully read the math problem(s) from the attached file/image.\n'}
+${safeAttempt ? `STUDENT'S CURRENT ATTEMPT / WHERE THEY ARE STUCK:\n"""\n${safeAttempt}\n"""\n` : ''}
+
+PEDAGOGICAL OBJECTIVES:
+1. "problemStatement": Restate the core problem clearly in academic English (enclosing all math expressions and variables in $...$ or $$...$$, using \\frac).
+2. "attemptDiagnosis": ${safeAttempt ? 'Directly diagnose the student attempt above: point out what they did right, pinpoint the exact mathematical misconception or sign/domain error (if any), and give a concrete corrective nudge WITHOUT spoiling the final answer.' : 'Provide a brief opening diagnostic note on the most critical concept students must check first in this problem (empty string if unneeded, or concise 1-2 sentences).'}
+3. "commonMistakes": Identify 3 to 5 specific, realistic pitfalls/misconceptions students commonly make on THIS exact problem (e.g., forgetting domain restrictions, dividing by an expression that could be zero, sign reversal in inequalities, extraneous roots when squaring, confusing local extrema of $f$ vs $f\'$, misapplying combination vs permutation, dropping absolute values, etc.). For each mistake provide:
+   - title: concise name of the trap
+   - severity: "high" or "medium"
+   - wrongExample: concrete incorrect step/expression students write (with $...$ LaTeX)
+   - whyWrong: clear conceptual explanation of why it fails
+   - howToAvoid: practical verification habit / classroom tip
+4. "nextStepHints": Build a progressive sequence of 3 to 5 Socratic "Next Step" scaffolding hints guiding the student from setup to completion WITHOUT revealing the final numerical result or final multiple-choice option letter! Each hint step has:
+   - stepNumber: 1, 2, 3...
+   - title: short step objective
+   - guidingQuestion: a thought-provoking question prompting the student what to check or transform next
+   - hint: actionable next-step guidance (do NOT state the final answer!)
+   - keyFormula: relevant formula/theorem/identity in $...$ (or "" if none)
+   - checkpoint: how the student knows they completed this step correctly before moving on
+5. "finalNudge": A brief closing self-verification prompt encouraging the student to finish the final calculation and double-check conditions (without revealing the final answer).
+
+STRICT LATEX RULES: Enclose ALL math symbols, numbers in formulas, equations, and variables ($x$, $y$, $m$, $a$, $b$) in $...$ or $$...$$. Always use \\frac instead of \\dfrac.`
+      : `Bạn là Chuyên gia Sư phạm Toán học chuyên về Phân tích sai lầm học sinh và Dẫn dắt tư duy (Scaffolding) — giúp học sinh tự tìm ra lời giải qua các gợi ý "bước tiếp theo" thay vì đưa ngay đáp án cuối cùng.
+
+${cleanedContextText ? `NGỮ CẢNH BÀI TẬP HIỆN TẠI:\n"""\n${cleanedContextText.slice(0, 30000)}\n"""\n` : 'Hãy đọc thật kỹ đề bài từ tệp/hình ảnh đính kèm.\n'}
+${safeAttempt ? `BÀI LÀM THỬ / CHỖ ĐANG BÍ CỦA HỌC SINH:\n"""\n${safeAttempt}\n"""\n` : ''}
+
+NHIỆM VỤ PHÂN TÍCH SƯ PHẠM:
+1. "problemStatement": Tóm tắt / viết lại đề bài rõ ràng, chính xác bằng Tiếng Việt chuẩn (bọc mọi công thức, biến số trong $...$ hoặc $$...$$, dùng \\frac).
+2. "attemptDiagnosis": ${safeAttempt ? 'Chẩn đoán trực tiếp bài làm thử / chỗ đang bí ở trên của học sinh: khen ngợi phần làm đúng (nếu có), chỉ rõ lỗi tư duy/biến đổi cụ thể ở bước nào và đưa ra gợi ý chỉnh hướng NGAY LẬP TỨC mà KHÔNG làm lộ đáp số cuối cùng.' : 'Nhận xét ngắn 1-2 câu về "điểm nghẽn tư duy" quan trọng nhất học sinh cần lưu ý ngay từ bước đọc đề.'}
+3. "commonMistakes": Chỉ ra 3 đến 5 sai lầm phổ biến nhất mà học sinh hay mắc phải khi giải ĐÚNG BÀI TOÁN NÀY (ví dụ: quên điều kiện xác định của căn/mẫu/logarit, chia cả hai vế cho biểu thức có thể bằng $0$ làm mất nghiệm, quên đổi chiều bất phương trình khi nhân số âm, bình phương hai vế sinh nghiệm ngoại lai, nhầm lẫn $C_n^k$ và $A_n^k$, đọc nhầm cực trị của $f\'(x)$ với $f(x)$, quên xét $m = 0$, sai dấu đạo hàm hàm hợp...). Mỗi sai lầm gồm:
+   - title: Tên ngắn gọn của bẫy/lỗi sai
+   - severity: "high" (lỗi nghiêm trọng dễ mất điểm hoàn toàn) hoặc "medium"
+   - wrongExample: Ví dụ bước làm sai cụ thể học sinh hay viết (dùng $...$ LaTeX)
+   - whyWrong: Giải thích bản chất vì sao sai / thiếu sót ở đâu
+   - howToAvoid: Mẹo kiểm tra nhanh & cách nhắc học sinh phòng tránh
+4. "nextStepHints": Xây dựng chuỗi 3 đến 5 nấc gợi ý **"Bước tiếp theo"** theo phương pháp gợi mở (Socratic Scaffolding) để học sinh tự giải quyết từng phần. **TUYỆT ĐỐI KHÔNG ĐƯỢC TIẾT LỘ ĐÁP SỐ CUỐI CÙNG HAY CHỮ CÁI ĐÁP ÁN (A/B/C/D) TRONG CÁC GỢI Ý**. Mỗi bước gồm:
+   - stepNumber: 1, 2, 3...
+   - title: Mục tiêu ngắn của bước
+   - guidingQuestion: Câu hỏi gợi mở tư duy cho học sinh tự suy nghĩ
+   - hint: Gợi ý thao tác biến đổi tiếp theo cần thực hiện (không giải hết ra đáp số cuối)
+   - keyFormula: Công thức / định lý / tính chất chìa khóa (bọc trong $...$, hoặc "" nếu không cần)
+   - checkpoint: Dấu hiệu để học sinh tự kiểm tra xem mình đã đi đúng hướng ở bước này chưa
+5. "finalNudge": Lời nhắc ngắn giúp học sinh tự thực hiện phép tính chốt hạ và đối chiếu điều kiện để tự kết luận đáp án.
+
+${MATH_FORMATTING_RULES}`;
+
+    const response = await generateWithFallback(req, {
+      model: 'gemini-4-hydrogen',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            ...processedAttachments,
+            { text: prompt }
+          ]
+        }
+      ],
+      config: {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
+        responseMimeType: 'application/json',
+        ...(isEnglish ? {
+          systemInstruction: `You are an expert Mathematics pedagogical coach. Analyze common student mistakes and provide progressive Socratic "next step" hints WITHOUT spoiling the final answer. All fields must be in academic English with all math formulas and variables enclosed in $...$ or $$...$$ and \\frac.`
+        } : {
+          systemInstruction: `Bạn là chuyên gia sư phạm Toán học. Phân tích sai lầm phổ biến của học sinh và đưa ra các gợi ý 'bước tiếp theo' có tính dẫn dắt mà KHÔNG làm lộ đáp án cuối cùng. Mọi công thức, biến số phải đặt trong $...$ hoặc $$...$$ và luôn dùng \\frac.`
+        }),
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            problemStatement: { type: Type.STRING },
+            attemptDiagnosis: { type: Type.STRING },
+            commonMistakes: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  title: { type: Type.STRING },
+                  severity: { type: Type.STRING },
+                  wrongExample: { type: Type.STRING },
+                  whyWrong: { type: Type.STRING },
+                  howToAvoid: { type: Type.STRING }
+                },
+                required: ['title', 'severity', 'wrongExample', 'whyWrong', 'howToAvoid']
+              }
+            },
+            nextStepHints: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  stepNumber: { type: Type.INTEGER },
+                  title: { type: Type.STRING },
+                  guidingQuestion: { type: Type.STRING },
+                  hint: { type: Type.STRING },
+                  keyFormula: { type: Type.STRING },
+                  checkpoint: { type: Type.STRING }
+                },
+                required: ['stepNumber', 'title', 'guidingQuestion', 'hint', 'keyFormula', 'checkpoint']
+              }
+            },
+            finalNudge: { type: Type.STRING }
+          },
+          required: ['problemStatement', 'attemptDiagnosis', 'commonMistakes', 'nextStepHints', 'finalNudge']
+        }
+      }
+    });
+
+    const parsed = safeJsonParse<any>(response.text || '{}', null);
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.nextStepHints) || parsed.nextStepHints.length === 0) {
+      throw new Error(
+        isEnglish
+          ? "Could not generate student mistake analysis & hints. Please try again."
+          : "Không thể phân tích lỗi sai và tạo gợi ý lúc này. Thầy cô vui lòng bấm thử lại."
+      );
+    }
+
+    const result = {
+      problemStatement: typeof parsed.problemStatement === 'string' ? parsed.problemStatement.trim() : '',
+      attemptDiagnosis: typeof parsed.attemptDiagnosis === 'string' ? parsed.attemptDiagnosis.trim() : '',
+      commonMistakes: Array.isArray(parsed.commonMistakes)
+        ? parsed.commonMistakes.map((m: any) => ({
+            title: String(m?.title || '').trim(),
+            severity: m?.severity === 'high' ? 'high' : 'medium',
+            wrongExample: String(m?.wrongExample || '').trim(),
+            whyWrong: String(m?.whyWrong || '').trim(),
+            howToAvoid: String(m?.howToAvoid || '').trim(),
+          })).filter((m: any) => m.title)
+        : [],
+      nextStepHints: parsed.nextStepHints.map((h: any, idx: number) => ({
+        stepNumber: typeof h?.stepNumber === 'number' ? h.stepNumber : idx + 1,
+        title: String(h?.title || `Bước ${idx + 1}`).trim(),
+        guidingQuestion: String(h?.guidingQuestion || '').trim(),
+        hint: String(h?.hint || '').trim(),
+        keyFormula: String(h?.keyFormula || '').trim(),
+        checkpoint: String(h?.checkpoint || '').trim(),
+      })),
+      finalNudge: typeof parsed.finalNudge === 'string' ? parsed.finalNudge.trim() : '',
+    };
+
+    return { result, customKeyFailed: response.customKeyFailed };
+  });
 });
 
 app.all("/api/extract-file-text", async (req, res) => {
@@ -4052,6 +4839,7 @@ app.all("/api/extract-file-text", async (req, res) => {
     if (isPdf) {
       extractedText = await extractTextFromPdf(buffer);
     } else if (isDocx) {
+      const mammoth = await getMammoth();
       const result = await mammoth.extractRawText({ arrayBuffer: buffer.toArrayBuffer() });
       extractedText = result.value || "";
     } else if (isDoc) {

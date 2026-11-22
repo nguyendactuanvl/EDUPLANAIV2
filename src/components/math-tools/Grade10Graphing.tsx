@@ -5,6 +5,7 @@ import { MarkdownRenderer, MathSpan } from "../MarkdownRenderer";
 import { formatLinearEquation, formatLinearInequality, formatQuadratic } from "../../lib/mathFormatters";
 import { FunctionPlotData, Point2D, AsymptoteLine, InequalityConstraint, PolygonVertex } from "./types";
 import { Sparkles, Plus, Trash2, CheckCircle2, TrendingUp, Info } from "lucide-react";
+import { triggerGlobalMathRender } from "../../lib/globalMath";
 
 export const Grade10Graphing: React.FC = () => {
   const [activeSubTab, setActiveSubTab] = useState<"parabola" | "single_ineq" | "system_ineq">("parabola");
@@ -17,11 +18,7 @@ export const Grade10Graphing: React.FC = () => {
   const [pC, setPC] = useState<number>(-3);
 
   React.useEffect(() => {
-    if (typeof window !== 'undefined' && (window as any).MathJax) {
-      if ((window as any).MathJax.typesetPromise) {
-        (window as any).MathJax.typesetPromise().catch(() => {});
-      }
-    }
+    triggerGlobalMathRender();
   }, [pA, pB, pC, activeSubTab]);
 
   const parabolaAnalysis = useMemo(() => {

@@ -28,7 +28,7 @@ import { HeaderConfigModal } from "../components/HeaderConfigModal";
 import { HeaderConfig, getHeaderConfig, saveHeaderConfig } from "../lib/headerConfig";
 import { QuestionVisualizerPanel } from "../components/math-tools/QuestionVisualizerPanel";
 import { WorksheetAiInspectorModal } from "../components/WorksheetAiInspectorModal";
-import { fetchExamFromCloud } from "../lib/cloudExamStore";
+import { fetchExamFromCloud, saveExamToCloud, saveExamToWebhook, deleteExamFromLocalStore, fetchSubmissionsFromGoogleSheets } from "../lib/cloudExamStore";
 import { analyzeFunctionToBbt, generateBbtSvg, convertBbtTableToSvg, autoEnrichTextWithVisuals } from "../lib/bbtRenderer";
 import { getTikzSvg, embedTikzSvgsInText } from "../components/TikzRenderer";
 import { saveToHistory, getHistory, deleteFromHistory } from '../lib/history';
@@ -36,7 +36,6 @@ import { HistoryItem } from '../types';
 import { cn, parseApiResponse, preProcessMathContent, sanitizeLatexString, fixMath, cleanQuestionStem, cleanOptionText, normalizeMathText, triggerGlobalMathRender, normalizeArithmeticProgressionFormulas, normalizeGeometricProgressionFormulas, formatWorksheetQuestionsAndSections, formatWorksheetSolutionSections, sanitizeExamQuestion, sanitizeAndPolishMath, normalizeArrayAndTableEnvironments, cleanMathAndUnwrapHeadings, formatStructuredJsonToMarkdown, safeJsonParse, getPublicAppUrl } from "../lib/utils";
 import { parseRawExamText } from '../lib/examParser';
 import { printElement, ensureMathRendered } from '../lib/print';
-import { saveExamToCloud, saveExamToWebhook } from '../lib/cloudExamStore';
 import { registerExamUrlMapping } from "../lib/smartRouter";
 import { KNTT_CURRICULUM, getKnttCurriculum } from "../data/knttCurriculum";
 import { LanguageSpeechControls } from "../components/LanguageSpeechControls";
@@ -891,14 +890,9 @@ export function Worksheets() {
         linkedSheetUrl: sheet.url
       };
 
-      const saveRes = await fetch("/api/exams/share", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...updatedData, customId: code })
-      });
-
-      if (!saveRes.ok) {
-        throw new Error("Không thể cập nhật liên kết tệp Trang tính lên máy chủ.");
+      const savedLocal = await saveExamToCloud(code, updatedData, { syncToSheets: false });
+      if (!savedLocal) {
+        throw new Error("Không thể cập nhật liên kết tệp Trang tính vào bộ nhớ trình duyệt.");
       }
 
       const subs = updatedData.submissions || [];
@@ -970,11 +964,7 @@ export function Worksheets() {
     };
 
     try {
-      await fetch("/api/exams/share", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...updatedData, customId: code })
-      }).catch(() => {});
+      await saveExamToCloud(code, updatedData, { syncToSheets: false });
 
       setSelectedRoomResultsData(updatedData);
 
@@ -1004,11 +994,7 @@ export function Worksheets() {
     };
 
     try {
-      await fetch("/api/exams/share", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...updatedData, customId: code })
-      }).catch(() => {});
+      await saveExamToCloud(code, updatedData, { syncToSheets: false });
 
       setSelectedRoomResultsData(updatedData);
 
@@ -1071,11 +1057,7 @@ export function Worksheets() {
           linkedSheetUrl: sheet.url
         };
 
-        await fetch("/api/exams/share", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...updatedData, customId: code })
-        }).catch(() => {});
+        await saveExamToCloud(code, updatedData, { syncToSheets: false });
 
         setSelectedRoomResultsData(updatedData);
 
@@ -1132,19 +1114,32 @@ export function Worksheets() {
     setSelectedRoomForResults(cleanCode);
     setIsLoadingResults(true);
     try {
-      let data = null;
-      try {
-        const res = await fetch(`/api/exams/${cleanCode}?fresh=true`);
-        if (res.ok) {
-          data = await res.json();
-        }
-      } catch (e) {}
-
-      if (!data) {
-        data = await fetchExamFromCloud(cleanCode);
-      }
+      const data = await fetchExamFromCloud(cleanCode);
 
       if (data) {
+        try {
+          const remoteSubs = await fetchSubmissionsFromGoogleSheets(cleanCode);
+          if (remoteSubs.length > 0) {
+            const mergedSubs = Array.isArray(data.submissions) ? [...data.submissions] : [];
+            remoteSubs.forEach((s: any) => {
+              const isDup = mergedSubs.some((m: any) =>
+                String(m.studentName || '').trim().toLowerCase() === String(s.studentName || '').trim().toLowerCase() &&
+                String(m.studentClass || m.className || '').trim().toLowerCase() === String(s.studentClass || s.className || '').trim().toLowerCase() &&
+                Math.abs(new Date(m.timestamp || m.submittedAt || 0).getTime() - new Date(s.timestamp || s.submittedAt || 0).getTime()) < 3 * 60 * 1000
+              );
+              if (!isDup) {
+                mergedSubs.push({
+                  ...s,
+                  studentClass: s.studentClass || s.className || '',
+                  totalScore: s.totalScore ?? s.score ?? 0,
+                  submittedAt: s.submittedAt || s.timestamp
+                });
+              }
+            });
+            data.submissions = mergedSubs;
+          }
+        } catch (e) {}
+
         setSelectedRoomResultsData(data);
         if (data.linkedSheetUrl) {
           setManualSheetUrlInput(data.linkedSheetUrl);
@@ -1152,7 +1147,7 @@ export function Worksheets() {
           setManualSheetUrlInput('');
         }
       } else {
-        throw new Error("Không thể tải kết quả từ máy chủ.");
+        throw new Error("Không tìm thấy dữ liệu phòng thi trên Google Sheets hoặc bộ nhớ trình duyệt.");
       }
     } catch (err: any) {
       alert("Lỗi tải kết quả phòng thi: " + err.message);
@@ -1218,12 +1213,7 @@ export function Worksheets() {
         setSelectedRoomResultsData(null);
       }
 
-      // 2. Call backend DELETE endpoint to free server & cloud store
-      try {
-        await fetch(`/api/exams/${code}`, { method: 'DELETE' });
-      } catch (err) {
-        console.warn("Lỗi gửi yêu cầu xóa tới máy chủ:", err);
-      }
+      deleteExamFromLocalStore(code);
 
       showToast(`Đã xóa phiếu online ${code} thành công!`);
     }
@@ -1234,20 +1224,10 @@ export function Worksheets() {
     if (!cleanCode) return;
 
     try {
-      let examData = null;
-      try {
-        const res = await fetch(`/api/exams/${cleanCode}?fresh=true`);
-        if (res.ok) {
-          examData = await res.json();
-        }
-      } catch (e) {}
+      const examData = await fetchExamFromCloud(cleanCode);
 
       if (!examData) {
-        examData = await fetchExamFromCloud(cleanCode);
-      }
-
-      if (!examData) {
-        throw new Error(`Không tìm thấy dữ liệu phiếu bài tập / đề thi cho mã "${cleanCode}".`);
+        throw new Error(`Không tìm thấy dữ liệu phiếu bài tập / đề thi cho mã "${cleanCode}" trong bộ nhớ trình duyệt.`);
       }
 
       const refreshedPayload = {
@@ -1301,14 +1281,9 @@ export function Worksheets() {
     };
 
     try {
-      const saveRes = await fetch("/api/exams/share", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...updatedData, customId: code })
-      });
-
-      if (!saveRes.ok) {
-        throw new Error("Không thể cập nhật danh sách bài làm lên máy chủ.");
+      const savedLocal = await saveExamToCloud(code, updatedData, { syncToSheets: false });
+      if (!savedLocal) {
+        throw new Error("Không thể cập nhật danh sách bài làm trong bộ nhớ trình duyệt.");
       }
 
       setSelectedRoomResultsData(updatedData);
@@ -1454,30 +1429,9 @@ export function Worksheets() {
         fallbackCode += chars.charAt(Math.floor(Math.random() * chars.length));
       }
 
-      let examId = fallbackCode;
-      try {
-        const shareRes = await apiFetch('/api/exams/share', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...payload, customId: fallbackCode }),
-          redirect: 'follow',
-        });
-        if (shareRes.ok) {
-          const shareRaw = await shareRes.text();
-          if (!shareRaw.trim().startsWith('<') && !shareRaw.includes('<!DOCTYPE html>')) {
-            try {
-              const shareJson = JSON.parse(shareRaw);
-              if (shareJson.examId) {
-                examId = shareJson.examId;
-              }
-            } catch (e) {}
-          }
-        }
-      } catch (e) {
-        console.warn("Share to api failed:", e);
-      }
+      const examId = fallbackCode;
 
-      // Sync to cloud store & Webhook unconditionally
+      // Lưu cấu hình phiếu trực tiếp vào localStorage trình duyệt
       try {
         await saveExamToCloud(examId, payload);
         registerExamUrlMapping(`/exam/${examId}`, examId);
@@ -1492,7 +1446,10 @@ export function Worksheets() {
       const shortLink = `${publicBase}/?pin=${examId}`;
       let compressed = '';
       try {
-        compressed = LZString.compressToEncodedURIComponent(JSON.stringify(payload));
+        const payloadJson = JSON.stringify(payload);
+        if (payloadJson.length <= 80_000) {
+          compressed = LZString.compressToEncodedURIComponent(payloadJson);
+        }
       } catch (compErr) {
         console.warn("LZString compression error:", compErr);
       }
@@ -1960,7 +1917,7 @@ export function Worksheets() {
       const cleanTitle = sanitizeExportName(customLessonName);
       const blob = await exportHtmlToWord(el, `PhieuHocTap_${cleanTitle}.docx`, 'omml');
       if (blob) {
-        showToast("✅ Đã xuất file Word (.docx) chuẩn Equation (OMML) thành công!");
+        showToast("✅ Đã xuất file Word (Equation - OMML) thành công!");
       } else {
         showToast("⚠️ Có lỗi khi xuất file Word. Vui lòng thử lại.");
       }
@@ -1970,11 +1927,11 @@ export function Worksheets() {
   const handleExportWordLatex = async () => {
     await runAfterPreviewReady(async (el) => {
       const cleanTitle = sanitizeExportName(customLessonName);
-      const blob = await exportHtmlToWord(el, `PhieuHocTap_${cleanTitle}_LaTeX.docx`, 'latex');
+      const blob = await exportHtmlToWord(el, `PhieuHocTap_${cleanTitle}_MathType.docx`, 'mathtype');
       if (blob) {
-        showToast("✅ Đã xuất file Word (LaTeX) thành công!");
+        showToast("✅ Đã xuất file Word (MathType) thành công!");
       } else {
-        showToast("⚠️ Có lỗi khi xuất file Word (LaTeX). Vui lòng thử lại.");
+        showToast("⚠️ Có lỗi khi xuất file Word (MathType). Vui lòng thử lại.");
       }
     });
   };
@@ -3632,15 +3589,25 @@ export function Worksheets() {
                   <span>In / PDF</span>
                 </button>
 
-                {/* Nút Xuất file A4 chuẩn định dạng .docx */}
+                {/* 2 lựa chọn Xuất Word: Equation (OMML) và MathType */}
                 <button
                   type="button"
                   onClick={handleExportWord}
                   className="px-3.5 py-1.5 sm:py-2 text-white text-xs sm:text-sm font-bold rounded-lg flex items-center gap-1.5 shadow-md transition-all bg-emerald-600 hover:bg-emerald-700 hover:scale-[1.02] active:scale-[0.98] cursor-pointer ring-2 ring-emerald-400/30"
-                  title="Tải xuống phiếu học tập đã soạn dưới dạng tệp .docx chuẩn định dạng A4"
+                  title="Xuất phiếu học tập sang tệp Word (.docx) công thức chuẩn Word Equation (OMML)"
                 >
                   <FileText className="w-4 h-4 text-emerald-100" />
-                  <span>Xuất file A4</span>
+                  <span>Xuất Word (Equation)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportWordLatex}
+                  className="px-3.5 py-1.5 sm:py-2 text-white text-xs sm:text-sm font-bold rounded-lg flex items-center gap-1.5 shadow-md transition-all bg-indigo-600 hover:bg-indigo-700 hover:scale-[1.02] active:scale-[0.98] cursor-pointer ring-2 ring-indigo-400/30"
+                  title="Xuất phiếu học tập sang tệp Word (.docx) công thức chuẩn Word MathType"
+                >
+                  <Download className="w-4 h-4 text-indigo-100" />
+                  <span>Xuất Word (MathType)</span>
                 </button>
 
                 {/* Export Word (Ảnh) */}
@@ -3652,16 +3619,6 @@ export function Worksheets() {
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Word (Ảnh)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleExportWordLatex}
-                  className="hidden xl:flex px-3 py-1.5 text-white text-xs font-semibold rounded-lg items-center gap-1.5 shadow-xs transition-colors bg-blue-600 hover:bg-blue-700 cursor-pointer"
-                  title="Xuất Word giữ nguyên mã LaTeX để dùng chức năng Toggle TeX của MathType"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Word (LaTeX)</span>
                 </button>
               </>
             )}

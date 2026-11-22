@@ -8,6 +8,7 @@ import {
   signOut
 } from "firebase/auth";
 import firebaseConfig from "../../firebase-applet-config.json";
+import { saveExamToWebhook as postDirectToGoogleScript } from "./cloudExamStore";
 
 // Initialize Firebase using the generated credentials
 const app = initializeApp(firebaseConfig);
@@ -139,13 +140,7 @@ export const getCachedToken = (): string | null => {
 
 const saveExamToWebhook = async (payload: any) => {
   try {
-    const res = await fetch("/api/webhook", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) return null;
-    return await res.json();
+    return await postDirectToGoogleScript(payload);
   } catch (e) {
     return null;
   }

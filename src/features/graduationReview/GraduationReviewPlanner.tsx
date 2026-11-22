@@ -707,16 +707,21 @@ ${subjectFormatInstructions}`;
   };
 
   // Export to Word (.docx)
-  const handleExportWord = async () => {
+  const handleExportWord = async (mode: "omml" | "mathtype" = "omml") => {
     if (!previewContainerRef.current) return;
     setIsExportingWord(true);
     try {
       await typesetMathJax(previewContainerRef.current);
+      const suffix = mode === "mathtype" ? "_MathType" : "";
       const fileName = `KHDH_OnThi_TN_THPT_${currentSubject.shortName}_${effectiveTopicName
         .replace(/[^a-zA-Z0-9\u00C0-\u024F\u1EA0-\u1EF9]/g, "_")
-        .slice(0, 35)}.docx`;
-      await exportHtmlToWord(previewContainerRef.current, fileName, "omml");
-      showToast("Đã xuất file Word (.docx) với công thức Equation (OMML) thành công!");
+        .slice(0, 35)}${suffix}.docx`;
+      await exportHtmlToWord(previewContainerRef.current, fileName, mode);
+      showToast(
+        mode === "mathtype"
+          ? "Đã xuất file Word (.docx) chuẩn MathType thành công!"
+          : "Đã xuất file Word (.docx) với công thức Equation (OMML) thành công!"
+      );
     } catch (e: any) {
       console.error("Lỗi xuất file Word:", e);
       showToast("Lỗi khi xuất file Word: " + (e?.message || "Vui lòng thử lại"));
@@ -1308,9 +1313,9 @@ ${subjectFormatInstructions}`;
 
                   <button
                     type="button"
-                    onClick={handleExportWord}
+                    onClick={() => handleExportWord("omml")}
                     disabled={isExportingWord}
-                    title="Xuất kế hoạch bài dạy sang tệp Word (.docx) chuẩn định dạng A4 in ấn"
+                    title="Xuất kế hoạch bài dạy sang tệp Word (.docx) công thức chuẩn Word Equation (OMML)"
                     className="p-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition-all text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-emerald-600/30 cursor-pointer"
                   >
                     {isExportingWord ? (
@@ -1318,7 +1323,22 @@ ${subjectFormatInstructions}`;
                     ) : (
                       <FileText className="w-3.5 h-3.5" />
                     )}
-                    <span>Xuất file A4 (.docx)</span>
+                    <span>Xuất Word (Equation)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleExportWord("mathtype")}
+                    disabled={isExportingWord}
+                    title="Xuất kế hoạch bài dạy sang tệp Word (.docx) công thức chuẩn Word MathType"
+                    className="p-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-indigo-600/30 cursor-pointer"
+                  >
+                    {isExportingWord ? (
+                      <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <FileText className="w-3.5 h-3.5" />
+                    )}
+                    <span>Xuất Word (MathType)</span>
                   </button>
 
                   <button

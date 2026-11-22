@@ -965,8 +965,9 @@ export function wrapNakedLatexExpressions(text: string): string {
     const isTableLine = /^\s*\|/.test(line);
     let out = '';
     let cursor = 0;
+    let safetySteps = 0;
 
-    while (cursor < line.length) {
+    while (cursor < line.length && ++safetySteps <= 2000) {
       const slice = line.slice(cursor);
       const anchorMatch = MATH_TRIGGER_RE.exec(slice);
       if (!anchorMatch || anchorMatch.index === undefined) {
@@ -1257,9 +1258,13 @@ export function wrapNakedLatexExpressions(text: string): string {
         }
       }
 
-      // Advance past failed trigger safely
-      out += line.slice(cursor, anchorIdx + anchorMatch[0].length);
-      cursor = anchorIdx + anchorMatch[0].length;
+      // Advance past failed trigger safely (always guarantee strict progress)
+      const nextCursor = Math.max(cursor + 1, anchorIdx + anchorMatch[0].length);
+      out += line.slice(cursor, nextCursor);
+      cursor = nextCursor;
+    }
+    if (cursor < line.length) {
+      out += line.slice(cursor);
     }
 
     return out;
@@ -3607,8 +3612,8 @@ export function formatMultipleChoiceInMarkdown(content: string): string {
   text = text.replace(/-+\*{2,}/g, '');
   text = text.replace(/\*{4,}/g, '**');
 
-  // 1. TÁCH BIỆT GIỮA CÁC CÂU HỎI (Spacing):
-  text = text.replace(/([^\n])\s*(?:\r?\n)?(\*{0,2}(?:Câu|Bài)\s*\d+[:\.]?\*{0,2})/gi, '$1\n\n$2');
+  // 1. TÁCH BIỆT GIỮA CÁC CÂU HỎI (Spacing) - không cắt cụm chữ thường như "từ câu 1 đến câu 12.":
+  text = text.replace(/([^\n])\s*(?:\r?\n)?(\*{0,2}(?:Câu|CÂU|Bài|BÀI)\s*\d+\s*[:\.]\*{0,2})/g, '$1\n\n$2');
 
   // 2. QUY TẮC HIỂN THỊ PHẦN ĐÚNG/SAI (PHẦN II):
   // - Khi gặp các ký hiệu mệnh đề a), b), c), d) (chữ thường):

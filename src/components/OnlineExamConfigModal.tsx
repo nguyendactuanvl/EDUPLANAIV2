@@ -210,22 +210,9 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
         fallbackCode += chars.charAt(Math.floor(Math.random() * chars.length));
       }
 
-      let examId = fallbackCode;
-      try {
-        const shareRes = await apiFetch('/api/exams/share', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...dataToShare, customId: fallbackCode })
-        });
-        if (shareRes.ok) {
-          const shareJson = await shareRes.json();
-          if (shareJson.examId) examId = shareJson.examId;
-        }
-      } catch (e) {
-        console.warn("Backend share notice:", e);
-      }
+      const examId = fallbackCode;
 
-      // Dual-sync to persistent Cloud KV with hex chunking and local cache
+      // Lưu cấu hình phòng thi trực tiếp vào localStorage trình duyệt
       await saveExamToCloud(examId, dataToShare);
       registerExamUrlMapping(`/exam/${examId}`, examId);
       registerExamUrlMapping(`/p/${examId}`, examId);
@@ -236,10 +223,13 @@ export const OnlineExamConfigModal: React.FC<OnlineExamConfigModalProps> = ({
       // Clean exam data (stripping correct answers and detailed explanations)
       const cleanExamData = stripExamAnswers(dataToShare);
 
-      // Compress cleanExamData into URL hash string
+      // Compress cleanExamData into URL hash string only for lightweight text exams (<= 80 KB)
       let hashData = '';
       try {
-        hashData = LZString.compressToEncodedURIComponent(JSON.stringify(cleanExamData));
+        const cleanJson = JSON.stringify(cleanExamData);
+        if (cleanJson.length <= 80_000) {
+          hashData = LZString.compressToEncodedURIComponent(cleanJson);
+        }
       } catch (compErr) {
         console.warn("LZString compression notice:", compErr);
       }

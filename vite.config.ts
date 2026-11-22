@@ -18,8 +18,15 @@ export default defineConfig(() => {
       },
       dedupe: ['react', 'react-dom'],
     },
+    css: {
+      devSourcemap: false,
+    },
     optimizeDeps: {
-      entries: ['index.html'],
+      holdUntilCrawlEnd: false,
+      esbuildOptions: {
+        sourcemap: false,
+        target: 'esnext',
+      },
       include: [
         'react',
         'react-dom',
@@ -29,6 +36,15 @@ export default defineConfig(() => {
         'lucide-react',
         'clsx',
         'tailwind-merge',
+        'lz-string',
+      ],
+      exclude: [
+        'express',
+        'dotenv',
+        'jsdom',
+        'pdf-parse',
+        'word-extractor',
+        'html-to-docx',
       ],
     },
     build: {
@@ -38,6 +54,7 @@ export default defineConfig(() => {
       sourcemap: false,
       reportCompressedSize: false,
       rollupOptions: {
+        maxParallelFileOps: 2,
         output: {
           manualChunks(id) {
             if (!id.includes('node_modules')) return undefined;
@@ -59,10 +76,7 @@ export default defineConfig(() => {
       // Do not modify file watching is disabled to prevent flickering during agent edits.
       hmr: false,
       ws: false,
-      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
-      watch: process.env.DISABLE_HMR === 'true' ? null : {
-        ignored: ['**/public/assets/**', '**/dist/**', '**/node_modules/**', '**/.git/**', '**/shared_exams.json'],
-      },
+      watch: null,
     },
   };
 });

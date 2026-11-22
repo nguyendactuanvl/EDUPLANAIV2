@@ -675,24 +675,9 @@ export function UploadTeacherExamModal({
         ]
       };
 
-      let examId = code;
+      const examId = code;
 
-      // 3. Save to backend API
-      try {
-        const shareRes = await apiFetch('/api/exams/share', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...payload, customId: code })
-        });
-        if (shareRes.ok) {
-          const shareJson = await shareRes.json();
-          if (shareJson.examId) examId = shareJson.examId;
-        }
-      } catch (e) {
-        console.warn("Backend share notice:", e);
-      }
-
-      // 4. Save to distributed cloud KV store + localStorage
+      // Lưu cấu hình phòng thi trực tiếp vào localStorage trình duyệt
       await saveExamToCloud(examId, payload);
       registerExamUrlMapping(`/exam/${examId}`, examId);
       registerExamUrlMapping(`/p/${examId}`, examId);

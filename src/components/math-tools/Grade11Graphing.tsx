@@ -6,6 +6,7 @@ import { MarkdownRenderer, MathSpan } from "../MarkdownRenderer";
 import { MathView } from "../MathView";
 import { FunctionPlotData, Point2D, AsymptoteLine, Shape3DType } from "./types";
 import { Sparkles, Box, Info, CheckCircle2, Copy, Check, RefreshCw } from "lucide-react";
+import { triggerGlobalMathRender } from "../../lib/globalMath";
 
 export const Grade11Graphing: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"trig" | "exp_log" | "geometry_3d">("trig");
@@ -21,11 +22,7 @@ export const Grade11Graphing: React.FC = () => {
   const [copiedTikz, setCopiedTikz] = useState<boolean>(false);
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && (window as any).MathJax) {
-      if ((window as any).MathJax.typesetPromise) {
-        (window as any).MathJax.typesetPromise().catch(() => {});
-      }
-    }
+    triggerGlobalMathRender();
   }, [trigFn, trigA, trigB, trigC, trigD, activeTab]);
 
   // Radian helper string

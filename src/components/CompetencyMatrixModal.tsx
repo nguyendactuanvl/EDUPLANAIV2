@@ -35,10 +35,19 @@ export { SAMPLE_COMPETENCY_MATRIX_11, SAMPLE_SPEC_LIST_11 };
 // HELPER ĐẾM SỐ LỆNH HỎI & ĐIỂM
 // ============================================================================
 
+function splitMatrixTokens(codeStr: string): string[] {
+  if (!codeStr || !codeStr.trim()) return [];
+  // Split by commas that are NOT inside parentheses (e.g. keep "IV.1 (0,5đ)" intact)
+  return codeStr
+    .split(/,(?![^()]*\))/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
 export function countMatrixCommands(codeStr: string): number {
-  if (!codeStr || !codeStr.trim()) return 0;
+  const parts = splitMatrixTokens(codeStr);
+  if (parts.length === 0) return 0;
   let count = 0;
-  const parts = codeStr.split(',').map(s => s.trim()).filter(Boolean);
   for (const p of parts) {
     if (/II\.\d+[a-d]{2}/i.test(p)) {
       count += 2;
@@ -52,10 +61,18 @@ export function countMatrixCommands(codeStr: string): number {
 }
 
 export function countMatrixScore(codeStr: string): number {
-  if (!codeStr || !codeStr.trim()) return 0;
+  const parts = splitMatrixTokens(codeStr);
+  if (parts.length === 0) return 0;
   let score = 0;
-  const parts = codeStr.split(',').map(s => s.trim()).filter(Boolean);
   for (const p of parts) {
+    const explicitMatch = p.match(/\((\d+(?:[.,]\d+)?)\s*đ\)/i);
+    if (explicitMatch) {
+      const val = parseFloat(explicitMatch[1].replace(',', '.'));
+      if (!Number.isNaN(val)) {
+        score += val;
+        continue;
+      }
+    }
     if (/^I\.\d+/i.test(p)) {
       score += 0.25;
     } else if (/^II\.\d+[a-d]{2}/i.test(p)) {
@@ -64,13 +81,68 @@ export function countMatrixScore(codeStr: string): number {
       score += 0.25;
     } else if (/^III\.\d+/i.test(p)) {
       score += 0.5;
-    } else if (/^TL\d+/i.test(p)) {
+    } else if (/^(?:TL|IV\.)\d+/i.test(p)) {
       score += 1.0;
     } else {
       score += 0.25;
     }
   }
   return score;
+}
+
+const EMPTY_LEVELS = { biet: '', hieu: '', vd: '' };
+
+function normalizeLevels(obj: any): { biet: string; hieu: string; vd: string } {
+  if (!obj || typeof obj !== 'object') return { ...EMPTY_LEVELS };
+  return {
+    biet: typeof obj.biet === 'string' ? obj.biet : String(obj.biet ?? ''),
+    hieu: typeof obj.hieu === 'string' ? obj.hieu : String(obj.hieu ?? ''),
+    vd: typeof obj.vd === 'string' ? obj.vd : String(obj.vd ?? '')
+  };
+}
+
+export function normalizeMatrixRow(row: any, idx: number = 0): MatrixRowItem {
+  const r = row && typeof row === 'object' ? row : {};
+  const normalized: MatrixRowItem = {
+    id: r.id || `row_${idx}_${Date.now()}`,
+    topic: r.topic || 'CHỦ ĐỀ',
+    unit: r.unit || '',
+    gqvd: normalizeLevels(r.gqvd),
+    tuduy: normalizeLevels(r.tuduy),
+    mohinh: normalizeLevels(r.mohinh),
+  };
+  if (r.nlc) normalized.nlc = normalizeLevels(r.nlc);
+  if (r.ds) normalized.ds = normalizeLevels(r.ds);
+  if (r.tln) normalized.tln = normalizeLevels(r.tln);
+  if (r.tl) normalized.tl = normalizeLevels(r.tl);
+  if (r.tong) normalized.tong = r.tong;
+  if (r.tiLe) normalized.tiLe = r.tiLe;
+  return normalized;
+}
+
+export function normalizeMatrixRows(rows: any): MatrixRowItem[] {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((r, idx) => normalizeMatrixRow(r, idx));
+}
+
+export function normalizeSpecUnits(specs: any): SpecUnitItem[] {
+  if (!Array.isArray(specs)) return [];
+  return specs.map((s: any, idx: number) => ({
+    id: s?.id || `spec_${idx}_${Date.now()}`,
+    topic: s?.topic || '',
+    unit: s?.unit || '',
+    bietSpec: s?.bietSpec || '',
+    hieuSpec: s?.hieuSpec || '',
+    vdSpec: s?.vdSpec || '',
+    vdcSpec: s?.vdcSpec,
+    assignedQuestions: {
+      part1: s?.assignedQuestions?.part1 || '',
+      part2: s?.assignedQuestions?.part2 || '',
+      part3: s?.assignedQuestions?.part3 || '',
+      essay: s?.assignedQuestions?.essay || ''
+    },
+    points: typeof s?.points === 'number' ? s.points : parseFloat(s?.points) || 0
+  }));
 }
 
 // ============================================================================
@@ -118,8 +190,8 @@ export function CompetencyMatrixModal({
   });
 
   const [title, setTitle] = useState(examTitle || currentTemplate.title);
-  const [matrixData, setMatrixData] = useState<MatrixRowItem[]>(currentTemplate.matrixRows);
-  const [specData, setSpecData] = useState<SpecUnitItem[]>(currentTemplate.specUnits);
+  const [matrixData, setMatrixData] = useState<MatrixRowItem[]>(() => normalizeMatrixRows(currentTemplate.matrixRows));
+  const [specData, setSpecData] = useState<SpecUnitItem[]>(() => normalizeSpecUnits(currentTemplate.specUnits));
   
   // Navigation tab inside modal: library | drag_drop | matrix | charts | spec | both
   const [activeViewTab, setActiveViewTab] = useState<'library' | 'drag_drop' | 'matrix' | 'charts' | 'spec' | 'both'>(initialTab);
@@ -201,24 +273,39 @@ export function CompetencyMatrixModal({
 
   // Sync state when template changes
   const handleSelectTemplate = (template: ExamMatrixTemplate, targetTab: 'matrix' | 'drag_drop' = 'matrix') => {
-    setCurrentTemplate(template);
-    setTitle(template.title);
-    setMatrixData(JSON.parse(JSON.stringify(template.matrixRows)));
-    setSpecData(JSON.parse(JSON.stringify(template.specUnits)));
+    const safeTemplate: ExamMatrixTemplate = {
+      ...template,
+      competencyHeaders: template.competencyHeaders || { c1: 'Giải quyết vấn đề', c2: 'Tư duy toán học', c3: 'Mô hình hoá' },
+      qCounts: template.qCounts || { mc: 12, tf: 2, sa: 4, essay: 4 },
+      topicsList: template.topicsList || [],
+      matrixRows: normalizeMatrixRows(template.matrixRows),
+      specUnits: normalizeSpecUnits(template.specUnits)
+    };
+    setCurrentTemplate(safeTemplate);
+    setTitle(safeTemplate.title);
+    setMatrixData(JSON.parse(JSON.stringify(safeTemplate.matrixRows)));
+    setSpecData(JSON.parse(JSON.stringify(safeTemplate.specUnits)));
     setActiveViewTab(targetTab);
-    setAppliedNotification(`Đã tải mẫu ma trận: ${template.title}`);
+    setAppliedNotification(`Đã tải mẫu ma trận: ${safeTemplate.title}`);
     setTimeout(() => setAppliedNotification(null), 3000);
   };
 
   // Sync state when AI proposes a matrix
   const handleApplyFromAi = (suggestedData: any, directToExam?: boolean) => {
-    setCurrentTemplate(suggestedData.template);
-    setMatrixData(suggestedData.matrixRows);
-    setSpecData(suggestedData.specUnits);
-    setTitle(suggestedData.title);
+    const normalizedRows = normalizeMatrixRows(suggestedData.matrixRows);
+    const normalizedSpecs = normalizeSpecUnits(suggestedData.specUnits);
+    const safeTpl: ExamMatrixTemplate = {
+      ...suggestedData.template,
+      matrixRows: normalizedRows,
+      specUnits: normalizedSpecs
+    };
+    setCurrentTemplate(safeTpl);
+    setMatrixData(normalizedRows);
+    setSpecData(normalizedSpecs);
+    setTitle(suggestedData.title || safeTpl.title);
     setShowAiModal(false);
     if (directToExam) {
-      handleApplyConfig(suggestedData.template);
+      handleApplyConfig(safeTpl);
     } else {
       setActiveViewTab('matrix');
       setAppliedNotification('✨ Đã nạp Ma trận & Bản đặc tả được AI đề xuất thành công!');
@@ -239,8 +326,17 @@ export function CompetencyMatrixModal({
       description: saveTemplateDesc.trim() || `Mẫu ma trận được thiết kế riêng cho môn ${currentTemplate.subjectName} Lớp ${currentTemplate.grade}.`,
       durationMinutes: currentTemplate.durationMinutes,
       totalPoints: currentTemplate.totalPoints,
-      competencyHeaders: { ...currentTemplate.competencyHeaders },
-      qCounts: { ...currentTemplate.qCounts },
+      competencyHeaders: {
+        c1: currentTemplate?.competencyHeaders?.c1 || 'Giải quyết vấn đề',
+        c2: currentTemplate?.competencyHeaders?.c2 || 'Tư duy và lập luận',
+        c3: currentTemplate?.competencyHeaders?.c3 || 'Mô hình hóa / Giao tiếp'
+      },
+      qCounts: {
+        mc: currentTemplate?.qCounts?.mc ?? 12,
+        tf: currentTemplate?.qCounts?.tf ?? 2,
+        sa: currentTemplate?.qCounts?.sa ?? 4,
+        essay: currentTemplate?.qCounts?.essay ?? 4
+      },
       matrixRows: JSON.parse(JSON.stringify(matrixData)),
       specUnits: JSON.parse(JSON.stringify(specData)),
       topicsList: Array.from(new Set(matrixData.map(r => r.topic))).filter(Boolean)
@@ -305,7 +401,9 @@ export function CompetencyMatrixModal({
         const imported: ExamMatrixTemplate = {
           ...parsed,
           id: `imported_matrix_${Date.now()}`,
-          badge: parsed.badge || 'Mẫu nhập từ file'
+          badge: parsed.badge || 'Mẫu nhập từ file',
+          matrixRows: normalizeMatrixRows(parsed.matrixRows),
+          specUnits: normalizeSpecUnits(parsed.specUnits),
         };
         const updated = [imported, ...customTemplates];
         setCustomTemplates(updated);
@@ -352,9 +450,16 @@ export function CompetencyMatrixModal({
     });
   }, [allAvailableTemplates, originFilter, subjectFilter, gradeFilter, semesterFilter, searchQuery]);
 
+  const isVinhLoc = useMemo(() => {
+    return matrixData.some(r => r && (r.nlc || r.ds || r.tln || r.tl)) ||
+      currentTemplate?.badge?.includes('EDUPLAN AI') ||
+      currentTemplate?.badge?.includes('19') ||
+      (currentTemplate?.subjectId === 'toan' && ['10', '11', '12'].includes(currentTemplate?.grade));
+  }, [matrixData, currentTemplate]);
+
   if (!isOpen) return null;
 
-  // Tính toán số lệnh hỏi và điểm động
+  // Tính toán số lệnh hỏi và điểm động (hỗ trợ cả 2 chuẩn: 18 cột Năng lực & 19 cột Vinh Lộc)
   const calculateTotals = () => {
     let c1BietCount = 0; let c1BietScore = 0;
     let c1HieuCount = 0; let c1HieuScore = 0;
@@ -368,42 +473,89 @@ export function CompetencyMatrixModal({
     let c3HieuCount = 0; let c3HieuScore = 0;
     let c3VdCount = 0;   let c3VdScore = 0;
 
-    matrixData.forEach(row => {
-      c1BietCount += countMatrixCommands(row.gqvd.biet);
-      c1BietScore += countMatrixScore(row.gqvd.biet);
-      c1HieuCount += countMatrixCommands(row.gqvd.hieu);
-      c1HieuScore += countMatrixScore(row.gqvd.hieu);
-      c1VdCount += countMatrixCommands(row.gqvd.vd);
-      c1VdScore += countMatrixScore(row.gqvd.vd);
+    let nlcBiet = 0, nlcHieu = 0, nlcVd = 0;
+    let dsBiet = 0, dsHieu = 0, dsVd = 0;
+    let tlnBiet = 0, tlnHieu = 0, tlnVd = 0;
+    let tlBiet = 0, tlHieu = 0, tlVd = 0;
+    let scoreTlBiet = 0, scoreTlHieu = 0, scoreTlVd = 0;
 
-      c2BietCount += countMatrixCommands(row.tuduy.biet);
-      c2BietScore += countMatrixScore(row.tuduy.biet);
-      c2HieuCount += countMatrixCommands(row.tuduy.hieu);
-      c2HieuScore += countMatrixScore(row.tuduy.hieu);
-      c2VdCount += countMatrixCommands(row.tuduy.vd);
-      c2VdScore += countMatrixScore(row.tuduy.vd);
+    (matrixData || []).forEach(row => {
+      if (!row) return;
+      const gqvd = row.gqvd || EMPTY_LEVELS;
+      const tuduy = row.tuduy || EMPTY_LEVELS;
+      const mohinh = row.mohinh || EMPTY_LEVELS;
 
-      c3BietCount += countMatrixCommands(row.mohinh.biet);
-      c3BietScore += countMatrixScore(row.mohinh.biet);
-      c3HieuCount += countMatrixCommands(row.mohinh.hieu);
-      c3HieuScore += countMatrixScore(row.mohinh.hieu);
-      c3VdCount += countMatrixCommands(row.mohinh.vd);
-      c3VdScore += countMatrixScore(row.mohinh.vd);
+      c1BietCount += countMatrixCommands(gqvd.biet || '');
+      c1BietScore += countMatrixScore(gqvd.biet || '');
+      c1HieuCount += countMatrixCommands(gqvd.hieu || '');
+      c1HieuScore += countMatrixScore(gqvd.hieu || '');
+      c1VdCount += countMatrixCommands(gqvd.vd || '');
+      c1VdScore += countMatrixScore(gqvd.vd || '');
+
+      c2BietCount += countMatrixCommands(tuduy.biet || '');
+      c2BietScore += countMatrixScore(tuduy.biet || '');
+      c2HieuCount += countMatrixCommands(tuduy.hieu || '');
+      c2HieuScore += countMatrixScore(tuduy.hieu || '');
+      c2VdCount += countMatrixCommands(tuduy.vd || '');
+      c2VdScore += countMatrixScore(tuduy.vd || '');
+
+      c3BietCount += countMatrixCommands(mohinh.biet || '');
+      c3BietScore += countMatrixScore(mohinh.biet || '');
+      c3HieuCount += countMatrixCommands(mohinh.hieu || '');
+      c3HieuScore += countMatrixScore(mohinh.hieu || '');
+      c3VdCount += countMatrixCommands(mohinh.vd || '');
+      c3VdScore += countMatrixScore(mohinh.vd || '');
+
+      if (row.nlc) {
+        nlcBiet += countMatrixCommands(row.nlc.biet || '');
+        nlcHieu += countMatrixCommands(row.nlc.hieu || '');
+        nlcVd += countMatrixCommands(row.nlc.vd || '');
+      }
+      if (row.ds) {
+        dsBiet += countMatrixCommands(row.ds.biet || '');
+        dsHieu += countMatrixCommands(row.ds.hieu || '');
+        dsVd += countMatrixCommands(row.ds.vd || '');
+      }
+      if (row.tln) {
+        tlnBiet += countMatrixCommands(row.tln.biet || '');
+        tlnHieu += countMatrixCommands(row.tln.hieu || '');
+        tlnVd += countMatrixCommands(row.tln.vd || '');
+      }
+      if (row.tl) {
+        tlBiet += countMatrixCommands(row.tl.biet || '');
+        tlHieu += countMatrixCommands(row.tl.hieu || '');
+        tlVd += countMatrixCommands(row.tl.vd || '');
+        scoreTlBiet += countMatrixScore(row.tl.biet || '');
+        scoreTlHieu += countMatrixScore(row.tl.hieu || '');
+        scoreTlVd += countMatrixScore(row.tl.vd || '');
+      }
     });
 
-    const totalQuestions = c1BietCount + c1HieuCount + c1VdCount +
+    const competencyTotalQuestions = c1BietCount + c1HieuCount + c1VdCount +
       c2BietCount + c2HieuCount + c2VdCount +
       c3BietCount + c3HieuCount + c3VdCount;
 
-    const totalScore = Math.round((
+    const competencyTotalScore = Math.round((
       c1BietScore + c1HieuScore + c1VdScore +
       c2BietScore + c2HieuScore + c2VdScore +
       c3BietScore + c3HieuScore + c3VdScore
     ) * 100) / 100;
 
-    const bietTotalScore = c1BietScore + c2BietScore + c3BietScore;
-    const hieuTotalScore = c1HieuScore + c2HieuScore + c3HieuScore;
-    const vdTotalScore = c1VdScore + c2VdScore + c3VdScore;
+    const vlTotalQuestions = nlcBiet + nlcHieu + nlcVd + dsBiet + dsHieu + dsVd + tlnBiet + tlnHieu + tlnVd + tlBiet + tlHieu + tlVd;
+    const vlScoreBiet = nlcBiet * 0.25 + dsBiet * 0.25 + tlnBiet * 0.5 + scoreTlBiet;
+    const vlScoreHieu = nlcHieu * 0.25 + dsHieu * 0.25 + tlnHieu * 0.5 + scoreTlHieu;
+    const vlScoreVd = nlcVd * 0.25 + dsVd * 0.25 + tlnVd * 0.5 + scoreTlVd;
+    const vlTotalScore = Math.round((vlScoreBiet + vlScoreHieu + vlScoreVd) * 100) / 100;
+
+    const useVlTotals = competencyTotalQuestions === 0 && vlTotalQuestions > 0;
+    const totalQuestions = useVlTotals ? vlTotalQuestions : competencyTotalQuestions;
+    const totalScore = useVlTotals ? vlTotalScore : competencyTotalScore;
+
+    const bietTotalScore = useVlTotals ? vlScoreBiet : (c1BietScore + c2BietScore + c3BietScore);
+    const hieuTotalScore = useVlTotals ? vlScoreHieu : (c1HieuScore + c2HieuScore + c3HieuScore);
+    const vdTotalScore = useVlTotals ? vlScoreVd : (c1VdScore + c2VdScore + c3VdScore);
+
+    const qFallback = (currentTemplate?.qCounts?.mc || 0) + (currentTemplate?.qCounts?.tf || 0) * 4 + (currentTemplate?.qCounts?.sa || 0) + (currentTemplate?.qCounts?.essay || 0);
 
     return {
       counts: {
@@ -416,12 +568,28 @@ export function CompetencyMatrixModal({
         c2: { biet: c2BietScore, hieu: c2HieuScore, vd: c2VdScore },
         c3: { biet: c3BietScore, hieu: c3HieuScore, vd: c3VdScore }
       },
+      vl: {
+        counts: {
+          nlc: { biet: nlcBiet, hieu: nlcHieu, vd: nlcVd },
+          ds: { biet: dsBiet, hieu: dsHieu, vd: dsVd },
+          tln: { biet: tlnBiet, hieu: tlnHieu, vd: tlnVd },
+          tl: { biet: tlBiet, hieu: tlHieu, vd: tlVd },
+          tong: { biet: nlcBiet + dsBiet + tlnBiet + tlBiet, hieu: nlcHieu + dsHieu + tlnHieu + tlHieu, vd: nlcVd + dsVd + tlnVd + tlVd }
+        },
+        scores: {
+          nlc: { biet: nlcBiet * 0.25, hieu: nlcHieu * 0.25, vd: nlcVd * 0.25 },
+          ds: { biet: dsBiet * 0.25, hieu: dsHieu * 0.25, vd: dsVd * 0.25 },
+          tln: { biet: tlnBiet * 0.5, hieu: tlnHieu * 0.5, vd: tlnVd * 0.5 },
+          tl: { biet: scoreTlBiet, hieu: scoreTlHieu, vd: scoreTlVd },
+          tong: { biet: vlScoreBiet, hieu: vlScoreHieu, vd: vlScoreVd }
+        }
+      },
       cognitivePercent: {
         biet: totalScore > 0 ? Math.round((bietTotalScore / totalScore) * 100) : 40,
         hieu: totalScore > 0 ? Math.round((hieuTotalScore / totalScore) * 100) : 30,
         vd: totalScore > 0 ? Math.round((vdTotalScore / totalScore) * 100) : 30
       },
-      totalQuestions: totalQuestions || currentTemplate.qCounts.mc + currentTemplate.qCounts.tf * 4 + currentTemplate.qCounts.sa + currentTemplate.qCounts.essay,
+      totalQuestions: totalQuestions || qFallback,
       totalScore: totalScore || 10
     };
   };
@@ -430,7 +598,8 @@ export function CompetencyMatrixModal({
 
   // Nhóm các hàng theo chủ đề
   const groupedTopics: { topic: string; rows: MatrixRowItem[] }[] = [];
-  matrixData.forEach(item => {
+  (matrixData || []).forEach(item => {
+    if (!item) return;
     const existing = groupedTopics.find(g => g.topic === item.topic);
     if (existing) {
       existing.rows.push(item);
@@ -440,13 +609,19 @@ export function CompetencyMatrixModal({
   });
 
   // Cell editing
-  const handleCellChange = (rowId: string, competency: 'gqvd' | 'tuduy' | 'mohinh', level: 'biet' | 'hieu' | 'vd', val: string) => {
+  const handleCellChange = (
+    rowId: string,
+    competency: 'gqvd' | 'tuduy' | 'mohinh' | 'nlc' | 'ds' | 'tln' | 'tl',
+    level: 'biet' | 'hieu' | 'vd',
+    val: string
+  ) => {
     setMatrixData(prev => prev.map(r => {
       if (r.id === rowId) {
+        const currentBucket = r[competency] || { biet: '', hieu: '', vd: '' };
         return {
           ...r,
           [competency]: {
-            ...r[competency],
+            ...currentBucket,
             [level]: val
           }
         };
@@ -464,7 +639,14 @@ export function CompetencyMatrixModal({
       unit: `${matrixData.length + 1}. Nội dung kiến thức mới`,
       gqvd: { biet: '', hieu: '', vd: '' },
       tuduy: { biet: '', hieu: '', vd: '' },
-      mohinh: { biet: '', hieu: '', vd: '' }
+      mohinh: { biet: '', hieu: '', vd: '' },
+      ...(isVinhLoc ? {
+        nlc: { biet: '', hieu: '', vd: '' },
+        ds: { biet: '', hieu: '', vd: '' },
+        tln: { biet: '', hieu: '', vd: '' },
+        tl: { biet: '', hieu: '', vd: '' },
+        tiLe: ''
+      } : {})
     };
     setMatrixData(prev => [...prev, newRow]);
   };
@@ -481,8 +663,8 @@ export function CompetencyMatrixModal({
   // Reset to original template
   const handleResetToTemplate = () => {
     if (window.confirm('Khôi phục lại toàn bộ nội dung ma trận & đặc tả theo mẫu chuẩn gốc của Bộ GD&ĐT?')) {
-      setMatrixData(JSON.parse(JSON.stringify(currentTemplate.matrixRows)));
-      setSpecData(JSON.parse(JSON.stringify(currentTemplate.specUnits)));
+      setMatrixData(normalizeMatrixRows(JSON.parse(JSON.stringify(currentTemplate.matrixRows || []))));
+      setSpecData(normalizeSpecUnits(JSON.parse(JSON.stringify(currentTemplate.specUnits || []))));
       setTitle(currentTemplate.title);
     }
   };
@@ -520,74 +702,125 @@ export function CompetencyMatrixModal({
     try {
       const wb = XLSX.utils.book_new();
 
-      // Sheet 1: Ma trận
-      const matrixAoa: any[][] = [
-        [title.toUpperCase()],
-        [`Môn học: ${tpl.subjectName} - Lớp: ${tpl.grade} - Thời gian làm bài: ${tpl.durationMinutes} phút`],
-        [],
-        [
-          'TT', 
-          'Chủ đề', 
-          'Nội dung / Đơn vị kiến thức', 
-          `${tpl.competencyHeaders.c1} - Biết`, 
-          `${tpl.competencyHeaders.c1} - Hiểu`, 
-          `${tpl.competencyHeaders.c1} - Vận dụng`, 
-          `${tpl.competencyHeaders.c2} - Biết`, 
-          `${tpl.competencyHeaders.c2} - Hiểu`, 
-          `${tpl.competencyHeaders.c2} - Vận dụng`, 
-          `${tpl.competencyHeaders.c3} - Biết`, 
-          `${tpl.competencyHeaders.c3} - Hiểu`, 
-          `${tpl.competencyHeaders.c3} - Vận dụng`,
-          'Tổng số lệnh',
-          'Điểm',
-          'Tỉ lệ %'
-        ]
-      ];
+      if (isVinhLoc) {
+        const matrixAoa: any[][] = [
+          [title.toUpperCase()],
+          [`Môn học: ${tpl.subjectName} - Lớp: ${tpl.grade} - Thời gian làm bài: ${tpl.durationMinutes} phút`],
+          [],
+          [
+            'TT', 'Chương / Chủ đề', 'Nội dung / Đơn vị kiến thức',
+            'Nhiều LC - Biết', 'Nhiều LC - Hiểu', 'Nhiều LC - VD',
+            'Đúng-Sai - Biết', 'Đúng-Sai - Hiểu', 'Đúng-Sai - VD',
+            'TL ngắn - Biết', 'TL ngắn - Hiểu', 'TL ngắn - VD',
+            'Tự luận - Biết', 'Tự luận - Hiểu', 'Tự luận - VD',
+            'Tổng Biết', 'Tổng Hiểu', 'Tổng VD', 'Tỉ lệ %'
+          ]
+        ];
 
-      matrixData.forEach((r, idx) => {
+        matrixData.forEach((r, idx) => {
+          const bietSum = countMatrixCommands(r.nlc?.biet || '') + countMatrixCommands(r.ds?.biet || '') + countMatrixCommands(r.tln?.biet || '') + countMatrixCommands(r.tl?.biet || '');
+          const hieuSum = countMatrixCommands(r.nlc?.hieu || '') + countMatrixCommands(r.ds?.hieu || '') + countMatrixCommands(r.tln?.hieu || '') + countMatrixCommands(r.tl?.hieu || '');
+          const vdSum = countMatrixCommands(r.nlc?.vd || '') + countMatrixCommands(r.ds?.vd || '') + countMatrixCommands(r.tln?.vd || '') + countMatrixCommands(r.tl?.vd || '');
+
+          matrixAoa.push([
+            idx + 1,
+            r.topic,
+            r.unit,
+            r.nlc?.biet || '-', r.nlc?.hieu || '-', r.nlc?.vd || '-',
+            r.ds?.biet || '-', r.ds?.hieu || '-', r.ds?.vd || '-',
+            r.tln?.biet || '-', r.tln?.hieu || '-', r.tln?.vd || '-',
+            r.tl?.biet || '-', r.tl?.hieu || '-', r.tl?.vd || '-',
+            bietSum || '-', hieuSum || '-', vdSum || '-',
+            r.tiLe || '-'
+          ]);
+        });
+
         matrixAoa.push([
-          idx + 1,
-          r.topic,
-          r.unit,
-          r.gqvd.biet,
-          r.gqvd.hieu,
-          r.gqvd.vd,
-          r.tuduy.biet,
-          r.tuduy.hieu,
-          r.tuduy.vd,
-          r.mohinh.biet,
-          r.mohinh.hieu,
-          r.mohinh.vd,
-          countMatrixCommands(r.gqvd.biet) + countMatrixCommands(r.gqvd.hieu) + countMatrixCommands(r.gqvd.vd) +
-          countMatrixCommands(r.tuduy.biet) + countMatrixCommands(r.tuduy.hieu) + countMatrixCommands(r.tuduy.vd) +
-          countMatrixCommands(r.mohinh.biet) + countMatrixCommands(r.mohinh.hieu) + countMatrixCommands(r.mohinh.vd),
-          (countMatrixScore(r.gqvd.biet) + countMatrixScore(r.gqvd.hieu) + countMatrixScore(r.gqvd.vd) +
-          countMatrixScore(r.tuduy.biet) + countMatrixScore(r.tuduy.hieu) + countMatrixScore(r.tuduy.vd) +
-          countMatrixScore(r.mohinh.biet) + countMatrixScore(r.mohinh.hieu) + countMatrixScore(r.mohinh.vd)).toFixed(2),
-          '10%'
+          'Tổng số lệnh hỏi', '', '',
+          totals.vl.counts.nlc.biet, totals.vl.counts.nlc.hieu, totals.vl.counts.nlc.vd,
+          totals.vl.counts.ds.biet, totals.vl.counts.ds.hieu, totals.vl.counts.ds.vd,
+          totals.vl.counts.tln.biet, totals.vl.counts.tln.hieu, totals.vl.counts.tln.vd,
+          totals.vl.counts.tl.biet, totals.vl.counts.tl.hieu, totals.vl.counts.tl.vd,
+          totals.vl.counts.tong.biet, totals.vl.counts.tong.hieu, totals.vl.counts.tong.vd,
+          '100%'
         ]);
-      });
 
-      matrixAoa.push([
-        'Tổng số lệnh hỏi',
-        '',
-        '',
-        totals.counts.c1.biet,
-        totals.counts.c1.hieu,
-        totals.counts.c1.vd,
-        totals.counts.c2.biet,
-        totals.counts.c2.hieu,
-        totals.counts.c2.vd,
-        totals.counts.c3.biet,
-        totals.counts.c3.hieu,
-        totals.counts.c3.vd,
-        totals.totalQuestions,
-        `${totals.totalScore.toFixed(1)}đ`,
-        '100%'
-      ]);
+        const wsMatrix = XLSX.utils.aoa_to_sheet(matrixAoa);
+        XLSX.utils.book_append_sheet(wb, wsMatrix, 'Ma_Tran_GDPT_2018');
+      } else {
+        // Sheet 1: Ma trận năng lực
+        const cHeaders = tpl.competencyHeaders || { c1: 'Năng lực 1', c2: 'Năng lực 2', c3: 'Năng lực 3' };
+        const matrixAoa: any[][] = [
+          [title.toUpperCase()],
+          [`Môn học: ${tpl.subjectName} - Lớp: ${tpl.grade} - Thời gian làm bài: ${tpl.durationMinutes} phút`],
+          [],
+          [
+            'TT',
+            'Chủ đề',
+            'Nội dung / Đơn vị kiến thức',
+            `${cHeaders.c1} - Biết`,
+            `${cHeaders.c1} - Hiểu`,
+            `${cHeaders.c1} - Vận dụng`,
+            `${cHeaders.c2} - Biết`,
+            `${cHeaders.c2} - Hiểu`,
+            `${cHeaders.c2} - Vận dụng`,
+            `${cHeaders.c3} - Biết`,
+            `${cHeaders.c3} - Hiểu`,
+            `${cHeaders.c3} - Vận dụng`,
+            'Tổng số lệnh',
+            'Điểm',
+            'Tỉ lệ %'
+          ]
+        ];
 
-      const wsMatrix = XLSX.utils.aoa_to_sheet(matrixAoa);
-      XLSX.utils.book_append_sheet(wb, wsMatrix, 'Ma_Tran_GDPT_2018');
+        matrixData.forEach((r, idx) => {
+          const gqvd = r.gqvd || EMPTY_LEVELS;
+          const tuduy = r.tuduy || EMPTY_LEVELS;
+          const mohinh = r.mohinh || EMPTY_LEVELS;
+          matrixAoa.push([
+            idx + 1,
+            r.topic,
+            r.unit,
+            gqvd.biet,
+            gqvd.hieu,
+            gqvd.vd,
+            tuduy.biet,
+            tuduy.hieu,
+            tuduy.vd,
+            mohinh.biet,
+            mohinh.hieu,
+            mohinh.vd,
+            countMatrixCommands(gqvd.biet) + countMatrixCommands(gqvd.hieu) + countMatrixCommands(gqvd.vd) +
+            countMatrixCommands(tuduy.biet) + countMatrixCommands(tuduy.hieu) + countMatrixCommands(tuduy.vd) +
+            countMatrixCommands(mohinh.biet) + countMatrixCommands(mohinh.hieu) + countMatrixCommands(mohinh.vd),
+            (countMatrixScore(gqvd.biet) + countMatrixScore(gqvd.hieu) + countMatrixScore(gqvd.vd) +
+            countMatrixScore(tuduy.biet) + countMatrixScore(tuduy.hieu) + countMatrixScore(tuduy.vd) +
+            countMatrixScore(mohinh.biet) + countMatrixScore(mohinh.hieu) + countMatrixScore(mohinh.vd)).toFixed(2),
+            '10%'
+          ]);
+        });
+
+        matrixAoa.push([
+          'Tổng số lệnh hỏi',
+          '',
+          '',
+          totals.counts.c1.biet,
+          totals.counts.c1.hieu,
+          totals.counts.c1.vd,
+          totals.counts.c2.biet,
+          totals.counts.c2.hieu,
+          totals.counts.c2.vd,
+          totals.counts.c3.biet,
+          totals.counts.c3.hieu,
+          totals.counts.c3.vd,
+          totals.totalQuestions,
+          `${totals.totalScore.toFixed(1)}đ`,
+          '100%'
+        ]);
+
+        const wsMatrix = XLSX.utils.aoa_to_sheet(matrixAoa);
+        XLSX.utils.book_append_sheet(wb, wsMatrix, 'Ma_Tran_GDPT_2018');
+      }
 
       // Sheet 2: Bảng đặc tả
       const specAoa: any[][] = [
@@ -604,10 +837,10 @@ export function CompetencyMatrixModal({
           s.bietSpec,
           s.hieuSpec,
           s.vdSpec,
-          s.assignedQuestions.part1,
-          s.assignedQuestions.part2,
-          s.assignedQuestions.part3,
-          s.assignedQuestions.essay,
+          s.assignedQuestions?.part1 || '',
+          s.assignedQuestions?.part2 || '',
+          s.assignedQuestions?.part3 || '',
+          s.assignedQuestions?.essay || '',
           s.points
         ]);
       });
@@ -1092,12 +1325,12 @@ export function CompetencyMatrixModal({
                           <div className="flex items-center justify-between font-bold text-slate-700 dark:text-slate-300">
                             <span>Phân bổ câu hỏi:</span>
                             <span className="text-indigo-600 font-mono">
-                              {tpl.qCounts.mc} TN + {tpl.qCounts.tf} Đ/S + {tpl.qCounts.sa} TLN + {tpl.qCounts.essay} TL
+                              {tpl.qCounts?.mc || 0} TN + {tpl.qCounts?.tf || 0} Đ/S + {tpl.qCounts?.sa || 0} TLN + {tpl.qCounts?.essay || 0} TL
                             </span>
                           </div>
                           <div className="flex items-center justify-between text-[11px] text-slate-500">
-                            <span>Thời gian: {tpl.durationMinutes} phút</span>
-                            <span>Thang điểm: {tpl.totalPoints}.0đ (100%)</span>
+                            <span>Thời gian: {tpl.durationMinutes || 90} phút</span>
+                            <span>Thang điểm: {tpl.totalPoints || 10}.0đ (100%)</span>
                           </div>
                         </div>
 
@@ -1107,13 +1340,13 @@ export function CompetencyMatrixModal({
                             Các mạch kiến thức:
                           </div>
                           <div className="flex flex-wrap gap-1">
-                            {tpl.topicsList.slice(0, 3).map((tp, idx) => (
+                            {(tpl.topicsList || []).slice(0, 3).map((tp, idx) => (
                               <span key={idx} className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded-md truncate max-w-full font-medium">
                                 • {tp}
                               </span>
                             ))}
-                            {tpl.topicsList.length > 3 && (
-                              <span className="text-[10px] text-slate-400 self-center">+{tpl.topicsList.length - 3} chủ đề</span>
+                            {(tpl.topicsList || []).length > 3 && (
+                              <span className="text-[10px] text-slate-400 self-center">+{(tpl.topicsList || []).length - 3} chủ đề</span>
                             )}
                           </div>
                         </div>
@@ -1274,17 +1507,212 @@ export function CompetencyMatrixModal({
                 </div>
               </div>
 
-              {/* Bảng Ma trận Năng lực chuẩn */}
+              {/* Bảng Ma trận chuẩn (19 cột THPT EDUPLAN AI hoặc 18 cột Năng lực) */}
               <div className="overflow-x-auto bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
                 <div className="text-center mb-3">
                   <h3 className="text-base sm:text-lg font-bold uppercase text-black" style={{ fontFamily: '"Times New Roman", Times, serif' }}>
-                    I. MA TRẬN ĐỀ KIỂM TRA MÔN {currentTemplate.subjectName.toUpperCase()} - KHỐI {currentTemplate.grade}
+                    {isVinhLoc
+                      ? `I. MA TRẬN ĐỀ KIỂM TRA MÔN ${currentTemplate.subjectName.toUpperCase()} - KHỐI ${currentTemplate.grade} (KHUNG 19 CỘT GDPT 2018)`
+                      : `I. MA TRẬN ĐỀ KIỂM TRA MÔN ${currentTemplate.subjectName.toUpperCase()} - KHỐI ${currentTemplate.grade}`}
                   </h3>
                   <p className="text-xs italic text-slate-600">
                     (Khung ma trận đánh giá năng lực theo chuẩn Chương trình GDPT 2018 - Thời gian: {currentTemplate.durationMinutes} phút)
                   </p>
                 </div>
 
+                {isVinhLoc ? (
+                  <table className="w-full border-collapse border border-black text-[12px] min-w-[1150px] font-serif text-black" style={{ fontFamily: '"Times New Roman", Times, serif' }}>
+                    <thead>
+                      <tr className="bg-slate-100 font-bold text-center">
+                        <th className="border border-black p-1.5 w-10" rowSpan={3}>TT</th>
+                        <th className="border border-black p-1.5 w-44" rowSpan={3}>Chương / Chủ đề</th>
+                        <th className="border border-black p-1.5 w-52" rowSpan={3}>Nội dung / Đơn vị kiến thức</th>
+                        <th className="border border-black p-1.5" colSpan={12}>MỨC ĐỘ ĐÁNH GIÁ</th>
+                        <th className="border border-black p-1.5" colSpan={3} rowSpan={2}>TỔNG</th>
+                        <th className="border border-black p-1.5 w-16" rowSpan={3}>Tỉ lệ %</th>
+                        <th className="border border-black p-1.5 w-10 no-print" rowSpan={3}>Thao tác</th>
+                      </tr>
+                      <tr className="bg-slate-50 font-bold text-center">
+                        <th className="border border-black p-1" colSpan={9}>TNKQ</th>
+                        <th className="border border-black p-1" colSpan={3}>Tự luận</th>
+                      </tr>
+                      <tr className="bg-slate-100 font-bold text-center text-[11px]">
+                        <th className="border border-black p-1 w-12">Nhiều LC<br/>Biết</th>
+                        <th className="border border-black p-1 w-12">Nhiều LC<br/>Hiểu</th>
+                        <th className="border border-black p-1 w-12">Nhiều LC<br/>VD</th>
+                        <th className="border border-black p-1 w-12">Đúng-Sai<br/>Biết</th>
+                        <th className="border border-black p-1 w-12">Đúng-Sai<br/>Hiểu</th>
+                        <th className="border border-black p-1 w-12">Đúng-Sai<br/>VD</th>
+                        <th className="border border-black p-1 w-12">TL ngắn<br/>Biết</th>
+                        <th className="border border-black p-1 w-12">TL ngắn<br/>Hiểu</th>
+                        <th className="border border-black p-1 w-12">TL ngắn<br/>VD</th>
+                        <th className="border border-black p-1 w-14">TL<br/>Biết</th>
+                        <th className="border border-black p-1 w-14">TL<br/>Hiểu</th>
+                        <th className="border border-black p-1 w-14">TL<br/>VD</th>
+                        <th className="border border-black p-1 w-10">Biết</th>
+                        <th className="border border-black p-1 w-10">Hiểu</th>
+                        <th className="border border-black p-1 w-10">VD</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {groupedTopics.map((group, gIdx) => {
+                        return group.rows.map((row, rIdx) => {
+                          const nlc = row.nlc || EMPTY_LEVELS;
+                          const ds = row.ds || EMPTY_LEVELS;
+                          const tln = row.tln || EMPTY_LEVELS;
+                          const tl = row.tl || EMPTY_LEVELS;
+                          const bietSum = countMatrixCommands(nlc.biet) + countMatrixCommands(ds.biet) + countMatrixCommands(tln.biet) + countMatrixCommands(tl.biet);
+                          const hieuSum = countMatrixCommands(nlc.hieu) + countMatrixCommands(ds.hieu) + countMatrixCommands(tln.hieu) + countMatrixCommands(tl.hieu);
+                          const vdSum = countMatrixCommands(nlc.vd) + countMatrixCommands(ds.vd) + countMatrixCommands(tln.vd) + countMatrixCommands(tl.vd);
+
+                          return (
+                            <tr key={row.id} className="hover:bg-slate-50">
+                              {rIdx === 0 && (
+                                <>
+                                  <td className="border border-black p-1 text-center font-bold" rowSpan={group.rows.length}>
+                                    {gIdx + 1}
+                                  </td>
+                                  <td className="border border-black p-1 font-bold" rowSpan={group.rows.length}>
+                                    <input
+                                      type="text"
+                                      value={row.topic}
+                                      onChange={e => {
+                                        const newTopic = e.target.value;
+                                        setMatrixData(prev => prev.map(item => item.topic === group.topic ? { ...item, topic: newTopic } : item));
+                                      }}
+                                      className="w-full bg-transparent font-bold focus:bg-white focus:outline-blue-500 rounded px-1"
+                                    />
+                                  </td>
+                                </>
+                              )}
+
+                              <td className="border border-black p-1">
+                                <input
+                                  type="text"
+                                  value={row.unit}
+                                  onChange={e => {
+                                    const newUnit = e.target.value;
+                                    setMatrixData(prev => prev.map(item => item.id === row.id ? { ...item, unit: newUnit } : item));
+                                  }}
+                                  className="w-full bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1"
+                                />
+                              </td>
+
+                              <td className="border border-black p-1 text-center">
+                                <input type="text" value={nlc.biet} onChange={e => handleCellChange(row.id, 'nlc', 'biet', e.target.value)} className="w-full text-center font-bold text-blue-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1" />
+                              </td>
+                              <td className="border border-black p-1 text-center">
+                                <input type="text" value={nlc.hieu} onChange={e => handleCellChange(row.id, 'nlc', 'hieu', e.target.value)} className="w-full text-center font-bold text-blue-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1" />
+                              </td>
+                              <td className="border border-black p-1 text-center">
+                                <input type="text" value={nlc.vd} onChange={e => handleCellChange(row.id, 'nlc', 'vd', e.target.value)} className="w-full text-center font-bold text-blue-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1" />
+                              </td>
+
+                              <td className="border border-black p-1 text-center">
+                                <input type="text" value={ds.biet} onChange={e => handleCellChange(row.id, 'ds', 'biet', e.target.value)} className="w-full text-center font-bold text-indigo-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1" />
+                              </td>
+                              <td className="border border-black p-1 text-center">
+                                <input type="text" value={ds.hieu} onChange={e => handleCellChange(row.id, 'ds', 'hieu', e.target.value)} className="w-full text-center font-bold text-indigo-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1" />
+                              </td>
+                              <td className="border border-black p-1 text-center">
+                                <input type="text" value={ds.vd} onChange={e => handleCellChange(row.id, 'ds', 'vd', e.target.value)} className="w-full text-center font-bold text-indigo-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1" />
+                              </td>
+
+                              <td className="border border-black p-1 text-center">
+                                <input type="text" value={tln.biet} onChange={e => handleCellChange(row.id, 'tln', 'biet', e.target.value)} className="w-full text-center font-bold text-purple-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1" />
+                              </td>
+                              <td className="border border-black p-1 text-center">
+                                <input type="text" value={tln.hieu} onChange={e => handleCellChange(row.id, 'tln', 'hieu', e.target.value)} className="w-full text-center font-bold text-purple-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1" />
+                              </td>
+                              <td className="border border-black p-1 text-center">
+                                <input type="text" value={tln.vd} onChange={e => handleCellChange(row.id, 'tln', 'vd', e.target.value)} className="w-full text-center font-bold text-purple-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1" />
+                              </td>
+
+                              <td className="border border-black p-1 text-center">
+                                <input type="text" value={tl.biet} onChange={e => handleCellChange(row.id, 'tl', 'biet', e.target.value)} className="w-full text-center font-bold text-rose-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1" />
+                              </td>
+                              <td className="border border-black p-1 text-center">
+                                <input type="text" value={tl.hieu} onChange={e => handleCellChange(row.id, 'tl', 'hieu', e.target.value)} className="w-full text-center font-bold text-rose-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1" />
+                              </td>
+                              <td className="border border-black p-1 text-center">
+                                <input type="text" value={tl.vd} onChange={e => handleCellChange(row.id, 'tl', 'vd', e.target.value)} className="w-full text-center font-bold text-rose-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1" />
+                              </td>
+
+                              <td className="border border-black p-1 text-center font-bold bg-slate-50">{bietSum || '-'}</td>
+                              <td className="border border-black p-1 text-center font-bold bg-slate-50">{hieuSum || '-'}</td>
+                              <td className="border border-black p-1 text-center font-bold bg-slate-50">{vdSum || '-'}</td>
+                              <td className="border border-black p-1 text-center font-bold text-emerald-800">
+                                <input
+                                  type="text"
+                                  value={row.tiLe || ''}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    setMatrixData(prev => prev.map(item => item.id === row.id ? { ...item, tiLe: val } : item));
+                                  }}
+                                  placeholder="-"
+                                  className="w-full text-center font-bold text-emerald-800 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1"
+                                />
+                              </td>
+                              <td className="border border-black p-1 text-center no-print">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteRow(row.id)}
+                                  className="p-1 text-red-500 hover:text-red-700 rounded hover:bg-red-50 cursor-pointer"
+                                  title="Xóa dòng này"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })}
+
+                      <tr className="bg-slate-100 font-bold text-center">
+                        <td className="border border-black p-1 text-center" colSpan={3}>Tổng số lệnh hỏi</td>
+                        <td className="border border-black p-1 text-blue-700">{totals.vl.counts.nlc.biet}</td>
+                        <td className="border border-black p-1 text-blue-700">{totals.vl.counts.nlc.hieu}</td>
+                        <td className="border border-black p-1 text-blue-700">{totals.vl.counts.nlc.vd || '-'}</td>
+                        <td className="border border-black p-1 text-indigo-700">{totals.vl.counts.ds.biet}</td>
+                        <td className="border border-black p-1 text-indigo-700">{totals.vl.counts.ds.hieu}</td>
+                        <td className="border border-black p-1 text-indigo-700">{totals.vl.counts.ds.vd || '-'}</td>
+                        <td className="border border-black p-1 text-purple-700">{totals.vl.counts.tln.biet}</td>
+                        <td className="border border-black p-1 text-purple-700">{totals.vl.counts.tln.hieu}</td>
+                        <td className="border border-black p-1 text-purple-700">{totals.vl.counts.tln.vd || '-'}</td>
+                        <td className="border border-black p-1 text-rose-700">{totals.vl.counts.tl.biet || '-'}</td>
+                        <td className="border border-black p-1 text-rose-700">{totals.vl.counts.tl.hieu}</td>
+                        <td className="border border-black p-1 text-rose-700">{totals.vl.counts.tl.vd}</td>
+                        <td className="border border-black p-1">{totals.vl.counts.tong.biet}</td>
+                        <td className="border border-black p-1">{totals.vl.counts.tong.hieu}</td>
+                        <td className="border border-black p-1">{totals.vl.counts.tong.vd}</td>
+                        <td className="border border-black p-1 text-emerald-800">{totals.totalQuestions} lệnh</td>
+                        <td className="border border-black p-1 no-print"></td>
+                      </tr>
+
+                      <tr className="bg-slate-50 font-bold text-center">
+                        <td className="border border-black p-1 text-center" colSpan={3}>Tổng số điểm</td>
+                        <td className="border border-black p-1">{totals.vl.scores.nlc.biet.toFixed(2)}</td>
+                        <td className="border border-black p-1">{totals.vl.scores.nlc.hieu.toFixed(2)}</td>
+                        <td className="border border-black p-1">{totals.vl.scores.nlc.vd ? totals.vl.scores.nlc.vd.toFixed(2) : '-'}</td>
+                        <td className="border border-black p-1">{totals.vl.scores.ds.biet.toFixed(2)}</td>
+                        <td className="border border-black p-1">{totals.vl.scores.ds.hieu.toFixed(2)}</td>
+                        <td className="border border-black p-1">{totals.vl.scores.ds.vd ? totals.vl.scores.ds.vd.toFixed(2) : '-'}</td>
+                        <td className="border border-black p-1">{totals.vl.scores.tln.biet.toFixed(2)}</td>
+                        <td className="border border-black p-1">{totals.vl.scores.tln.hieu.toFixed(2)}</td>
+                        <td className="border border-black p-1">{totals.vl.scores.tln.vd ? totals.vl.scores.tln.vd.toFixed(2) : '-'}</td>
+                        <td className="border border-black p-1">{totals.vl.scores.tl.biet ? totals.vl.scores.tl.biet.toFixed(2) : '-'}</td>
+                        <td className="border border-black p-1">{totals.vl.scores.tl.hieu.toFixed(2)}</td>
+                        <td className="border border-black p-1">{totals.vl.scores.tl.vd.toFixed(2)}</td>
+                        <td className="border border-black p-1">{totals.vl.scores.tong.biet.toFixed(2)}</td>
+                        <td className="border border-black p-1">{totals.vl.scores.tong.hieu.toFixed(2)}</td>
+                        <td className="border border-black p-1">{totals.vl.scores.tong.vd.toFixed(2)}</td>
+                        <td className="border border-black p-1 text-emerald-800">{totals.totalScore.toFixed(1)}đ</td>
+                        <td className="border border-black p-1 no-print"></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                ) : (
                 <table className="w-full border-collapse border border-black text-[12px] min-w-[1100px] font-serif text-black" style={{ fontFamily: '"Times New Roman", Times, serif' }}>
                   <thead>
                     {/* Hàng 1 */}
@@ -1302,9 +1730,9 @@ export function CompetencyMatrixModal({
                     </tr>
                     {/* Hàng 2 */}
                     <tr className="bg-slate-50 font-bold text-center">
-                      <th className="border border-black p-1" colSpan={3}>Năng lực {currentTemplate.competencyHeaders.c1}</th>
-                      <th className="border border-black p-1" colSpan={3}>Năng lực {currentTemplate.competencyHeaders.c2}</th>
-                      <th className="border border-black p-1" colSpan={3}>Năng lực {currentTemplate.competencyHeaders.c3}</th>
+                      <th className="border border-black p-1" colSpan={3}>Năng lực {currentTemplate.competencyHeaders?.c1 || 'Giải quyết vấn đề'}</th>
+                      <th className="border border-black p-1" colSpan={3}>Năng lực {currentTemplate.competencyHeaders?.c2 || 'Tư duy'}</th>
+                      <th className="border border-black p-1" colSpan={3}>Năng lực {currentTemplate.competencyHeaders?.c3 || 'Mô hình hóa'}</th>
                       <th className="border border-black p-1 w-12" rowSpan={2}>Biết<br/>({totals.cognitivePercent.biet}%)</th>
                       <th className="border border-black p-1 w-12" rowSpan={2}>Hiểu<br/>({totals.cognitivePercent.hieu}%)</th>
                       <th className="border border-black p-1 w-12" rowSpan={2}>Vận dụng<br/>({totals.cognitivePercent.vd}%)</th>
@@ -1333,15 +1761,18 @@ export function CompetencyMatrixModal({
                   <tbody>
                     {groupedTopics.map((group, gIdx) => {
                       return group.rows.map((row, rIdx) => {
-                        const rowBietCommands = countMatrixCommands(row.gqvd.biet) + countMatrixCommands(row.tuduy.biet) + countMatrixCommands(row.mohinh.biet);
-                        const rowHieuCommands = countMatrixCommands(row.gqvd.hieu) + countMatrixCommands(row.tuduy.hieu) + countMatrixCommands(row.mohinh.hieu);
-                        const rowVdCommands = countMatrixCommands(row.gqvd.vd) + countMatrixCommands(row.tuduy.vd) + countMatrixCommands(row.mohinh.vd);
+                        const gqvd = row.gqvd || EMPTY_LEVELS;
+                        const tuduy = row.tuduy || EMPTY_LEVELS;
+                        const mohinh = row.mohinh || EMPTY_LEVELS;
+                        const rowBietCommands = countMatrixCommands(gqvd.biet) + countMatrixCommands(tuduy.biet) + countMatrixCommands(mohinh.biet);
+                        const rowHieuCommands = countMatrixCommands(gqvd.hieu) + countMatrixCommands(tuduy.hieu) + countMatrixCommands(mohinh.hieu);
+                        const rowVdCommands = countMatrixCommands(gqvd.vd) + countMatrixCommands(tuduy.vd) + countMatrixCommands(mohinh.vd);
                         const rowTotalCommands = rowBietCommands + rowHieuCommands + rowVdCommands;
                         
                         const rowScore = (
-                          countMatrixScore(row.gqvd.biet) + countMatrixScore(row.gqvd.hieu) + countMatrixScore(row.gqvd.vd) +
-                          countMatrixScore(row.tuduy.biet) + countMatrixScore(row.tuduy.hieu) + countMatrixScore(row.tuduy.vd) +
-                          countMatrixScore(row.mohinh.biet) + countMatrixScore(row.mohinh.hieu) + countMatrixScore(row.mohinh.vd)
+                          countMatrixScore(gqvd.biet) + countMatrixScore(gqvd.hieu) + countMatrixScore(gqvd.vd) +
+                          countMatrixScore(tuduy.biet) + countMatrixScore(tuduy.hieu) + countMatrixScore(tuduy.vd) +
+                          countMatrixScore(mohinh.biet) + countMatrixScore(mohinh.hieu) + countMatrixScore(mohinh.vd)
                         );
                         const rowPercent = totals.totalScore > 0 ? Math.round((rowScore / totals.totalScore) * 100) : 0;
 
@@ -1383,7 +1814,7 @@ export function CompetencyMatrixModal({
                             <td className="border border-black p-1 text-center">
                               <input
                                 type="text"
-                                value={row.gqvd.biet}
+                                value={gqvd.biet}
                                 onChange={e => handleCellChange(row.id, 'gqvd', 'biet', e.target.value)}
                                 className="w-full text-center font-bold text-blue-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1"
                               />
@@ -1391,7 +1822,7 @@ export function CompetencyMatrixModal({
                             <td className="border border-black p-1 text-center">
                               <input
                                 type="text"
-                                value={row.gqvd.hieu}
+                                value={gqvd.hieu}
                                 onChange={e => handleCellChange(row.id, 'gqvd', 'hieu', e.target.value)}
                                 className="w-full text-center font-bold text-blue-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1"
                               />
@@ -1399,7 +1830,7 @@ export function CompetencyMatrixModal({
                             <td className="border border-black p-1 text-center">
                               <input
                                 type="text"
-                                value={row.gqvd.vd}
+                                value={gqvd.vd}
                                 onChange={e => handleCellChange(row.id, 'gqvd', 'vd', e.target.value)}
                                 className="w-full text-center font-bold text-blue-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1"
                               />
@@ -1409,7 +1840,7 @@ export function CompetencyMatrixModal({
                             <td className="border border-black p-1 text-center">
                               <input
                                 type="text"
-                                value={row.tuduy.biet}
+                                value={tuduy.biet}
                                 onChange={e => handleCellChange(row.id, 'tuduy', 'biet', e.target.value)}
                                 className="w-full text-center font-bold text-indigo-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1"
                               />
@@ -1417,7 +1848,7 @@ export function CompetencyMatrixModal({
                             <td className="border border-black p-1 text-center">
                               <input
                                 type="text"
-                                value={row.tuduy.hieu}
+                                value={tuduy.hieu}
                                 onChange={e => handleCellChange(row.id, 'tuduy', 'hieu', e.target.value)}
                                 className="w-full text-center font-bold text-indigo-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1"
                               />
@@ -1425,7 +1856,7 @@ export function CompetencyMatrixModal({
                             <td className="border border-black p-1 text-center">
                               <input
                                 type="text"
-                                value={row.tuduy.vd}
+                                value={tuduy.vd}
                                 onChange={e => handleCellChange(row.id, 'tuduy', 'vd', e.target.value)}
                                 className="w-full text-center font-bold text-indigo-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1"
                               />
@@ -1435,7 +1866,7 @@ export function CompetencyMatrixModal({
                             <td className="border border-black p-1 text-center">
                               <input
                                 type="text"
-                                value={row.mohinh.biet}
+                                value={mohinh.biet}
                                 onChange={e => handleCellChange(row.id, 'mohinh', 'biet', e.target.value)}
                                 className="w-full text-center font-bold text-purple-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1"
                               />
@@ -1443,7 +1874,7 @@ export function CompetencyMatrixModal({
                             <td className="border border-black p-1 text-center">
                               <input
                                 type="text"
-                                value={row.mohinh.hieu}
+                                value={mohinh.hieu}
                                 onChange={e => handleCellChange(row.id, 'mohinh', 'hieu', e.target.value)}
                                 className="w-full text-center font-bold text-purple-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1"
                               />
@@ -1451,7 +1882,7 @@ export function CompetencyMatrixModal({
                             <td className="border border-black p-1 text-center">
                               <input
                                 type="text"
-                                value={row.mohinh.vd}
+                                value={mohinh.vd}
                                 onChange={e => handleCellChange(row.id, 'mohinh', 'vd', e.target.value)}
                                 className="w-full text-center font-bold text-purple-700 bg-transparent focus:bg-white focus:outline-blue-500 rounded px-1"
                               />
@@ -1537,6 +1968,7 @@ export function CompetencyMatrixModal({
                     </tr>
                   </tbody>
                 </table>
+                )}
               </div>
             </div>
           )}
@@ -1666,10 +2098,10 @@ export function CompetencyMatrixModal({
                         <td className="border border-black p-1.5 text-center font-bold text-blue-700">
                           <input
                             type="text"
-                            value={spec.assignedQuestions.part1}
+                            value={spec.assignedQuestions?.part1 || ''}
                             onChange={e => {
                               const val = e.target.value;
-                              setSpecData(prev => prev.map(s => s.id === spec.id ? { ...s, assignedQuestions: { ...s.assignedQuestions, part1: val } } : s));
+                              setSpecData(prev => prev.map(s => s.id === spec.id ? { ...s, assignedQuestions: { ...(s.assignedQuestions || { part1: '', part2: '', part3: '', essay: '' }), part1: val } } : s));
                             }}
                             className="w-full text-center bg-transparent focus:bg-white rounded"
                           />
@@ -1677,10 +2109,10 @@ export function CompetencyMatrixModal({
                         <td className="border border-black p-1.5 text-center font-bold text-indigo-700">
                           <input
                             type="text"
-                            value={spec.assignedQuestions.part2}
+                            value={spec.assignedQuestions?.part2 || ''}
                             onChange={e => {
                               const val = e.target.value;
-                              setSpecData(prev => prev.map(s => s.id === spec.id ? { ...s, assignedQuestions: { ...s.assignedQuestions, part2: val } } : s));
+                              setSpecData(prev => prev.map(s => s.id === spec.id ? { ...s, assignedQuestions: { ...(s.assignedQuestions || { part1: '', part2: '', part3: '', essay: '' }), part2: val } } : s));
                             }}
                             className="w-full text-center bg-transparent focus:bg-white rounded"
                           />
@@ -1688,10 +2120,10 @@ export function CompetencyMatrixModal({
                         <td className="border border-black p-1.5 text-center font-bold text-purple-700">
                           <input
                             type="text"
-                            value={spec.assignedQuestions.part3}
+                            value={spec.assignedQuestions?.part3 || ''}
                             onChange={e => {
                               const val = e.target.value;
-                              setSpecData(prev => prev.map(s => s.id === spec.id ? { ...s, assignedQuestions: { ...s.assignedQuestions, part3: val } } : s));
+                              setSpecData(prev => prev.map(s => s.id === spec.id ? { ...s, assignedQuestions: { ...(s.assignedQuestions || { part1: '', part2: '', part3: '', essay: '' }), part3: val } } : s));
                             }}
                             className="w-full text-center bg-transparent focus:bg-white rounded"
                           />
@@ -1699,10 +2131,10 @@ export function CompetencyMatrixModal({
                         <td className="border border-black p-1.5 text-center font-bold text-rose-700">
                           <input
                             type="text"
-                            value={spec.assignedQuestions.essay}
+                            value={spec.assignedQuestions?.essay || ''}
                             onChange={e => {
                               const val = e.target.value;
-                              setSpecData(prev => prev.map(s => s.id === spec.id ? { ...s, assignedQuestions: { ...s.assignedQuestions, essay: val } } : s));
+                              setSpecData(prev => prev.map(s => s.id === spec.id ? { ...s, assignedQuestions: { ...(s.assignedQuestions || { part1: '', part2: '', part3: '', essay: '' }), essay: val } } : s));
                             }}
                             className="w-full text-center bg-transparent focus:bg-white rounded"
                           />
@@ -1725,10 +2157,10 @@ export function CompetencyMatrixModal({
                     {/* Tổng điểm bảng đặc tả */}
                     <tr className="bg-slate-100 font-bold text-center">
                       <td className="border border-black p-2" colSpan={4}>TỔNG CỘNG ĐỀ KIỂM TRA</td>
-                      <td className="border border-black p-2 text-blue-700">{currentTemplate.qCounts.mc} câu</td>
-                      <td className="border border-black p-2 text-indigo-700">{currentTemplate.qCounts.tf} câu</td>
-                      <td className="border border-black p-2 text-purple-700">{currentTemplate.qCounts.sa} câu</td>
-                      <td className="border border-black p-2 text-rose-700">{currentTemplate.qCounts.essay} câu</td>
+                      <td className="border border-black p-2 text-blue-700">{currentTemplate.qCounts?.mc || 0} câu</td>
+                      <td className="border border-black p-2 text-indigo-700">{currentTemplate.qCounts?.tf || 0} câu</td>
+                      <td className="border border-black p-2 text-purple-700">{currentTemplate.qCounts?.sa || 0} câu</td>
+                      <td className="border border-black p-2 text-rose-700">{currentTemplate.qCounts?.essay || 0} câu</td>
                       <td className="border border-black p-2 text-emerald-800 text-sm">
                         {specData.reduce((acc, curr) => acc + (curr.points || 0), 0).toFixed(2)}đ
                       </td>
@@ -2238,9 +2670,9 @@ export function PedagogicalMatrixExportView({
               <th className="border border-black p-1 text-center" colSpan={3}>Tỉ lệ tư duy (%)</th>
             </tr>
             <tr className="bg-slate-50 font-bold text-center">
-              <th className="border border-black p-1 text-center" colSpan={3}>Năng lực {tpl.competencyHeaders.c1}</th>
-              <th className="border border-black p-1 text-center" colSpan={3}>Năng lực {tpl.competencyHeaders.c2}</th>
-              <th className="border border-black p-1 text-center" colSpan={3}>Năng lực {tpl.competencyHeaders.c3}</th>
+              <th className="border border-black p-1 text-center" colSpan={3}>Năng lực {tpl.competencyHeaders?.c1 || 'Giải quyết vấn đề'}</th>
+              <th className="border border-black p-1 text-center" colSpan={3}>Năng lực {tpl.competencyHeaders?.c2 || 'Tư duy'}</th>
+              <th className="border border-black p-1 text-center" colSpan={3}>Năng lực {tpl.competencyHeaders?.c3 || 'Mô hình hóa'}</th>
               <th className="border border-black p-1 text-center" style={{ width: '4%' }} rowSpan={2}>Biết<br/>({totals.cognitivePercent.biet}%)</th>
               <th className="border border-black p-1 text-center" style={{ width: '4%' }} rowSpan={2}>Hiểu<br/>({totals.cognitivePercent.hieu}%)</th>
               <th className="border border-black p-1 text-center" style={{ width: '4%' }} rowSpan={2}>Vận dụng<br/>({totals.cognitivePercent.vd}%)</th>

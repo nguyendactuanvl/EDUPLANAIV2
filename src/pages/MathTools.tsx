@@ -689,10 +689,11 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
   };
 
   // Export Word
-  const handleExportWord = () => {
+  const handleExportWord = (mode: 'omml' | 'mathtype' = 'omml') => {
     if (reportRef.current) {
-      const title = activeModule === "grade10" ? "Loi_Giai_Thong_Ke_Lop_10" : "Loi_Giai_Thong_Ke_Ghep_Nhom_Lop_11_12";
-      exportHtmlToWord(reportRef.current, title);
+      const baseTitle = activeModule === "grade10" ? "Loi_Giai_Thong_Ke_Lop_10" : "Loi_Giai_Thong_Ke_Ghep_Nhom_Lop_11_12";
+      const suffix = mode === 'mathtype' ? '_MathType' : '';
+      exportHtmlToWord(reportRef.current, `${baseTitle}${suffix}.docx`, mode);
     }
   };
 
@@ -1573,12 +1574,21 @@ $$s = \\sqrt{s^2} = \\sqrt{${round(variance, 4)}} \\approx ${round(stdDev, 4)} \
               </button>
 
               <button
-                onClick={handleExportWord}
-                className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors"
-                title="Xuất file Word .doc"
+                onClick={() => handleExportWord('omml')}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                title="Xuất file Word (.docx) công thức chuẩn Word Equation (OMML)"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Xuất Word</span>
+                <span>Xuất Word (Equation)</span>
+              </button>
+
+              <button
+                onClick={() => handleExportWord('mathtype')}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                title="Xuất file Word (.docx) công thức chuẩn Word MathType"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Xuất Word (MathType)</span>
               </button>
             </div>
           </div>

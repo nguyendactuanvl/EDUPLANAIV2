@@ -20,7 +20,7 @@ export const ImageViewerModal: React.FC<ImageViewerModalProps> = ({ imageUrl, is
     return () => window.removeEventListener('keydown', handleEsc);
   }, [onClose]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !imageUrl || !imageUrl.trim()) return null;
 
   return (
     <div className="fixed inset-0 z-[9999] bg-black/90 flex flex-col items-center justify-center p-2" onClick={onClose}>
@@ -37,7 +37,7 @@ export const ImageViewerModal: React.FC<ImageViewerModalProps> = ({ imageUrl, is
         onClick={(e) => e.stopPropagation()}
       >
         <img 
-          src={imageUrl} 
+          src={imageUrl || undefined} 
           alt="Full screen view" 
           style={{ transform: `scale(${scale}) rotate(${rotation}deg)`, transition: 'transform 0.2s' }}
           className="max-w-[95vw] max-h-[95vh] object-contain"

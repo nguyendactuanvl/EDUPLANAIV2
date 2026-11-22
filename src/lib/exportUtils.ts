@@ -51,6 +51,265 @@ import { convertBbtTableToSvg, autoEnrichTextWithVisuals } from './bbtRenderer';
 import { getTikzSvg } from '../components/TikzRenderer';
 import { normalizeMathText, normalizeArithmeticProgressionFormulas, preprocessMathText, fixAndMergeMathArrows } from './globalMath';
 
+export interface ElectronMathTypeBridge {
+  isSupported: boolean;
+  convertAndSave: (buffer: ArrayBuffer, fileName: string) => Promise<{ success: boolean; error?: string }>;
+}
+
+declare global {
+  interface Window {
+    electronMathType?: ElectronMathTypeBridge;
+  }
+}
+
+/**
+ * Quy đổi các lệnh KaTeX/MathJax đặc thù bên trong công thức sang chuẩn LaTeX cổ điển của MathType:
+ * \dfrac và \tfrac -> \frac, \geqslant -> \geq, \leqslant -> \leq.
+ */
+export function normalizeLatexCommandsForMathType(tex: string): string {
+  if (!tex) return '';
+  return tex
+    .replace(/\\(?:d|t)frac(?![a-zA-Z])/g, '\\frac')
+    .replace(/\\geqslant(?![a-zA-Z])/g, '\\geq')
+    .replace(/\\leqslant(?![a-zA-Z])/g, '\\leq')
+    .replace(/\\ge\s+slant(?![a-zA-Z])/g, '\\geq')
+    .replace(/\\le\s+slant(?![a-zA-Z])/g, '\\leq');
+}
+
+/**
+ * Kiểm tra chuỗi TeX đã được bọc bởi đúng một cặp ngoặc nhọn ngoài cùng {...} hay chưa
+ * (tránh nhận nhầm dạng {a} + {b} và tránh bọc trùng {{ABC}}).
+ */
+function isWrappedInSingleBraceGroup(tex: string): boolean {
+  if (!tex.startsWith('{') || !tex.endsWith('}')) return false;
+  let depth = 0;
+  for (let i = 0; i < tex.length; i++) {
+    const ch = tex[i];
+    if (ch === '\\') {
+      i++;
+      continue;
+    }
+    if (ch === '{') {
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0 && i < tex.length - 1) return false;
+    }
+  }
+  return depth === 0;
+}
+
+/**
+ * Bọc thêm cặp ngoặc nhọn {} cho các công thức inline dạng tên hình học/biến/số/tọa độ
+ * (như ${ABC}$, ${12}$, ${Oxy}$, ${d}$, ${(-3; 0)}$, ${5\text{ cm}}$, ${2x - 3y \le -6}$...)
+ * để khi chuyển sang MathType (Toggle TeX / Alt + \) luôn nhận diện chuẩn 100%,
+ * không bị bỏ sót số hoặc chuỗi chữ cái thường.
+ */
+function wrapInlineTexForMathType(cleanTex: string): string {
+  if (!cleanTex) return '';
+  if (isWrappedInSingleBraceGroup(cleanTex)) return cleanTex;
+  if (/\\begin\s*\{/.test(cleanTex)) return cleanTex;
+
+  const hasBackslashCmd = /\\[a-zA-Z]+/.test(cleanTex);
+  const startsWithNumberOrSign = /^[+-]?\d/.test(cleanTex);
+  const onlyTextOrUnitCmd =
+    hasBackslashCmd &&
+    !cleanTex
+      .replace(/\\(?:text|mathrm|operatorname)\s*\{[^{}]*\}/g, '')
+      .replace(/\\(?:circ|degree|quad|qquad)(?![a-zA-Z])/g, '')
+      .match(/\\[a-zA-Z]+/);
+
+  if (!hasBackslashCmd || startsWithNumberOrSign || onlyTextOrUnitCmd) {
+    return `{${cleanTex}}`;
+  }
+  return cleanTex;
+}
+
+/**
+ * Chuẩn hóa toàn bộ nội dung LaTeX cho MathType trước khi tạo file .docx:
+ * - Chuyển công thức display $$ ... $$ thành \[ ... \] (xóa khoảng trắng thừa ở 2 đầu bên trong).
+ * - Giữ nguyên công thức inline $ ... $ và xóa khoảng trắng thừa sát dấu $ bên trong (ví dụ $ x^2 $ -> ${x^2}$).
+ * - Bọc {} cho các công thức inline dạng chữ/số/tọa độ (${ABC}$, ${12}$, ${Oxy}$...) để MathType nhận diện chuẩn.
+ * - Quy đổi các lệnh KaTeX/MathJax đặc thù sang chuẩn LaTeX cổ điển của MathType:
+ *   \dfrac và \tfrac -> \frac, \geqslant -> \geq, \leqslant -> \leq.
+ */
+export function normalizeLatexForMathType(text: string): string {
+  if (!text) return '';
+
+  // 1. Quy đổi các lệnh KaTeX/MathJax đặc thù sang chuẩn LaTeX cổ điển của MathType
+  let result = normalizeLatexCommandsForMathType(text);
+
+  // 2. Chuyển công thức display $$ ... $$ thành \[ ... \] (xóa khoảng trắng thừa ở 2 đầu bên trong)
+  result = result.replace(/\$\$([\s\S]*?)\$\$/g, (_match, inner: string) => {
+    const cleanInner = normalizeLatexCommandsForMathType(inner)
+      .replace(/(?<!\\)\$/g, '')
+      .replace(/\\\[|\\\]/g, '')
+      .replace(/[\r\n]+/g, ' ')
+      .trim();
+    return cleanInner ? `\\[${cleanInner}\\]` : '';
+  });
+
+  // Chuẩn hóa các khối \[ ... \] có sẵn (xóa khoảng trắng thừa ở 2 đầu bên trong)
+  result = result.replace(/\\\[([\s\S]*?)\\\]/g, (_match, inner: string) => {
+    const cleanInner = normalizeLatexCommandsForMathType(inner)
+      .replace(/(?<!\\)\$/g, '')
+      .replace(/\\\[|\\\]/g, '')
+      .replace(/[\r\n]+/g, ' ')
+      .trim();
+    return cleanInner ? `\\[${cleanInner}\\]` : '';
+  });
+
+  // Chuẩn hóa công thức inline \( ... \) sang $...$
+  result = result.replace(/\\\(([\s\S]*?)\\\)/g, (_match, inner: string) => {
+    const cleanInner = normalizeLatexCommandsForMathType(inner)
+      .replace(/(?<!\\)\$/g, '')
+      .replace(/\\\(|\\\)/g, '')
+      .replace(/[\r\n]+/g, ' ')
+      .trim();
+    return cleanInner ? `$${wrapInlineTexForMathType(cleanInner)}$` : '';
+  });
+
+  // 3. Giữ nguyên công thức inline $ ... $ và xóa khoảng trắng thừa sát dấu $ bên trong (ví dụ $ ABC $ -> ${ABC}$)
+  result = result.replace(/\$([^$\r\n]+?)\$/g, (_match, inner: string) => {
+    const cleanInner = normalizeLatexCommandsForMathType(inner)
+      .replace(/(?<!\\)\$/g, '')
+      .replace(/\\\[|\\\]/g, '')
+      .trim();
+    return cleanInner ? `$${wrapInlineTexForMathType(cleanInner)}$` : '';
+  });
+
+  return result;
+}
+
+/**
+ * Định dạng một token toán học đơn lẻ sang chuỗi chuẩn MathType ($...$ hoặc \[...\]).
+ * Loại bỏ mọi dấu phân cách $ / \[ / \] thừa bên trong để lệnh Toggle TeX (Alt + \)
+ * của MathType không bao giờ bắt cặp sai xuyên qua hình ảnh hoặc đoạn văn khác.
+ */
+function formatMathTokenForMathType(rawTex: string, isBlock?: boolean): string {
+  if (!rawTex) return '';
+  let inner = rawTex.trim();
+  // Gỡ vỏ phân cách bên ngoài (kể cả khi bị lệch 1 đầu)
+  inner = inner
+    .replace(/^(?:\$\$|\\\[|\\\(|(?<!\\)\$)+/, '')
+    .replace(/(?:\$\$|\\\]|\\\)|(?<!\\)\$)+$/, '');
+
+  const cleanTex = normalizeLatexCommandsForMathType(inner)
+    .replace(/(?<!\\)\$/g, '')
+    .replace(/\\\[|\\\]|\\\(|\\\)/g, '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+
+  if (!cleanTex) return '';
+  return isBlock ? `\\[${cleanTex}\\]` : `$${wrapInlineTexForMathType(cleanTex)}$`;
+}
+
+/**
+ * Làm sạch các ký tự phân cách TeX mồ côi trong văn bản thường (ngoài công thức)
+ * khi xuất Word chuẩn MathType để tránh MathType Toggle TeX (Alt + \) nuốt mất hình ảnh.
+ */
+function sanitizePlainTextForMathType(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/(?<!\\)\$/g, '')
+    .replace(/\\\[/g, '\\ [')
+    .replace(/\\\]/g, '\\ ]')
+    .replace(/\\\(/g, '\\ (')
+    .replace(/\\\)/g, '\\ )');
+}
+
+/**
+ * Hiển thị Modal hướng dẫn chuyển đổi công thức MathType sau khi tải file .docx trên trình duyệt Web hoặc bản Desktop vỏ cũ.
+ */
+export function showMathTypeGuideModal(): void {
+  if (typeof document === 'undefined') return;
+
+  const existing = document.getElementById('mathtype-export-guide-modal');
+  if (existing) {
+    existing.remove();
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'mathtype-export-guide-modal';
+  overlay.style.cssText = [
+    'position: fixed',
+    'inset: 0',
+    'background: rgba(15, 23, 42, 0.65)',
+    'backdrop-filter: blur(4px)',
+    'z-index: 1000000',
+    'display: flex',
+    'align-items: center',
+    'justify-content: center',
+    'padding: 16px',
+    'font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  ].join(';');
+
+  const card = document.createElement('div');
+  card.style.cssText = [
+    'background: #ffffff',
+    'color: #0f172a',
+    'max-width: 520px',
+    'width: 100%',
+    'border-radius: 16px',
+    'box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    'border: 1px solid #e2e8f0',
+    'overflow: hidden',
+    'animation: mtModalFadeIn 0.2s ease-out',
+  ].join(';');
+
+  card.innerHTML = `
+    <style>
+      @keyframes mtModalFadeIn {
+        from { opacity: 0; transform: translateY(8px) scale(0.98); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+    </style>
+    <div style="background: linear-gradient(135deg, #4f46e5, #3730a3); padding: 16px 20px; display: flex; align-items: center; gap: 12px; color: #ffffff;">
+      <div style="width: 38px; height: 38px; border-radius: 10px; background: rgba(255,255,255,0.18); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px; flex-shrink: 0;">
+        ∑
+      </div>
+      <div>
+        <div style="font-size: 16px; font-weight: 700; line-height: 1.3;">Xuất Word (MathType) thành công</div>
+        <div style="font-size: 12px; color: #e0e7ff; margin-top: 2px;">Hướng dẫn chuyển đổi nhanh sang đối tượng MathType</div>
+      </div>
+    </div>
+    <div style="padding: 20px;">
+      <p style="margin: 0; font-size: 14px; line-height: 1.65; color: #1e293b; font-weight: 500; background: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #4f46e5; border-radius: 10px; padding: 14px 16px;">
+        Đã tải file Word chuẩn MathType! Để chuyển toàn bộ công thức sang đối tượng MathType trong 1 giây: Mở file Word vừa tải -&gt; Nhấn <strong>Ctrl + A</strong> -&gt; Nhấn tổ hợp phím <strong>Alt + \\</strong> (hoặc bấm nút <strong>Toggle TeX</strong> trên thanh công cụ MathType).
+      </p>
+      <div style="margin-top: 18px; display: flex; justify-content: flex-end;">
+        <button id="mathtype-guide-close-btn" type="button" style="background: #4f46e5; color: #ffffff; border: none; border-radius: 10px; padding: 10px 24px; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25); transition: background 0.15s;">
+          Đã hiểu
+        </button>
+      </div>
+    </div>
+  `;
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  const closeModal = () => {
+    overlay.remove();
+    window.removeEventListener('keydown', onKeyDown);
+  };
+
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape' || e.key === 'Enter') {
+      closeModal();
+    }
+  };
+
+  window.addEventListener('keydown', onKeyDown);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeModal();
+  });
+  const closeBtn = card.querySelector('#mathtype-guide-close-btn');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', closeModal);
+  }
+}
+
 interface RunStyle {
   bold?: boolean;
   italics?: boolean;
@@ -62,7 +321,7 @@ interface RunStyle {
 }
 
 interface ExportOptions {
-  mathFormat: 'omml' | 'latex' | 'image';
+  mathFormat: 'omml' | 'mathtype' | 'latex' | 'image';
 }
 
 const yieldToMain = (ms: number = 0): Promise<void> =>
@@ -647,7 +906,7 @@ export async function svgToPngDataUrl(
  */
 function dataUrlToUint8Array(dataUrl: string): Uint8Array {
   const parts = dataUrl.split(',');
-  const b64 = parts.length > 1 ? parts[1] : parts[0];
+  const b64 = (parts.length > 1 ? parts[1] : parts[0]).replace(/\s+/g, '');
   const binaryString = atob(b64);
   const len = binaryString.length;
   const bytes = new Uint8Array(len);
@@ -1013,9 +1272,12 @@ function tokensToRuns(
 
   const runs: ParagraphChild[] = [];
 
+  const isMathType = options.mathFormat === 'mathtype' || options.mathFormat === 'latex';
+
   for (const token of tokens) {
     if (token.type === 'text') {
-      const qMatch = token.content.match(/^(\s*(?:\*\*)?(?:Câu|Bài)\s*\d+[:\.]?(?:\*\*)?)([\s\S]*)$/i);
+      const safeTokenText = isMathType ? sanitizePlainTextForMathType(token.content) : token.content;
+      const qMatch = safeTokenText.match(/^(\s*(?:\*\*)?(?:Câu|Bài)\s*\d+[:\.]?(?:\*\*)?)([\s\S]*)$/i);
       if (qMatch && !style.bold) {
         const cleanLabel = qMatch[1].replace(/\*\*/g, '').trim();
         runs.push(
@@ -1032,7 +1294,7 @@ function tokensToRuns(
         }
       } else {
         // Kiểm tra nếu text bắt đầu bằng nhãn phương án A-D (in hoa) hoặc a-d) (Đúng/Sai - giữ nguyên chữ thường!)
-        const optMatch = token.content.match(/^(\s*(?:[-*•●]\s*)?(?:\*{0,3})([A-D]\.|[A-D]\)|[a-d]\))(?:\*{0,3})[ \t]*)([\s\S]*)$/);
+        const optMatch = safeTokenText.match(/^(\s*(?:[-*•●]\s*)?(?:\*{0,3})([A-D]\.|[A-D]\)|[a-d]\))(?:\*{0,3})[ \t]*)([\s\S]*)$/);
         const isActivitySubHeader = optMatch && /^[a-d]\)/i.test(optMatch[2]) && /^\s*(?:Mục\s*tiêu|Nội\s*dung|Sản\s*phẩm|Tổ\s*chức\s*thực\s*hiện)\s*:/i.test(optMatch[3]);
         if (optMatch && !style.bold && !isActivitySubHeader) {
           const rawLabel = optMatch[2].trim();
@@ -1055,7 +1317,7 @@ function tokensToRuns(
           }
         } else {
           // Chỉ chuẩn hóa nhãn phương án A., B., C., D. IN HOA ở đầu dòng/tách biệt (KHÔNG dùng /i trên lowercase a), b), c), d) và KHÔNG nuốt dấu ngoặc mở '(')
-          let cleanedContent = token.content
+          let cleanedContent = safeTokenText
             .replace(/(^|\n)[ \t]*(?:[-*•●]\s*)?(?:\*{1,3}|<b>)?(?:\(([A-D])\)|([A-D])[\.\:\)])(?:\*{1,3}|<\/b>)?[ \t]*/g, (_m, p1, g1, g2) => `${p1}${g1 || g2}. `)
             .replace(/(?<=\b[A-D][\.\:\)])\s*\*\*+(?=\s|$)/g, '')
             .replace(/\*\*+(?=[A-D][\.\:\)])/g, '');
@@ -1064,15 +1326,20 @@ function tokensToRuns(
       }
     } else {
       // Math token
-      if (options.mathFormat === 'latex') {
-        const mathText = token.isBlock ? `\n$$${token.content}$$\n` : ` $${token.content}$ `;
-        runs.push(
-          ...createTextRunsWithMathFont(mathText, {
-            ...style,
-            italics: true,
-            font: style.font || 'Times New Roman',
-          })
-        );
+      if (options.mathFormat === 'mathtype' || options.mathFormat === 'latex') {
+        const mathText = formatMathTokenForMathType(token.content, token.isBlock);
+        if (mathText) {
+          runs.push(
+            new TextRun({
+              text: mathText,
+              font: style.font || 'Times New Roman',
+              size: style.size || 24,
+              bold: style.bold,
+              italics: style.italics,
+              color: style.color,
+            })
+          );
+        }
       } else {
         runs.push(latexToOmmlComponent(token.content, token.isBlock));
       }
@@ -1098,6 +1365,9 @@ function parseTextWithMath(
   const trailSpace = !trimEdges ? (safeText.match(/\s+$/)?.[0] ? ' ' : '') : '';
   safeText = stripInternalTags(safeText, trimEdges);
   safeText = cachedNormalizeAndFixArrows(safeText);
+  if (options.mathFormat === 'mathtype' || options.mathFormat === 'latex') {
+    safeText = normalizeLatexForMathType(safeText);
+  }
   if (!trimEdges) {
     if (leadSpace && !/^\s/.test(safeText)) safeText = leadSpace + safeText;
     if (trailSpace && !/\s$/.test(safeText)) safeText = safeText + trailSpace;
@@ -1229,13 +1499,19 @@ function parseInlineContent(
 
       const isBlock = el.classList.contains('katex-display') || el.getAttribute('display') === 'true' || el.getAttribute('data-block') === '1' || (tagName === 'MJX-CONTAINER' && el.getAttribute('display') === 'true');
 
-      if (tex && options.mathFormat === 'latex') {
-        const mathText = isBlock ? `\n$$${tex}$$\n` : ` $${tex}$ `;
-        return createTextRunsWithMathFont(mathText, {
-          ...style,
-          italics: true,
-          font: style.font || 'Times New Roman',
-        });
+      if (tex && (options.mathFormat === 'mathtype' || options.mathFormat === 'latex')) {
+        const mathText = formatMathTokenForMathType(tex, isBlock);
+        if (!mathText) return [];
+        return [
+          new TextRun({
+            text: mathText,
+            font: style.font || 'Times New Roman',
+            size: style.size || 24,
+            bold: style.bold,
+            italics: style.italics,
+            color: style.color,
+          }),
+        ];
       }
 
       if (mathml) {
@@ -1287,36 +1563,38 @@ function parseInlineContent(
       if (img.src && (img.src.startsWith('data:image/') || img.src.startsWith('blob:'))) {
         try {
           const bytes = dataUrlToUint8Array(img.src);
+          const isCroppedFigure = img.getAttribute('data-cropped-figure') === 'true' || img.hasAttribute('data-page');
           const rawW =
             parseInt(img.getAttribute('data-width') || '', 10) ||
             parseInt(img.getAttribute('width') || '', 10) ||
             img.naturalWidth ||
-            560;
+            420;
           const rawH =
             parseInt(img.getAttribute('data-height') || '', 10) ||
             parseInt(img.getAttribute('height') || '', 10) ||
             img.naturalHeight ||
-            340;
+            280;
 
-          // Ensure images in Word are clear and appropriately sized: min width 480px (~12.5cm), max width 640px (~16cm)
-          let finalW = Math.max(rawW, 480);
+          // Keep cropped PDF/exam figures crisp at natural readable size (200..520px),
+          // while keeping generated diagrams readable (min 420px, max 600px)
+          const minW = isCroppedFigure ? 200 : 420;
+          const maxW = isCroppedFigure ? 520 : 620;
+          const maxH = isCroppedFigure ? 400 : 460;
+
+          let finalW = Math.min(maxW, Math.max(rawW, minW));
           let finalH = Math.round(rawH * (finalW / Math.max(1, rawW)));
 
-          if (finalW > 640) {
-            const downScale = 640 / finalW;
-            finalW = 640;
-            finalH = Math.round(finalH * downScale);
+          if (finalH > maxH) {
+            const hScale = maxH / finalH;
+            finalH = maxH;
+            finalW = Math.max(140, Math.round(finalW * hScale));
           }
 
-          if (finalH > 460) {
-            const hScale = 460 / finalH;
-            finalH = 460;
-            finalW = Math.max(180, Math.round(finalW * hScale));
-          }
+          const imgType: 'png' | 'jpg' = /^data:image\/jpe?g/i.test(img.src) ? 'jpg' : 'png';
 
           return [
             new ImageRun({
-              type: 'png',
+              type: imgType,
               data: bytes,
               transformation: {
                 width: finalW,
@@ -1410,6 +1688,7 @@ function buildInvisibleChoiceTable(
 
   const createCell = (opt: { label: string; node?: Node; text?: string }, colPct: number) => {
     let childRuns: ParagraphChild[] = [];
+    const imgParagraphs: Paragraph[] = [];
 
     if (opt.node) {
       const hasImg = opt.node instanceof HTMLElement && !!opt.node.querySelector('img');
@@ -1420,6 +1699,21 @@ function buildInvisibleChoiceTable(
           if (/^\s*(?:[-*•●]\s*)?(?:\$\$?|\\\()?(?:\*{0,2})[A-D][\.\:\)]?(?:\*{0,2})(?:\$\$?|\\\))?\s*$/i.test(b.textContent || '')) {
             b.remove();
           }
+        }
+        // Tách riêng ảnh ra Paragraph độc lập để MathType Toggle TeX không ảnh hưởng đến ảnh trong phương án
+        const imgs = Array.from(cloned.querySelectorAll('img'));
+        for (const imgEl of imgs) {
+          const imgRuns = parseInlineContent(imgEl, {}, options);
+          if (imgRuns.length > 0) {
+            imgParagraphs.push(
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                spacing: { line: 288, before: 40, after: 40 },
+                children: imgRuns,
+              })
+            );
+          }
+          imgEl.remove();
         }
         childRuns = parseInlineContent(cloned, {}, options);
       } else {
@@ -1447,6 +1741,7 @@ function buildInvisibleChoiceTable(
             ...childRuns,
           ],
         }),
+        ...imgParagraphs,
       ],
     });
   };
@@ -1530,8 +1825,10 @@ function buildTrueFalseParagraphs(
   statements: { label: string; node?: Node; text?: string }[],
   options: ExportOptions
 ): Paragraph[] {
-  return statements.map((stmt) => {
+  const out: Paragraph[] = [];
+  for (const stmt of statements) {
     let childRuns: ParagraphChild[] = [];
+    const imgParagraphs: Paragraph[] = [];
 
     if (stmt.node) {
       // Check if node contains an image (e.g. geometric figure)
@@ -1544,6 +1841,20 @@ function buildTrueFalseParagraphs(
             b.remove();
           }
         }
+        const imgs = Array.from(cloned.querySelectorAll('img'));
+        for (const imgEl of imgs) {
+          const imgRuns = parseInlineContent(imgEl, {}, options);
+          if (imgRuns.length > 0) {
+            imgParagraphs.push(
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                spacing: { line: 288, before: 60, after: 60 },
+                children: imgRuns,
+              })
+            );
+          }
+          imgEl.remove();
+        }
         childRuns = parseInlineContent(cloned, {}, options);
       } else {
         // Extract complete text + math intact, preserving every formula and trailing punctuation
@@ -1555,26 +1866,36 @@ function buildTrueFalseParagraphs(
     }
 
     // Ghép toàn bộ nhãn a), phần chữ, phần công thức toán (MathRun/OMML) và dấu chấm kết thúc vào CÙNG MỘT ĐỐI TƯỢNG new Paragraph
-    return new Paragraph({
-      indent: { left: convertMillimetersToTwip(5) }, // 0.5 cm
-      spacing: { line: 288, after: 80 }, // 1.2 lines, 4pt after
-      children: [
-        new TextRun({
-          text: `${stmt.label} `,
-          bold: true,
-          font: 'Times New Roman',
-          size: 24,
-        }),
-        ...childRuns,
-      ],
-    });
-  });
+    out.push(
+      new Paragraph({
+        indent: { left: convertMillimetersToTwip(5) }, // 0.5 cm
+        spacing: { line: 288, after: 80 }, // 1.2 lines, 4pt after
+        children: [
+          new TextRun({
+            text: `${stmt.label} `,
+            bold: true,
+            font: 'Times New Roman',
+            size: 24,
+          }),
+          ...childRuns,
+        ],
+      }),
+      ...imgParagraphs
+    );
+  }
+  return out;
 }
 
 /**
  * Groups fragmented multiple-choice option paragraphs (A, B, C, D) or stems with trailing A
  * into a single unified invisible choice table for high-fidelity Word export.
  */
+function nodeContainsImg(node: Node | undefined): boolean {
+  if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+  const el = node as HTMLElement;
+  return el.tagName.toUpperCase() === 'IMG' || !!el.querySelector('img');
+}
+
 function tryExtractChoiceCluster(
   nodes: Node[],
   idx: number,
@@ -1588,13 +1909,19 @@ function tryExtractChoiceCluster(
 
   // TH1: Đề bài dính phương án A ở đuôi (ví dụ: "... là A. 15." hoặc "... bằng A. u_5 = 48.")
   // và các node tiếp theo chứa B., C., D. (CHỈ áp dụng chữ IN HOA A, B, C, D)
-  const stemWithAMatch = currentText.match(/^(.*?)\s+(?:[-*]\s*)?(?:\*{0,2})A[\.\)](?:\*{0,2})\s*([^\n]+)$/);
+  // Tuyệt đối không gom khi currentEl chứa hình ảnh (tránh làm rơi ảnh đề bài)
+  const stemWithAMatch = !nodeContainsImg(currentEl)
+    ? currentText.match(/^(.*?)\s+(?:[-*]\s*)?(?:\*{0,2})A[\.\)](?:\*{0,2})\s*([^\n]+)$/)
+    : null;
   if (stemWithAMatch) {
     const nextEls: HTMLElement[] = [];
     for (let j = idx + 1; j < Math.min(idx + 6, nodes.length); j++) {
       if (nodes[j].nodeType === Node.ELEMENT_NODE) {
-        const text = stripInternalTags(getNodeLatexOrText(nodes[j])).trim();
-        if (text) nextEls.push(nodes[j] as HTMLElement);
+        const elJ = nodes[j] as HTMLElement;
+        const text = stripInternalTags(getNodeLatexOrText(elJ)).trim();
+        // Nếu gặp khối chỉ chứa hình ảnh chen giữa -> không nuốt khối ảnh
+        if (!text && nodeContainsImg(elJ)) break;
+        if (text) nextEls.push(elJ);
       }
     }
     if (nextEls.length >= 3) {
@@ -1606,6 +1933,19 @@ function tryExtractChoiceCluster(
         /^\s*(?:[-*]\s*)?(?:\*{0,2})C[\.\)]/.test(tC) &&
         /^\s*(?:[-*]\s*)?(?:\*{0,2})D[\.\)]/.test(tD)
       ) {
+        const lastConsumedEl = nextEls[2];
+        let consumed = 1;
+        let hasInterveningImage = false;
+        for (let k = idx + 1; k < nodes.length; k++) {
+          consumed++;
+          if (nodes[k] === lastConsumedEl) break;
+          if (!nextEls.includes(nodes[k] as HTMLElement) && nodeContainsImg(nodes[k])) {
+            hasInterveningImage = true;
+            break;
+          }
+        }
+        if (hasInterveningImage) return null;
+
         const stemText = stemWithAMatch[1].trim();
         const optA = stemWithAMatch[2].trim();
         const optB = tB.replace(/^\s*(?:[-*]\s*)?(?:\*{0,2})B[\.\)](?:\*{0,2})\s*/, '').trim();
@@ -1621,17 +1961,11 @@ function tryExtractChoiceCluster(
         }
         items.push(buildInvisibleChoiceTable([
           { label: 'A.', text: optA },
-          { label: 'B.', text: optB },
-          { label: 'C.', text: optC },
-          { label: 'D.', text: optD }
+          nodeContainsImg(nextEls[0]) ? { label: 'B.', node: nextEls[0] } : { label: 'B.', text: optB },
+          nodeContainsImg(nextEls[1]) ? { label: 'C.', node: nextEls[1] } : { label: 'C.', text: optC },
+          nodeContainsImg(nextEls[2]) ? { label: 'D.', node: nextEls[2] } : { label: 'D.', text: optD }
         ], options));
 
-        const lastConsumedEl = nextEls[2];
-        let consumed = 1;
-        for (let k = idx + 1; k < nodes.length; k++) {
-          consumed++;
-          if (nodes[k] === lastConsumedEl) break;
-        }
         return { consumed, items };
       }
     }
@@ -1644,8 +1978,10 @@ function tryExtractChoiceCluster(
     const nextEls: HTMLElement[] = [];
     for (let j = idx + 1; j < Math.min(idx + 6, nodes.length); j++) {
       if (nodes[j].nodeType === Node.ELEMENT_NODE) {
-        const text = stripInternalTags(getNodeLatexOrText(nodes[j])).trim();
-        if (text) nextEls.push(nodes[j] as HTMLElement);
+        const elJ = nodes[j] as HTMLElement;
+        const text = stripInternalTags(getNodeLatexOrText(elJ)).trim();
+        if (!text && nodeContainsImg(elJ)) break;
+        if (text) nextEls.push(elJ);
       }
     }
     if (nextEls.length >= 3) {
@@ -1653,19 +1989,26 @@ function tryExtractChoiceCluster(
       const parsedC = matchChoiceOptionText(stripInternalTags(getNodeLatexOrText(nextEls[1])).trim());
       const parsedD = matchChoiceOptionText(stripInternalTags(getNodeLatexOrText(nextEls[2])).trim());
       if (parsedB?.letter === 'B' && parsedC?.letter === 'C' && parsedD?.letter === 'D') {
-        const table = buildInvisibleChoiceTable([
-          { label: 'A.', text: parsedA.body },
-          { label: 'B.', text: parsedB.body },
-          { label: 'C.', text: parsedC.body },
-          { label: 'D.', text: parsedD.body }
-        ], options);
-
         const lastConsumedEl = nextEls[2];
         let consumed = 1;
+        let hasInterveningImage = false;
         for (let k = idx + 1; k < nodes.length; k++) {
           consumed++;
           if (nodes[k] === lastConsumedEl) break;
+          if (!nextEls.includes(nodes[k] as HTMLElement) && nodeContainsImg(nodes[k])) {
+            hasInterveningImage = true;
+            break;
+          }
         }
+        if (hasInterveningImage) return null;
+
+        const table = buildInvisibleChoiceTable([
+          nodeContainsImg(currentEl) ? { label: 'A.', node: currentEl } : { label: 'A.', text: parsedA.body },
+          nodeContainsImg(nextEls[0]) ? { label: 'B.', node: nextEls[0] } : { label: 'B.', text: parsedB.body },
+          nodeContainsImg(nextEls[1]) ? { label: 'C.', node: nextEls[1] } : { label: 'C.', text: parsedC.body },
+          nodeContainsImg(nextEls[2]) ? { label: 'D.', node: nextEls[2] } : { label: 'D.', text: parsedD.body }
+        ], options);
+
         return { consumed, items: [table] };
       }
     }
@@ -1707,6 +2050,40 @@ async function parseDomToDocxChildren(
 
     const el = node as HTMLElement;
     const tagName = el.tagName.toUpperCase();
+
+    // 0.0 Direct standalone <img> or inline/display math node inside a block container
+    if (tagName === 'IMG') {
+      const imgRuns = parseInlineContent(el, {}, options);
+      if (imgRuns.length > 0) {
+        result.push(
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { line: 288, before: 100, after: 100 },
+            children: imgRuns,
+          })
+        );
+      }
+      return;
+    }
+
+    if (isInlineMathElement(el)) {
+      const mathRuns = parseInlineContent(el, {}, options);
+      if (mathRuns.length > 0) {
+        const isBlockMath =
+          el.getAttribute('data-block') === '1' ||
+          el.getAttribute('display') === 'true' ||
+          el.classList.contains('katex-display') ||
+          el.classList.contains('math-display');
+        result.push(
+          new Paragraph({
+            alignment: isBlockMath ? AlignmentType.CENTER : AlignmentType.LEFT,
+            spacing: { line: 288, after: 80 },
+            children: mathRuns,
+          })
+        );
+      }
+      return;
+    }
 
     // 0. Page Breaks
     const isExplicitDivider =
@@ -2224,40 +2601,31 @@ async function parseDomToDocxChildren(
             };
 
             const cellParagraphs: Paragraph[] = [];
+            const cellHasImg = !!cellEl.querySelector('img');
             const cellChildren = Array.from(cellEl.children);
 
-            if (cellChildren.length > 0 && cellChildren.some((ch) => /^(DIV|P|H[1-6])$/.test(ch.tagName))) {
-              for (const child of cellChildren) {
-                const runs = formatCellRuns(child);
-                cellParagraphs.push(
-                  new Paragraph({
-                    spacing: { line: isDenseTable ? 220 : 288, after: isDenseTable ? 10 : 40 },
-                    alignment: isCenter ? AlignmentType.CENTER : AlignmentType.LEFT,
-                    children: runs,
-                  })
-                );
+            const applyDenseStyle = (runs: ParagraphChild[]) => {
+              if (isDenseTable) {
+                runs.forEach((run) => {
+                  if (run instanceof ImageRun) return;
+                  (run as any).options = {
+                    ...(run as any).options,
+                    size: maxCols >= 15 ? 17 : (c === 0 ? 18 : 20),
+                    font: 'Times New Roman',
+                  };
+                });
               }
-            } else if (cellEl.querySelector('br')) {
-              const brGroups: Node[][] = [[]];
-              for (const cn of Array.from(cellEl.childNodes)) {
-                if (cn.nodeType === Node.ELEMENT_NODE && (cn as HTMLElement).tagName === 'BR') {
-                  brGroups.push([]);
-                } else {
-                  brGroups[brGroups.length - 1].push(cn);
-                }
-              }
-              for (const grp of brGroups) {
-                if (grp.length === 0) continue;
-                const runs = parseInlineChildSequence(grp, isHeaderCell ? { bold: true } : {}, options);
-                if (isDenseTable) {
-                  runs.forEach((run) => {
-                    (run as any).options = {
-                      ...(run as any).options,
-                      size: maxCols >= 15 ? 17 : (c === 0 ? 18 : 20),
-                      font: 'Times New Roman',
-                    };
-                  });
-                }
+            };
+
+            if (cellHasImg || (cellChildren.length > 0 && cellChildren.some((ch) => /^(DIV|P|H[1-6]|BR)$/i.test(ch.tagName)))) {
+              // Duyệt đầy đủ childNodes để không bao giờ rơi text node xen kẽ với <div><img></div> hoặc <br/>
+              // Đồng thời tách mọi <img> sang Paragraph căn giữa độc lập (an toàn 100% khi chạy MathType Toggle TeX)
+              let inlineBuf: Node[] = [];
+              const flushInlineBuf = () => {
+                if (inlineBuf.length === 0) return;
+                const runs = parseInlineChildSequence(inlineBuf, isHeaderCell ? { bold: true } : {}, options);
+                inlineBuf = [];
+                applyDenseStyle(runs);
                 if (runs.length > 0) {
                   cellParagraphs.push(
                     new Paragraph({
@@ -2267,7 +2635,81 @@ async function parseDomToDocxChildren(
                     })
                   );
                 }
+              };
+
+              const emitCellNode = (cn: Node) => {
+                if (cn.nodeType === Node.ELEMENT_NODE) {
+                  const cnEl = cn as HTMLElement;
+                  const cnTag = cnEl.tagName.toUpperCase();
+                  if (cnTag === 'BR') {
+                    flushInlineBuf();
+                    return;
+                  }
+                  if (cnTag === 'IMG') {
+                    flushInlineBuf();
+                    const imgRuns = parseInlineContent(cnEl, {}, options);
+                    if (imgRuns.length > 0) {
+                      cellParagraphs.push(
+                        new Paragraph({
+                          spacing: { line: 288, before: 60, after: 60 },
+                          alignment: AlignmentType.CENTER,
+                          children: imgRuns,
+                        })
+                      );
+                    }
+                    return;
+                  }
+                  if (/^(DIV|P|H[1-6])$/.test(cnTag)) {
+                    flushInlineBuf();
+                    const nestedImgs = Array.from(cnEl.querySelectorAll('img'));
+                    if (nestedImgs.length > 0) {
+                      const textOnlyClone = cnEl.cloneNode(true) as HTMLElement;
+                      textOnlyClone.querySelectorAll('img').forEach(im => im.remove());
+                      const txtRuns = parseInlineContent(textOnlyClone, isHeaderCell ? { bold: true } : {}, options);
+                      applyDenseStyle(txtRuns);
+                      if (txtRuns.length > 0) {
+                        cellParagraphs.push(
+                          new Paragraph({
+                            spacing: { line: isDenseTable ? 220 : 276, after: isDenseTable ? 10 : 40 },
+                            alignment: isCenter ? AlignmentType.CENTER : AlignmentType.LEFT,
+                            children: txtRuns,
+                          })
+                        );
+                      }
+                      for (const imgEl of nestedImgs) {
+                        const imgRuns = parseInlineContent(imgEl, {}, options);
+                        if (imgRuns.length > 0) {
+                          cellParagraphs.push(
+                            new Paragraph({
+                              spacing: { line: 288, before: 60, after: 60 },
+                              alignment: AlignmentType.CENTER,
+                              children: imgRuns,
+                            })
+                          );
+                        }
+                      }
+                    } else {
+                      const runs = formatCellRuns(cnEl);
+                      if (runs.length > 0) {
+                        cellParagraphs.push(
+                          new Paragraph({
+                            spacing: { line: isDenseTable ? 220 : 288, after: isDenseTable ? 10 : 40 },
+                            alignment: isCenter ? AlignmentType.CENTER : AlignmentType.LEFT,
+                            children: runs,
+                          })
+                        );
+                      }
+                    }
+                    return;
+                  }
+                }
+                inlineBuf.push(cn);
+              };
+
+              for (const cn of Array.from(cellEl.childNodes)) {
+                emitCellNode(cn);
               }
+              flushInlineBuf();
             } else {
               const runs = formatCellRuns(cellEl);
               cellParagraphs.push(
@@ -2399,7 +2841,7 @@ async function parseDomToDocxChildren(
         const rawText = itemLatexTexts[i];
         const ordNum = olStart + i;
         const hasExplicitNumber = /^\s*(?:\*{0,3})?(?:Câu\s*\d+|Bài\s*\d+|\d+[\.\)\:])/i.test(rawText);
-        const mcMatch = rawText.match(mcRegex);
+        const mcMatch = !li.querySelector('img') ? rawText.match(mcRegex) : null;
 
         if (mcMatch) {
           let stemText = stripInternalTags(mcMatch[1].trim());
@@ -2464,6 +2906,40 @@ async function parseDomToDocxChildren(
         const isChoiceItem =
           parsedChoiceItems[i] !== null ||
           /^\s*(?:[-*•●]\s*)?(?:\*{0,3}|\s*)?\(?[a-d]\)?[\.\:\)]/.test(rawText);
+        if (li.querySelector('img')) {
+          const liClone = li.cloneNode(true) as HTMLElement;
+          const liImgs = Array.from(liClone.querySelectorAll('img'));
+          const imgParas: Paragraph[] = [];
+          for (const imgEl of liImgs) {
+            const imgRuns = parseInlineContent(imgEl, {}, options);
+            if (imgRuns.length > 0) {
+              imgParas.push(
+                new Paragraph({
+                  alignment: AlignmentType.CENTER,
+                  spacing: { line: 288, before: 80, after: 80 },
+                  children: imgRuns,
+                })
+              );
+            }
+            imgEl.remove();
+          }
+          const textRuns = parseInlineContent(liClone, {}, options);
+          if (textRuns.length > 0) {
+            if (isOrderedList && !hasExplicitNumber && !isSectionItem && !isChoiceItem) {
+              textRuns.unshift(...createTextRunsWithMathFont(`${ordNum}. `, { bold: true }));
+            }
+            result.push(
+              new Paragraph({
+                bullet: (isOrderedList || isQuestionItem || isChoiceItem || isSectionItem) ? undefined : { level: 0 },
+                spacing: { line: 288, after: (isQuestionItem || isOrderedList) ? 80 : 60 },
+                children: textRuns,
+              })
+            );
+          }
+          result.push(...imgParas);
+          continue;
+        }
+
         const runs = parseInlineContent(li, {}, options);
         if (runs.length === 0) continue;
 
@@ -2573,7 +3049,17 @@ async function parseDomToDocxChildren(
       if (hasImgs) {
         const rawText = stripInternalTags(getNodeLatexOrText(el));
         if (rawText) {
-          const textRuns = parseInlineChildSequence(Array.from(el.childNodes).filter(c => !(c.nodeType === Node.ELEMENT_NODE && (c as HTMLElement).tagName.toUpperCase() === 'IMG')), {}, options);
+          const textRuns = parseInlineChildSequence(
+            Array.from(el.childNodes).filter(
+              c =>
+                !(
+                  c.nodeType === Node.ELEMENT_NODE &&
+                  ((c as HTMLElement).tagName.toUpperCase() === 'IMG' || !!(c as HTMLElement).querySelector?.('img'))
+                )
+            ),
+            {},
+            options
+          );
           if (textRuns.length > 0) {
             result.push(
               new Paragraph({
@@ -2735,15 +3221,50 @@ async function parseDomToDocxChildren(
     }
 
     const childNodes = Array.from(el.childNodes);
+    const isBlockChildNode = (n: Node): boolean => {
+      if (n.nodeType !== Node.ELEMENT_NODE) return false;
+      const t = (n as HTMLElement).tagName.toUpperCase();
+      return /^(DIV|P|TABLE|UL|OL|H[1-6]|HR|IMG)$/.test(t);
+    };
+    const inlinePending: Node[] = [];
+    const flushInlinePending = () => {
+      if (inlinePending.length === 0) return;
+      const meaningful = inlinePending.some(
+        (n) =>
+          (n.textContent || '').trim() !== '' ||
+          (n.nodeType === Node.ELEMENT_NODE &&
+            (isInlineMathElement(n) || !!(n as HTMLElement).querySelector?.('img, .omml-math-node')))
+      );
+      if (meaningful) {
+        const runs = parseInlineChildSequence(inlinePending, {}, options);
+        if (runs.length > 0) {
+          result.push(
+            new Paragraph({
+              spacing: { line: 288, after: 80 },
+              children: runs,
+            })
+          );
+        }
+      }
+      inlinePending.length = 0;
+    };
+
     for (let i = 0; i < childNodes.length; i++) {
+      const cn = childNodes[i];
+      if (!isBlockChildNode(cn)) {
+        inlinePending.push(cn);
+        continue;
+      }
+      flushInlinePending();
       const cluster = tryExtractChoiceCluster(childNodes, i, options);
       if (cluster) {
         result.push(...cluster.items);
         i += cluster.consumed - 1;
         continue;
       }
-      await processNode(childNodes[i]);
+      await processNode(cn);
     }
+    flushInlinePending();
   }
 
   const rootChildren = Array.from(root.childNodes);
@@ -2766,13 +3287,15 @@ async function parseDomToDocxChildren(
 export async function exportHtmlToWord(
   element: HTMLElement,
   filename: string,
-  mathFormat: 'omml' | 'mathml' | 'latex' | 'image' | boolean = 'omml'
+  mathFormat: 'omml' | 'mathtype' | 'mathml' | 'latex' | 'image' | boolean = 'omml',
+  skipDownload: boolean = false
 ) {
-  let resolvedMathFormat: 'omml' | 'latex' | 'image' = 'omml';
+  let resolvedMathFormat: 'omml' | 'mathtype' | 'image' = 'omml';
   if (mathFormat === 'image') resolvedMathFormat = 'image';
-  else if (mathFormat === true || mathFormat === 'latex') resolvedMathFormat = 'latex';
+  else if (mathFormat === 'mathtype' || mathFormat === true || mathFormat === 'latex') resolvedMathFormat = 'mathtype';
   else resolvedMathFormat = 'omml';
 
+  const isMathTypeMode = resolvedMathFormat === 'mathtype';
   let loadingOverlay = document.getElementById('word-export-loading');
   if (!loadingOverlay) {
     loadingOverlay = document.createElement('div');
@@ -2788,16 +3311,19 @@ export async function exportHtmlToWord(
     loadingOverlay.style.flexDirection = 'column';
     loadingOverlay.style.alignItems = 'center';
     loadingOverlay.style.justifyContent = 'center';
-    loadingOverlay.innerHTML = `
-      <div style="width: 52px; height: 52px; border: 4px solid #10b981; border-bottom-color: transparent; border-radius: 50%; display: inline-block; box-sizing: border-box; animation: rotation 1s linear infinite;"></div>
-      <style>@keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
-      <h2 style="margin-top: 20px; color: #0f172a; font-family: 'Times New Roman', serif; font-size: 18px; font-weight: bold;">Đang xử lý xuất file Word (.docx)...</h2>
-      <p style="color: #475569; font-family: sans-serif; font-size: 14px; margin-top: 6px;">Đang biên dịch công thức toán sang chuẩn Equation (OMML) và dàn trang...</p>
-    `;
     document.body.appendChild(loadingOverlay);
-  } else {
-    loadingOverlay.style.display = 'flex';
   }
+  loadingOverlay.innerHTML = `
+    <div style="width: 52px; height: 52px; border: 4px solid ${isMathTypeMode ? '#4f46e5' : '#10b981'}; border-bottom-color: transparent; border-radius: 50%; display: inline-block; box-sizing: border-box; animation: rotation 1s linear infinite;"></div>
+    <style>@keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+    <h2 style="margin-top: 20px; color: #0f172a; font-family: 'Times New Roman', serif; font-size: 18px; font-weight: bold;">Đang xử lý xuất file Word (.docx)...</h2>
+    <p style="color: #475569; font-family: sans-serif; font-size: 14px; margin-top: 6px;">${
+      isMathTypeMode
+        ? 'Đang chuẩn hóa công thức LaTeX tương thích Word MathType và dàn trang...'
+        : 'Đang biên dịch công thức toán sang chuẩn Equation (OMML) và dàn trang...'
+    }</p>
+  `;
+  loadingOverlay.style.display = 'flex';
 
   // Yield briefly so browser paints the loading overlay cleanly before heavy processing starts
   await yieldToMain(25);
@@ -2838,6 +3364,23 @@ export async function exportHtmlToWord(
 
   try {
     const clone = element.cloneNode(true) as HTMLElement;
+
+    // Preserve natural image dimensions & resolved src from live DOM onto detached clone
+    const srcImgs = Array.from(element.querySelectorAll('img'));
+    const cloneImgs = Array.from(clone.querySelectorAll('img'));
+    cloneImgs.forEach((clonedImg, idx) => {
+      const srcImg = srcImgs[idx];
+      if (!srcImg) return;
+      if (!clonedImg.getAttribute('src') && (srcImg.currentSrc || srcImg.src)) {
+        clonedImg.src = srcImg.currentSrc || srcImg.src;
+      }
+      if (!clonedImg.getAttribute('data-width') && srcImg.naturalWidth > 0) {
+        clonedImg.setAttribute('data-width', String(srcImg.naturalWidth));
+      }
+      if (!clonedImg.getAttribute('data-height') && srcImg.naturalHeight > 0) {
+        clonedImg.setAttribute('data-height', String(srcImg.naturalHeight));
+      }
+    });
 
     // Convert form controls (input, textarea, select) to text spans to preserve all user data
     const srcControls = Array.from(element.querySelectorAll('input, textarea, select'));
@@ -2891,6 +3434,21 @@ export async function exportHtmlToWord(
 
     // 0.0 Ensure Question Numbers (Câu 1:, Câu 2:...) and True/False items (a), b)...) in worksheets and exams
     // are merged with question prompt so they are strictly preserved as bold lead-ins in Word export
+    // Never merge into an image wrapper div (e.g. CustomImageRenderer) or when inline text already follows firstChild
+    const findTextContentContainer = (parentEl: Element, firstChild: Element): Element | null => {
+      const hasDirectFollowingText = Array.from(parentEl.childNodes).some(
+        (cn) => cn !== firstChild && cn.nodeType === Node.TEXT_NODE && (cn.textContent || '').trim().length > 0
+      );
+      if (hasDirectFollowingText) return null;
+      const candidates = Array.from(parentEl.querySelectorAll('.math-view-container, div, p'));
+      for (const cand of candidates) {
+        if (cand === firstChild || cand.contains(firstChild)) continue;
+        if (cand.querySelector('img') && !(cand.textContent || '').trim()) continue;
+        if ((cand.textContent || '').trim().length > 0) return cand;
+      }
+      return null;
+    };
+
     clone.querySelectorAll('div, li').forEach(qHeader => {
       const firstChild = qHeader.firstElementChild;
       if (!firstChild) return;
@@ -2898,8 +3456,8 @@ export async function exportHtmlToWord(
       const qMatch = firstText.match(/^\s*(?:\*\*)?(?:Câu|Bài|Question|Q)\s*\d+[:\.]?(?:\*\*)?\s*$/i);
       if (qMatch) {
         const qNumText = qMatch[0].replace(/\*+/g, '').trim();
-        const mathContainer = qHeader.querySelector('.math-view-container, div, p');
-        if (mathContainer && mathContainer !== firstChild) {
+        const mathContainer = findTextContentContainer(qHeader, firstChild);
+        if (mathContainer) {
           const targetP = mathContainer.querySelector('p') || mathContainer;
           if (targetP && !targetP.textContent?.trim().startsWith(qNumText)) {
             const strong = document.createElement('strong');
@@ -2918,8 +3476,8 @@ export async function exportHtmlToWord(
       const tfMatch = firstText.match(/^\s*(?:\*\*)?[a-d][\)\.](?:\*\*)?\s*$/i);
       if (tfMatch) {
         const tfLabel = tfMatch[0].replace(/\*+/g, '').trim();
-        const contentContainer = tfItem.querySelector('.math-view-container, div, p');
-        if (contentContainer && contentContainer !== firstChild) {
+        const contentContainer = findTextContentContainer(tfItem, firstChild);
+        if (contentContainer) {
           const targetP = contentContainer.querySelector('p') || contentContainer;
           if (targetP && !targetP.textContent?.trim().startsWith(tfLabel)) {
             const strong = document.createElement('strong');
@@ -2982,8 +3540,13 @@ export async function exportHtmlToWord(
       if (latex || mathMlStr) {
         const token = document.createElement('span');
         token.className = 'omml-math-node';
-        if (latex) token.setAttribute('data-latex', encodeURIComponent(latex.trim()));
-        if (mathMlStr) token.setAttribute('data-mathml', encodeURIComponent(mathMlStr.trim()));
+        if (latex) {
+          const finalLatex = isMathTypeMode ? normalizeLatexCommandsForMathType(latex.trim()) : latex.trim();
+          token.setAttribute('data-latex', encodeURIComponent(finalLatex));
+        }
+        if (mathMlStr && (!isMathTypeMode || !latex)) {
+          token.setAttribute('data-mathml', encodeURIComponent(mathMlStr.trim()));
+        }
         token.setAttribute('data-block', isBlock ? '1' : '0');
         mc.parentNode.replaceChild(token, mc);
       }
@@ -3024,6 +3587,9 @@ export async function exportHtmlToWord(
               .replace(/(?<=\b[A-D][\.\:\)])\s*\*\*+(?=\s|$)/g, '')
               .replace(/\*\*+(?=[A-D][\.\:\)])/g, '');
             let updated = afterLabels !== normalizedOnce ? fixAndMergeMathArrows(afterLabels) : normalizedOnce;
+            if (isMathTypeMode) {
+              updated = normalizeLatexForMathType(updated);
+            }
             if (hadLeadNl && updated && !/^\r?\n/.test(updated)) updated = '\n' + updated;
             else if (hadLeadWs && updated && !/^\s/.test(updated)) updated = ' ' + updated;
             if (hadTrailNl && updated && !/\r?\n$/.test(updated)) updated = updated + '\n';
@@ -3280,11 +3846,12 @@ export async function exportHtmlToWord(
       await Promise.all(pendingVisualConversions);
     }
 
-    // 2. Pre-process standard remote/relative images to data URLs
+    // 2. Pre-process remote/relative/blob/non-PNG-JPEG images to standard PNG data URLs
     const standardImgs = Array.from(clone.querySelectorAll('img'));
     for (let i = 0; i < standardImgs.length; i++) {
       const img = standardImgs[i];
-      if (img.src.startsWith('data:')) continue;
+      if (!img.src) continue;
+      if (/^data:image\/(?:png|jpe?g);base64,/i.test(img.src)) continue;
 
       try {
         const canvas = document.createElement('canvas');
@@ -3292,13 +3859,17 @@ export async function exportHtmlToWord(
         if (!ctx) continue;
 
         const originalImg = new Image();
-        originalImg.crossOrigin = 'Anonymous';
+        if (!img.src.startsWith('data:') && !img.src.startsWith('blob:')) {
+          originalImg.crossOrigin = 'Anonymous';
+        }
 
         const base64Data = await withTimeout(
           new Promise<string>((resolve, reject) => {
             originalImg.onload = () => {
               canvas.width = originalImg.naturalWidth || originalImg.width || 300;
               canvas.height = originalImg.naturalHeight || originalImg.height || 150;
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
               ctx.drawImage(originalImg, 0, 0);
               resolve(canvas.toDataURL('image/png'));
             };
@@ -3311,6 +3882,22 @@ export async function exportHtmlToWord(
 
         img.src = base64Data;
       } catch (e) {
+        if (img.src.startsWith('blob:') && typeof fetch === 'function' && typeof FileReader !== 'undefined') {
+          try {
+            const resp = await fetch(img.src);
+            const blob = await resp.blob();
+            const fallbackUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result || ''));
+              reader.onerror = () => reject(new Error('FileReader failed'));
+              reader.readAsDataURL(blob);
+            });
+            if (fallbackUrl.startsWith('data:image/')) {
+              img.src = fallbackUrl;
+              continue;
+            }
+          } catch {}
+        }
         console.error('Image rasterization error:', e);
       }
     }
@@ -3447,7 +4034,31 @@ export async function exportHtmlToWord(
     await yieldToMain(0);
     const cleanBaseName = filename.replace(/\.(docx?|DOCX?)$/i, '').replace(/[:\\/*?"<>|]+/g, '_');
     const finalFilename = `${cleanBaseName}.docx`;
-    saveAs(docBlob, finalFilename);
+
+    if (!skipDownload) {
+      if (isMathTypeMode) {
+        const arrayBuffer = await docBlob.arrayBuffer();
+        if (typeof window !== 'undefined' && window.electronMathType?.isSupported) {
+          try {
+            const result = await window.electronMathType.convertAndSave(arrayBuffer, finalFilename);
+            if (!result?.success) {
+              console.warn('Electron MathType convertAndSave returned unsuccessful:', result?.error);
+              saveAs(docBlob, finalFilename);
+              showMathTypeGuideModal();
+            }
+          } catch (bridgeErr) {
+            console.error('Electron MathType bridge error, falling back to browser download:', bridgeErr);
+            saveAs(docBlob, finalFilename);
+            showMathTypeGuideModal();
+          }
+        } else {
+          saveAs(docBlob, finalFilename);
+          showMathTypeGuideModal();
+        }
+      } else {
+        saveAs(docBlob, finalFilename);
+      }
+    }
     return docBlob;
   } catch (err) {
     console.error('DOCX Export failed:', err);
@@ -3467,10 +4078,10 @@ export async function exportHtmlToWord(
  */
 export async function generateDocxBlobFromElement(
   element: HTMLElement,
-  mathFormat: 'omml' | 'image' = 'omml'
+  mathFormat: 'omml' | 'mathtype' | 'image' = 'omml'
 ): Promise<Blob | null> {
   try {
-    const docBlob = await exportHtmlToWord(element, 'temp_drive_file.docx', mathFormat);
+    const docBlob = await exportHtmlToWord(element, 'temp_drive_file.docx', mathFormat, true);
     return docBlob;
   } catch (e) {
     console.error('Lỗi tạo Word Blob cho Google Drive:', e);

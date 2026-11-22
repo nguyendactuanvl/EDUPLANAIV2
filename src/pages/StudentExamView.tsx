@@ -9,7 +9,7 @@ import { apiFetch } from '../lib/apiFetch';
 import LZString from 'lz-string';
 import { XLSX } from '../lib/xlsxUtils';
 import { fixMath, cleanMath, cleanQuestionStem, cleanOptionText, formatMathContent, sanitizeShortAnswerInput, validateShortAnswer, compareShortAnswers, sanitizeAndPolishMath, sanitizeExamQuestion } from "../lib/utils";
-import { fetchExamFromCloud, saveExamToCloud, SYSTEM_EXAM_WEBHOOK } from "../lib/cloudExamStore";
+import { fetchExamFromCloud, appendExamSubmissionLocal, SYSTEM_EXAM_WEBHOOK, isSystemExamStorageRow, sendExamResultToWebhook } from "../lib/cloudExamStore";
 import { LanguageSpeechControls } from "../components/LanguageSpeechControls";
 
 const EMPTY_ESSAY_IMAGES: string[] = [];
@@ -128,7 +128,7 @@ const StudentQuestionCard = React.memo<StudentQuestionCardProps>(({
         <MathView content={questionContent} />
       </div>
 
-      {q.imageUrl && (
+      {q.imageUrl && q.imageUrl.trim() && (
         <div className="flex flex-col items-center justify-center my-4 p-2 bg-slate-50 border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
           <img
             src={q.imageUrl}
@@ -531,10 +531,10 @@ const StudentQuestionCard = React.memo<StudentQuestionCardProps>(({
               {/* Preview Thumbnail Grid */}
               {essayImages && essayImages.length > 0 && (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
-                  {essayImages.map((imgUrl, imgIdx) => (
+                  {essayImages.filter(Boolean).map((imgUrl, imgIdx) => (
                     <div key={imgIdx} className="relative group border border-slate-200 rounded-lg overflow-hidden bg-white shadow-2xs aspect-3/4 flex items-center justify-center">
                       <img
-                        src={imgUrl}
+                        src={imgUrl || undefined}
                         alt={`Ảnh bài làm trang ${imgIdx + 1}`}
                         className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform"
                         onClick={() => onPreviewImage(imgUrl)}
@@ -655,30 +655,12 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
       }
     } catch (e) {}
 
-    // B. Backend Express API (/api/exams/:id?fresh=true)
+    // B. LocalStorage examCache_<ID>
     if (activeCode) {
       try {
-        const res = await fetch(`/api/exams/${encodeURIComponent(activeCode)}?fresh=true`);
-        if (res.ok) {
-          const freshData = await res.json();
-          if (freshData && Array.isArray(freshData.submissions)) {
-            freshData.submissions.forEach((s: any) => {
-              const isDup = mergedList.some((m: any) =>
-                m.studentName === s.studentName &&
-                m.studentClass === s.studentClass &&
-                Math.abs(new Date(m.timestamp || m.submittedAt || 0).getTime() - new Date(s.timestamp || s.submittedAt || 0).getTime()) < 3 * 60 * 1000
-              );
-              if (!isDup) mergedList.push(s);
-            });
-          }
-        }
-      } catch (e) {}
-
-      // C. Distributed Cloud KV
-      try {
-        const cloudExam = await fetchExamFromCloud(activeCode);
-        if (cloudExam && Array.isArray(cloudExam.submissions)) {
-          cloudExam.submissions.forEach((s: any) => {
+        const localExam = await fetchExamFromCloud(activeCode);
+        if (localExam && Array.isArray(localExam.submissions)) {
+          localExam.submissions.forEach((s: any) => {
             const isDup = mergedList.some((m: any) =>
               m.studentName === s.studentName &&
               m.studentClass === s.studentClass &&
@@ -690,14 +672,15 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
       } catch (e) {}
     }
 
-    // D. Google Sheets Webhook
+    // D. Google Sheets Webhook (bỏ qua các dòng __EXAM__ dùng để lưu trữ đề thi)
     try {
       const sheetRes = await fetch(SYSTEM_EXAM_WEBHOOK);
       if (sheetRes.ok) {
         const sheetData = await sheetRes.json();
         if (Array.isArray(sheetData)) {
           sheetData.forEach((s: any) => {
-            if (s && String(s.examId || '').toLowerCase() === activeCode.toLowerCase()) {
+            if (!s || isSystemExamStorageRow(s)) return;
+            if (String(s.examId || '').toLowerCase() === activeCode.toLowerCase()) {
               const isDup = mergedList.some((m: any) =>
                 m.studentName === s.studentName &&
                 m.studentClass === s.studentClass &&
@@ -769,21 +752,13 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
     setError(null);
     
     try {
-      let data = await fetchExamFromCloud(cleanId);
-
-      // Retry up to 2 times if serverless cold start or network delay occurs
-      if (!data) {
-        await new Promise(r => setTimeout(r, 600));
-        data = await fetchExamFromCloud(cleanId);
-      }
+      const urlScriptParam = typeof window !== 'undefined'
+        ? (new URLSearchParams(window.location.search).get('script') || undefined)
+        : undefined;
+      const data = await fetchExamFromCloud(cleanId, { scriptUrl: urlScriptParam });
 
       if (!data) {
-        await new Promise(r => setTimeout(r, 1000));
-        data = await fetchExamFromCloud(cleanId);
-      }
-
-      if (!data) {
-        throw new Error(`Không tìm thấy bài thi với mã "${cleanId}". Vui lòng kiểm tra lại mã PIN hoặc yêu cầu thầy/cô gửi lại Link bài làm trực tiếp.`);
+        throw new Error(`Không tìm thấy bài thi với mã "${cleanId}" trên Google Sheets hoặc bộ nhớ trình duyệt. Vui lòng kiểm tra lại mã PIN hoặc liên hệ Giáo viên.`);
       }
 
       if (data.codeVersions || data.pdfBase64) {
@@ -1429,57 +1404,22 @@ export function StudentExamView({ examId, examRawData }: { examId?: string, exam
       setIsViolationSubmission(true);
     }
 
-    // 1. Save to Student's LocalStorage & Room Cache
+    // 1. Lưu trực tiếp kết quả vào localStorage (eduplan_exam_results + examCache_<ID>)
     try {
-      const existingResults = JSON.parse(localStorage.getItem('eduplan_exam_results') || '[]');
-      existingResults.push(submitPayload);
-      localStorage.setItem('eduplan_exam_results', JSON.stringify(existingResults));
-    } catch(e) {
+      appendExamSubmissionLocal(currentExamId, submitPayload).catch((e) => {
+        console.error("Lỗi lưu kết quả local:", e);
+      });
+    } catch (e) {
       console.error("Lỗi lưu kết quả local:", e);
     }
 
-    // 2. Submit to Backend Express Server API (/api/exams/:id/submit)
+    // 4. Send directly to Google Sheets Webhook (script.google.com, zero Vercel server)
     try {
-      apiFetch(`/api/exams/${encodeURIComponent(currentExamId)}/submit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(submitPayload)
-      }).catch(err => console.warn("Lỗi gửi API server:", err));
-    } catch (e) {}
-
-    // 3. Direct sync to Cloud KV (distributed resilient persistence)
-    (async () => {
-      try {
-        const cloudExam = await fetchExamFromCloud(currentExamId);
-        if (cloudExam) {
-          cloudExam.submissions = cloudExam.submissions || [];
-          const isDup = cloudExam.submissions.some((s: any) =>
-            s.studentName === submitPayload.studentName &&
-            s.studentClass === submitPayload.studentClass &&
-            Math.abs(new Date(s.timestamp || s.submittedAt || Date.now()).getTime() - Date.now()) < 3 * 60 * 1000
-          );
-          if (!isDup) {
-            cloudExam.submissions.push(submitPayload);
-            await saveExamToCloud(currentExamId, cloudExam);
-          }
-        }
-      } catch (e) {
-        console.warn("Lỗi lưu trực tiếp Cloud KV:", e);
-      }
-    })();
-
-    // 4. Send to Webhook (Google Sheets)
-    try {
-      fetch(SYSTEM_EXAM_WEBHOOK, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(submitPayload)
-      }).catch(err => {
+      sendExamResultToWebhook(submitPayload).catch(err => {
         console.warn("Lỗi gửi Webhook điểm thi:", err);
       });
     } catch (err) {
-      console.warn("Lỗi gọi fetch Webhook:", err);
+      console.warn("Lỗi gọi gửi Webhook:", err);
     }
   };
 

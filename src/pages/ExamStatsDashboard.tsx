@@ -8,7 +8,7 @@ import {
 import { XLSX } from "../lib/xlsxUtils";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
-import { fetchExamFromCloud, saveExamToCloud } from "../lib/cloudExamStore";
+import { fetchExamFromCloud, saveExamToCloud, fetchSubmissionsFromGoogleSheets } from "../lib/cloudExamStore";
 import { registerExamUrlMapping } from "../lib/smartRouter";
 
 interface Submission {
@@ -67,7 +67,6 @@ export function ExamStatsDashboard({ initialExamId, onBackToExam }: ExamStatsDas
   const [currentExam, setCurrentExam] = useState<ExamRoom | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
-  const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
   const [searchPinInput, setSearchPinInput] = useState<string>("");
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
@@ -77,8 +76,6 @@ export function ExamStatsDashboard({ initialExamId, onBackToExam }: ExamStatsDas
   const [sortBy, setSortBy] = useState<"score_desc" | "score_asc" | "time_asc" | "name_asc">("score_desc");
   const [selectedSubmissionForReview, setSelectedSubmissionForReview] = useState<Submission | null>(null);
 
-  // Auto-refresh interval ref
-  const autoRefreshTimerRef = useRef<any>(null);
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
   const dashboardRef = useRef<HTMLDivElement>(null);
 
@@ -225,33 +222,42 @@ export function ExamStatsDashboard({ initialExamId, onBackToExam }: ExamStatsDas
     return () => window.removeEventListener("open-exam-stats", handleOpenStats);
   }, []);
 
-  // 2. Fetch specific exam data from server & cloud KV
+  // 2. Load specific exam data directly from browser localStorage
   const fetchExamData = async (code: string) => {
     if (!code) return;
     setIsLoading(true);
     const cleanCode = code.trim().toUpperCase();
 
     try {
-      let serverData = null;
-      try {
-        const res = await fetch(`/api/exams/${cleanCode}?fresh=true`);
-        if (res.ok) {
-          serverData = await res.json();
-        }
-      } catch (e) {}
+      const localData = await fetchExamFromCloud(cleanCode);
 
-      if (!serverData) {
-        serverData = await fetchExamFromCloud(cleanCode);
-      }
+      if (localData) {
+        const title = localData.examTitle || localData.title || localData.examData?.examName || localData.examName || `Phòng thi ${cleanCode}`;
+        const duration = localData.duration || localData.examDuration || localData.examData?.duration || 45;
+        const submissions = Array.isArray(localData.submissions) ? [...localData.submissions] : [];
 
-      if (serverData) {
-        // Normalize server data
-        const title = serverData.examTitle || serverData.title || serverData.examData?.examName || serverData.examName || `Phòng thi ${cleanCode}`;
-        const duration = serverData.duration || serverData.examDuration || serverData.examData?.duration || 45;
-        const submissions = Array.isArray(serverData.submissions) ? serverData.submissions : [];
+        // Hợp nhất thêm lượt nộp bài trực tiếp từ Google Sheets (script.google.com)
+        try {
+          const remoteSubs = await fetchSubmissionsFromGoogleSheets(cleanCode, localData.scriptUrl);
+          remoteSubs.forEach((s: any) => {
+            const isDup = submissions.some((m: any) =>
+              String(m.studentName || '').trim().toLowerCase() === String(s.studentName || '').trim().toLowerCase() &&
+              String(m.studentClass || m.className || '').trim().toLowerCase() === String(s.studentClass || s.className || '').trim().toLowerCase() &&
+              Math.abs(new Date(m.timestamp || m.submittedAt || 0).getTime() - new Date(s.timestamp || s.submittedAt || 0).getTime()) < 3 * 60 * 1000
+            );
+            if (!isDup) {
+              submissions.push({
+                ...s,
+                studentClass: s.studentClass || s.className || '',
+                totalScore: s.totalScore ?? s.score ?? 0,
+                submittedAt: s.submittedAt || s.timestamp
+              });
+            }
+          });
+        } catch (e) {}
 
         const normalizedExam: ExamRoom = {
-          ...serverData,
+          ...localData,
           id: cleanCode,
           code: cleanCode,
           title: title,
@@ -263,7 +269,6 @@ export function ExamStatsDashboard({ initialExamId, onBackToExam }: ExamStatsDas
         setCurrentExam(normalizedExam);
         setLastRefreshed(new Date());
 
-        // Update in history list if missing or update submissions count
         setRoomsList(prev => {
           const exists = prev.some(r => r.id === cleanCode || r.code === cleanCode);
           if (!exists) {
@@ -272,7 +277,7 @@ export function ExamStatsDashboard({ initialExamId, onBackToExam }: ExamStatsDas
               code: cleanCode,
               title: title,
               duration: duration,
-              createdAt: serverData.createdAt || new Date().toISOString(),
+              createdAt: localData.createdAt || new Date().toISOString(),
               submissions: submissions
             };
             const updated = [newEntry, ...prev];
@@ -285,7 +290,6 @@ export function ExamStatsDashboard({ initialExamId, onBackToExam }: ExamStatsDas
           }
         });
       } else {
-        // Fallback: check in local list
         const localFound = roomsList.find(r => r.id === cleanCode || r.code === cleanCode);
         if (localFound) {
           setCurrentExam(localFound);
@@ -294,7 +298,7 @@ export function ExamStatsDashboard({ initialExamId, onBackToExam }: ExamStatsDas
         }
       }
     } catch (err) {
-      console.warn("Lỗi tải thông tin phòng thi từ máy chủ:", err);
+      console.warn("Lỗi đọc dữ liệu phòng thi từ localStorage:", err);
       const localFound = roomsList.find(r => r.id === cleanCode || r.code === cleanCode);
       if (localFound) {
         setCurrentExam(localFound);
@@ -304,17 +308,17 @@ export function ExamStatsDashboard({ initialExamId, onBackToExam }: ExamStatsDas
     }
   };
 
-  // Auto-refresh interval (every 12 seconds when enabled)
+  // Passive localStorage cross-tab listener (no network polling)
   useEffect(() => {
-    if (autoRefresh && selectedRoomId) {
-      autoRefreshTimerRef.current = setInterval(() => {
+    if (!selectedRoomId) return;
+    const handleStorageUpdate = (e: StorageEvent) => {
+      if (!e.key || e.key.includes(selectedRoomId) || e.key === "eduplan_exam_results" || e.key === "eduplan_teacher_exams_history") {
         fetchExamData(selectedRoomId);
-      }, 12000);
-    }
-    return () => {
-      if (autoRefreshTimerRef.current) clearInterval(autoRefreshTimerRef.current);
+      }
     };
-  }, [autoRefresh, selectedRoomId]);
+    window.addEventListener("storage", handleStorageUpdate);
+    return () => window.removeEventListener("storage", handleStorageUpdate);
+  }, [selectedRoomId]);
 
   const handleRoomChange = (code: string) => {
     setSelectedRoomId(code);
@@ -683,24 +687,10 @@ export function ExamStatsDashboard({ initialExamId, onBackToExam }: ExamStatsDas
             onClick={() => fetchExamData(selectedRoomId)}
             disabled={isLoading || !selectedRoomId}
             className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs sm:text-sm font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
-            title="Làm mới dữ liệu bài nộp từ học sinh"
+            title="Làm mới dữ liệu bài nộp từ bộ nhớ trình duyệt"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-indigo-600" : ""}`} />
             <span>Làm mới</span>
-          </button>
-
-          {/* Auto-refresh toggle */}
-          <button
-            onClick={() => setAutoRefresh(!autoRefresh)}
-            className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 border transition-all cursor-pointer shadow-2xs ${
-              autoRefresh
-                ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                : "bg-slate-50 border-slate-200 text-slate-500"
-            }`}
-            title="Tự động đồng bộ kết quả mới nộp mỗi 12 giây"
-          >
-            <span className={`w-2 h-2 rounded-full ${autoRefresh ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
-            <span>{autoRefresh ? "Tự động: BẬT" : "Tự động: TẮT"}</span>
           </button>
 
           {/* Export Excel Button */}

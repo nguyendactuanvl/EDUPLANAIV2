@@ -16,7 +16,7 @@ import { Link } from 'lucide-react';
 import { exportHtmlToWord, downloadAllExamImagesFromElement } from '../lib/exportUtils';
 import { cn, fixMath, cleanQuestionStem, parseApiResponse, cleanOptionText, getPublicAppUrl, isRealWorldQuestion, sanitizeShortAnswerInput, validateShortAnswer, compareShortAnswers, sanitizeLatexString, safePrompt } from '../lib/utils';
 import { ensureMathRendered } from '../lib/print';
-import { saveExamToCloud, SYSTEM_EXAM_WEBHOOK } from '../lib/cloudExamStore';
+import { saveExamToCloud, fetchExamFromCloud, SYSTEM_EXAM_WEBHOOK, isSystemExamStorageRow } from '../lib/cloudExamStore';
 import { 
   STANDARDIZED_EXAM_TYPES, 
   getDefaultDurationForExamType, 
@@ -631,8 +631,9 @@ export function ExamGenerator() {
     let local: any[] = [];
     // 1. Đọc localStorage dự phòng trước
     try {
-      local = JSON.parse(localStorage.getItem('eduplan_exam_results') || '[]');
-      if (Array.isArray(local) && local.length > 0) {
+      const rawLocal = JSON.parse(localStorage.getItem('eduplan_exam_results') || '[]');
+      if (Array.isArray(rawLocal) && rawLocal.length > 0) {
+        local = rawLocal.filter((item: any) => item && typeof item === 'object' && !isSystemExamStorageRow(item));
         local.sort((a: any, b: any) => new Date(b.submittedAt || b.timestamp || 0).getTime() - new Date(a.submittedAt || a.timestamp || 0).getTime());
         setExamResults(local);
       }
@@ -641,32 +642,39 @@ export function ExamGenerator() {
     }
 
     const merged = [...local];
+    // O(N) lookup maps instead of O(N^2) findIndex over 1,000+ rows
+    const keyToIndex = new Map<string, number>();
+    const idToIndex = new Map<string, number>();
+    const registerMergedItem = (item: any, idx: number) => {
+      if (!item) return;
+      const nameKey = String(item.studentName ?? item.name ?? '').trim().toLowerCase();
+      const examKey = String(item.examId ?? '').trim().toUpperCase();
+      if (nameKey && examKey) keyToIndex.set(`${nameKey}||${examKey}`, idx);
+      if (item.id) idToIndex.set(String(item.id), idx);
+    };
+    merged.forEach((m, idx) => registerMergedItem(m, idx));
 
-    // 2. Gọi API lấy dữ liệu thực tế từ Google Sheet Webhook và hợp nhất
+    // 2. Gọi API lấy dữ liệu thực tế từ Google Sheet Webhook và hợp nhất trong O(N)
     try {
       const res = await fetch(SYSTEM_EXAM_WEBHOOK);
       if (res.ok) {
         const cloudData = await res.json();
         if (Array.isArray(cloudData) && cloudData.length > 0) {
-          cloudData.forEach((cloudItem: any) => {
-            if (!cloudItem || typeof cloudItem !== 'object') return;
+          for (let i = 0; i < cloudData.length; i++) {
+            const cloudItem = cloudData[i];
+            if (!cloudItem || typeof cloudItem !== 'object' || isSystemExamStorageRow(cloudItem)) continue;
             const cName = String(cloudItem.studentName ?? '').trim().toLowerCase();
-            const cExamId = String(cloudItem.examId ?? '');
+            const cExamId = String(cloudItem.examId ?? '').trim().toUpperCase();
             const cId = cloudItem.id ? String(cloudItem.id) : '';
 
-            const index = merged.findIndex((m: any) => {
-              if (!m) return false;
-              const mName = String(m.studentName ?? '').trim().toLowerCase();
-              const mExamId = String(m.examId ?? '');
-              const mId = m.id ? String(m.id) : '';
+            let index: number | undefined;
+            if (cName && cExamId) index = keyToIndex.get(`${cName}||${cExamId}`);
+            if (index === undefined && cId) index = idToIndex.get(cId);
 
-              return (
-                (mName && cName && mName === cName && mExamId && cExamId && mExamId === cExamId) ||
-                (mId && cId && mId === cId)
-              );
-            });
-            if (index === -1) {
+            if (index === undefined) {
+              const newIdx = merged.length;
               merged.push(cloudItem);
+              registerMergedItem(cloudItem, newIdx);
             } else {
               merged[index] = {
                 ...cloudItem,
@@ -677,45 +685,42 @@ export function ExamGenerator() {
                 essayImages: cloudItem.essayImages || merged[index].essayImages
               };
             }
-          });
+          }
         }
       }
     } catch (error) {
       console.error("Lỗi tải kết quả từ máy chủ:", error);
     }
 
-    // 3. Lấy dữ liệu bài nộp từ Server API & Cloud KV cho các phòng thi của giáo viên
+    // 3. Lấy dữ liệu bài nộp trực tiếp từ localStorage (localOnly — KHÔNG gọi mạng hàng loạt)
     try {
       const historyRaw = localStorage.getItem("eduplan_teacher_exams_history");
       const historyArr = historyRaw ? JSON.parse(historyRaw) : [];
-      const codesToFetch = new Set<string>();
+      const codesToRead = new Set<string>();
       if (Array.isArray(historyArr)) {
-        historyArr.forEach((h: any) => { if (h.code) codesToFetch.add(String(h.code).toUpperCase()); });
+        historyArr.forEach((h: any) => { if (h?.code) codesToRead.add(String(h.code).trim().toUpperCase()); });
       }
-      local.forEach((l: any) => { if (l.examId) codesToFetch.add(String(l.examId).toUpperCase()); });
 
-      for (const code of Array.from(codesToFetch)) {
+      for (const code of Array.from(codesToRead)) {
         try {
-          const res = await fetch(`/api/exams/${code}?fresh=true`);
-          if (res.ok) {
-            const serverExam = await res.json();
-            if (serverExam && Array.isArray(serverExam.submissions)) {
-              serverExam.submissions.forEach((s: any) => {
-                const sName = String(s.studentName || s.name || '').trim().toLowerCase();
-                const sExamId = String(s.examId || code);
-                const isDup = merged.some((m: any) =>
-                  String(m.studentName || m.name || '').trim().toLowerCase() === sName &&
-                  String(m.examId || '').toUpperCase() === sExamId.toUpperCase() &&
-                  Math.abs(new Date(m.timestamp || m.submittedAt || 0).getTime() - new Date(s.timestamp || s.submittedAt || 0).getTime()) < 3 * 60 * 1000
-                );
-                if (!isDup) merged.push(s);
-              });
+          const localExam = await fetchExamFromCloud(code, { localOnly: true });
+          if (localExam && Array.isArray(localExam.submissions)) {
+            for (const s of localExam.submissions) {
+              if (!s || isSystemExamStorageRow(s)) continue;
+              const sName = String(s.studentName || s.name || '').trim().toLowerCase();
+              const sExamId = String(s.examId || code).trim().toUpperCase();
+              const existingIdx = (sName && sExamId) ? keyToIndex.get(`${sName}||${sExamId}`) : undefined;
+              if (existingIdx === undefined) {
+                const newIdx = merged.length;
+                merged.push(s);
+                registerMergedItem(s, newIdx);
+              }
             }
           }
         } catch (e) {}
       }
     } catch (e) {
-      console.warn("Lỗi đồng bộ server results:", e);
+      console.warn("Lỗi đọc local examCache results:", e);
     }
 
     merged.sort((a: any, b: any) => new Date(b.submittedAt || b.timestamp || 0).getTime() - new Date(a.submittedAt || a.timestamp || 0).getTime());
@@ -726,8 +731,16 @@ export function ExamGenerator() {
     setResultsLoading(false);
   };
 
+  // Load cached local results immediately without firing heavy remote network sync until user opens the Results tab
   useEffect(() => {
-    fetchResults();
+    try {
+      const rawLocal = JSON.parse(localStorage.getItem('eduplan_exam_results') || '[]');
+      if (Array.isArray(rawLocal) && rawLocal.length > 0) {
+        const cleanLocal = rawLocal.filter((item: any) => item && typeof item === 'object' && !isSystemExamStorageRow(item));
+        cleanLocal.sort((a: any, b: any) => new Date(b.submittedAt || b.timestamp || 0).getTime() - new Date(a.submittedAt || a.timestamp || 0).getTime());
+        setExamResults(cleanLocal);
+      }
+    } catch (e) {}
   }, []);
 
   useEffect(() => {
@@ -1880,19 +1893,19 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
   const handleExportWord = (contentId: string, code: string) => {
     const printContent = document.getElementById(contentId);
     if (!printContent) return;
-    exportHtmlToWord(printContent, `De_kiem_tra_Ma_${code}.doc`);
+    exportHtmlToWord(printContent, `De_kiem_tra_Ma_${code}.docx`, 'omml');
   };
 
   const handleExportWordLatex = (contentId: string, code: string) => {
     const printContent = document.getElementById(contentId);
     if (!printContent) return;
-    exportHtmlToWord(printContent, `De_kiem_tra_Ma_${code}_LaTeX.doc`, true);
+    exportHtmlToWord(printContent, `De_kiem_tra_Ma_${code}_MathType.docx`, 'mathtype');
   };
 
   const handleExportWordImage = (contentId: string, code: string) => {
     const printContent = document.getElementById(contentId);
     if (!printContent) return;
-    exportHtmlToWord(printContent, `De_kiem_tra_Ma_${code}_Anh.doc`, 'image');
+    exportHtmlToWord(printContent, `De_kiem_tra_Ma_${code}_Anh.docx`, 'image');
   };
 
   const handleDownloadExamImages = async (contentId: string, code: string): Promise<number> => {
@@ -1921,16 +1934,16 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
     }
   };
 
-  const handleExportAllWord = async () => {
+  const handleExportAllWord = async (mode: 'omml' | 'mathtype' = 'omml') => {
     if (shuffledExams.length === 0) {
       alert('Chưa có mã đề nào được trộn.');
       return;
     }
-    alert(`🚀 Đang chuẩn bị đóng gói và xuất Word (.docx) cho trọn bộ ${shuffledExams.length} mã đề (${shuffledExams.map(e => e.code).join(', ')})...`);
     for (const exam of shuffledExams) {
       const printContent = document.getElementById(`print-exam-${exam.code}`);
       if (printContent) {
-        await exportHtmlToWord(printContent, `De_kiem_tra_Ma_${exam.code}.doc`);
+        const suffix = mode === 'mathtype' ? '_MathType' : '';
+        await exportHtmlToWord(printContent, `De_kiem_tra_Ma_${exam.code}${suffix}.docx`, mode);
         await new Promise(r => setTimeout(r, 600));
       }
     }
@@ -3054,9 +3067,16 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                                 <button onClick={() => {
                                     const wrap = document.getElementById('matrix-table-wrap');
                                     if (!wrap) return;
-                                    exportHtmlToWord(wrap, 'Ma_Tran_De_Kiem_Tra.doc');
-                                }} className="px-3 py-1.5 bg-blue-50 text-blue-600 font-medium rounded hover:bg-blue-100 flex items-center gap-2 text-sm border border-blue-200 no-print">
-                                  Xuất Word
+                                    exportHtmlToWord(wrap, 'Ma_Tran_De_Kiem_Tra.docx', 'omml');
+                                }} className="px-3 py-1.5 bg-emerald-600 text-white font-semibold rounded hover:bg-emerald-700 flex items-center gap-1.5 text-xs sm:text-sm no-print cursor-pointer">
+                                  <FileText className="w-4 h-4" /> Xuất Word (Equation)
+                                </button>
+                                <button onClick={() => {
+                                    const wrap = document.getElementById('matrix-table-wrap');
+                                    if (!wrap) return;
+                                    exportHtmlToWord(wrap, 'Ma_Tran_De_Kiem_Tra_MathType.docx', 'mathtype');
+                                }} className="px-3 py-1.5 bg-indigo-600 text-white font-semibold rounded hover:bg-indigo-700 flex items-center gap-1.5 text-xs sm:text-sm no-print cursor-pointer">
+                                  <Download className="w-4 h-4" /> Xuất Word (MathType)
                                 </button>
                                 <button onClick={() => window.print()} className="px-3 py-1.5 bg-slate-50 text-slate-600 font-medium rounded hover:bg-slate-200 flex items-center gap-2 text-sm border border-slate-300 no-print">
                                   <Printer className="w-4 h-4" /> In PDF
@@ -3373,9 +3393,16 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                             <button onClick={() => {
                                 const wrap = document.getElementById('spec-table-wrap');
                                 if (!wrap) return;
-                                exportHtmlToWord(wrap, 'Ban_Dac_Ta_De_Kiem_Tra.doc');
-                            }} className="px-3 py-1.5 bg-blue-50 text-blue-600 font-medium rounded hover:bg-blue-100 flex items-center gap-2 text-sm border border-blue-200 no-print">
-                              Xuất Word
+                                exportHtmlToWord(wrap, 'Ban_Dac_Ta_De_Kiem_Tra.docx', 'omml');
+                            }} className="px-3 py-1.5 bg-emerald-600 text-white font-semibold rounded hover:bg-emerald-700 flex items-center gap-1.5 text-xs sm:text-sm no-print cursor-pointer">
+                              <FileText className="w-4 h-4" /> Xuất Word (Equation)
+                            </button>
+                            <button onClick={() => {
+                                const wrap = document.getElementById('spec-table-wrap');
+                                if (!wrap) return;
+                                exportHtmlToWord(wrap, 'Ban_Dac_Ta_De_Kiem_Tra_MathType.docx', 'mathtype');
+                            }} className="px-3 py-1.5 bg-indigo-600 text-white font-semibold rounded hover:bg-indigo-700 flex items-center gap-1.5 text-xs sm:text-sm no-print cursor-pointer">
+                              <Download className="w-4 h-4" /> Xuất Word (MathType)
                             </button>
                             <button onClick={() => window.print()} className="px-3 py-1.5 bg-slate-50 text-slate-600 font-medium rounded hover:bg-slate-200 flex items-center gap-2 text-sm border border-slate-300 no-print">
                               <Printer className="w-4 h-4" /> In PDF
@@ -4357,11 +4384,19 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                       </button>
                       <button 
                         type="button"
-                        onClick={handleExportAllWord} 
-                        className="px-3 sm:px-4 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 flex items-center gap-2 shadow-sm transition-all cursor-pointer"
-                        title="Tải file Word (.docx) cho tất cả các mã đề đã trộn"
+                        onClick={() => handleExportAllWord('omml')} 
+                        className="px-3 sm:px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700 flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                        title="Tải file Word (.docx) công thức chuẩn Equation (OMML) cho tất cả các mã đề đã trộn"
                       >
-                        <Download className="w-4 h-4" /> <span>📄 Tải Word Tất Cả Mã Đề (.docx)</span>
+                        <FileText className="w-4 h-4" /> <span>Xuất Word (Equation) Tất Cả Mã Đề</span>
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => handleExportAllWord('mathtype')} 
+                        className="px-3 sm:px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                        title="Tải file Word (.docx) công thức chuẩn MathType cho tất cả các mã đề đã trộn"
+                      >
+                        <Download className="w-4 h-4" /> <span>Xuất Word (MathType) Tất Cả Mã Đề</span>
                       </button>
                       <button 
                         type="button"
@@ -4645,9 +4680,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                                     ]
                                 };
                                 const publicBase = getPublicAppUrl() || window.location.origin;
-                                const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(singleData));
-                                const url = `${publicBase}/?examData=${compressed}`;
-                                
+
                                 try {
                                     const btn = document.getElementById(`share-btn-${exam.code}`);
                                     if (btn) btn.innerHTML = '<span class="animate-spin mr-1">⌛</span> Đang tạo link...';
@@ -4658,19 +4691,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                                       fallbackCode += chars.charAt(Math.floor(Math.random() * chars.length));
                                     }
 
-                                    let examId = fallbackCode;
-                                    try {
-                                        const shareRes = await apiFetch("/api/exams/share", {
-                                            method: "POST",
-                                            headers: { "Content-Type": "application/json" },
-                                            body: JSON.stringify({ ...singleData, customId: fallbackCode })
-                                        });
-                                        if (shareRes.ok) {
-                                            const sData = await shareRes.json();
-                                            if (sData.examId) examId = sData.examId;
-                                        }
-                                    } catch (e) {}
-
+                                    const examId = fallbackCode;
                                     await saveExamToCloud(examId, singleData);
 
                                     const finalUrl = `${publicBase}/?pin=${examId}`;
@@ -4679,7 +4700,11 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                                     alert(`Đã copy link thi trực tiếp cho Mã đề ${exam.code} (Mã PIN: ${examId})!\nLink này mở mượt trên mọi thiết bị và Zalo.`);
                                     if (btn) btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-share-2 w-4 h-4"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg> Copy Link Thi';
                                 } catch (e) {
-                                    navigator.clipboard.writeText(url);
+                                    const serializedSingle = JSON.stringify(singleData);
+                                    const fallbackUrl = serializedSingle.length <= 80_000
+                                      ? `${publicBase}/?examData=${LZString.compressToEncodedURIComponent(serializedSingle)}`
+                                      : `${publicBase}/`;
+                                    navigator.clipboard.writeText(fallbackUrl).catch(() => {});
                                     alert(`Đã copy link thi cho Mã đề ${exam.code}.`);
                                     const btn = document.getElementById(`share-btn-${exam.code}`);
                                     if (btn) btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-share-2 w-4 h-4"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg> Copy Link Thi';
@@ -4712,28 +4737,15 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                                     ]
                                 };
                                 const publicBase = getPublicAppUrl() || window.location.origin;
-                                const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(singleData));
-                                
+
                                 const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
                                 let fallbackCode = '';
                                 for (let i = 0; i < 6; i++) {
                                   fallbackCode += chars.charAt(Math.floor(Math.random() * chars.length));
                                 }
 
-                                let examId = fallbackCode;
-                                try {
-                                    const shareRes = await apiFetch("/api/exams/share", {
-                                        method: "POST",
-                                        headers: { "Content-Type": "application/json" },
-                                        body: JSON.stringify({ ...singleData, customId: fallbackCode })
-                                    });
-                                    if (shareRes.ok) {
-                                        const sData = await shareRes.json();
-                                        if (sData.examId) examId = sData.examId;
-                                    }
-                                } catch (e) {}
-
-                                // Dual-sync to persistent Cloud KV with hex chunking and local cache
+                                const examId = fallbackCode;
+                                // Lưu cấu hình đề trực tiếp lên Google Sheets & localStorage trình duyệt
                                 await saveExamToCloud(examId, singleData);
 
                                 const finalUrl = `${publicBase}/?pin=${examId}`;
@@ -4777,11 +4789,11 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                             <button onClick={() => handleExportWordAndImages(`print-exam-${exam.code}`, exam.code)} className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-sm rounded shadow-sm flex items-center gap-1.5 transition-all cursor-pointer active:scale-95" title="Tải đồng thời file Word (.docx) VÀ bộ ảnh PNG HD (BBT, đồ thị, bảng xét dấu) tránh lỗi định dạng">
                               <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" /> Tải Word + Bộ Ảnh HD
                             </button>
-                            <button onClick={() => handleExportWord(`print-exam-${exam.code}`, exam.code)} className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm rounded shadow-sm flex items-center gap-1.5 transition-all cursor-pointer active:scale-95" title="Xuất đề kiểm tra sang tệp Word (.docx) chuẩn định dạng A4 in ấn">
-                              <FileText className="w-4 h-4" /> Xuất file A4 (.docx)
+                            <button onClick={() => handleExportWord(`print-exam-${exam.code}`, exam.code)} className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm rounded shadow-sm flex items-center gap-1.5 transition-all cursor-pointer active:scale-95" title="Xuất đề kiểm tra sang tệp Word (.docx) công thức chuẩn Word Equation (OMML)">
+                              <FileText className="w-4 h-4" /> Xuất Word (Equation)
                             </button>
-                            <button onClick={() => handleExportWordLatex(`print-exam-${exam.code}`, exam.code)} className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-sm font-medium rounded hover:bg-slate-50 flex items-center gap-2" title="Xuất Word giữ nguyên mã LaTeX để dùng chức năng Toggle TeX của MathType">
-                              <Download className="w-4 h-4" /> Xuất Word (LaTeX)
+                            <button onClick={() => handleExportWordLatex(`print-exam-${exam.code}`, exam.code)} className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm rounded shadow-sm flex items-center gap-1.5 transition-all cursor-pointer active:scale-95" title="Xuất đề kiểm tra sang tệp Word (.docx) công thức chuẩn Word MathType">
+                              <Download className="w-4 h-4" /> Xuất Word (MathType)
                             </button>
                             <button onClick={() => handleExportWordImage(`print-exam-${exam.code}`, exam.code)} className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-sm font-medium rounded hover:bg-slate-50 flex items-center gap-2" title="Xuất Word với công thức dạng ảnh chất lượng cao (không lo lỗi hiển thị)">
                               <Download className="w-4 h-4" /> Xuất Word (Ảnh)
@@ -6176,7 +6188,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
 
                                 {essayPhotos.length > 0 ? (
                                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 pt-1">
-                                    {essayPhotos.map((imgUrl: string, pIdx: number) => (
+                                    {essayPhotos.filter(Boolean).map((imgUrl: string, pIdx: number) => (
                                       <div
                                         key={pIdx}
                                         onClick={() => {
@@ -6187,7 +6199,7 @@ ${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt
                                         className="group relative border-2 border-purple-200 hover:border-purple-600 rounded-xl overflow-hidden bg-slate-100 aspect-3/4 flex items-center justify-center cursor-pointer shadow-2xs hover:shadow-md transition-all"
                                       >
                                         <img
-                                          src={imgUrl}
+                                          src={imgUrl || undefined}
                                           alt={`Ảnh bài làm trang ${pIdx + 1}`}
                                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                                         />

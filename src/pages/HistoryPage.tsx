@@ -44,49 +44,11 @@ export function HistoryPage() {
     printElement(exportRef.current, "Lich_su");
   };
 
-  const handleExportWord = (item: HistoryItem) => {
-        const clone = exportRef.current.cloneNode(true) as HTMLElement;
-    
-    // Extract MathML from MathJax for native Word Equation support
-    const mjxElements = clone.querySelectorAll('mjx-container');
-    mjxElements.forEach(el => {
-      const latex = el.getAttribute('data-latex');
-      const isBlock = el.getAttribute('data-block') === '1';
-      if (latex && typeof window !== 'undefined' && (window as any).MathJax && typeof (window as any).MathJax.tex2mml === 'function') {
-        try {
-          const mmlStr = (window as any).MathJax.tex2mml(latex, { display: isBlock });
-          const temp = document.createElement('div');
-          temp.innerHTML = mmlStr;
-          const mathNode = temp.querySelector('math');
-          if (mathNode) {
-            el.parentNode?.replaceChild(mathNode, el);
-          }
-        } catch (e) {}
-      }
-    });
-    
-    const htmlToExport = clone.innerHTML;
+  const handleExportWord = async (item: HistoryItem, mode: 'omml' | 'mathtype' = 'omml') => {
     if (!exportRef.current) return;
-    const htmlContent = `
-      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-      <head><meta charset='utf-8'><title>Export HTML To Doc</title></head><body>
-      \${viewingItem?.id === item.id && exportRef.current ? htmlToExport : "Vui lòng 'Xem chi tiết' trước khi tải xuống để đảm bảo định dạng."}
-      </body></html>
-    `;
-    
-    const blob = new Blob(['\ufeff', htmlContent], {
-      type: 'application/msword'
-    });
-    
-    const url = 'data:application/vnd.ms-word;charset=utf-8,' + encodeURIComponent(htmlContent);
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    
-    const downloadName = `Giao_an_${item.lessonName ? item.lessonName.substring(0,30) : 'bai_hoc'}.doc`;
-    link.download = downloadName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const baseName = `Giao_an_${item.lessonName ? item.lessonName.substring(0, 30) : 'bai_hoc'}`;
+    const suffix = mode === 'mathtype' ? '_MathType' : '';
+    await exportHtmlToWord(exportRef.current, `${baseName}${suffix}.docx`, mode);
   };
 
   const filteredHistory = history.filter(item => 
@@ -195,20 +157,31 @@ export function HistoryPage() {
                 <h3 className="font-bold text-lg text-slate-800">{viewingItem.lessonName}</h3>
                 <p className="text-sm text-slate-500">Môn: {viewingItem.subject} {viewingItem.grade !== 0 && `• Lớp ${viewingItem.grade}`}</p>
               </div>
-              <button 
-                onClick={() => handleExportWord(viewingItem)}
-                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
-              >
-                <Download className="w-4 h-4" />
-                <span>Tải Word (.doc)</span>
-              </button>
-              <button 
-                onClick={() => handleExportPDF()}
-                className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors shadow-sm"
-              >
-                <span className="text-xs font-bold border-2 border-current px-1 rounded">PDF</span>
-                <span>Tải PDF</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button 
+                  onClick={() => handleExportWord(viewingItem, 'omml')}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm text-xs font-bold cursor-pointer"
+                  title="Xuất file Word (.docx) công thức chuẩn Word Equation (OMML)"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Xuất Word (Equation)</span>
+                </button>
+                <button 
+                  onClick={() => handleExportWord(viewingItem, 'mathtype')}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm text-xs font-bold cursor-pointer"
+                  title="Xuất file Word (.docx) công thức chuẩn Word MathType"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Xuất Word (MathType)</span>
+                </button>
+                <button 
+                  onClick={() => handleExportPDF()}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors shadow-sm text-xs font-bold cursor-pointer"
+                >
+                  <span className="text-xs font-bold border-2 border-current px-1 rounded">PDF</span>
+                  <span>Tải PDF</span>
+                </button>
+              </div>
             </div>
             <div className="p-8 overflow-y-auto flex-1">
               <div ref={exportRef}>

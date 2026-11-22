@@ -329,8 +329,8 @@ export function OnThiTNTHPTModule() {
     }
   };
 
-  // Export Word (.docx) using OMML Equations
-  const handleExportWord = async () => {
+  // Export Word (.docx) using OMML Equations or MathType
+  const handleExportWord = async (mode: "omml" | "mathtype" = "omml") => {
     if (!previewRef.current) {
       if (viewMode === "source") {
         setViewMode("preview");
@@ -349,8 +349,9 @@ export function OnThiTNTHPTModule() {
         .replace(/[^a-zA-Z0-9]+/g, "_")
         .replace(/^_+|_+$/g, "")
         .slice(0, 60);
-      const fileName = `${safeSlug || "OnThi_TN_THPT_Toan"}_OMML.docx`;
-      await exportHtmlToWord(previewRef.current, fileName, "omml");
+      const suffix = mode === "mathtype" ? "MathType" : "OMML";
+      const fileName = `${safeSlug || "OnThi_TN_THPT_Toan"}_${suffix}.docx`;
+      await exportHtmlToWord(previewRef.current, fileName, mode);
     } catch (err: any) {
       setErrorMessage(
         err?.message || "Có lỗi khi chuyển đổi sang file Word (.docx)."
@@ -823,16 +824,32 @@ export function OnThiTNTHPTModule() {
 
               <button
                 type="button"
-                onClick={handleExportWord}
+                onClick={() => handleExportWord("omml")}
                 disabled={isExportingWord || !cleanedMarkdown}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-emerald-600 dark:hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                title="Xuất tài liệu sang file Word (.docx) công thức chuẩn Word Equation (OMML)"
               >
                 {isExportingWord ? (
                   <RotateCw className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <FileDown className="w-3.5 h-3.5" />
                 )}
-                <span>Xuất file Word (.DOCX) chuẩn OMML</span>
+                <span>Xuất Word (Equation)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleExportWord("mathtype")}
+                disabled={isExportingWord || !cleanedMarkdown}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                title="Xuất tài liệu sang file Word (.docx) công thức chuẩn Word MathType"
+              >
+                {isExportingWord ? (
+                  <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <FileDown className="w-3.5 h-3.5" />
+                )}
+                <span>Xuất Word (MathType)</span>
               </button>
 
               <button

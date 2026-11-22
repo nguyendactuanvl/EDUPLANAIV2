@@ -1,4 +1,5 @@
-@import "tailwindcss";
+@import "tailwindcss" source("../src");
+@source "../index.html";
 @plugin "@tailwindcss/typography";
 
 /* Chuẩn hóa Font chữ Times New Roman cho văn bản sư phạm (không can thiệp font toán KaTeX) */

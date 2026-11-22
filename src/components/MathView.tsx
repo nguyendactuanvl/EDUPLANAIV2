@@ -3,10 +3,10 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
-import { normalizeMathText, preprocessMathText, cleanMathAndUnwrapHeadings, rehypeSanitizeEventHandlers, cleanProps, sanitizeSvgOrHtmlForReact } from '../lib/globalMath';
+import { normalizeMathText, preprocessMathText, cleanMathAndUnwrapHeadings, rehypeSanitizeEventHandlers, cleanProps, sanitizeSvgOrHtmlForReact, protectHtmlMediaTags, restoreHtmlMediaTags } from '../lib/globalMath';
 import { convertBbtTableToSvg, unflattenMarkdownTables } from '../lib/bbtRenderer';
 import { TikzRenderer, getTikzSvg } from './TikzRenderer';
-import { typesetMathJax } from './MarkdownRenderer';
+import { typesetMathJax, safeMarkdownUrlTransform } from './MarkdownRenderer';
 
 interface MathViewProps {
   content?: string | null;
@@ -50,7 +50,8 @@ export function wrapRawSvgBlocks(input: string): string {
 
 export function preprocessMath(raw?: string | null): string {
   if (!raw) return '';
-  let s = preprocessMathText(raw);
+  const { masked: mediaSafeRaw, tokens: mediaTokens } = protectHtmlMediaTags(String(raw));
+  let s = preprocessMathText(mediaSafeRaw);
 
   // 1. Chuyển đổi trực tiếp các BẢNG BIẾN THIÊN (BBT) Markdown table sang <svg-wrapper>
   s = unflattenMarkdownTables(s);
@@ -87,7 +88,7 @@ export function preprocessMath(raw?: string | null): string {
   // 3. Chuyển đổi các thẻ <svg>...</svg> thô sang <svg-wrapper> để tránh lỗi React DOM namespace
   s = wrapRawSvgBlocks(s);
 
-  return s;
+  return restoreHtmlMediaTags(s, mediaTokens);
 }
 
 const REMARK_PLUGINS = [remarkMath, remarkGfm];
@@ -246,6 +247,25 @@ const REHYPE_PLUGINS = [rehypeRaw, rehypeSanitizeEventHandlers];
         return <span className="text-red-500">Lỗi hiển thị hình ảnh TikZ</span>;
       }
     },
+    img: ({ node, src, alt, className, ...props }: any) => {
+      const cleanSrc = (src || '').trim();
+      if (!cleanSrc || cleanSrc === '#' || cleanSrc === 'about:blank' || cleanSrc === 'undefined' || cleanSrc === 'null') {
+        return null;
+      }
+      return (
+        <img
+          {...cleanProps(props)}
+          src={cleanSrc}
+          alt={alt || 'Hình vẽ minh họa bài toán'}
+          loading="eager"
+          className={
+            className ||
+            'max-w-full sm:max-w-[520px] w-auto h-auto mx-auto my-3 rounded-lg border border-slate-200 shadow-sm block object-contain cursor-zoom-in'
+          }
+          onClick={() => window.dispatchEvent(new CustomEvent('open-fullscreen-image', { detail: cleanSrc }))}
+        />
+      );
+    },
     table: ({ node, children, ...props }: any) => (
       <div className="overflow-x-auto my-3 max-w-full whitespace-normal">
         <table className="min-w-fit mx-auto border-collapse border border-slate-300 text-sm text-center shadow-2xs rounded-md overflow-hidden bg-white" {...cleanProps(props)}>
@@ -375,23 +395,26 @@ export const MathView: React.FC<MathViewProps> = React.memo(({ content, value, t
     if (lastProcessedRef.current === processed) return;
     lastProcessedRef.current = processed;
 
-    const timer = setTimeout(() => {
-      if (!containerRef.current) return;
-      typesetMathJax(containerRef.current);
-    }, 60);
+    if (!processed || (!processed.includes('$') && !processed.includes('\\(') && !processed.includes('\\['))) {
+      return;
+    }
 
-    return () => clearTimeout(timer);
+    typesetMathJax(el);
   }, [processed, deferTypeset]);
 
   if (inline) {
+    const inlineClass = className
+      ? (className.includes('math-view-container') ? className : `math-view-container ${className}`)
+      : 'math-view-container inline-flex items-center gap-1 align-baseline font-serif';
     return (
       <span
         ref={containerRef as React.RefObject<HTMLSpanElement>}
-        className={className || "inline-flex items-center gap-1 align-baseline font-serif"}
+        className={inlineClass}
       >
         <Markdown
           remarkPlugins={REMARK_PLUGINS}
           rehypePlugins={REHYPE_PLUGINS}
+          urlTransform={safeMarkdownUrlTransform}
           components={inlineComponents}
         >
           {processed}
@@ -400,14 +423,19 @@ export const MathView: React.FC<MathViewProps> = React.memo(({ content, value, t
     );
   }
 
+  const blockClass = className
+    ? (className.includes('math-view-container') ? className : `math-view-container ${className}`)
+    : 'math-view-container font-serif leading-relaxed text-slate-800 whitespace-pre-line';
+
   return (
     <div
       ref={containerRef as React.RefObject<HTMLDivElement>}
-      className={className || "math-view-container font-serif leading-relaxed text-slate-800 whitespace-pre-line"}
+      className={blockClass}
     >
       <Markdown
         remarkPlugins={REMARK_PLUGINS}
         rehypePlugins={REHYPE_PLUGINS}
+        urlTransform={safeMarkdownUrlTransform}
         components={sharedComponents}
       >
         {processed}

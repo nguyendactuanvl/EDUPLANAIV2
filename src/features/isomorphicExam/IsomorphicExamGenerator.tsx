@@ -564,7 +564,7 @@ export function IsomorphicExamGenerator() {
   };
 
   // Export Active Tab to Word (.docx)
-  const handleExportActiveTabWord = async () => {
+  const handleExportActiveTabWord = async (mode: "omml" | "mathtype" = "omml") => {
     if (!tabContentRef.current) return;
     setIsExportingWord(true);
     try {
@@ -574,8 +574,13 @@ export function IsomorphicExamGenerator() {
           : activeResultTab === "tab2_exam"
           ? `DeDangCau_Ma${examCode}`
           : `DapAn_HDC_Ma${examCode}`;
-      await exportHtmlToWord(tabContentRef.current, `${tabSuffix}.docx`);
-      showToast(`Đã xuất tệp Word (${tabSuffix}.docx) chuẩn Equation OMML!`);
+      const fmtSuffix = mode === "mathtype" ? "_MathType" : "";
+      await exportHtmlToWord(tabContentRef.current, `${tabSuffix}${fmtSuffix}.docx`, mode);
+      showToast(
+        mode === "mathtype"
+          ? `Đã xuất tệp Word (${tabSuffix}_MathType.docx) chuẩn MathType!`
+          : `Đã xuất tệp Word (${tabSuffix}.docx) chuẩn Equation OMML!`
+      );
     } catch (err: any) {
       showToast("Lỗi khi xuất file Word: " + (err?.message || "Vui lòng thử lại."));
     } finally {
@@ -584,15 +589,17 @@ export function IsomorphicExamGenerator() {
   };
 
   // Export Full 3-in-1 Package (Ma trận + Đề thi + Đáp án & HDC) to Word (.docx)
-  const handleExportFullBundleWord = async () => {
+  const handleExportFullBundleWord = async (mode: "omml" | "mathtype" = "omml") => {
     if (!fullBundleExportRef.current) return;
     setIsExportingWord(true);
     try {
       typesetMathJax(fullBundleExportRef.current);
       await new Promise((r) => setTimeout(r, 250));
+      const fmtSuffix = mode === "mathtype" ? "_MathType" : "";
       await exportHtmlToWord(
         fullBundleExportRef.current,
-        `HoSo_DeDangCau_Ma${examCode}_Full_3in1.docx`
+        `HoSo_DeDangCau_Ma${examCode}_Full_3in1${fmtSuffix}.docx`,
+        mode
       );
       showToast("Đã xuất trọn bộ Hồ sơ Đề đẳng cấu (Ma trận + Đề thi + HDC) ra file Word (.docx)!");
     } catch (err: any) {
@@ -662,16 +669,31 @@ export function IsomorphicExamGenerator() {
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={handleExportFullBundleWord}
+              onClick={() => handleExportFullBundleWord("omml")}
               disabled={isExportingWord}
               className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-600/30 cursor-pointer transition-all"
+              title="Xuất trọn bộ hồ sơ 3-in-1 công thức chuẩn Word Equation (OMML)"
             >
               {isExportingWord ? (
                 <RotateCw className="w-4 h-4 animate-spin" />
               ) : (
                 <Download className="w-4 h-4" />
               )}
-              <span>Xuất Trọn Bộ Hồ Sơ 3-in-1 (.docx)</span>
+              <span>Xuất Word (Equation) 3-in-1</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleExportFullBundleWord("mathtype")}
+              disabled={isExportingWord}
+              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-indigo-600/30 cursor-pointer transition-all"
+              title="Xuất trọn bộ hồ sơ 3-in-1 công thức chuẩn Word MathType"
+            >
+              {isExportingWord ? (
+                <RotateCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+              <span>Xuất Word (MathType) 3-in-1</span>
             </button>
           </div>
         </div>
@@ -1152,12 +1174,24 @@ export function IsomorphicExamGenerator() {
 
                 <button
                   type="button"
-                  onClick={handleExportActiveTabWord}
+                  onClick={() => handleExportActiveTabWord("omml")}
                   disabled={isExportingWord}
                   className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md cursor-pointer transition-all"
+                  title="Xuất tab hiện tại sang tệp Word (.docx) công thức chuẩn Word Equation (OMML)"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Xuất Tab (.docx)</span>
+                  <span>Xuất Word (Equation)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleExportActiveTabWord("mathtype")}
+                  disabled={isExportingWord}
+                  className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md cursor-pointer transition-all"
+                  title="Xuất tab hiện tại sang tệp Word (.docx) công thức chuẩn Word MathType"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Xuất Word (MathType)</span>
                 </button>
 
                 <button

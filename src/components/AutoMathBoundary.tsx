@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { triggerGlobalMathRender } from '../lib/globalMath';
+import { triggerGlobalMathRender, isMathJaxTypesetting } from '../lib/globalMath';
 
 export interface AutoMathBoundaryProps extends React.HTMLAttributes<HTMLElement> {
   children?: React.ReactNode;
@@ -21,24 +21,24 @@ export const AutoMathBoundary: React.FC<AutoMathBoundaryProps> = ({
   className = '',
   as: Component = 'div',
   onTypeset,
-  debounceMs = 100,
+  debounceMs = 120,
   dependencies,
   ...restProps
 }) => {
   const containerRef = useRef<HTMLElement | null>(null);
+  const onTypesetRef = useRef(onTypeset);
+  onTypesetRef.current = onTypeset;
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
-    // Trigger initial typesetting when component mounts or updates
+    // Trigger initial typesetting when component mounts
     triggerGlobalMathRender(el);
-    if (onTypeset) {
-      onTypeset();
-    }
+    onTypesetRef.current?.();
 
     let isScheduled = false;
-    let timerId: NodeJS.Timeout | null = null;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
 
     const scheduleRender = () => {
       if (isScheduled) return;
@@ -49,19 +49,21 @@ export const AutoMathBoundary: React.FC<AutoMathBoundaryProps> = ({
         isScheduled = false;
         if (containerRef.current) {
           triggerGlobalMathRender(containerRef.current);
-          if (onTypeset) {
-            onTypeset();
-          }
+          onTypesetRef.current?.();
         }
       }, debounceMs);
     };
 
     const observer = new MutationObserver((mutations) => {
+      if (isMathJaxTypesetting()) return;
       let shouldRender = false;
+      let inspected = 0;
 
       for (const mutation of mutations) {
+        if (++inspected > 50) break;
         if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
           for (let i = 0; i < mutation.addedNodes.length; i++) {
+            if (++inspected > 50) break;
             const node = mutation.addedNodes[i];
             if (node.nodeType === Node.ELEMENT_NODE) {
               const elem = node as HTMLElement;
@@ -78,14 +80,15 @@ export const AutoMathBoundary: React.FC<AutoMathBoundaryProps> = ({
                 ['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT', 'PRE', 'CODE'].includes(tag) ||
                 elem.classList.contains('MathJax') ||
                 elem.classList.contains('math-view-container') ||
-                elem.closest('mjx-container') ||
+                elem.classList.contains('markdown-body') ||
+                elem.closest('mjx-container, .math-view-container, .markdown-body') ||
                 elem.hasAttribute('data-latex')
               ) {
                 continue;
               }
 
               const text = elem.textContent || '';
-              if (text.includes('$') || text.includes('`') || text.includes('\\')) {
+              if (text.includes('$') || text.includes('\\(') || text.includes('\\[')) {
                 shouldRender = true;
                 break;
               }
@@ -96,14 +99,13 @@ export const AutoMathBoundary: React.FC<AutoMathBoundaryProps> = ({
           if (
             parent &&
             (parent.tagName.toUpperCase().startsWith('MJX') ||
-              parent.closest('mjx-container') ||
-              parent.closest('.math-view-container') ||
+              parent.closest('mjx-container, .math-view-container, .markdown-body') ||
               parent.classList.contains('MathJax'))
           ) {
             continue;
           }
           const text = mutation.target.textContent || '';
-          if (text.includes('$') || text.includes('`') || text.includes('\\')) {
+          if (text.includes('$') || text.includes('\\(') || text.includes('\\[')) {
             shouldRender = true;
           }
         }
@@ -125,7 +127,16 @@ export const AutoMathBoundary: React.FC<AutoMathBoundaryProps> = ({
       observer.disconnect();
       if (timerId) clearTimeout(timerId);
     };
-  }, [debounceMs, onTypeset, children]);
+  }, [debounceMs]);
+
+  useEffect(() => {
+    if (!dependencies || dependencies.length === 0) return;
+    const el = containerRef.current;
+    if (el) {
+      triggerGlobalMathRender(el);
+      onTypesetRef.current?.();
+    }
+  }, dependencies || []);
 
   const Tag = Component as any;
 

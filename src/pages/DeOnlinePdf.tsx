@@ -15,7 +15,7 @@ import {
   getCachedToken 
 } from "../lib/googleAuth";
 import { FeatureQuickGuideBanner } from "../components/FeatureQuickGuideBanner";
-import { saveExamToCloud, fetchExamFromCloud, saveExamToWebhook } from "../lib/cloudExamStore";
+import { saveExamToCloud, fetchExamFromCloud, appendExamSubmissionLocal, deleteExamFromLocalStore, saveExamToWebhook, GOOGLE_APPS_SCRIPT_FULL_CODE, fetchSubmissionsFromGoogleSheets, sendExamResultToWebhook } from "../lib/cloudExamStore";
 import { registerExamUrlMapping } from "../lib/smartRouter";
 import { safePrompt, getPublicAppUrl } from "../lib/utils";
 import { apiFetch } from "../lib/apiFetch";
@@ -588,14 +588,10 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
         linkedSheetUrl: sheet.url
       };
 
-      const saveRes = await fetch("/api/exams/share", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...updatedData, customId: code })
-      });
+      const savedLocal = await saveExamToCloud(code, updatedData, { syncToSheets: false });
 
-      if (!saveRes.ok) {
-        throw new Error("Không thể cập nhật liên kết tệp Trang tính lên máy chủ.");
+      if (!savedLocal) {
+        throw new Error("Không thể cập nhật liên kết tệp Trang tính vào bộ nhớ trình duyệt.");
       }
 
       const subs = updatedData.submissions || [];
@@ -686,11 +682,7 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
         linkedSheetUrl: sheet.url
       };
 
-      await fetch("/api/exams/share", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...updatedData, customId: code })
-      }).catch(() => {});
+      await saveExamToCloud(code, updatedData, { syncToSheets: false });
 
       setSelectedRoomResultsData(updatedData);
 
@@ -731,14 +723,10 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
     };
 
     try {
-      const saveRes = await fetch("/api/exams/share", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...updatedData, customId: code })
-      });
+      const savedLocal = await saveExamToCloud(code, updatedData, { syncToSheets: false });
 
-      if (!saveRes.ok) {
-        throw new Error("Không thể cập nhật danh sách bài làm lên máy chủ.");
+      if (!savedLocal) {
+        throw new Error("Không thể cập nhật danh sách bài làm trong bộ nhớ trình duyệt.");
       }
 
       if (updatedData.linkedSheetId) {
@@ -850,54 +838,48 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
   }, []);
 
   const syncHistoryToCloud = async (historyList: any[]) => {
-    let code = localStorage.getItem("eduplan_teacher_sync_code") || teacherSyncCode;
+    const code = (localStorage.getItem("eduplan_teacher_sync_code") || teacherSyncCode || "").trim().toUpperCase();
     if (!code) return;
     try {
-      await fetch("/api/exams/share", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rooms: historyList, customId: code.toUpperCase() })
-      });
+      localStorage.setItem(`eduplan_teacher_sync_${code}`, JSON.stringify(historyList));
     } catch (e) {
-      console.warn("Lỗi đồng bộ danh sách phòng lên đám mây:", e);
+      console.warn("Lỗi lưu danh sách phòng vào localStorage:", e);
     }
   };
 
   const handleSyncRoomsHistory = async (syncCodeToUse?: string) => {
     const targetCode = (syncCodeToUse || teacherSyncCode || "").trim().toUpperCase();
     if (!targetCode) {
-      alert("Vui lòng nhập Mã đồng bộ Giáo viên!");
+      alert("Vui lòng nhập Mã lưu trữ Giáo viên!");
       return;
     }
-    
+
     setIsLoadingResults(true);
     try {
-      const res = await fetch(`/api/exams/${targetCode}`);
-      if (!res.ok) {
-        throw new Error("Không tìm thấy dữ liệu đồng bộ cho mã này.");
-      }
-      const data = await res.json();
-      if (data && Array.isArray(data.rooms)) {
-        // Merge with local history (avoid duplicates)
+      const storedRaw = localStorage.getItem(`eduplan_teacher_sync_${targetCode}`);
+      const storedRooms = storedRaw ? JSON.parse(storedRaw) : null;
+      if (Array.isArray(storedRooms)) {
         const localRaw = localStorage.getItem("eduplan_teacher_exams_history") || "[]";
         const local = JSON.parse(localRaw);
-        const merged = [...data.rooms];
-        local.forEach((locRoom: any) => {
-          if (!merged.some(m => m.code === locRoom.code)) {
-            merged.push(locRoom);
-          }
-        });
-        
+        const merged = [...storedRooms];
+        if (Array.isArray(local)) {
+          local.forEach((locRoom: any) => {
+            if (!merged.some((m: any) => m.code === locRoom.code)) {
+              merged.push(locRoom);
+            }
+          });
+        }
+
         localStorage.setItem("eduplan_teacher_exams_history", JSON.stringify(merged));
         setExamsHistory(merged);
         setTeacherSyncCode(targetCode);
         localStorage.setItem("eduplan_teacher_sync_code", targetCode);
-        alert(`🎉 Đồng bộ lịch sử thành công! Đã khôi phục và hợp nhất ${data.rooms.length} phòng thi.`);
+        alert(`🎉 Khôi phục lịch sử từ trình duyệt thành công! Đã hợp nhất ${storedRooms.length} phòng thi.`);
       } else {
-        alert("Không có dữ liệu phòng thi hợp lệ trong mã đồng bộ này.");
+        alert("Không tìm thấy dữ liệu lịch sử đã lưu trên trình duyệt này cho mã này.");
       }
     } catch (err: any) {
-      alert("Lỗi đồng bộ lịch sử: " + err.message);
+      alert("Lỗi đọc lịch sử từ localStorage: " + err.message);
     } finally {
       setIsLoadingResults(false);
     }
@@ -915,30 +897,13 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
     setExamError("");
     try {
       const cleanCode = code.trim().toUpperCase();
-      let data: any = null;
-
-      for (let attempt = 0; attempt < 3 && !data; attempt++) {
-        if (attempt > 0) {
-          await new Promise(r => setTimeout(r, 600 * attempt));
-        }
-        // 1. Thử lấy từ Backend API
-        try {
-          const res = await fetch(`/api/exams/${encodeURIComponent(cleanCode)}?fresh=true`);
-          if (res.ok) {
-            data = await res.json();
-          }
-        } catch (e) {
-          console.warn("Backend API load room error:", e);
-        }
-
-        // 2. Dự phòng lấy từ Cloud Store (Cloud KV, LocalStorage, Google Webhook) nếu Backend API không có dữ liệu
-        if (!data) {
-          data = await fetchExamFromCloud(cleanCode);
-        }
-      }
+      const urlScriptParam = typeof window !== 'undefined'
+        ? (new URLSearchParams(window.location.search).get('script') || undefined)
+        : undefined;
+      const data = await fetchExamFromCloud(cleanCode, { scriptUrl: urlScriptParam });
 
       if (!data) {
-        throw new Error("Không tìm thấy mã phòng thi. Vui lòng kiểm tra lại mã hoặc đường link chia sẻ từ Giáo viên.");
+        throw new Error("Không tìm thấy mã phòng thi trên Google Sheets hoặc bộ nhớ trình duyệt. Vui lòng kiểm tra lại mã hoặc đường link chia sẻ từ Giáo viên.");
       }
 
       setLoadedExamData(data);
@@ -1138,31 +1103,31 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
         antiCheatMode: antiCheatMode
       };
 
-      const res = await fetch("/api/exams/share", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!res.ok) {
-        throw new Error("Không thể lưu cấu hình phòng thi lên máy chủ chia sẻ.");
+      const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+      let generatedCode = '';
+      for (let i = 0; i < 6; i++) {
+        generatedCode += chars.charAt(Math.floor(Math.random() * chars.length));
       }
-      const data = await res.json();
-      const code = data.examId.toUpperCase();
+      const code = generatedCode.toUpperCase();
       setSharedRoomId(code);
 
-      // Save room persistently across client localStorage, Express server, and Cloud KV
+      // Lưu phòng thi trực tiếp vào Google Sheets (script.google.com) và localStorage trình duyệt
       try {
-        await saveExamToCloud(code, { ...payload, id: code, customId: code });
+        const savedOk = await saveExamToCloud(
+          code,
+          { ...payload, id: code, customId: code },
+          { syncToSheets: true, scriptUrl: scriptUrl.trim() || undefined }
+        );
+        if (!savedOk) {
+          throw new Error("Không thể lưu cấu hình phòng thi lên Google Sheets hoặc bộ nhớ trình duyệt.");
+        }
         registerExamUrlMapping(`/exam/${code}`, code);
         registerExamUrlMapping(`/p/${code}`, code);
         registerExamUrlMapping(`/thi/${code}`, code);
         registerExamUrlMapping(`/?pin=${code}`, code);
         registerExamUrlMapping(`/#/exam/${code}`, code);
-      } catch (cloudErr) {
-        console.warn("Lỗi lưu Cloud KV phòng thi:", cloudErr);
+      } catch (localErr) {
+        console.warn("Lỗi lưu localStorage phòng thi:", localErr);
       }
 
       // Save shared room to teacher's local history
@@ -1205,21 +1170,35 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
     setSelectedRoomForResults(cleanCode);
     setSelectedRoomResultsData(null);
     try {
-      let data = null;
+      const data = await fetchExamFromCloud(cleanCode);
+
+      if (!data) {
+        throw new Error(`Không tìm thấy dữ liệu phòng thi với mã "${cleanCode}" trên Google Sheets hoặc bộ nhớ trình duyệt. Vui lòng kiểm tra lại mã phòng thi.`);
+      }
+
+      // Hợp nhất thêm kết quả nộp bài trực tiếp từ Google Sheets (script.google.com)
       try {
-        const res = await fetch(`/api/exams/${cleanCode}?fresh=true`);
-        if (res.ok) {
-          data = await res.json();
+        const remoteSubs = await fetchSubmissionsFromGoogleSheets(cleanCode, data.scriptUrl);
+        if (remoteSubs.length > 0) {
+          const mergedSubs = Array.isArray(data.submissions) ? [...data.submissions] : [];
+          remoteSubs.forEach((s: any) => {
+            const isDup = mergedSubs.some((m: any) =>
+              String(m.studentName || '').trim().toLowerCase() === String(s.studentName || '').trim().toLowerCase() &&
+              String(m.studentClass || m.className || '').trim().toLowerCase() === String(s.studentClass || s.className || '').trim().toLowerCase() &&
+              Math.abs(new Date(m.timestamp || m.submittedAt || 0).getTime() - new Date(s.timestamp || s.submittedAt || 0).getTime()) < 3 * 60 * 1000
+            );
+            if (!isDup) {
+              mergedSubs.push({
+                ...s,
+                studentClass: s.studentClass || s.className || '',
+                totalScore: s.totalScore ?? s.score ?? 0,
+                submittedAt: s.submittedAt || s.timestamp
+              });
+            }
+          });
+          data.submissions = mergedSubs;
         }
       } catch (e) {}
-
-      if (!data) {
-        data = await fetchExamFromCloud(cleanCode);
-      }
-
-      if (!data) {
-        throw new Error(`Không tìm thấy dữ liệu phòng thi với mã "${cleanCode}". Vui lòng kiểm tra lại mã phòng thi.`);
-      }
 
       setSelectedRoomResultsData(data);
     } catch (e: any) {
@@ -1233,7 +1212,7 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
     let confirmed = true;
     try {
       if (typeof window !== 'undefined' && window.confirm) {
-        confirmed = window.confirm(`Bạn có chắc muốn xóa lưu trữ phòng thi ${code} khỏi lịch sử trên máy này? (Dữ liệu trên máy chủ vẫn được giữ lại)`);
+        confirmed = window.confirm(`Bạn có chắc muốn xóa lưu trữ phòng thi ${code} khỏi trình duyệt này?`);
       }
     } catch (e) {
       confirmed = true;
@@ -1242,12 +1221,7 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
     if (confirmed) {
       const updated = examsHistory.filter(r => r.code !== code);
       setExamsHistory(updated);
-      try {
-        localStorage.setItem("eduplan_teacher_exams_history", JSON.stringify(updated));
-        localStorage.removeItem(`examCache_${code}`);
-      } catch (e) {
-        console.warn("Could not update localStorage:", e);
-      }
+      deleteExamFromLocalStore(code);
       syncHistoryToCloud(updated);
       if (selectedRoomForResults === code) {
         setSelectedRoomForResults(null);
@@ -1262,20 +1236,10 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
 
     setIsSharing(true);
     try {
-      let examData = null;
-      try {
-        const res = await fetch(`/api/exams/${cleanCode}?fresh=true`);
-        if (res.ok) {
-          examData = await res.json();
-        }
-      } catch (e) {}
+      const examData = await fetchExamFromCloud(cleanCode);
 
       if (!examData) {
-        examData = await fetchExamFromCloud(cleanCode);
-      }
-
-      if (!examData) {
-        throw new Error(`Không tìm thấy dữ liệu đề thi cho phòng "${cleanCode}".`);
+        throw new Error(`Không tìm thấy dữ liệu đề thi cho phòng "${cleanCode}" trong bộ nhớ trình duyệt.`);
       }
 
       const refreshedPayload = {
@@ -1501,58 +1465,8 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
     setPart3Keys(part3);
   };
 
-  // Google Apps Script source code
-  const appsScriptCode = `function doPost(e) {
-  try {
-    // Phân tích dữ liệu JSON gửi đến
-    var data = JSON.parse(e.postData.contents);
-    
-    // Mở file Google Sheet đang liên kết với script này
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getActiveSheet();
-    
-    // Nếu trang tính trống, tự động tạo dòng tiêu đề (Header)
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow([
-        "Mã phòng thi",
-        "Thời gian nộp", 
-        "Họ và tên", 
-        "Lớp", 
-        "Tổng điểm (10)", 
-        "Điểm Phần I (TN 4 lựa chọn)", 
-        "Điểm Phần II (TN Đúng/Sai)", 
-        "Điểm Phần III (Trả lời ngắn)", 
-        "Chi tiết đáp án chi tiết"
-      ]);
-    }
-    
-    // Ghi kết quả làm bài của học sinh xuống dòng tiếp theo
-    sheet.appendRow([
-      data.examTitle || "Đề thi PDF",
-      data.submitTime || new Date().toLocaleString("vi-VN"),
-      data.studentName || "Học sinh ẩn danh",
-      data.studentClass || "Lớp trống",
-      data.totalScore,
-      data.scorePart1,
-      data.scorePart2,
-      data.scorePart3,
-      JSON.stringify(data.details)
-    ]);
-    
-    // Trả về phản hồi thành công cho ứng dụng
-    return ContentService.createTextOutput(JSON.stringify({ 
-      "status": "success", 
-      "message": "Đã lưu kết quả của " + data.studentName + " vào Google Sheet!" 
-    })).setMimeType(ContentService.MimeType.JSON);
-    
-  } catch (error) {
-    // Trả về lỗi nếu có sự cố xảy ra
-    return ContentService.createTextOutput(JSON.stringify({ 
-      "status": "error", 
-      "message": error.toString() 
-    })).setMimeType(ContentService.MimeType.JSON);
-  }
-}`;
+  // Google Apps Script source code (supports both KhoDeThi exam storage & student scores)
+  const appsScriptCode = GOOGLE_APPS_SCRIPT_FULL_CODE;
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(appsScriptCode);
@@ -1723,29 +1637,35 @@ export default function DeOnlinePdf({ studentModeData }: DeOnlinePdfProps = {}) 
     }
 
     try {
+      const pdfSubmissionForSystem = {
+        ...payload,
+        examId: sharedRoomId || examTitle.trim(),
+        examName: examTitle.trim(),
+        className: payload.studentClass,
+        score: payload.totalScore,
+        timeSpent: `${Math.floor((duration * 60 - timeLeft) / 60)} phút`,
+      };
       if (scriptUrl.trim()) {
-        // Send to Apps Script Web App
+        // Send to teacher's custom Apps Script Web App
         await fetch(scriptUrl.trim(), {
           method: "POST",
           mode: "no-cors",
-          headers: { "Content-Type": "text/plain" },
-          body: JSON.stringify(payload)
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(pdfSubmissionForSystem)
         });
       }
+      // Always also record to system Google Sheets webhook so results sync across devices
+      sendExamResultToWebhook(pdfSubmissionForSystem).catch(() => {});
     } catch (e) {
       console.warn("Lỗi gửi điểm lên Google Sheets:", e);
     }
 
     try {
       if (sharedRoomId) {
-        await fetch(`/api/exams/${sharedRoomId}/submit`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
+        await appendExamSubmissionLocal(sharedRoomId, payload);
       }
-    } catch (apiErr) {
-      console.warn("Lỗi gửi điểm lên máy chủ lưu trữ dự phòng:", apiErr);
+    } catch (localErr) {
+      console.warn("Lỗi lưu điểm vào bộ nhớ trình duyệt:", localErr);
     }
 
     setSubmitResult({
@@ -2781,14 +2701,14 @@ HS05 - Hoàng Văn Em`);
                   Quản lý Lưu trữ Đề thi / Phòng thi đã tạo ({examsHistory.length})
                 </span>
                 
-                {/* Teacher Sync Code UI segment */}
+                {/* Teacher Local Sync Code UI segment */}
                 <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 p-2 rounded-xl text-xs">
-                  <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">☁️ Mã đồng bộ đám mây:</span>
+                  <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">💾 Mã lưu trữ trình duyệt:</span>
                   <strong className="font-mono text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded font-black text-xs">{teacherSyncCode}</strong>
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(teacherSyncCode);
-                      alert("Đã copy Mã đồng bộ: " + teacherSyncCode);
+                      alert("Đã copy Mã lưu trữ: " + teacherSyncCode);
                     }}
                     className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer"
                   >
@@ -2797,14 +2717,14 @@ HS05 - Hoàng Văn Em`);
                   <span className="text-slate-300">|</span>
                   <button
                     onClick={() => {
-                      const input = safePrompt("Nhập mã đồng bộ Giáo viên (ví dụ: GV-XXXXXX) để khôi phục danh sách phòng thi của bạn từ đám mây:", teacherSyncCode);
+                      const input = safePrompt("Nhập mã lưu trữ Giáo viên (ví dụ: GV-XXXXXX) để khôi phục danh sách phòng thi đã lưu trên trình duyệt:", teacherSyncCode);
                       if (input && input.trim()) {
                         handleSyncRoomsHistory(input.trim());
                       }
                     }}
                     className="text-[10px] text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer"
                   >
-                    Nhập mã khác / Đồng bộ
+                    Khôi phục theo mã
                   </button>
                 </div>
               </div>
@@ -4438,7 +4358,7 @@ HS05 - Hoàng Văn Em`);
             <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-900 text-white">
               <h2 className="text-base font-bold flex items-center gap-2">
                 <Code className="w-5 h-5 text-emerald-400" />
-                Google Apps Script (doPost) - Mã nhận điểm
+                Google Apps Script (doPost & doGet) - Lưu đề thi & Nhận điểm
               </h2>
               <button 
                 onClick={() => setShowCodeModal(false)}

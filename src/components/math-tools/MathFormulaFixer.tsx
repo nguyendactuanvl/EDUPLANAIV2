@@ -18,6 +18,7 @@ import {
 } from '../../lib/utils';
 import { exportHtmlToWord } from '../../lib/exportUtils';
 import { printElement } from '../../lib/print';
+import { protectHtmlMediaTags, restoreHtmlMediaTags } from '../../lib/globalMath';
 
 // Preset sample broken math texts
 const SAMPLE_BROKEN_TEXTS = [
@@ -67,7 +68,8 @@ c) Tìm m để phương trình x^2 - 2(m+1)x + m^2 + 2 = 0 có hai nghiệm ph�
 // Core 1-Click Math Repair Engine
 export const run1ClickMathFix = (rawInput: string): string => {
   if (!rawInput) return '';
-  return fixMath(rawInput);
+  const { masked, tokens } = protectHtmlMediaTags(rawInput);
+  return restoreHtmlMediaTags(fixMath(masked), tokens);
 };
 
 export const MathFormulaFixer: React.FC = () => {
@@ -114,9 +116,10 @@ export const MathFormulaFixer: React.FC = () => {
   };
 
   // Export to Word
-  const handleExportWord = () => {
+  const handleExportWord = (mode: 'omml' | 'mathtype' = 'omml') => {
     const el = document.getElementById('math-fixer-report');
-    if (el) exportHtmlToWord(el, 'Tai_Lieu_Toan_Da_Chinh_Loi.docx');
+    const suffix = mode === 'mathtype' ? '_MathType' : '';
+    if (el) exportHtmlToWord(el, `Tai_Lieu_Toan_Da_Chinh_Loi${suffix}.docx`, mode);
   };
 
   // Print
@@ -301,11 +304,21 @@ export const MathFormulaFixer: React.FC = () => {
               </button>
               <button
                 type="button"
-                onClick={handleExportWord}
-                className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-lg border border-blue-200/60 flex items-center gap-1.5 transition-colors cursor-pointer"
+                onClick={() => handleExportWord('omml')}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                title="Xuất file Word (.docx) công thức chuẩn Word Equation (OMML)"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Xuất Word</span>
+                <span>Xuất Word (Equation)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExportWord('mathtype')}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                title="Xuất file Word (.docx) công thức chuẩn Word MathType"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Xuất Word (MathType)</span>
               </button>
             </div>
           </div>

@@ -26,6 +26,40 @@ export function sanitizeSvgOrHtmlForReact(html: string): string {
     .replace(/<\/script>/gi, '');
 }
 
+const HTML_MEDIA_TAG_RE = /<img\b[^>]*>|<svg-wrapper\b[\s\S]*?<\/svg-wrapper>|<tikz-diagram\b[\s\S]*?<\/tikz-diagram>/gi;
+
+const encodePuaIndex = (idx: number): string =>
+  String(idx)
+    .split('')
+    .map((ch) => String.fromCharCode(0xe100 + Number(ch)))
+    .join('');
+
+const decodePuaIndex = (encoded: string): number =>
+  Number(
+    encoded
+      .split('')
+      .map((ch) => String(ch.charCodeAt(0) - 0xe100))
+      .join('')
+  );
+
+export function protectHtmlMediaTags(text: string): { masked: string; tokens: string[] } {
+  const tokens: string[] = [];
+  if (!text || (!text.includes('<img') && !text.includes('<svg-wrapper') && !text.includes('<tikz-diagram') && !text.includes('<IMG'))) {
+    return { masked: text, tokens };
+  }
+  const masked = text.replace(HTML_MEDIA_TAG_RE, (match) => {
+    const idx = tokens.length;
+    tokens.push(match);
+    return `\uE010${encodePuaIndex(idx)}\uE011`;
+  });
+  return { masked, tokens };
+}
+
+export function restoreHtmlMediaTags(text: string, tokens: string[]): string {
+  if (!text || tokens.length === 0) return text;
+  return text.replace(/\uE010([\uE100-\uE109]+)\uE011/g, (_m, enc) => tokens[decodePuaIndex(enc)] ?? '');
+}
+
 export function convertBacktickMathToDollars(text: string): string {
   if (!text) return '';
   let t = String(text);
@@ -443,8 +477,14 @@ export function cleanSectionTitles(text: string): string {
   if (!text || typeof text !== 'string') return text || '';
   let s = text;
 
-  // Tách riêng nếu tiêu đề PHẦN bị dính với Câu hỏi, mệnh đề a), hoặc mục đánh số (vd: PHẦN III: 1. Với n=4...) trên cùng 1 dòng:
-  s = s.replace(/(PHẦN\s*(?:[1-4]|I{1,4}|IV)\b[^:\n]*:?)(?=[ \t]+(?:\*{0,2}(?:Câu|Bài)\s*\d+|\d+[\.\)](?:\s+(?![A-D]\b)|\s*$)|(?:[-*]\s*)?\*{0,2}[a-d]\)\s+))/gi, '$1\n\n');
+  const proseBeforeNumberRe = /(?:^|\s)(?:câu|bài|phần|trang|mục|số|hình|bảng|lớp|khối|từ|đến|năm|thí\s*sinh|trả\s*lời)$/i;
+
+  // Tách riêng nếu tiêu đề PHẦN bị dính với Câu hỏi (Câu 1., Bài 1:...), mệnh đề a), hoặc mục đánh số (vd: PHẦN III: 1. Với n=4...) trên cùng 1 dòng:
+  // Không cắt câu dẫn thường như "Phần I. Thí sinh trả lời từ câu 1 đến câu 12. Mỗi câu hỏi..."
+  s = s.replace(
+    /((?:PHẦN|Phần)\s*(?:[1-4]|I{1,4}|IV)\b[^:\n]*:?)(?=[ \t]+(?:\*{0,2}(?:Câu|CÂU|Bài|BÀI)\s*\d+\s*[:.\)]|\d+[\.\)](?:\s+(?![A-D]\b)|\s*$)|(?:[-*]\s*)?\*{0,2}[a-d]\)\s+))/g,
+    (match, prefix) => (proseBeforeNumberRe.test(prefix.trim()) ? match : `${prefix}\n\n`)
+  );
 
   // Nếu tiêu đề ngắn "PHẦN II:", "PHẦN III:", "PHẦN IV:" bị dính trực tiếp với công thức hoặc nội dung câu 1 (không phải tên tiêu đề phần):
   s = s.replace(/(PHẦN\s*(?:[2-4]|II|III|IV)\s*:)[ \t]+(?!(?:TRẮC\s*NGHIỆM|CÂU\s*HỎI|BÀI\s*TẬP|TỰ\s*LUẬN|ĐÚNG|TRẢ\s*LỜI|NHIỀU|LỰA\s*CHỌN|PHẦN|MỖI|HƯỚNG\s*DẪN|ĐÁP\s*ÁN|LỜI\s*GIẢI)\b)(\S)/gi, '$1\n\n$2');
@@ -457,11 +497,12 @@ export function cleanSectionTitles(text: string): string {
       return `\n\n### ${quickAnsMatch[1].replace(/[\$\*]/g, '').trim()} ${quickAnsMatch[2].trim()}`;
     }
 
-    // Nếu có Câu hỏi, mệnh đề a), hoặc mục 1. 2. lọt vào header do dính dòng, tách ra để bảo vệ công thức toán và Câu 1
-    const qMatch = header.match(/^(.*?)(\s+(?:\*{0,2}(?:Câu|Bài)\s*\d+|\d+[\.\)](?:\s+(?![A-D]\b)|\s*$)|(?:[-*]\s*)?\*{0,2}[a-d]\)\s+)[\s\S]*)$/i);
+    // Nếu có Câu hỏi (Câu 1., Bài 1:), mệnh đề a), hoặc mục 1. 2. lọt vào header do dính dòng, tách ra để bảo vệ công thức toán và Câu 1
+    // Không tách nhầm cụm chữ thường "từ câu 1 đến câu 12. Mỗi câu hỏi..."
+    const qMatch = header.match(/^(.*?)(\s+(?:\*{0,2}(?:Câu|CÂU|Bài|BÀI)\s*\d+\s*[:.\)]|\d+[\.\)](?:\s+(?![A-D]\b)|\s*$)|(?:[-*]\s*)?\*{0,2}[a-d]\)\s+)[\s\S]*)$/);
     let title = header;
     let rest = '';
-    if (qMatch) {
+    if (qMatch && !proseBeforeNumberRe.test(qMatch[1].trim())) {
       title = qMatch[1];
       rest = '\n\n' + qMatch[2].trim();
     } else {
@@ -692,7 +733,8 @@ export function formatQuickAnswerTables(text: string): string {
  */
 export function cleanMathAndUnwrapHeadings(text: string): string {
   if (!text || typeof text !== 'string') return text || '';
-  let s = sanitizeSvgOrHtmlForReact(text);
+  const { masked: protectedMediaText, tokens: mediaTokens } = protectHtmlMediaTags(text);
+  let s = sanitizeSvgOrHtmlForReact(protectedMediaText);
 
   // 0. Gỡ bỏ thụt lề 4+ khoảng trắng / tab (gây indented <pre><code> trong CommonMark) ngoài các khối ```fenced```
   const fencedBlocks: string[] = [];
@@ -1012,7 +1054,7 @@ export function cleanMathAndUnwrapHeadings(text: string): string {
       return `\n\n$$\n${nextBody}\n$$\n\n`;
     }
   );
-  return out;
+  return restoreHtmlMediaTags(out, mediaTokens);
 }
 
 const GM_LATEX_CMD_ATOM = `\\\\[a-zA-Z]+(?:\\[[^\\]]*\\])?(?:\\{(?:[^{}]|\\{[^{}]*\\})*\\}){0,3}`;
@@ -1056,7 +1098,8 @@ export function fixAndMergeMathArrows(text: string): string {
   if (!/(?:\\(?:RightArrow|LeftArrow|Leftarrow|Rightarrow|Leftrightarrow|iff|implies)|=>|<=>|Đáp\s*số|Đáp\s*án)/i.test(text)) {
     return text;
   }
-  let s = text;
+  const { masked: mediaMasked, tokens: mediaTokens } = protectHtmlMediaTags(text);
+  let s = mediaMasked;
 
   // 1. Chuẩn hóa các biến thể viết hoa hoặc double backslash
   s = s.replace(/\\RightArrow\b/g, '\\Rightarrow');
@@ -1140,7 +1183,7 @@ export function fixAndMergeMathArrows(text: string): string {
   // 7. Bọc số trong "Đáp số: 4." hoặc "Đáp án: 4." thành "Đáp số: $4$."
   s = s.replace(/(\b(?:Đáp\s*số|Đáp\s*án)\s*:\s*)([+\-]?(?:\d+(?:[.,]\d+)?|\b[a-zA-Z]\b))(?!\$)(?=[.,;!?\s]|$)/gi, '$1$$$2$$');
 
-  return s;
+  return restoreHtmlMediaTags(s, mediaTokens);
 }
 
 /**
@@ -1192,10 +1235,10 @@ export function sanitizeLatexMathAndDelimiters(raw: string): string {
   s = s.replace(/(?:^|\n)\s*SS0\.\s*\*{0,2}Câu\s*\d+:?\*{0,2}SS\s*/gi, '\n');
   s = s.replace(/(?:^|\n)\s*d\$\.\s*/gi, '\n');
 
-  // Đảm bảo các tiêu đề câu hỏi **Câu X:** trong lời giải được ngắt dòng riêng biệt (KHÔNG cắt trong bảng Markdown |...| và KHÔNG cắt sau dấu bullet •/-/*)
+  // Đảm bảo các tiêu đề câu hỏi **Câu X:** trong lời giải được ngắt dòng riêng biệt (KHÔNG cắt trong bảng Markdown |...| và KHÔNG cắt cụm chữ thường như "từ câu 1 đến câu 12.")
   s = s.split('\n').map((line) => {
     if (/^\s*\|/.test(line)) return line;
-    return line.replace(/([^\n\-*•●+])\s+(\*{0,2}Câu\s*\d+[:\.]?\*{0,2})/gi, '$1\n\n$2');
+    return line.replace(/([^\n\-*•●+])\s+(\*{0,2}(?:Câu|CÂU)\s*\d+\s*[:\.]\*{0,2})/g, '$1\n\n$2');
   }).join('\n');
 
   // 3.4. Giải cứu thẻ <br/> nếu bị nhốt bên trong cặp dấu $...$
@@ -1402,12 +1445,15 @@ export function normalizeMathText(text: any): string {
   if (typeof text !== 'string') text = String(text);
   if (!text) return '';
 
+  const { masked: mediaMasked, tokens: mediaTokens } = protectHtmlMediaTags(text);
+  text = mediaMasked;
+
   // Fast-path: pure Vietnamese prose without math delimiters, operators, symbols, or LaTeX keywords
   if (
     !/[\\$\{\}\^_=<>\|*~/+\-×÷≤≥≠≈→⇒⇔√παβγθφωσΔΩ∞°∈∉∪∩∅\[\]()\r\n]/.test(text) &&
     !/\b(?:frac|dfrac|sqrt|sin|cos|tan|cot|lim|ln|log|vec|cdot|times|ge|le|ne|neq|iff|Delta|pi|alpha|beta|gamma|theta|phi|omega|begin|end|underline|textbf|mathbb|overline|left|right|forall|exists|setminus|emptyset|varnothing|mid|circ|vdots|nearrow|searrow|undefined|null)\b|TẮM|dưóin|SS_|uu_|Đáp\s*(?:số|án)|You can't|Extra\s*close|Missing\s*\\/i.test(text)
   ) {
-    return text.normalize('NFC');
+    return restoreHtmlMediaTags(text.normalize('NFC'), mediaTokens);
   }
 
   // 0. Sửa lỗi `_\{` và `^\{` bị escape nhầm làm hỏng chỉ số dưới/trên TeX (S_{20}, u_n, S_n)
@@ -1651,7 +1697,7 @@ export function normalizeMathText(text: any): string {
   t = wrapFractionAndNegativePowers(t);
   t = fixIncompleteFractions(t);
   t = balanceCasesEnvironments(t);
-  return fixAndMergeMathArrows(t);
+  return restoreHtmlMediaTags(fixAndMergeMathArrows(t), mediaTokens);
 }
 
 export function fixIncompleteFractions(text: string): string {
@@ -2111,7 +2157,11 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
   text = text.replace(/:[ \t]*([a-zA-ZÀ-ỹ0-9])/g, ': $1');
 
   // Tách riêng nếu tiêu đề PHẦN bị dính liền với Câu 1, mệnh đề a), hoặc công thức câu 1 trên cùng 1 dòng
-  text = text.replace(/(PHẦN\s*(?:[1-4]|I{1,4}|IV)\b[^:\n]*:?)[ \t]+(?=(?:[-*]\s*)?(?:\*{0,2}(?:Câu|Bài)\s*\d+|\d+[\.\)](?:\s+(?![A-D]\b)|\s*$)|\*{0,2}[a-d]\)\s+))/gi, '$1\n');
+  const proseBeforeNumRe = /(?:^|\s)(?:câu|bài|phần|trang|mục|số|hình|bảng|lớp|khối|từ|đến|năm|thí\s*sinh|trả\s*lời)$/i;
+  text = text.replace(
+    /((?:PHẦN|Phần)\s*(?:[1-4]|I{1,4}|IV)\b[^:\n]*:?)[ \t]+(?=(?:[-*]\s*)?(?:\*{0,2}(?:Câu|CÂU|Bài|BÀI)\s*\d+\s*[:.\)]|\d+[\.\)](?:\s+(?![A-D]\b)|\s*$)|\*{0,2}[a-d]\)\s+))/g,
+    (match, prefix) => (proseBeforeNumRe.test(prefix.trim()) ? match : `${prefix}\n`)
+  );
   text = text.replace(/(PHẦN\s*(?:[2-4]|II|III|IV)\s*:)[ \t]+(?!(?:TRẮC\s*NGHIỆM|CÂU\s*HỎI|BÀI\s*TẬP|TỰ\s*LUẬN|ĐÚNG|TRẢ\s*LỜI|NHIỀU|LỰA\s*CHỌN|PHẦN|MỖI|HƯỚNG\s*DẪN|ĐÁP\s*ÁN|LỜI\s*GIẢI)\b)(\S)/gi, '$1\n$2');
 
   const mathSplitParts = text.split(/(\$\$[\s\S]*?\$\$|\$[^\$\n]+?\$)/g);
@@ -2562,25 +2612,180 @@ export function formatWorksheetSolutionSections(markdown: string): string {
   return res.trim();
 }
 
-let mathRenderTimer: any = null;
+let isTypesettingActive = false;
+let batchFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let batchQueuePromise: Promise<void> = Promise.resolve();
+const pendingTypesetElements = new Set<HTMLElement>();
+let pendingFullDocument = false;
+let pendingWaiters: Array<() => void> = [];
+
+export function isMathJaxTypesetting(): boolean {
+  return isTypesettingActive;
+}
+
+function hasRawMathDelimiters(text: string | null | undefined): boolean {
+  if (!text) return false;
+  return (
+    text.indexOf('$') !== -1 ||
+    text.indexOf('\\(') !== -1 ||
+    text.indexOf('\\[') !== -1 ||
+    text.indexOf('\\begin{') !== -1
+  );
+}
+
+function isHiddenOrIgnoredElement(el: HTMLElement): boolean {
+  if (!el || !el.isConnected) return true;
+  if (el.getAttribute('aria-hidden') === 'true') return true;
+  if (el.classList.contains('tex2jax_ignore') || el.classList.contains('svg-wrapper')) return true;
+  if (el.closest('[aria-hidden="true"], .tex2jax_ignore, [data-math-streaming="true"]')) return true;
+  return false;
+}
+
+function dedupeNestedElements(elements: HTMLElement[]): HTMLElement[] {
+  const connected = elements.filter((el) => el && el.isConnected && !isHiddenOrIgnoredElement(el));
+  if (connected.length <= 1) return connected;
+  const set = new Set(connected);
+  return connected.filter((el) => {
+    let parent = el.parentElement;
+    while (parent) {
+      if (set.has(parent)) return false;
+      parent = parent.parentElement;
+    }
+    return true;
+  });
+}
+
+async function waitForMathJaxReady(): Promise<any | null> {
+  if (typeof window === 'undefined') return null;
+  let mj = (window as any).MathJax;
+  let retries = 0;
+  while ((!mj || typeof mj.typesetPromise !== 'function') && retries < 30) {
+    if (mj?.startup?.promise) {
+      try {
+        await mj.startup.promise;
+        mj = (window as any).MathJax;
+        if (mj && typeof mj.typesetPromise === 'function') break;
+      } catch (e) {}
+    }
+    await new Promise((r) => setTimeout(r, 150));
+    mj = (window as any).MathJax;
+    retries++;
+  }
+  if (!mj || typeof mj.typesetPromise !== 'function') return null;
+  if (mj.startup?.promise) {
+    try { await mj.startup.promise; } catch (e) {}
+  }
+  return mj;
+}
+
+async function flushBatchedMathJaxTypeset(): Promise<void> {
+  const fullDoc = pendingFullDocument;
+  pendingFullDocument = false;
+
+  const rawTargets = Array.from(pendingTypesetElements);
+  pendingTypesetElements.clear();
+
+  const waiters = pendingWaiters;
+  pendingWaiters = [];
+
+  try {
+    const mj = await waitForMathJaxReady();
+    if (!mj) return;
+
+    if (fullDoc && rawTargets.length === 0) {
+      const root = document.getElementById('root') || document.body;
+      if (!root || !hasRawMathDelimiters(root.textContent)) return;
+      isTypesettingActive = true;
+      try {
+        await mj.typesetPromise([root]);
+      } catch (err) {
+        console.warn('MathJax full typeset error:', err);
+      } finally {
+        isTypesettingActive = false;
+      }
+      return;
+    }
+
+    const targets = dedupeNestedElements(rawTargets).filter((el) => {
+      // Only typeset elements that actually have raw LaTeX delimiters remaining
+      if (el.querySelector('.math-inline, .math-display')) return true;
+      return hasRawMathDelimiters(el.textContent);
+    });
+
+    if (targets.length === 0) return;
+
+    // Chunk elements and yield between chunks so Chrome main thread never freezes ("Trang không phản hồi")
+    const CHUNK_SIZE = 10;
+    for (let i = 0; i < targets.length; i += CHUNK_SIZE) {
+      const chunk = targets.slice(i, i + CHUNK_SIZE).filter((el) => el.isConnected);
+      if (chunk.length === 0) continue;
+
+      isTypesettingActive = true;
+      try {
+        if (typeof mj.typesetClear === 'function') {
+          try { mj.typesetClear(chunk); } catch (e) {}
+        }
+        await mj.typesetPromise(chunk);
+        for (const el of chunk) {
+          const containers = el.querySelectorAll('mjx-container:not([data-latex])');
+          containers.forEach((mjx: Element) => {
+            const text = mjx.getAttribute('aria-label') || mjx.querySelector('mjx-assistive-mml')?.textContent || '';
+            if (text) {
+              mjx.setAttribute('data-latex', text.replace(/^\$+|\$+$/g, '').trim());
+            }
+          });
+        }
+      } catch (err) {
+        console.warn('MathJax chunk typeset error:', err);
+      } finally {
+        isTypesettingActive = false;
+      }
+
+      if (i + CHUNK_SIZE < targets.length) {
+        await new Promise((r) => setTimeout(r, 16));
+      }
+    }
+  } finally {
+    for (const resolve of waiters) {
+      resolve();
+    }
+  }
+}
+
+/**
+ * Unified, batched, time-sliced MathJax typeset scheduler.
+ * Coalesces rapid element mounts/updates into a single serialized queue and yields
+ * between chunks so the browser main thread stays responsive.
+ */
+export function scheduleBatchedMathJaxTypeset(targetElement?: HTMLElement | null): Promise<void> {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return Promise.resolve();
+  }
+
+  if (targetElement) {
+    if (!targetElement.isConnected || isHiddenOrIgnoredElement(targetElement)) {
+      return Promise.resolve();
+    }
+    pendingTypesetElements.add(targetElement);
+  } else {
+    pendingFullDocument = true;
+  }
+
+  return new Promise<void>((resolve) => {
+    pendingWaiters.push(resolve);
+    if (batchFlushTimer) clearTimeout(batchFlushTimer);
+    batchFlushTimer = setTimeout(() => {
+      batchFlushTimer = null;
+      batchQueuePromise = batchQueuePromise
+        .then(() => flushBatchedMathJaxTypeset())
+        .catch(() => {});
+    }, 80);
+  });
+}
 
 export function triggerGlobalMathRender(targetElement?: HTMLElement | null) {
   if (typeof window === 'undefined') return;
-  if (mathRenderTimer) clearTimeout(mathRenderTimer);
-
-  mathRenderTimer = setTimeout(() => {
-    const mj = (window as any).MathJax;
-    if (mj && mj.typesetPromise) {
-      if (targetElement) {
-        if (mj.typesetClear) {
-          try { mj.typesetClear([targetElement]); } catch (e) {}
-        }
-        mj.typesetPromise([targetElement]).catch(() => {});
-      } else {
-        mj.typesetPromise().catch(() => {});
-      }
-    }
-  }, 100);
+  scheduleBatchedMathJaxTypeset(targetElement);
 }
 
 export function wrapUnenclosedLatexMath(text: string): string {
@@ -2610,7 +2815,8 @@ export function wrapUnenclosedLatexMath(text: string): string {
 
 export function preprocessMathText(text: any): string {
   if (text === null || text === undefined) return '';
-  let str = String(text);
+  const { masked: mediaMasked, tokens: mediaTokens } = protectHtmlMediaTags(String(text));
+  let str = mediaMasked;
   str = fixAndMergeMathArrows(str);
   str = wrapUnenclosedLatexMath(str);
   str = cleanSectionTitles(str);
@@ -2626,7 +2832,7 @@ export function preprocessMathText(text: any): string {
   str = formatQuickAnswerTables(str);
   str = cleanSectionTitles(str);
   str = fixAndMergeMathArrows(str);
-  return str;
+  return restoreHtmlMediaTags(str, mediaTokens);
 }
 
 
@@ -2648,7 +2854,12 @@ function repairUnbalancedMathBraces(tex: string): string {
   let res = '';
   let lastIdx = 0;
   let m: RegExpExecArray | null;
-  while ((m = sqrtRe.exec(out)) !== null) {
+  let guard = 0;
+  while ((m = sqrtRe.exec(out)) !== null && guard++ < 50) {
+    if (m[0].length === 0) {
+      sqrtRe.lastIndex++;
+      continue;
+    }
     let depth = 0;
     for (let i = 0; i < m.index; i++) {
       if (out[i] === '\\' && (out[i + 1] === '{' || out[i + 1] === '}')) {
@@ -2687,7 +2898,8 @@ export function cleanInnerMathLatex(tex: any): string {
   const closeCount = (s.match(/(?<!\\)\}/g) || []).length;
   if (closeCount > openCount) {
     let diff = closeCount - openCount;
-    while (diff > 0 && /\}/.test(s)) {
+    let guard = 0;
+    while (diff > 0 && /\}/.test(s) && guard++ < 50) {
       if (s.trim().endsWith('}')) {
         s = s.trim().replace(/\}$/, '');
       } else {
@@ -2696,7 +2908,7 @@ export function cleanInnerMathLatex(tex: any): string {
       diff--;
     }
   } else if (openCount > closeCount) {
-    s = s + '}'.repeat(openCount - closeCount);
+    s = s + '}'.repeat(Math.min(50, openCount - closeCount));
   }
   return s;
 }
@@ -2718,28 +2930,36 @@ export function setupGlobalMathObserver() {
   (window as any).triggerGlobalMathRender = triggerGlobalMathRender;
 
   const observer = new MutationObserver((mutations) => {
-    let shouldRender = false;
+    // Ignore all DOM mutations produced while MathJax itself is inserting <mjx-container> nodes
+    if (isTypesettingActive) return;
+
+    const dirtyTargets: HTMLElement[] = [];
+    let inspectedNodes = 0;
+    const MAX_INSPECTED_NODES = 60;
+    const MAX_TARGETS_PER_BATCH = 15;
+
     for (const mutation of mutations) {
+      if (inspectedNodes >= MAX_INSPECTED_NODES || dirtyTargets.length >= MAX_TARGETS_PER_BATCH) break;
+
       const targetEl = mutation.target.nodeType === Node.ELEMENT_NODE
         ? (mutation.target as HTMLElement)
         : mutation.target.parentElement;
       if (
-        targetEl &&
-        (targetEl.closest('.math-view-container') ||
-          targetEl.closest('.markdown-body') ||
-          targetEl.closest('[data-math-streaming="true"]'))
+        !targetEl ||
+        targetEl.closest('.math-view-container, .markdown-body, mjx-container, [data-math-streaming="true"], [aria-hidden="true"], .tex2jax_ignore')
       ) {
         continue;
       }
 
       if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
         for (let i = 0; i < mutation.addedNodes.length; i++) {
+          if (++inspectedNodes > MAX_INSPECTED_NODES || dirtyTargets.length >= MAX_TARGETS_PER_BATCH) break;
           const node = mutation.addedNodes[i];
           if (node.nodeType === Node.ELEMENT_NODE) {
             const el = node as HTMLElement;
             const tag = el.tagName ? el.tagName.toUpperCase() : '';
 
-            // Skip MathJax internal SVG/MJX elements, form inputs, and self-typesetting components
+            // Skip MathJax internal SVG/MJX elements, form inputs, hidden export nodes, and self-typesetting components
             if (
               tag.startsWith('MJX') ||
               tag === 'SVG' ||
@@ -2747,48 +2967,53 @@ export function setupGlobalMathObserver() {
               tag === 'G' ||
               tag === 'RECT' ||
               tag === 'TEXT' ||
-              ['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT', 'PRE', 'CODE'].includes(tag) ||
+              ['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT', 'PRE', 'CODE', 'CANVAS'].includes(tag) ||
               el.classList.contains('MathJax') ||
               el.classList.contains('math-view-container') ||
               el.classList.contains('markdown-body') ||
-              el.closest('mjx-container') ||
-              el.closest('.math-view-container') ||
-              el.closest('.markdown-body') ||
-              el.closest('[data-math-streaming="true"]')
+              el.classList.contains('tex2jax_ignore') ||
+              el.getAttribute('aria-hidden') === 'true'
             ) {
               continue;
             }
 
+            // Skip huge container subtrees in MutationObserver (their leaf React math components manage their own typesetting)
+            if (el.childElementCount > 30) {
+              continue;
+            }
+
             const text = el.textContent || '';
-            if (text.includes('$') || text.includes('\\(') || text.includes('\\[')) {
-              shouldRender = true;
-              break;
+            if (hasRawMathDelimiters(text)) {
+              dirtyTargets.push(el);
+            }
+          } else if (node.nodeType === Node.TEXT_NODE) {
+            const text = node.textContent || '';
+            if (hasRawMathDelimiters(text)) {
+              dirtyTargets.push(targetEl);
             }
           }
         }
       } else if (mutation.type === 'characterData') {
-        const parent = mutation.target.parentElement;
+        inspectedNodes++;
+        const tag = targetEl.tagName ? targetEl.tagName.toUpperCase() : '';
         if (
-          parent &&
-          (parent.tagName.toUpperCase().startsWith('MJX') ||
-            parent.closest('mjx-container') ||
-            parent.closest('.math-view-container') ||
-            parent.closest('.markdown-body') ||
-            parent.closest('[data-math-streaming="true"]') ||
-            parent.classList.contains('MathJax'))
+          tag.startsWith('MJX') ||
+          ['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT', 'PRE', 'CODE'].includes(tag) ||
+          targetEl.classList.contains('MathJax')
         ) {
           continue;
         }
         const text = mutation.target.textContent || '';
-        if (text.includes('$') || text.includes('\\(') || text.includes('\\[')) {
-          shouldRender = true;
+        if (hasRawMathDelimiters(text)) {
+          dirtyTargets.push(targetEl);
         }
       }
-      if (shouldRender) break;
     }
 
-    if (shouldRender) {
-      triggerGlobalMathRender();
+    if (dirtyTargets.length > 0) {
+      for (const el of dirtyTargets) {
+        scheduleBatchedMathJaxTypeset(el);
+      }
     }
   });
 
@@ -2808,11 +3033,6 @@ export function setupGlobalMathObserver() {
   } else {
     attachObserver();
   }
-
-  // Also initial trigger when MathJax finishes loading script
-  window.addEventListener('load', () => {
-    triggerGlobalMathRender();
-  });
 }
 
 /**

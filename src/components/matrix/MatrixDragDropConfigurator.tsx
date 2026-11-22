@@ -16,10 +16,12 @@ import {
 import { MatrixRowItem } from '../../data/matrixLibraryData';
 import { countMatrixCommands, countMatrixScore } from '../CompetencyMatrixModal';
 
+type DragBucketKey = 'gqvd' | 'tuduy' | 'mohinh' | 'nlc' | 'ds' | 'tln' | 'tl';
+
 interface MatrixDragDropConfiguratorProps {
   matrixData: MatrixRowItem[];
   onChangeMatrixData: (newData: MatrixRowItem[]) => void;
-  competencyHeaders: {
+  competencyHeaders?: {
     c1: string;
     c2: string;
     c3: string;
@@ -30,7 +32,7 @@ interface MatrixDragDropConfiguratorProps {
 interface DraggedTokenInfo {
   type: 'existing_token' | 'new_generator';
   sourceRowId?: string;
-  sourceCompetency?: 'gqvd' | 'tuduy' | 'mohinh';
+  sourceCompetency?: DragBucketKey;
   sourceLevel?: 'biet' | 'hieu' | 'vd';
   token?: string;
   newType?: 'mc' | 'tf' | 'sa' | 'essay';
@@ -39,9 +41,12 @@ interface DraggedTokenInfo {
 export function MatrixDragDropConfigurator({
   matrixData,
   onChangeMatrixData,
-  competencyHeaders,
+  competencyHeaders = { c1: 'Giải quyết vấn đề', c2: 'Tư duy', c3: 'Mô hình hóa' },
   onResetDefault
 }: MatrixDragDropConfiguratorProps) {
+  const isVinhLocMode = (matrixData || []).some(r => r && (r.nlc || r.ds || r.tln || r.tl));
+  const activeBuckets: DragBucketKey[] = isVinhLocMode ? ['nlc', 'ds', 'tln', 'tl'] : ['gqvd', 'tuduy', 'mohinh'];
+
   // Drag states
   const [draggedToken, setDraggedToken] = useState<DraggedTokenInfo | null>(null);
   const [draggedRowIndex, setDraggedRowIndex] = useState<number | null>(null);
@@ -49,7 +54,7 @@ export function MatrixDragDropConfigurator({
   const [isTrashHovered, setIsTrashHovered] = useState<boolean>(false);
   const [quickAddModal, setQuickAddModal] = useState<{
     rowId: string;
-    competency: 'gqvd' | 'tuduy' | 'mohinh';
+    competency: DragBucketKey;
     level: 'biet' | 'hieu' | 'vd';
   } | null>(null);
   const [customInputVal, setCustomInputVal] = useState<string>('');
@@ -84,7 +89,7 @@ export function MatrixDragDropConfigurator({
     e: React.DragEvent,
     token: string,
     rowId: string,
-    competency: 'gqvd' | 'tuduy' | 'mohinh',
+    competency: DragBucketKey,
     level: 'biet' | 'hieu' | 'vd'
   ) => {
     e.stopPropagation();
@@ -128,12 +133,15 @@ export function MatrixDragDropConfigurator({
   // Compute next available question number for new chip
   const getNextQuestionCode = (type: 'mc' | 'tf' | 'sa' | 'essay'): string => {
     const allTokens: string[] = [];
-    matrixData.forEach(r => {
-      ['gqvd', 'tuduy', 'mohinh'].forEach(c => {
+    (matrixData || []).forEach(r => {
+      if (!r) return;
+      activeBuckets.forEach(c => {
+        const compObj = (r as any)[c];
+        if (!compObj) return;
         ['biet', 'hieu', 'vd'].forEach(l => {
-          const str = (r as any)[c][l];
-          if (str) {
-            allTokens.push(...str.split(',').map((s: string) => s.trim()).filter(Boolean));
+          const str = compObj[l];
+          if (typeof str === 'string' && str.trim()) {
+            allTokens.push(...str.split(/,(?![^()]*\))/).map((s: string) => s.trim()).filter(Boolean));
           }
         });
       });
@@ -173,7 +181,7 @@ export function MatrixDragDropConfigurator({
   const handleCellDrop = (
     e: React.DragEvent,
     targetRowId: string,
-    targetCompetency: 'gqvd' | 'tuduy' | 'mohinh',
+    targetCompetency: DragBucketKey,
     targetLevel: 'biet' | 'hieu' | 'vd'
   ) => {
     e.preventDefault();
@@ -197,29 +205,31 @@ export function MatrixDragDropConfigurator({
 
       // Move token from source to target
       const updated = matrixData.map(row => {
-        const next = { ...row };
+        const next: any = { ...row };
         // Remove from source
         if (row.id === sourceRowId) {
-          const oldVal = (next as any)[sourceCompetency][sourceLevel] || '';
+          const srcBucket = next[sourceCompetency] || { biet: '', hieu: '', vd: '' };
+          const oldVal = srcBucket[sourceLevel] || '';
           const filtered = oldVal
-            .split(',')
+            .split(/,(?![^()]*\))/)
             .map((s: string) => s.trim())
             .filter((s: string) => s && s !== token)
             .join(', ');
           next[sourceCompetency] = {
-            ...next[sourceCompetency],
+            ...srcBucket,
             [sourceLevel]: filtered
           };
         }
         // Add to target
         if (row.id === targetRowId) {
-          const oldVal = (next as any)[targetCompetency][targetLevel] || '';
-          const parts = oldVal ? oldVal.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+          const tgtBucket = next[targetCompetency] || { biet: '', hieu: '', vd: '' };
+          const oldVal = tgtBucket[targetLevel] || '';
+          const parts = oldVal ? oldVal.split(/,(?![^()]*\))/).map((s: string) => s.trim()).filter(Boolean) : [];
           if (!parts.includes(token)) {
             parts.push(token);
           }
           next[targetCompetency] = {
-            ...next[targetCompetency],
+            ...tgtBucket,
             [targetLevel]: parts.join(', ')
           };
         }
@@ -232,13 +242,14 @@ export function MatrixDragDropConfigurator({
       const newTokenCode = getNextQuestionCode(draggedToken.newType);
       const updated = matrixData.map(row => {
         if (row.id === targetRowId) {
-          const oldVal = (row as any)[targetCompetency][targetLevel] || '';
-          const parts = oldVal ? oldVal.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+          const tgtBucket = (row as any)[targetCompetency] || { biet: '', hieu: '', vd: '' };
+          const oldVal = tgtBucket[targetLevel] || '';
+          const parts = oldVal ? oldVal.split(/,(?![^()]*\))/).map((s: string) => s.trim()).filter(Boolean) : [];
           parts.push(newTokenCode);
           return {
             ...row,
             [targetCompetency]: {
-              ...row[targetCompetency],
+              ...tgtBucket,
               [targetLevel]: parts.join(', ')
             }
           };
@@ -269,16 +280,17 @@ export function MatrixDragDropConfigurator({
 
     const updated = matrixData.map(row => {
       if (row.id === sourceRowId) {
-        const oldVal = (row as any)[sourceCompetency][sourceLevel] || '';
+        const srcBucket = (row as any)[sourceCompetency] || { biet: '', hieu: '', vd: '' };
+        const oldVal = srcBucket[sourceLevel] || '';
         const filtered = oldVal
-          .split(',')
+          .split(/,(?![^()]*\))/)
           .map((s: string) => s.trim())
           .filter((s: string) => s && s !== token)
           .join(', ');
         return {
           ...row,
           [sourceCompetency]: {
-            ...row[sourceCompetency],
+            ...srcBucket,
             [sourceLevel]: filtered
           }
         };
@@ -293,16 +305,16 @@ export function MatrixDragDropConfigurator({
   // Direct token delete
   const handleDeleteTokenDirect = (
     rowId: string,
-    competency: 'gqvd' | 'tuduy' | 'mohinh',
+    competency: DragBucketKey,
     level: 'biet' | 'hieu' | 'vd',
     tokenToDelete: string
   ) => {
     const updated = matrixData.map(row => {
       if (row.id === rowId) {
-        const compObj = (row as any)[competency] || {};
+        const compObj = (row as any)[competency] || { biet: '', hieu: '', vd: '' };
         const oldVal = compObj[level] || '';
         const filtered = oldVal
-          .split(',')
+          .split(/,(?![^()]*\))/)
           .map((s: string) => s.trim())
           .filter((s: string) => s && s !== tokenToDelete)
           .join(', ');
@@ -372,14 +384,14 @@ export function MatrixDragDropConfigurator({
   // Render a droppable cell
   const renderDroppableCell = (
     row: MatrixRowItem,
-    competency: 'gqvd' | 'tuduy' | 'mohinh',
+    competency: DragBucketKey,
     level: 'biet' | 'hieu' | 'vd',
     bgColorClass: string
   ) => {
     const cellKey = `${row.id}_${competency}_${level}`;
     const rawVal = (row as any)[competency]?.[level] || '';
     const tokens = rawVal
-      .split(',')
+      .split(/,(?![^()]*\))/)
       .map((s: string) => s.trim())
       .filter(Boolean);
     const isTarget = activeDropCell === cellKey;
@@ -559,53 +571,96 @@ export function MatrixDragDropConfigurator({
               <th className="border border-black p-1 w-10" rowSpan={3}>TT</th>
               <th className="border border-black p-1 w-48" rowSpan={3}>Chủ đề</th>
               <th className="border border-black p-1 w-52" rowSpan={3}>Nội dung / Đơn vị kiến thức</th>
-              <th className="border border-black p-1" colSpan={9}>
-                Mức độ đánh giá theo Năng lực môn học
+              <th className="border border-black p-1" colSpan={isVinhLocMode ? 12 : 9}>
+                {isVinhLocMode ? 'Mức độ đánh giá theo Dạng thức câu hỏi' : 'Mức độ đánh giá theo Năng lực môn học'}
               </th>
               <th className="border border-black p-1 w-16" rowSpan={3}>Tổng lệnh</th>
               <th className="border border-black p-1 w-14" rowSpan={3}>Điểm</th>
             </tr>
 
-            {/* Hàng 2: Tên năng lực */}
-            <tr className="bg-slate-50 font-bold text-center">
-              <th className="border border-black p-1 text-blue-800" colSpan={3}>
-                1. {competencyHeaders.c1}
-              </th>
-              <th className="border border-black p-1 text-indigo-800" colSpan={3}>
-                2. {competencyHeaders.c2}
-              </th>
-              <th className="border border-black p-1 text-purple-800" colSpan={3}>
-                3. {competencyHeaders.c3}
-              </th>
-            </tr>
+            {isVinhLocMode ? (
+              <>
+                <tr className="bg-slate-50 font-bold text-center">
+                  <th className="border border-black p-1 text-blue-800" colSpan={3}>1. TN Nhiều lựa chọn</th>
+                  <th className="border border-black p-1 text-indigo-800" colSpan={3}>2. TN Đúng / Sai</th>
+                  <th className="border border-black p-1 text-purple-800" colSpan={3}>3. TN Trả lời ngắn</th>
+                  <th className="border border-black p-1 text-rose-800" colSpan={3}>4. Tự luận</th>
+                </tr>
+                <tr className="bg-slate-100 font-bold text-center text-[11px]">
+                  <th className="border border-black p-1 w-14 text-blue-700 bg-blue-50/50">Biết</th>
+                  <th className="border border-black p-1 w-14 text-blue-700 bg-blue-50/50">Hiểu</th>
+                  <th className="border border-black p-1 w-14 text-blue-700 bg-blue-50/50">VD</th>
+                  <th className="border border-black p-1 w-14 text-indigo-700 bg-indigo-50/50">Biết</th>
+                  <th className="border border-black p-1 w-14 text-indigo-700 bg-indigo-50/50">Hiểu</th>
+                  <th className="border border-black p-1 w-14 text-indigo-700 bg-indigo-50/50">VD</th>
+                  <th className="border border-black p-1 w-14 text-purple-700 bg-purple-50/50">Biết</th>
+                  <th className="border border-black p-1 w-14 text-purple-700 bg-purple-50/50">Hiểu</th>
+                  <th className="border border-black p-1 w-14 text-purple-700 bg-purple-50/50">VD</th>
+                  <th className="border border-black p-1 w-14 text-rose-700 bg-rose-50/50">Biết</th>
+                  <th className="border border-black p-1 w-14 text-rose-700 bg-rose-50/50">Hiểu</th>
+                  <th className="border border-black p-1 w-14 text-rose-700 bg-rose-50/50">VD</th>
+                </tr>
+              </>
+            ) : (
+              <>
+                {/* Hàng 2: Tên năng lực */}
+                <tr className="bg-slate-50 font-bold text-center">
+                  <th className="border border-black p-1 text-blue-800" colSpan={3}>
+                    1. {competencyHeaders.c1}
+                  </th>
+                  <th className="border border-black p-1 text-indigo-800" colSpan={3}>
+                    2. {competencyHeaders.c2}
+                  </th>
+                  <th className="border border-black p-1 text-purple-800" colSpan={3}>
+                    3. {competencyHeaders.c3}
+                  </th>
+                </tr>
 
-            {/* Hàng 3: Cấp độ nhận thức */}
-            <tr className="bg-slate-100 font-bold text-center text-[11px]">
-              <th className="border border-black p-1 w-14 text-blue-700 bg-blue-50/50">Biết</th>
-              <th className="border border-black p-1 w-14 text-blue-700 bg-blue-50/50">Hiểu</th>
-              <th className="border border-black p-1 w-14 text-blue-700 bg-blue-50/50">VD</th>
+                {/* Hàng 3: Cấp độ nhận thức */}
+                <tr className="bg-slate-100 font-bold text-center text-[11px]">
+                  <th className="border border-black p-1 w-14 text-blue-700 bg-blue-50/50">Biết</th>
+                  <th className="border border-black p-1 w-14 text-blue-700 bg-blue-50/50">Hiểu</th>
+                  <th className="border border-black p-1 w-14 text-blue-700 bg-blue-50/50">VD</th>
 
-              <th className="border border-black p-1 w-14 text-indigo-700 bg-indigo-50/50">Biết</th>
-              <th className="border border-black p-1 w-14 text-indigo-700 bg-indigo-50/50">Hiểu</th>
-              <th className="border border-black p-1 w-14 text-indigo-700 bg-indigo-50/50">VD</th>
+                  <th className="border border-black p-1 w-14 text-indigo-700 bg-indigo-50/50">Biết</th>
+                  <th className="border border-black p-1 w-14 text-indigo-700 bg-indigo-50/50">Hiểu</th>
+                  <th className="border border-black p-1 w-14 text-indigo-700 bg-indigo-50/50">VD</th>
 
-              <th className="border border-black p-1 w-14 text-purple-700 bg-purple-50/50">Biết</th>
-              <th className="border border-black p-1 w-14 text-purple-700 bg-purple-50/50">Hiểu</th>
-              <th className="border border-black p-1 w-14 text-purple-700 bg-purple-50/50">VD</th>
-            </tr>
+                  <th className="border border-black p-1 w-14 text-purple-700 bg-purple-50/50">Biết</th>
+                  <th className="border border-black p-1 w-14 text-purple-700 bg-purple-50/50">Hiểu</th>
+                  <th className="border border-black p-1 w-14 text-purple-700 bg-purple-50/50">VD</th>
+                </tr>
+              </>
+            )}
           </thead>
 
           <tbody>
             {matrixData.map((row, idx) => {
-              const rowCmdCount = 
-                countMatrixCommands(row.gqvd?.biet || '') + countMatrixCommands(row.gqvd?.hieu || '') + countMatrixCommands(row.gqvd?.vd || '') +
-                countMatrixCommands(row.tuduy?.biet || '') + countMatrixCommands(row.tuduy?.hieu || '') + countMatrixCommands(row.tuduy?.vd || '') +
-                countMatrixCommands(row.mohinh?.biet || '') + countMatrixCommands(row.mohinh?.hieu || '') + countMatrixCommands(row.mohinh?.vd || '');
+              const rowCmdCount = isVinhLocMode
+                ? (
+                  countMatrixCommands(row.nlc?.biet || '') + countMatrixCommands(row.nlc?.hieu || '') + countMatrixCommands(row.nlc?.vd || '') +
+                  countMatrixCommands(row.ds?.biet || '') + countMatrixCommands(row.ds?.hieu || '') + countMatrixCommands(row.ds?.vd || '') +
+                  countMatrixCommands(row.tln?.biet || '') + countMatrixCommands(row.tln?.hieu || '') + countMatrixCommands(row.tln?.vd || '') +
+                  countMatrixCommands(row.tl?.biet || '') + countMatrixCommands(row.tl?.hieu || '') + countMatrixCommands(row.tl?.vd || '')
+                )
+                : (
+                  countMatrixCommands(row.gqvd?.biet || '') + countMatrixCommands(row.gqvd?.hieu || '') + countMatrixCommands(row.gqvd?.vd || '') +
+                  countMatrixCommands(row.tuduy?.biet || '') + countMatrixCommands(row.tuduy?.hieu || '') + countMatrixCommands(row.tuduy?.vd || '') +
+                  countMatrixCommands(row.mohinh?.biet || '') + countMatrixCommands(row.mohinh?.hieu || '') + countMatrixCommands(row.mohinh?.vd || '')
+                );
 
-              const rowScore = 
-                countMatrixScore(row.gqvd?.biet || '') + countMatrixScore(row.gqvd?.hieu || '') + countMatrixScore(row.gqvd?.vd || '') +
-                countMatrixScore(row.tuduy?.biet || '') + countMatrixScore(row.tuduy?.hieu || '') + countMatrixScore(row.tuduy?.vd || '') +
-                countMatrixScore(row.mohinh?.biet || '') + countMatrixScore(row.mohinh?.hieu || '') + countMatrixScore(row.mohinh?.vd || '');
+              const rowScore = isVinhLocMode
+                ? (
+                  (countMatrixCommands(row.nlc?.biet || '') + countMatrixCommands(row.nlc?.hieu || '') + countMatrixCommands(row.nlc?.vd || '')) * 0.25 +
+                  (countMatrixCommands(row.ds?.biet || '') + countMatrixCommands(row.ds?.hieu || '') + countMatrixCommands(row.ds?.vd || '')) * 0.25 +
+                  (countMatrixCommands(row.tln?.biet || '') + countMatrixCommands(row.tln?.hieu || '') + countMatrixCommands(row.tln?.vd || '')) * 0.5 +
+                  countMatrixScore(row.tl?.biet || '') + countMatrixScore(row.tl?.hieu || '') + countMatrixScore(row.tl?.vd || '')
+                )
+                : (
+                  countMatrixScore(row.gqvd?.biet || '') + countMatrixScore(row.gqvd?.hieu || '') + countMatrixScore(row.gqvd?.vd || '') +
+                  countMatrixScore(row.tuduy?.biet || '') + countMatrixScore(row.tuduy?.hieu || '') + countMatrixScore(row.tuduy?.vd || '') +
+                  countMatrixScore(row.mohinh?.biet || '') + countMatrixScore(row.mohinh?.hieu || '') + countMatrixScore(row.mohinh?.vd || '')
+                );
 
               const isDraggingThisRow = draggedRowIndex === idx;
 
@@ -629,20 +684,42 @@ export function MatrixDragDropConfigurator({
                   <td className="border border-black p-1 font-bold text-slate-900">{row.topic}</td>
                   <td className="border border-black p-1 text-slate-800">{row.unit}</td>
 
-                  {/* 1. Năng lực 1: GQVĐ */}
-                  {renderDroppableCell(row, 'gqvd', 'biet', 'bg-blue-50/20')}
-                  {renderDroppableCell(row, 'gqvd', 'hieu', 'bg-blue-50/20')}
-                  {renderDroppableCell(row, 'gqvd', 'vd', 'bg-blue-50/20')}
+                  {isVinhLocMode ? (
+                    <>
+                      {renderDroppableCell(row, 'nlc', 'biet', 'bg-blue-50/20')}
+                      {renderDroppableCell(row, 'nlc', 'hieu', 'bg-blue-50/20')}
+                      {renderDroppableCell(row, 'nlc', 'vd', 'bg-blue-50/20')}
 
-                  {/* 2. Năng lực 2: Tư duy */}
-                  {renderDroppableCell(row, 'tuduy', 'biet', 'bg-indigo-50/20')}
-                  {renderDroppableCell(row, 'tuduy', 'hieu', 'bg-indigo-50/20')}
-                  {renderDroppableCell(row, 'tuduy', 'vd', 'bg-indigo-50/20')}
+                      {renderDroppableCell(row, 'ds', 'biet', 'bg-indigo-50/20')}
+                      {renderDroppableCell(row, 'ds', 'hieu', 'bg-indigo-50/20')}
+                      {renderDroppableCell(row, 'ds', 'vd', 'bg-indigo-50/20')}
 
-                  {/* 3. Năng lực 3: Mô hình hoá */}
-                  {renderDroppableCell(row, 'mohinh', 'biet', 'bg-purple-50/20')}
-                  {renderDroppableCell(row, 'mohinh', 'hieu', 'bg-purple-50/20')}
-                  {renderDroppableCell(row, 'mohinh', 'vd', 'bg-purple-50/20')}
+                      {renderDroppableCell(row, 'tln', 'biet', 'bg-purple-50/20')}
+                      {renderDroppableCell(row, 'tln', 'hieu', 'bg-purple-50/20')}
+                      {renderDroppableCell(row, 'tln', 'vd', 'bg-purple-50/20')}
+
+                      {renderDroppableCell(row, 'tl', 'biet', 'bg-rose-50/20')}
+                      {renderDroppableCell(row, 'tl', 'hieu', 'bg-rose-50/20')}
+                      {renderDroppableCell(row, 'tl', 'vd', 'bg-rose-50/20')}
+                    </>
+                  ) : (
+                    <>
+                      {/* 1. Năng lực 1: GQVĐ */}
+                      {renderDroppableCell(row, 'gqvd', 'biet', 'bg-blue-50/20')}
+                      {renderDroppableCell(row, 'gqvd', 'hieu', 'bg-blue-50/20')}
+                      {renderDroppableCell(row, 'gqvd', 'vd', 'bg-blue-50/20')}
+
+                      {/* 2. Năng lực 2: Tư duy */}
+                      {renderDroppableCell(row, 'tuduy', 'biet', 'bg-indigo-50/20')}
+                      {renderDroppableCell(row, 'tuduy', 'hieu', 'bg-indigo-50/20')}
+                      {renderDroppableCell(row, 'tuduy', 'vd', 'bg-indigo-50/20')}
+
+                      {/* 3. Năng lực 3: Mô hình hoá */}
+                      {renderDroppableCell(row, 'mohinh', 'biet', 'bg-purple-50/20')}
+                      {renderDroppableCell(row, 'mohinh', 'hieu', 'bg-purple-50/20')}
+                      {renderDroppableCell(row, 'mohinh', 'vd', 'bg-purple-50/20')}
+                    </>
+                  )}
 
                   {/* Tổng dòng */}
                   <td className="border border-black p-1 text-center font-bold text-indigo-700 bg-slate-50">

@@ -612,14 +612,15 @@ export function SimilarExamsModal({
   const currentExam = similarExams.find(e => e.code === activeTab) || similarExams[0];
 
   // Export current exam to Word
-  const handleExportSingleWord = async () => {
+  const handleExportSingleWord = async (mode: 'omml' | 'mathtype' = 'omml') => {
     if (!singleExamContainerRef.current || !currentExam) return;
     try {
       setExportingWord(true);
+      const suffix = mode === 'mathtype' ? '_MathType' : '';
       await exportHtmlToWord(
         singleExamContainerRef.current,
-        `De_Tuong_Tu_Ma_${currentExam.code}.docx`,
-        'omml'
+        `De_Tuong_Tu_Ma_${currentExam.code}${suffix}.docx`,
+        mode
       );
     } catch (err: any) {
       console.error('Word export error:', err);
@@ -666,14 +667,15 @@ export function SimilarExamsModal({
   };
 
   // Export all 4 exams into 1 Word file with page breaks
-  const handleExportAllFourWord = async () => {
+  const handleExportAllFourWord = async (mode: 'omml' | 'mathtype' = 'omml') => {
     if (!allExamsContainerRef.current || similarExams.length === 0) return;
     try {
       setExportingWord(true);
+      const suffix = mode === 'mathtype' ? '_MathType' : '';
       await exportHtmlToWord(
         allExamsContainerRef.current,
-        `Tron_Bo_4_De_Tuong_Tu_1001_1002_1003_1004.docx`,
-        'omml'
+        `Tron_Bo_4_De_Tuong_Tu_1001_1002_1003_1004${suffix}.docx`,
+        mode
       );
     } catch (err: any) {
       console.error('Word export all error:', err);
@@ -959,17 +961,28 @@ export function SimilarExamsModal({
                     {showDetailedSolutions ? 'Ẩn lời giải' : 'Hiện lời giải'}
                   </button>
 
-                  {/* Export Current Exam Word (Chuẩn OMML) */}
+                  {/* Export Current Exam Word (Equation & MathType) */}
                   {activeTab !== 'matrix' && (
-                    <button
-                      onClick={handleExportSingleWord}
-                      disabled={exportingWord}
-                      className="px-3.5 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                      title="Xuất đề thi đang xem ra file Word .docx font Times New Roman, công thức toán OMML chỉnh sửa được"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      Tải Đề Này (.docx)
-                    </button>
+                    <>
+                      <button
+                        onClick={() => handleExportSingleWord('omml')}
+                        disabled={exportingWord}
+                        className="px-3.5 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                        title="Xuất đề thi đang xem ra file Word (.docx) công thức chuẩn Word Equation (OMML)"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Xuất Word (Equation)
+                      </button>
+                      <button
+                        onClick={() => handleExportSingleWord('mathtype')}
+                        disabled={exportingWord}
+                        className="px-3.5 py-1.5 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                        title="Xuất đề thi đang xem ra file Word (.docx) công thức chuẩn Word MathType"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Xuất Word (MathType)
+                      </button>
+                    </>
                   )}
 
                   {/* Export Current Exam Word (Ảnh) */}
@@ -985,15 +998,25 @@ export function SimilarExamsModal({
                     </button>
                   )}
 
-                  {/* Export All 4 Exams Word */}
+                  {/* Export All 4 Exams Word (Equation & MathType) */}
                   <button
-                    onClick={handleExportAllFourWord}
+                    onClick={() => handleExportAllFourWord('omml')}
                     disabled={exportingWord}
                     className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-                    title="Xuất trọn bộ 4 đề thi vào 1 file Word duy nhất, tự động phân trang (page-break) giữa các mã đề để in ấn phát cho học sinh"
+                    title="Xuất trọn bộ 4 đề thi vào 1 file Word duy nhất công thức chuẩn Equation (OMML)"
                   >
                     <FileDown className="w-3.5 h-3.5" />
-                    Tải Trọn Bộ 4 Đề (.docx)
+                    Tải 4 Đề (Equation)
+                  </button>
+
+                  <button
+                    onClick={() => handleExportAllFourWord('mathtype')}
+                    disabled={exportingWord}
+                    className="px-3.5 py-1.5 bg-indigo-700 hover:bg-indigo-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                    title="Xuất trọn bộ 4 đề thi vào 1 file Word duy nhất công thức chuẩn MathType"
+                  >
+                    <FileDown className="w-3.5 h-3.5" />
+                    Tải 4 Đề (MathType)
                   </button>
 
                   {/* Export All 4 Exams Word (Ảnh) */}

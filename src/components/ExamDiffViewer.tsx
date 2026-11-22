@@ -346,11 +346,12 @@ export function ExamDiffViewer({
   };
 
   // Export current code to Word
-  const handleDownloadWord = () => {
+  const handleDownloadWord = (mode: 'omml' | 'mathtype' = 'omml') => {
     const printContainerId = `print-exam-${activeExam.code}`;
     const printEl = document.getElementById(printContainerId);
+    const suffix = mode === 'mathtype' ? '_MathType' : '';
     if (printEl) {
-      exportHtmlToWord(printEl, `${examTitle}_Ma_${activeExam.code}`);
+      exportHtmlToWord(printEl, `${examTitle}_Ma_${activeExam.code}${suffix}.docx`, mode);
     } else {
       // Fallback: create temporary DOM element
       const tempDiv = document.createElement('div');
@@ -378,7 +379,7 @@ export function ExamDiffViewer({
           .join('')}
       `;
       document.body.appendChild(tempDiv);
-      exportHtmlToWord(tempDiv, `${examTitle}_Ma_${activeExam.code}`);
+      exportHtmlToWord(tempDiv, `${examTitle}_Ma_${activeExam.code}${suffix}.docx`, mode);
       setTimeout(() => document.body.removeChild(tempDiv), 1000);
     }
   };
@@ -470,12 +471,20 @@ export function ExamDiffViewer({
             <Zap className="w-3.5 h-3.5" /> Sửa Tự Động (Auto-Fix)
           </button>
 
-          {/* Download Word */}
+          {/* Download Word Equation & MathType */}
           <button
-            onClick={handleDownloadWord}
+            onClick={() => handleDownloadWord('omml')}
             className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
+            title="Xuất mã đề này ra file Word (.docx) công thức chuẩn Word Equation (OMML)"
           >
-            <Download className="w-3.5 h-3.5 text-emerald-400" /> Tải Word Mã {selectedCode}
+            <Download className="w-3.5 h-3.5 text-emerald-400" /> Xuất Word (Equation)
+          </button>
+          <button
+            onClick={() => handleDownloadWord('mathtype')}
+            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+            title="Xuất mã đề này ra file Word (.docx) công thức chuẩn Word MathType"
+          >
+            <Download className="w-3.5 h-3.5 text-indigo-200" /> Xuất Word (MathType)
           </button>
 
           {/* Download Images */}
@@ -960,10 +969,18 @@ export function ExamDiffViewer({
             <Zap className="w-3.5 h-3.5" /> Sửa Tự Động Tất Cả Lỗi (Auto-Fix)
           </button>
           <button
-            onClick={handleDownloadWord}
-            className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+            onClick={() => handleDownloadWord('omml')}
+            className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+            title="Xuất mã đề này ra file Word (.docx) công thức chuẩn Word Equation (OMML)"
           >
-            <Download className="w-3.5 h-3.5" /> Tải File Word Mã {selectedCode} (.docx)
+            <Download className="w-3.5 h-3.5" /> Xuất Word (Equation) Mã {selectedCode}
+          </button>
+          <button
+            onClick={() => handleDownloadWord('mathtype')}
+            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+            title="Xuất mã đề này ra file Word (.docx) công thức chuẩn Word MathType"
+          >
+            <Download className="w-3.5 h-3.5" /> Xuất Word (MathType) Mã {selectedCode}
           </button>
           <button
             onClick={onClose}

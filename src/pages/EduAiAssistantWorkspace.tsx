@@ -209,13 +209,14 @@ export function EduAiAssistantWorkspace() {
     }
   };
 
-  const handleExportDocx = (content: string, title: string = "SanPham_GiaoDuc_AI_THPT") => {
+  const handleExportDocx = (content: string, title: string = "SanPham_GiaoDuc_AI_THPT", mode: 'omml' | 'mathtype' = 'omml') => {
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = `<div style="font-family:'Times New Roman', Times, serif; font-size:13pt; line-height:1.5;">${content.replace(/\n/g, '<br/>')}</div>`;
     document.body.appendChild(tempDiv);
-    exportHtmlToWord(tempDiv, `${title}_${Date.now()}.doc`, 'omml');
+    const suffix = mode === 'mathtype' ? '_MathType' : '';
+    exportHtmlToWord(tempDiv, `${title}_${Date.now()}${suffix}.docx`, mode);
     document.body.removeChild(tempDiv);
-    showToast("Đã tải xuống tệp Word (.doc) thành công!");
+    showToast(`Đã tải xuống tệp Word (${mode === 'mathtype' ? 'MathType' : 'Equation'}) thành công!`);
   };
 
   const handleCopyText = (content: string) => {
@@ -365,11 +366,20 @@ export function EduAiAssistantWorkspace() {
                     <span>Sao chép nội dung</span>
                   </button>
                   <button
-                    onClick={() => handleExportDocx(msg.content, "SanPham_GiaoDuc_AI_THPT")}
+                    onClick={() => handleExportDocx(msg.content, "SanPham_GiaoDuc_AI_THPT", "omml")}
                     className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                    title="Xuất file Word (.docx) công thức chuẩn Word Equation (OMML)"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>Tải xuống file Word (.docx)</span>
+                    <span>Xuất Word (Equation)</span>
+                  </button>
+                  <button
+                    onClick={() => handleExportDocx(msg.content, "SanPham_GiaoDuc_AI_THPT", "mathtype")}
+                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                    title="Xuất file Word (.docx) công thức chuẩn Word MathType"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Xuất Word (MathType)</span>
                   </button>
                 </div>
               )}

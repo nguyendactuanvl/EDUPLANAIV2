@@ -97,7 +97,8 @@ export function MatrixVisualCharts({
     // By topic
     const topicMap: Record<string, { count: number; score: number }> = {};
 
-    matrixData.forEach(row => {
+    (matrixData || []).forEach(row => {
+      if (!row) return;
       const topicKey = row.topic || 'Chủ đề khác';
       if (!topicMap[topicKey]) {
         topicMap[topicKey] = { count: 0, score: 0 };
@@ -105,27 +106,31 @@ export function MatrixVisualCharts({
 
       const countAndClassify = (str: string, compId: 'c1' | 'c2' | 'c3', level: 'biet' | 'hieu' | 'vd') => {
         if (!str || !str.trim()) return;
-        const cmds = str.split(',').map(s => s.trim()).filter(Boolean);
+        const cmds = str.split(/,(?![^()]*\))/).map(s => s.trim()).filter(Boolean);
         cmds.forEach(cmd => {
           const c = /II\.\d+[a-d]{4}/i.test(cmd) ? 4 : /II\.\d+[a-d]{2}/i.test(cmd) ? 2 : 1;
+          const explicitMatch = cmd.match(/\((\d+(?:[.,]\d+)?)\s*đ\)/i);
+          const explicitScore = explicitMatch ? parseFloat(explicitMatch[1].replace(',', '.')) : NaN;
+
           let s = 0.25;
           if (/^I\.\d+/i.test(cmd)) {
-            s = 0.25;
+            s = !Number.isNaN(explicitScore) ? explicitScore : 0.25;
             part1Count += c;
             part1Score += s;
           } else if (/^II\.\d+/i.test(cmd)) {
-            s = /II\.\d+[a-d]{2}/i.test(cmd) ? 0.5 : 0.25;
+            s = !Number.isNaN(explicitScore) ? explicitScore : (/II\.\d+[a-d]{2}/i.test(cmd) ? 0.5 : 0.25);
             part2Count += c;
             part2Score += s;
           } else if (/^III\.\d+/i.test(cmd)) {
-            s = 0.5;
+            s = !Number.isNaN(explicitScore) ? explicitScore : 0.5;
             part3Count += c;
             part3Score += s;
-          } else if (/^TL\d+/i.test(cmd)) {
-            s = 1.0;
+          } else if (/^(?:TL|IV\.)\d+/i.test(cmd)) {
+            s = !Number.isNaN(explicitScore) ? explicitScore : 1.0;
             essayCount += c;
             essayScore += s;
           } else {
+            s = !Number.isNaN(explicitScore) ? explicitScore : 0.25;
             part1Count += c;
             part1Score += s;
           }
@@ -149,17 +154,42 @@ export function MatrixVisualCharts({
         });
       };
 
-      countAndClassify(row.gqvd?.biet || '', 'c1', 'biet');
-      countAndClassify(row.gqvd?.hieu || '', 'c1', 'hieu');
-      countAndClassify(row.gqvd?.vd || '', 'c1', 'vd');
+      const hasCompData = Boolean(
+        row.gqvd?.biet || row.gqvd?.hieu || row.gqvd?.vd ||
+        row.tuduy?.biet || row.tuduy?.hieu || row.tuduy?.vd ||
+        row.mohinh?.biet || row.mohinh?.hieu || row.mohinh?.vd
+      );
 
-      countAndClassify(row.tuduy?.biet || '', 'c2', 'biet');
-      countAndClassify(row.tuduy?.hieu || '', 'c2', 'hieu');
-      countAndClassify(row.tuduy?.vd || '', 'c2', 'vd');
+      if (hasCompData) {
+        countAndClassify(row.gqvd?.biet || '', 'c1', 'biet');
+        countAndClassify(row.gqvd?.hieu || '', 'c1', 'hieu');
+        countAndClassify(row.gqvd?.vd || '', 'c1', 'vd');
 
-      countAndClassify(row.mohinh?.biet || '', 'c3', 'biet');
-      countAndClassify(row.mohinh?.hieu || '', 'c3', 'hieu');
-      countAndClassify(row.mohinh?.vd || '', 'c3', 'vd');
+        countAndClassify(row.tuduy?.biet || '', 'c2', 'biet');
+        countAndClassify(row.tuduy?.hieu || '', 'c2', 'hieu');
+        countAndClassify(row.tuduy?.vd || '', 'c2', 'vd');
+
+        countAndClassify(row.mohinh?.biet || '', 'c3', 'biet');
+        countAndClassify(row.mohinh?.hieu || '', 'c3', 'hieu');
+        countAndClassify(row.mohinh?.vd || '', 'c3', 'vd');
+      } else {
+        // Fallback for 19-column Vinh Loc format rows (nlc, ds, tln, tl)
+        countAndClassify(row.nlc?.biet || '', 'c1', 'biet');
+        countAndClassify(row.nlc?.hieu || '', 'c2', 'hieu');
+        countAndClassify(row.nlc?.vd || '', 'c3', 'vd');
+
+        countAndClassify(row.ds?.biet || '', 'c1', 'biet');
+        countAndClassify(row.ds?.hieu || '', 'c2', 'hieu');
+        countAndClassify(row.ds?.vd || '', 'c3', 'vd');
+
+        countAndClassify(row.tln?.biet || '', 'c1', 'biet');
+        countAndClassify(row.tln?.hieu || '', 'c2', 'hieu');
+        countAndClassify(row.tln?.vd || '', 'c3', 'vd');
+
+        countAndClassify(row.tl?.biet || '', 'c1', 'biet');
+        countAndClassify(row.tl?.hieu || '', 'c2', 'hieu');
+        countAndClassify(row.tl?.vd || '', 'c3', 'vd');
+      }
     });
 
     const bietScoreTotal = c1BietScore + c2BietScore + c3BietScore;

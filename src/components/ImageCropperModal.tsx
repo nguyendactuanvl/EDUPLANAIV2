@@ -232,15 +232,17 @@ export function ImageCropperModal({
           className="flex-1 overflow-auto bg-slate-900/90 p-4 flex items-center justify-center min-h-[340px] select-none"
         >
           <div className="relative inline-block border-2 border-slate-700 rounded-lg overflow-hidden shadow-2xl">
-            <img
-              ref={imgRef}
-              src={imageSrc}
-              alt="Source crop"
-              onLoad={handleImageLoad}
-              onMouseDown={(e) => handleMouseDown(e, 'create')}
-              className="max-h-[60vh] max-w-full object-contain cursor-crosshair block"
-              draggable={false}
-            />
+            {imageSrc ? (
+              <img
+                ref={imgRef}
+                src={imageSrc}
+                alt="Source crop"
+                onLoad={handleImageLoad}
+                onMouseDown={(e) => handleMouseDown(e, 'create')}
+                className="max-h-[60vh] max-w-full object-contain cursor-crosshair block"
+                draggable={false}
+              />
+            ) : null}
 
             {/* Dark overlay with transparent cutout */}
             {cropBox && cropBox.width > 5 && cropBox.height > 5 && (

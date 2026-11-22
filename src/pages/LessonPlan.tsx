@@ -859,21 +859,21 @@ export function LessonPlan() {
           </button>
           <button 
             className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-all flex items-center gap-1.5 text-xs font-bold shadow-xs cursor-pointer active:scale-95"
-            title="Tải kế hoạch bài dạy sang tệp Word (.docx) chuẩn A4 in ấn (OMML Equation)"
-            onClick={() => { if(exportRef.current) exportHtmlToWord(exportRef.current, `GiaoAn_${(activeTab === 'system' && selectedLesson ? selectedLesson.lesson : customLessonName).replace(/\s+/g, '_')}_A4.doc`, 'omml'); }}
+            title="Xuất kế hoạch bài dạy sang tệp Word (.docx) chuẩn Word Equation (OMML)"
+            onClick={() => { if(exportRef.current) exportHtmlToWord(exportRef.current, `GiaoAn_${(activeTab === 'system' && selectedLesson ? selectedLesson.lesson : customLessonName).replace(/\s+/g, '_')}_A4.docx`, 'omml'); }}
             disabled={!suggestion}
           >
             <FileText className="h-4 w-4" />
-            <span>Xuất file A4 (.docx)</span>
+            <span>Xuất Word (Equation)</span>
           </button>
           <button 
-            className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors flex items-center gap-1"
-            title="Tải Word (Chuẩn MathML - Word Online/Linh hoạt)"
-            onClick={() => { if(exportRef.current) exportHtmlToWord(exportRef.current, `GiaoAn_${(activeTab === 'system' && selectedLesson ? selectedLesson.lesson : customLessonName).replace(/\s+/g, '_')}_MathML.doc`, 'mathml'); }}
+            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md transition-all flex items-center gap-1.5 text-xs font-bold shadow-xs cursor-pointer active:scale-95"
+            title="Xuất kế hoạch bài dạy sang tệp Word (.docx) chuẩn Word MathType"
+            onClick={() => { if(exportRef.current) exportHtmlToWord(exportRef.current, `GiaoAn_${(activeTab === 'system' && selectedLesson ? selectedLesson.lesson : customLessonName).replace(/\s+/g, '_')}_MathType.docx`, 'mathtype'); }}
             disabled={!suggestion}
           >
             <Download className="h-4 w-4" />
-            <span className="text-xs font-medium">MathML</span>
+            <span>Xuất Word (MathType)</span>
           </button>
           <button 
             className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"

@@ -1,11 +1,26 @@
-import React, { useEffect, useRef, useState } from 'react';
-import Markdown from 'react-markdown';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import Markdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
-import { rehypeSanitizeEventHandlers, cleanProps, cleanMathAndUnwrapHeadings, fixAndMergeMathArrows } from '../lib/globalMath';
+
+export const safeMarkdownUrlTransform = (url: string, key?: string): string => {
+  const trimmed = (url || '').trim();
+  if (!trimmed) return '';
+  // Allow safe raster data:image/* URIs (cropped PDF figures, embedded DOCX images) on img src
+  if (
+    (!key || key === 'src') &&
+    /^data:image\/(?:png|jpe?g|gif|webp|bmp);base64,/i.test(trimmed)
+  ) {
+    return trimmed;
+  }
+  if ((!key || key === 'src') && /^blob:/i.test(trimmed)) {
+    return trimmed;
+  }
+  return defaultUrlTransform(trimmed);
+};
+import { rehypeSanitizeEventHandlers, cleanProps, cleanMathAndUnwrapHeadings, fixAndMergeMathArrows, scheduleBatchedMathJaxTypeset, protectHtmlMediaTags, restoreHtmlMediaTags } from '../lib/globalMath';
 import { TikzRenderer, getTikzSvg } from './TikzRenderer';
-import { ImageViewerModal } from './ImageViewerModal';
 import { convertBbtTableToSvg, unflattenMarkdownTables } from '../lib/bbtRenderer';
 import { MathView, preprocessMath, wrapRawSvgBlocks } from './MathView';
 import { 
@@ -55,59 +70,12 @@ export {
   normalizePropositionQuotes
 };
 
-let mathJaxQueue: Promise<void> = Promise.resolve();
-
 /**
- * Triggers MathJax 3 typesetPromise sequentially on a given container or globally across the document.
- * Uses a serialized queue to prevent concurrent typesetPromise collisions and ensure data-latex attributes.
+ * Triggers MathJax 3 typesetPromise using the unified batched, time-sliced scheduler
+ * to prevent concurrent collisions and browser main-thread freezes when many formulas render at once.
  */
 export const typesetMathJax = (element?: HTMLElement | null): Promise<void> => {
-  if (typeof window === 'undefined') return Promise.resolve();
-  const target = element || (typeof document !== 'undefined' ? document.body : null);
-  if (!target) return Promise.resolve();
-
-  const task = async () => {
-    let mj = (window as any).MathJax;
-    let retries = 0;
-    while ((!mj || typeof mj.typesetPromise !== 'function') && retries < 40) {
-      if (mj?.startup?.promise) {
-        try {
-          await mj.startup.promise;
-          mj = (window as any).MathJax;
-          if (mj && typeof mj.typesetPromise === 'function') break;
-        } catch (e) {}
-      }
-      await new Promise((r) => setTimeout(r, 200));
-      mj = (window as any).MathJax;
-      retries++;
-    }
-    if (!mj) return;
-    if (mj.startup && mj.startup.promise) {
-      try { await mj.startup.promise; } catch (e) {}
-    }
-    if (typeof mj.typesetPromise === 'function') {
-      try {
-        if (typeof mj.typesetClear === 'function') {
-          try { mj.typesetClear([target]); } catch (e) {}
-        }
-        await mj.typesetPromise([target]);
-        const containers = target.querySelectorAll('mjx-container');
-        containers.forEach((mjx: Element) => {
-          if (!mjx.hasAttribute('data-latex')) {
-            const text = mjx.getAttribute('aria-label') || mjx.querySelector('mjx-assistive-mml')?.textContent || '';
-            if (text) {
-              mjx.setAttribute('data-latex', text.replace(/^\$+|\$+$/g, '').trim());
-            }
-          }
-        });
-      } catch (err: any) {
-        console.warn('MathJax typeset error:', err);
-      }
-    }
-  };
-
-  mathJaxQueue = mathJaxQueue.then(task).catch(() => {});
-  return mathJaxQueue;
+  return scheduleBatchedMathJaxTypeset(element);
 };
 
 /**
@@ -414,11 +382,10 @@ const CustomImageRenderer: React.FC<{ cleanSrc: string; alt?: string; [key: stri
         </div>
         <img
           {...cleanProps(props)}
-          src={imgSrc}
+          src={imgSrc || undefined}
           alt={altText}
           loading="eager"
-          className="w-full max-w-[600px] min-w-[280px] h-auto rounded-lg mx-auto pt-1 sm:pt-2 cursor-zoom-in hover:ring-2 hover:ring-indigo-400 transition-all object-contain block"
-          style={{ minWidth: '280px' }}
+          className="max-w-full sm:max-w-[560px] w-auto h-auto rounded-lg mx-auto pt-1 sm:pt-2 cursor-zoom-in hover:ring-2 hover:ring-indigo-400 transition-all object-contain block"
           onClick={() => window.dispatchEvent(new CustomEvent('open-fullscreen-image', { detail: imgSrc }))}
           onError={() => {
             setHasError(true);
@@ -503,6 +470,29 @@ const markdownInlineComponents = {
   },
   span: markdownSpanRenderer,
   code: markdownCodeRenderer,
+  img: ({ node, src, alt, ...props }: any) => {
+    let cleanSrc = (src || '').trim();
+    if (!cleanSrc || cleanSrc === '#' || cleanSrc === 'about:blank' || cleanSrc === '...' || cleanSrc === 'undefined' || cleanSrc === 'null') {
+      return null;
+    }
+    if (cleanSrc.startsWith('[Hình') || cleanSrc.startsWith('[Đồ thị') || cleanSrc.includes('placeholder')) {
+      return null;
+    }
+    if (cleanSrc.includes('drive.google.com/file/d/')) {
+      const fileId = cleanSrc.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)?.[1];
+      if (fileId) {
+        cleanSrc = `https://drive.google.com/uc?export=view&id=${fileId}`;
+      }
+    }
+    return (
+      <CustomImageRenderer
+        cleanSrc={cleanSrc}
+        alt={alt || 'Hình minh họa SGK'}
+        referrerPolicy="no-referrer"
+        {...cleanProps(props)}
+      />
+    );
+  },
 };
 
 const ChoiceListContext = React.createContext<boolean>(false);
@@ -817,153 +807,143 @@ export const MarkdownRenderer = React.memo(({
   skipWorksheetFormatting?: boolean;
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
-  useEffect(() => {
-    const handleOpenFullscreen = (e: any) => {
-      setFullscreenImage(e.detail);
-    };
-    window.addEventListener('open-fullscreen-image', handleOpenFullscreen);
-    return () => window.removeEventListener('open-fullscreen-image', handleOpenFullscreen);
-  }, []);
+  const processedContent = useMemo(() => {
+    const { masked: mediaSafeInput, tokens: mediaTokens } = protectHtmlMediaTags(String(content || ''));
+    // Normalize math text without running worksheet-only section manglers when rendering lesson plans
+    let res = skipWorksheetFormatting
+      ? cleanMathAndUnwrapHeadings(normalizeMathLatex(mediaSafeInput))
+      : cleanMathAndUnwrapHeadings(preprocessMath(mediaSafeInput));
 
-  // Normalize math text without running worksheet-only section manglers when rendering lesson plans
-  let processedContent = skipWorksheetFormatting
-    ? cleanMathAndUnwrapHeadings(normalizeMathLatex(String(content || '')))
-    : cleanMathAndUnwrapHeadings(preprocessMath(content));
+    // Normalize array and table environments (repair \begin{array} column specifiers and remove inner blank lines)
+    res = normalizeArrayAndTableEnvironments(res);
 
-  // Normalize array and table environments (repair \begin{array} column specifiers and remove inner blank lines)
-  processedContent = normalizeArrayAndTableEnvironments(processedContent);
+    // Clean leaked undefined/null strings
+    res = res.replace(/(?<![a-zA-Z0-9_\$])(?:undefined|null)(?![a-zA-Z0-9_\$])/g, () => '');
 
-  // Clean leaked undefined/null strings
-  processedContent = processedContent.replace(/(?<![a-zA-Z0-9_\$])(?:undefined|null)(?![a-zA-Z0-9_\$])/g, () => '');
+    // 1. Chuyển đổi trực tiếp các BẢNG BIẾN THIÊN (BBT) Markdown table sang <svg-wrapper>
+    res = unflattenMarkdownTables(res);
+    res = res.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match, _g1, offset) => {
+      try {
+        const preceding = res.slice(Math.max(0, offset - 220), offset);
+        if (/(?:phân\s*bố\s*xác\s*suất|biến\s*ngẫu\s*nhiên|bảng\s*tần\s*số|bảng\s*tần\s*suất|mẫu\s*số\s*liệu|bảng\s*thống\s*kê|bảng\s*giá\s*trị)/i.test(preceding)) {
+          return match;
+        }
+        const svg = convertBbtTableToSvg(match);
+        if (svg) {
+          const base64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : Buffer.from(encodeURIComponent(svg)).toString('base64');
+          return `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n`;
+        }
+      } catch (e) {}
+      return match;
+    });
 
-  // 1. Chuyển đổi trực tiếp các BẢNG BIẾN THIÊN (BBT) Markdown table sang <svg-wrapper>
-  processedContent = unflattenMarkdownTables(processedContent);
-  processedContent = processedContent.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match, _g1, offset) => {
-    try {
-      const preceding = processedContent.slice(Math.max(0, offset - 220), offset);
-      if (/(?:phân\s*bố\s*xác\s*suất|biến\s*ngẫu\s*nhiên|bảng\s*tần\s*số|bảng\s*tần\s*suất|mẫu\s*số\s*liệu|bảng\s*thống\s*kê|bảng\s*giá\s*trị)/i.test(preceding)) {
+    // 2. Chuyển đổi các khối tikz code block
+    res = res.replace(/```tikz\s*([\s\S]*?)```/gi, (_, inner) => {
+      let cleaned = inner.replace(/\\(usetikzlibrary|usepackage)\s*\{[^}]*\}\s*/gi, '').trim();
+      if (!cleaned.includes('\\begin{tikzpicture}')) {
+         return `\\begin{tikzpicture}\n${cleaned}\n\\end{tikzpicture}`;
+      }
+      return cleaned;
+    });
+
+    // 2.5. Tự động chuyển đổi toàn bộ các công thức toán bị bọc bởi dấu backtick `...` sang $...$
+    res = res.replace(/`([^`]+)`/g, (match, inner) => {
+      if (/\b(?:if|for|while|def|class|return|import|print|input|const|let|var|function)\b/.test(inner)) {
         return match;
       }
-      const svg = convertBbtTableToSvg(match);
-      if (svg) {
-        const base64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : Buffer.from(encodeURIComponent(svg)).toString('base64');
-        return `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n`;
+      const cleanInner = inner.trim().replace(/^\$+|\$+$/g, '');
+      if (!cleanInner) return match;
+      return `$${cleanInner}$`;
+    });
+
+    // 3. Chuẩn hóa phân định công thức LaTeX \(...\) thành $...$ và \[...\] thành $$...$$
+    res = res.replace(/\\\(([\s\S]*?)\\\)/g, (_, formula) => `$${formula}$`);
+    res = res.replace(/\\\[([\s\S]*?)\\\]/g, (_, formula) => `\n\n$$${formula}$$\n\n`);
+    res = res.replace(/\\(\$)/g, '$1');
+    res = wrapNakedLatexExpressions(res);
+
+    // 3.5 Dọn sạch các dấu * đơn đánh dấu đáp án đúng (vd: *A. hoặc A.*), nhưng bảo toàn **A.** in đậm cân xứng
+    res = res.replace(/^([ \t]*(?:[-•]\s*)?)\*\*([A-D][\.\:\)])\*\*(?=\s|$)/gm, '$1**$2**');
+    res = res.replace(/^([ \t]*(?:[-•]\s*)?)\*(?!\*)([A-D][\.\:\)])(?!\*)/gm, '$1$2');
+    res = res.replace(/^([ \t]*(?:[-•]\s*)?(?:<b>)?[A-D][\.\:\)](?:<\/b>)?)\*(?!\*)/gm, '$1');
+    res = res.replace(/^([ \t]*(?:[-•]\s*)?\*{2}[A-D][\.\:\)]\*{2}\s*)\*+([^\*\n]+?)\*+(?=\s*$)/gm, '$1$2');
+    res = res.replace(/^([ \t]*(?:[-•]\s*)?(?:<b>)?[A-D][\.\:\)](?:<\/b>)?\s*)\*+([^\*\n]+?)\*+(?=\s*$)/gm, '$1$2');
+
+    // Chuẩn hóa khối display math $$...$$
+    res = res.replace(/\$\$([\s\S]*?)\$\$/g, (_match, body) => {
+      const trimmed = body.trim();
+      if (!trimmed.includes('\n')) {
+        return `$$${trimmed}$$`;
       }
-    } catch (e) {}
-    return match;
-  });
+      return `\n\n$$\n${trimmed}\n$$\n\n`;
+    });
 
-  // 2. Chuyển đổi các khối tikz code block
-  processedContent = processedContent.replace(/```tikz\s*([\s\S]*?)```/gi, (_, inner) => {
-    let cleaned = inner.replace(/\\(usetikzlibrary|usepackage)\s*\{[^}]*\}\s*/gi, '').trim();
-    if (!cleaned.includes('\\begin{tikzpicture}')) {
-       return `\\begin{tikzpicture}\n${cleaned}\n\\end{tikzpicture}`;
-    }
-    return cleaned;
-  });
+    // Gắn dấu chấm/phẩy/chấm phẩy mồ côi ngay sau khối $$...$$ vào cuối khối toán để không rớt xuống dòng trống
+    res = fixDisplayMathTrailingPunctuation(res);
+    res = res.replace(/(\$\$[\s\S]*?\$\$)\s*\.\s*(?=(?:[A-ZÀ-Ỹ]|\*{1,2}(?:Câu|Bài)\s*\d))/g, '$1\n\n');
 
-  // 2.5. Tự động chuyển đổi toàn bộ các công thức toán bị bọc bởi dấu backtick `...` sang $...$
-  processedContent = processedContent.replace(/`([^`]+)`/g, (match, inner) => {
-    if (/\b(?:if|for|while|def|class|return|import|print|input|const|let|var|function)\b/.test(inner)) {
-      return match;
-    }
-    const cleanInner = inner.trim().replace(/^\$+|\$+$/g, '');
-    if (!cleanInner) return match;
-    return `$${cleanInner}$`;
-  });
-
-  // 3. Chuẩn hóa phân định công thức LaTeX \(...\) thành $...$ và \[...\] thành $$...$$
-  // Bảo toàn 100% các ký tự gạch chéo ngược (\) bằng cách sử dụng các hàm phản hồi () => ...
-  processedContent = processedContent.replace(/\\\(([\s\S]*?)\\\)/g, (_, formula) => `$${formula}$`);
-  processedContent = processedContent.replace(/\\\[([\s\S]*?)\\\]/g, (_, formula) => `\n\n$$${formula}$$\n\n`);
-  // Bỏ các bộ tiền xử lý và regex thủ công chồng chéo, sử dụng bộ render chuẩn.
-  processedContent = processedContent.replace(/\\(\$)/g, '$1');
-  processedContent = wrapNakedLatexExpressions(processedContent);
-
-  // 3.5 Dọn sạch các dấu * đánh dấu đáp án trắc nghiệm ở đầu hoặc cuối phương án A, B, C, D
-  processedContent = processedContent.replace(/^([ \t]*(?:[-*•]\s*)?)\*+\s*([A-D][\.\:\)])/gm, '$1$2');
-  processedContent = processedContent.replace(/^([ \t]*(?:[-*−]\s*)?(?:\*{1,2}|<b>)?([A-D])[\.\:\)](?:\*{1,2}|<\/b>)?\s*)\*+([^\*\n]+?)\*+(?=\s*$)/gm, '$1$3');
-  processedContent = processedContent.replace(/^([ \t]*(?:[-*−]\s*)?(?:\*{1,2}|<b>)?([A-D])[\.\:\)](?:\*{1,2}|<\/b>)?\s*)\*+([^\*\n]+)(?=\s*$)/gm, '$1$3');
-  processedContent = processedContent.replace(/^([ \t]*(?:[-*−]\s*)?(?:\*{1,2}|<b>)?([A-D])[\.\:\)](?:\*{1,2}|<\/b>)?\s*)([^\*\n]+?)\*+(?=\s*$)/gm, '$1$3');
-
-  // Chuẩn hóa khối display math $$...$$: nếu có nhiều dòng, đảm bảo dấu mở $$ và đóng $$ luôn ở dòng riêng biệt
-  // Điều này ngăn remark-math bị lỗi "Expected EOF got \end{cases}" và nuốt luôn câu văn tiếng Việt phía sau
-  processedContent = processedContent.replace(/\$\$([\s\S]*?)\$\$/g, (_match, body) => {
-    const trimmed = body.trim();
-    if (!trimmed.includes('\n')) {
-      return `$$${trimmed}$$`;
-    }
-    return `\n\n$$\n${trimmed}\n$$\n\n`;
-  });
-
-  // Gắn dấu chấm/phẩy/chấm phẩy mồ côi ngay sau khối $$...$$ vào cuối khối toán để không rớt xuống dòng trống
-  processedContent = fixDisplayMathTrailingPunctuation(processedContent);
-  processedContent = processedContent.replace(/(\$\$[\s\S]*?\$\$)\s*\.\s*(?=(?:[A-ZÀ-Ỹ]|\*{1,2}(?:Câu|Bài)\s*\d))/g, '$1\n\n');
-
-  // Đã xử lý tất cả các phần tử BBT, TikZ, và hình vẽ tại phần trên của MarkdownRenderer.
-  // Không cần xử lý lại để tránh trùng lặp.
-
-  // Các khối HTML choices đã được dọn dẹp sạch sẽ ở Bước 6.
-
-  // 2. Base64 encode TikZ blocks to prevent Markdown/KaTeX interference
-  // If instant SVG can be generated (e.g. tkz-tab variation tables, function plots, geometry),
-  // convert directly to svg-wrapper so it loads in 0.001s without any delay or spinning!
-  processedContent = processedContent.replace(/(\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\})/gi, (match) => {
-    try {
-      const svg = getTikzSvg(match);
-      if (svg) {
-        const svgBase64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : Buffer.from(encodeURIComponent(svg)).toString('base64');
-        return `\n\n<svg-wrapper data-svg="${svgBase64}"></svg-wrapper>\n\n`;
+    // Base64 encode TikZ blocks
+    res = res.replace(/(\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\})/gi, (match) => {
+      try {
+        const svg = getTikzSvg(match);
+        if (svg) {
+          const svgBase64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : Buffer.from(encodeURIComponent(svg)).toString('base64');
+          return `\n\n<svg-wrapper data-svg="${svgBase64}"></svg-wrapper>\n\n`;
+        }
+        const base64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(match)) : Buffer.from(encodeURIComponent(match)).toString('base64');
+        return `\n\n<tikz-diagram data-tikz="${base64}"></tikz-diagram>\n\n`;
+      } catch (e) {
+        return match;
       }
-      const base64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(match)) : Buffer.from(encodeURIComponent(match)).toString('base64');
-      return `\n\n<tikz-diagram data-tikz="${base64}"></tikz-diagram>\n\n`;
-    } catch (e) {
-      return match;
-    }
-  });
+    });
 
-  // 2.6. Chuyển đổi trực tiếp mọi khối <svg>...</svg> thô trong Markdown sang <svg-wrapper data-svg="...">
-  // Ngăn rehypeRaw render trực tiếp thẻ <text>, <circle>, <path> và thuộc tính kebab-case vào React DOM
-  processedContent = wrapRawSvgBlocks(processedContent);
+    // Wrap raw <svg> blocks safely
+    res = wrapRawSvgBlocks(res);
 
-  // 3.5 Triệt tiêu hoàn toàn bất kỳ rò rỉ nào của chữ "undefined" hoặc "null" lẻ loi trong tài liệu tiếng Việt
-  processedContent = processedContent.replace(/(?<![a-zA-Z0-9_\$])(?:undefined|null)(?![a-zA-Z0-9_\$])/g, '');
-  processedContent = fixAndMergeMathArrows(processedContent);
-  processedContent = processedContent.split('\n').map((line) => {
-    if (/^\s*\|.*\|\s*$/.test(line)) {
-      return line.replace(/\$[^\$\n]+\$/g, (mathChunk) => {
-        return mathChunk
-          .replace(/\\left\s*\|/g, '\\left\\vert ')
-          .replace(/\\right\s*\|/g, '\\right\\vert ')
-          .replace(/\\\|/g, '\\Vert ')
-          .replace(/\|/g, '\\vert ');
-      });
-    }
-    return line;
-  }).join('\n');
+    // Clean leaked undefined/null and normalize table pipes in math
+    res = res.replace(/(?<![a-zA-Z0-9_\$])(?:undefined|null)(?![a-zA-Z0-9_\$])/g, '');
+    res = fixAndMergeMathArrows(res);
+    res = res.split('\n').map((line) => {
+      if (/^\s*\|.*\|\s*$/.test(line)) {
+        return line.replace(/\$[^\$\n]+\$/g, (mathChunk) => {
+          return mathChunk
+            .replace(/\\left\s*\|/g, '\\left\\vert ')
+            .replace(/\\right\s*\|/g, '\\right\\vert ')
+            .replace(/\\\|/g, '\\Vert ')
+            .replace(/\|/g, '\\vert ');
+        });
+      }
+      return line;
+    }).join('\n');
 
-  // 4. Auto-scanner effect with MathJax 3: whenever content updates or AI streams in new text,
-  // scan the rendered DOM container with MathJax typeset and attach data-latex attributes
+    return restoreHtmlMediaTags(res, mediaTokens);
+  }, [content, skipWorksheetFormatting]);
+
+  // 4. Auto-scanner effect with batched MathJax 3 scheduler
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (containerRef.current) {
-        typesetMathJax(containerRef.current);
-      }
-    }, 60);
-    return () => clearTimeout(timer);
+    if (!processedContent || (!processedContent.includes('$') && !processedContent.includes('\\(') && !processedContent.includes('\\['))) {
+      return;
+    }
+    const el = containerRef.current;
+    if (el) {
+      typesetMathJax(el);
+    }
   }, [processedContent]);
 
   if (inline) {
+    const inlineClass = className
+      ? (className.includes('markdown-body') ? className : `markdown-body ${className}`)
+      : 'markdown-body inline-flex items-center gap-1 align-baseline';
     return (
       <span
         ref={containerRef as any}
-        className={className || "inline-flex items-center gap-1 align-baseline"}
+        className={inlineClass}
       >
         <Markdown
           remarkPlugins={MARKDOWN_REMARK_PLUGINS}
           rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
+          urlTransform={safeMarkdownUrlTransform}
           components={markdownInlineComponents}
         >
           {processedContent}
@@ -972,14 +952,19 @@ export const MarkdownRenderer = React.memo(({
     );
   }
 
+  const blockClass = className
+    ? (className.includes('markdown-body') ? className : `markdown-body ${className}`)
+    : 'markdown-body prose prose-slate max-w-none prose-headings:text-slate-800 prose-h2:text-2xl prose-h2:border-b prose-h2:pb-2 prose-h3:text-xl prose-a:text-emerald-600 prose-table:border-collapse prose-th:border prose-th:bg-slate-50 prose-td:border prose-td:p-2';
+
   return (
     <div 
       ref={containerRef}
-      className={className || "markdown-body prose prose-slate max-w-none prose-headings:text-slate-800 prose-h2:text-2xl prose-h2:border-b prose-h2:pb-2 prose-h3:text-xl prose-a:text-emerald-600 prose-table:border-collapse prose-th:border prose-th:bg-slate-50 prose-td:border prose-td:p-2"}
+      className={blockClass}
     >
       <Markdown 
         remarkPlugins={MARKDOWN_REMARK_PLUGINS} 
         rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
+        urlTransform={safeMarkdownUrlTransform}
         components={markdownFullComponents}
       >
         {processedContent}

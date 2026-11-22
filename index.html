@@ -373,7 +373,8 @@
           var closeB = (s.match(/(?<!\\)\}/g) || []).length;
           if (closeB > openB) {
             var diffB = closeB - openB;
-            while (diffB > 0 && /\}/.test(s)) {
+            var guardB = 0;
+            while (diffB > 0 && /\}/.test(s) && guardB++ < 50) {
               if (s.trim().endsWith('}')) {
                 s = s.trim().replace(/\}$/, '');
               } else {
@@ -382,7 +383,7 @@
               diffB--;
             }
           } else if (openB > closeB) {
-            s = s + '}'.repeat(openB - closeB);
+            s = s + '}'.repeat(Math.min(50, openB - closeB));
           }
         }
 
@@ -395,7 +396,7 @@
           var begins = (s.match(/\\begin\s*\{cases\*?\}/gi) || []).length;
           var ends = (s.match(/\\end\s*\{cases\*?\}/gi) || []).length;
           if (begins > ends) {
-            s = s + '\\end{cases}'.repeat(begins - ends);
+            s = s + '\\end{cases}'.repeat(Math.min(20, begins - ends));
           }
         }
 
@@ -422,7 +423,7 @@
               if (doc && doc.math) {
                 try {
                   for (var m of doc.math) {
-                    if (m && m.typesetRoot) {
+                    if (m && m.typesetRoot && !m.typesetRoot.hasAttribute('data-latex')) {
                       m.typesetRoot.setAttribute('data-latex', m.math || '');
                       m.typesetRoot.setAttribute('data-block', m.display ? '1' : '0');
                     }
@@ -432,7 +433,7 @@
                     var arr = doc.math.toArray();
                     for (var i = 0; i < arr.length; i++) {
                       var item = arr[i];
-                      if (item && item.typesetRoot) {
+                      if (item && item.typesetRoot && !item.typesetRoot.hasAttribute('data-latex')) {
                         item.typesetRoot.setAttribute('data-latex', item.math || '');
                         item.typesetRoot.setAttribute('data-block', item.display ? '1' : '0');
                       }

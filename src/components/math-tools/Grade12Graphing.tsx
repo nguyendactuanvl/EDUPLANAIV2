@@ -8,6 +8,7 @@ import { formatCubic, formatQuadratic, formatQuartic, formatLinearEquation } fro
 import { FunctionPlotData, Point2D, AsymptoteLine } from "./types";
 import { Copy, Check, Printer, Sparkles } from "lucide-react";
 import { printElement } from "../../lib/print";
+import { triggerGlobalMathRender } from "../../lib/globalMath";
 
 export const Grade12Graphing: React.FC = () => {
   const [funcType, setFuncType] = useState<"cubic" | "rational1_1" | "rational2_1" | "quartic" | "parabola">("cubic");
@@ -43,19 +44,13 @@ export const Grade12Graphing: React.FC = () => {
 
   const [copiedKSHS, setCopiedKSHS] = useState<boolean>(false);
 
-  // Kích hoạt MathJax render lại công thức mỗi khi thay đổi hệ số hoặc chọn hàm mẫu
+  // Kích hoạt MathJax render lại công thức (có debounce & gom batch tránh treo trình duyệt khi kéo thanh trượt)
   React.useEffect(() => {
-    if (typeof window !== 'undefined' && (window as any).MathJax) {
-      if ((window as any).MathJax.typesetPromise) {
-        (window as any).MathJax.typesetPromise().catch(() => {});
-      }
-    }
+    triggerGlobalMathRender();
   }, [funcType, c3A, c3B, c3C, c3D, r1A, r1B, r1C, r1D, r2A, r2B, r2C, r2D, r2E, c4A, c4B, c4C, pA, pB, pC]);
 
   const triggerMathJax = () => {
-    if (typeof window !== 'undefined' && (window as any).MathJax && (window as any).MathJax.typesetPromise) {
-      (window as any).MathJax.typesetPromise().catch(() => {});
-    }
+    triggerGlobalMathRender();
   };
 
   const updateC3 = (a?: number, b?: number, c?: number, d?: number) => {
@@ -63,9 +58,6 @@ export const Grade12Graphing: React.FC = () => {
     if (b !== undefined) setC3B(b);
     if (c !== undefined) setC3C(c);
     if (d !== undefined) setC3D(d);
-    if (typeof window !== 'undefined' && (window as any).MathJax) {
-      (window as any).MathJax.typesetPromise?.();
-    }
   };
 
   const updateR1 = (a?: number, b?: number, c?: number, d?: number) => {
@@ -73,9 +65,6 @@ export const Grade12Graphing: React.FC = () => {
     if (b !== undefined) setR1B(b);
     if (c !== undefined) setR1C(c);
     if (d !== undefined) setR1D(d);
-    if (typeof window !== 'undefined' && (window as any).MathJax) {
-      (window as any).MathJax.typesetPromise?.();
-    }
   };
 
   const updateR2 = (a?: number, b?: number, c?: number, d?: number, e?: number) => {
@@ -84,27 +73,18 @@ export const Grade12Graphing: React.FC = () => {
     if (c !== undefined) setR2C(c);
     if (d !== undefined) setR2D(d);
     if (e !== undefined) setR2E(e);
-    if (typeof window !== 'undefined' && (window as any).MathJax) {
-      (window as any).MathJax.typesetPromise?.();
-    }
   };
 
   const updateC4 = (a?: number, b?: number, c?: number) => {
     if (a !== undefined) setC4A(a);
     if (b !== undefined) setC4B(b);
     if (c !== undefined) setC4C(c);
-    if (typeof window !== 'undefined' && (window as any).MathJax) {
-      (window as any).MathJax.typesetPromise?.();
-    }
   };
 
   const updateP = (a?: number, b?: number, c?: number) => {
     if (a !== undefined) setPA(a);
     if (b !== undefined) setPB(b);
     if (c !== undefined) setPC(c);
-    if (typeof window !== 'undefined' && (window as any).MathJax) {
-      (window as any).MathJax.typesetPromise?.();
-    }
   };
 
   // ==========================================

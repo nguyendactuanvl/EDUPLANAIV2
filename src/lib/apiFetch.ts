@@ -960,6 +960,106 @@ export async function generateWithKeyRotation<T>(
   throw lastError || new Error('Tất cả các API Key trong danh sách đều thất bại.');
 }
 
+const CLIENT_AI_ROUTES = new Set([
+  '/api/test-gemini-key',
+  '/api/extract-data',
+  '/api/generate-exam',
+  '/api/upgrade-lesson-plan',
+  '/api/generate-plan',
+  '/api/generate-graduation-review-plan',
+  '/api/list-gemini-models',
+  '/api/generate',
+  '/api/generate-stream',
+  '/api/live-token',
+  '/api/generate-lesson-plan',
+  '/api/generate-lesson-plan-file',
+  '/api/generate-inclusive-plan',
+  '/api/continue-lesson-plan',
+  '/api/generate-similar',
+  '/api/generate-interactive-worksheet',
+  '/api/generate-worksheet',
+  '/api/generate-worksheet-stream',
+  '/api/pdf-to-word',
+  '/api/detect-page-figures',
+  '/api/solve-exercise',
+  '/api/verify-exercise-solution',
+  '/api/translate-exercise-solution',
+  '/api/analyze-student-mistakes',
+  '/api/extract-file-text',
+  '/api/translate-academic',
+  '/api/parse-exam',
+  '/api/chat',
+  '/api/generate-similar-exams',
+  '/api/fix-question',
+  '/api/extract-answers-pdf',
+  '/api/generate-math-simulation',
+  '/api/reproduce-math-image',
+  '/api/suggest-exam-matrix',
+  '/api/generate-image',
+  '/api/generate-video',
+  '/api/science-solve',
+  '/api/journal-ai',
+  '/api/explain-mistake',
+  '/api/isomorphic-exam/extract-blueprint',
+  '/api/isomorphic-exam/generate-exam',
+  '/api/on-thi-tn-thpt/generate',
+]);
+
+function isKnownClientAiRoute(url: string): boolean {
+  try {
+    const parsed = new URL(url, typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
+    return CLIENT_AI_ROUTES.has(parsed.pathname);
+  } catch (_) {
+    const cleanPath = url.split('?')[0].trim();
+    return CLIENT_AI_ROUTES.has(cleanPath);
+  }
+}
+
+let clientAiEngineModulePromise: Promise<typeof import('../services/clientAiEngine')> | null = null;
+
+async function loadClientAiEngineWithRetry(retries = 2): Promise<typeof import('../services/clientAiEngine')> {
+  if (!clientAiEngineModulePromise) {
+    clientAiEngineModulePromise = (async () => {
+      let lastErr: any;
+      for (let i = 0; i <= retries; i++) {
+        try {
+          return await import('../services/clientAiEngine');
+        } catch (err) {
+          lastErr = err;
+          if (i < retries) {
+            await new Promise(r => setTimeout(r, 350 * (i + 1)));
+          }
+        }
+      }
+      clientAiEngineModulePromise = null;
+      throw lastErr;
+    })();
+  }
+  return clientAiEngineModulePromise;
+}
+
+async function dispatchClientOrServerRoute(
+  url: string,
+  options: RequestInit,
+  explicitApiKey?: string
+): Promise<Response> {
+  try {
+    const engine = await loadClientAiEngineWithRetry();
+    return await engine.dispatchClientAiRoute(url, options, explicitApiKey);
+  } catch (err: any) {
+    const isImportFailure =
+      err?.message &&
+      (err.message.includes('Failed to fetch dynamically imported module') ||
+        err.message.includes('Importing a module script failed') ||
+        err.message.includes('error loading dynamically imported module'));
+    if (isImportFailure && typeof window !== 'undefined') {
+      console.warn('[EduPlan] Falling back to server endpoint after dynamic import error:', url);
+      return window.fetch(url, options);
+    }
+    throw err;
+  }
+}
+
 /**
  * CLIENT-SIDE API FETCH ROUTER WITH ROUND-ROBIN & AUTO-FALLBACK RETRY LOOP ACROSS ACTIVE KEY POOL.
  * All Gemini AI content generation routes execute 100% client-side in the browser via `clientAiEngine`
@@ -970,8 +1070,7 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
   const skipRotation = incomingHeaders.get('x-skip-key-rotation') === '1';
   incomingHeaders.delete('x-skip-key-rotation');
 
-  const { isClientAiRoute, dispatchClientAiRoute } = await import('../services/clientAiEngine');
-  const isAiRoute = isClientAiRoute(url);
+  const isAiRoute = isKnownClientAiRoute(url);
 
   // Explicit single-key test calls execute directly in the browser without advancing Round-Robin
   if (isAiRoute && (skipRotation || url.startsWith('/api/test-gemini-key'))) {
@@ -980,10 +1079,10 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
     if (options.body && typeof options.body === 'string' && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json');
     }
-    return dispatchClientAiRoute(url, { ...options, headers }, explicitKey);
+    return dispatchClientOrServerRoute(url, { ...options, headers }, explicitKey);
   }
 
-  // Non-AI lightweight server endpoints (/api/health, /api/circulars, /api/exams/*, /api/webhook, /api/export-docx)
+  // Non-AI lightweight server endpoints (/api/health, /api/circulars, /api/export-docx)
   if (!isAiRoute) {
     const explicitKey = incomingHeaders.get('x-gemini-api-key') || undefined;
     const headers = getApiHeaders({ ...options, headers: incomingHeaders }, false, explicitKey);
@@ -1018,7 +1117,7 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
 
       let response: Response;
       try {
-        response = await dispatchClientAiRoute(
+        response = await dispatchClientOrServerRoute(
           url,
           {
             ...options,
