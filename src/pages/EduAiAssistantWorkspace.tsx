@@ -133,18 +133,80 @@ export function EduAiAssistantWorkspace() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const extractUploadedFileText = async (file: File): Promise<string> => {
+    const lowerName = file.name.toLowerCase();
+    const MAX_CHARS_PER_FILE = 18000;
+    let extracted = "";
+
+    try {
+      if (lowerName.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        const mammothMod: any = await import('mammoth');
+        const mammoth = mammothMod?.default || mammothMod;
+        const arrayBuffer = await file.arrayBuffer();
+        const res = await mammoth.extractRawText({ arrayBuffer });
+        extracted = (res?.value || '').trim();
+      } else if (lowerName.endsWith('.pdf') || file.type === 'application/pdf') {
+        const [pdfjsLib, workerMod] = await Promise.all([
+          import('pdfjs-dist'),
+          import('pdfjs-dist/build/pdf.worker.min.mjs?url')
+        ]);
+        if (pdfjsLib.GlobalWorkerOptions) {
+          pdfjsLib.GlobalWorkerOptions.workerSrc =
+            workerMod?.default || `https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs`;
+        }
+        const arrayBuffer = await file.arrayBuffer();
+        const loadingTask = pdfjsLib.getDocument({
+          data: new Uint8Array(arrayBuffer),
+          cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/cmaps/',
+          cMapPacked: true,
+        });
+        const pdf = await loadingTask.promise;
+        const maxPages = Math.min(pdf.numPages, 40);
+        const pageTexts: string[] = [];
+        for (let p = 1; p <= maxPages; p++) {
+          const page = await pdf.getPage(p);
+          const textContent = await page.getTextContent();
+          const pageStr = (textContent.items || [])
+            .map((item: any) => item?.str || '')
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          if (pageStr) pageTexts.push(`[Trang ${p}] ${pageStr}`);
+          if (pageTexts.join('\n').length >= MAX_CHARS_PER_FILE) break;
+        }
+        extracted = pageTexts.join('\n').trim();
+        if (!extracted) {
+          extracted = `(Tệp PDF dạng ảnh scan "${file.name}" - ${pdf.numPages} trang, không có lớp văn bản chọn được)`;
+        }
+      } else if (lowerName.endsWith('.txt') || lowerName.endsWith('.md') || lowerName.endsWith('.csv') || lowerName.endsWith('.json')) {
+        extracted = (await file.text()).trim();
+      } else {
+        const rawText = await file.text();
+        extracted = rawText.replace(/[^\x20-\x7E\u00A0-\uFFFF\r\n\t]/g, ' ').replace(/\s{2,}/g, ' ').trim();
+      }
+    } catch (err) {
+      console.warn(`Không thể đọc nội dung tệp ${file.name}:`, err);
+      extracted = `(Không thể trích xuất văn bản tự động từ tệp "${file.name}")`;
+    }
+
+    if (extracted.length > MAX_CHARS_PER_FILE) {
+      extracted = extracted.slice(0, MAX_CHARS_PER_FILE) + `\n... [Đã rút gọn nội dung tệp "${file.name}" để đảm bảo tốc độ xử lý]`;
+    }
+    return extracted;
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    Array.from(files).forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const text = event.target?.result as string || "";
-        setAttachedFiles(prev => [...prev, { name: file.name, size: file.size, content: text }]);
-        showToast(`Đã đính kèm tệp: ${file.name}`);
-      };
-      reader.readAsText(file);
-    });
+    const fileList = Array.from(files);
+    e.target.value = "";
+
+    showToast(`Đang đọc ${fileList.length} tệp tài liệu...`);
+    for (const file of fileList) {
+      const content = await extractUploadedFileText(file);
+      setAttachedFiles(prev => [...prev, { name: file.name, size: file.size, content }]);
+    }
+    showToast(`Đã đính kèm và trích xuất xong ${fileList.length} tệp tài liệu.`);
   };
 
   const handleSendMessage = async (textToSend?: string) => {
@@ -164,16 +226,23 @@ export function EduAiAssistantWorkspace() {
     setIsLoading(true);
 
     try {
-      // Build conversation history for API
-      const historyForApi = messages.map(m => ({
-        role: m.role,
-        parts: [{ text: m.content }]
-      }));
+      // Build conversation history for API (exclude previous error messages)
+      const historyForApi = messages
+        .filter(m => !m.id.startsWith('err_'))
+        .map(m => ({
+          role: m.role,
+          parts: [{ text: m.content }]
+        }));
       historyForApi.push({ role: 'user', parts: [{ text: userMsgContent }] });
 
       let contextInfo = "";
       if (attachedFiles.length > 0) {
-        contextInfo = "\nTài liệu nguồn đính kèm từ người dùng:\n" + attachedFiles.map(f => `--- Tệp: ${f.name} ---\n${f.content || '(Tệp nhị phân/văn bản)'}`).join('\n');
+        const MAX_TOTAL_ATTACHED_CHARS = 90000;
+        const perFileBudget = Math.max(4000, Math.floor(MAX_TOTAL_ATTACHED_CHARS / attachedFiles.length));
+        contextInfo = "\n\nTài liệu nguồn đính kèm từ người dùng:\n" + attachedFiles.map(f => {
+          const safeContent = (f.content || '(Tệp trống)').slice(0, perFileBudget);
+          return `--- Tệp: ${f.name} ---\n${safeContent}`;
+        }).join('\n\n');
       }
 
       const res = await apiFetch('/api/chat', {

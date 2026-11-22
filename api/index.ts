@@ -545,8 +545,17 @@ function handleAiError(error: any, req: any, res: any) {
     return res.status(400).json({ error: "Vị trí địa lý (Location/IP) hiện tại chưa nằm trong khu vực hỗ trợ mặc định của Google Gemini API. Để tiếp tục sử dụng ứng dụng ngay lập tức, thầy/cô vui lòng dán mã API Key cá nhân trong phần Cài đặt (tạo hoàn toàn miễn phí tại https://aistudio.google.com)." });
   }
 
+  if (
+    lowerMsg.includes("token count exceeds") ||
+    lowerMsg.includes("exceeds the maximum number of tokens") ||
+    lowerMsg.includes("request payload size exceeds") ||
+    (lowerMsg.includes("input token") && lowerMsg.includes("exceed"))
+  ) {
+    return res.status(400).json({ error: "Nội dung yêu cầu và các tệp đính kèm quá lớn, vượt quá giới hạn xử lý của mô hình AI. Thầy/cô vui lòng đính kèm ít tệp hơn (hoặc tách nhỏ nội dung) rồi thử lại." });
+  }
+
   if (lowerMsg.includes("not found") || error?.status === 404 || lowerMsg.includes("no longer available")) {
-    return res.status(404).json({ error: "Mô hình AI trước đây không còn khả dụng trên Google AI Studio. Hệ thống đã tự động chuyển sang mô hình mới nhất (gemini-4-hydrogen). Thầy/cô vui lòng bấm thử lại." });
+    return res.status(404).json({ error: "Không tìm thấy mô hình Gemini phù hợp cho API Key hiện tại (Lỗi 404). Thầy/cô vui lòng kiểm tra lại API Key trong mục Cài đặt API Key (góc trên bên phải) hoặc tạo key mới tại Google AI Studio rồi thử lại." });
   }
 
   console.error("AI Error Debug:", error?.name || "Error", error?.message || String(error), error?.status);
@@ -911,10 +920,7 @@ function getValidGeminiModels(requestedModel?: string): string[] {
     primary.includes("1.5") ||
     primary.includes("1.0") ||
     primary.includes("2.0") ||
-    primary.includes("2.5") ||
     primary.includes("3.5") ||
-    primary.includes("3-flash") ||
-    primary.includes("preview") ||
     primary.includes("latest") ||
     primary === "gemini-pro"
   ) {
@@ -923,7 +929,11 @@ function getValidGeminiModels(requestedModel?: string): string[] {
   const list = [
     primary,
     "gemini-4-hydrogen",
-    "gemini-3.1-flash-lite"
+    "gemini-3.1-flash-lite",
+    "gemini-3-flash-preview",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite"
   ];
   return Array.from(new Set(list));
 }

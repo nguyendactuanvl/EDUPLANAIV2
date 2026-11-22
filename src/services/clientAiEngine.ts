@@ -459,7 +459,8 @@ async function extractTextFromPdf(buffer: BrowserBuffer): Promise<string> {
   try {
     const pdfjsLib: any = await import("pdfjs-dist");
     if (pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version || "3.11.174"}/pdf.worker.min.js`;
+      const workerVersion = pdfjsLib.version || "4.10.38";
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${workerVersion}/build/pdf.worker.min.mjs`;
     }
     const dataCopy = new Uint8Array(buffer.bytes);
     const loadingTask = pdfjsLib.getDocument({ data: dataCopy });
@@ -723,23 +724,25 @@ function getAiApiKey(req?: any): string {
   return getCustomAiApiKey(req) || getEnvAiApiKey();
 }
 
-function getAiClients(req?: any): { client: GoogleGenAI; isCustom: boolean }[] {
+function getAiClients(req?: any): { client: GoogleGenAI; isCustom: boolean; apiKey: string }[] {
   const customKey = getCustomAiApiKey(req);
   const envKey = getEnvAiApiKey();
   const disableEnvFallback = req?.headers?.['x-disable-env-fallback'] === '1';
-  const clients: { client: GoogleGenAI; isCustom: boolean }[] = [];
+  const clients: { client: GoogleGenAI; isCustom: boolean; apiKey: string }[] = [];
 
   if (customKey) {
     clients.push({
       client: createGoogleGenAIClient(customKey),
-      isCustom: true
+      isCustom: true,
+      apiKey: customKey
     });
   }
 
   if (envKey && envKey !== customKey && (!customKey || !disableEnvFallback)) {
     clients.push({
       client: createGoogleGenAIClient(envKey),
-      isCustom: false
+      isCustom: false,
+      apiKey: envKey
     });
   }
 
@@ -813,8 +816,17 @@ function handleAiError(error: any, req: any, res: any) {
     return res.status(400).json({ error: "Vị trí địa lý (Location/IP) hiện tại chưa nằm trong khu vực hỗ trợ mặc định của Google Gemini API. Để tiếp tục sử dụng ứng dụng ngay lập tức, thầy/cô vui lòng dán mã API Key cá nhân trong phần Cài đặt (tạo hoàn toàn miễn phí tại https://aistudio.google.com)." });
   }
 
+  if (
+    lowerMsg.includes("token count exceeds") ||
+    lowerMsg.includes("exceeds the maximum number of tokens") ||
+    lowerMsg.includes("request payload size exceeds") ||
+    lowerMsg.includes("input token") && lowerMsg.includes("exceed")
+  ) {
+    return res.status(400).json({ error: "Nội dung yêu cầu và các tệp đính kèm quá lớn, vượt quá giới hạn xử lý của mô hình AI. Thầy/cô vui lòng đính kèm ít tệp hơn (hoặc tách nhỏ nội dung) rồi thử lại." });
+  }
+
   if (lowerMsg.includes("not found") || error?.status === 404 || lowerMsg.includes("no longer available")) {
-    return res.status(404).json({ error: "Mô hình AI trước đây không còn khả dụng trên Google AI Studio. Hệ thống đã tự động chuyển sang mô hình mới nhất. Thầy/cô vui lòng bấm thử lại." });
+    return res.status(404).json({ error: "Không tìm thấy mô hình Gemini phù hợp cho API Key hiện tại (Lỗi 404). Thầy/cô vui lòng kiểm tra lại API Key trong mục Cài đặt API Key (góc trên bên phải) hoặc tạo key mới tại Google AI Studio rồi thử lại." });
   }
 
   console.warn("AI Notice:", error?.name || "Error", error?.message || String(error), error?.status);
@@ -1143,6 +1155,60 @@ function safeJsonParse<T = any>(text: string, fallback?: T): T {
   }
 }
 
+const workingModelByKey = new Map<string, string>();
+const discoveredModelsByKey = new Map<string, { models: string[]; fetchedAt: number }>();
+const MODEL_DISCOVERY_TTL_MS = 10 * 60 * 1000;
+
+function isModelNotFoundError(err: any): boolean {
+  const status = err?.status;
+  const msg = String(err?.message || "").toLowerCase();
+  return status === 404 || msg.includes("not found") || msg.includes("no longer available") || msg.includes("is not supported for generatecontent");
+}
+
+function rankDiscoveredGeminiModel(modelId: string): number {
+  const m = modelId.toLowerCase();
+  if (m === "gemini-4-hydrogen") return 1;
+  if (m === "gemini-3.1-flash-lite") return 2;
+  if (m === "gemini-3-flash-preview") return 3;
+  if (m === "gemini-3.1-flash-lite-preview") return 4;
+  if (m === "gemini-2.5-flash") return 5;
+  if (m === "gemini-2.5-flash-lite") return 6;
+  if (m.startsWith("gemini-4-") && !m.includes("image") && !m.includes("tts") && !m.includes("live")) return 7;
+  if (m.startsWith("gemini-3") && m.includes("flash") && !m.includes("image") && !m.includes("tts") && !m.includes("live")) return 8;
+  if (m.startsWith("gemini-2.5-flash") && !m.includes("image") && !m.includes("tts") && !m.includes("live")) return 9;
+  if (m.startsWith("gemini-3") && m.includes("pro") && !m.includes("image")) return 10;
+  if (m.startsWith("gemini-2.5-pro") && !m.includes("image")) return 11;
+  if (m.includes("flash")) return 15;
+  return 20;
+}
+
+async function discoverAvailableGeminiModels(apiKey: string): Promise<string[]> {
+  if (!apiKey) return [];
+  const cached = discoveredModelsByKey.get(apiKey);
+  if (cached && Date.now() - cached.fetchedAt < MODEL_DISCOVERY_TTL_MS) {
+    return cached.models;
+  }
+  try {
+    const resp = await directBrowserFetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`
+    );
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    const rawModels: any[] = Array.isArray(data?.models) ? data.models : [];
+    const excludedRe = /embedding|imagen|veo|tts|audio|live|lyria|robotics|computer-use|deep-research|aqa|gemma|bisection|learnlm|image|1\.0|1\.5|2\.0|gemini-pro$/i;
+    const candidates = rawModels
+      .filter((m) => Array.isArray(m?.supportedGenerationMethods) && m.supportedGenerationMethods.includes("generateContent"))
+      .map((m) => String(m?.name || "").replace(/^models\//, "").trim())
+      .filter((id) => id.startsWith("gemini-") && !excludedRe.test(id))
+      .sort((a, b) => rankDiscoveredGeminiModel(a) - rankDiscoveredGeminiModel(b));
+    const unique = Array.from(new Set(candidates));
+    discoveredModelsByKey.set(apiKey, { models: unique, fetchedAt: Date.now() });
+    return unique;
+  } catch (_) {
+    return [];
+  }
+}
+
 function getValidGeminiModels(requestedModel?: string): string[] {
   let primary = (requestedModel || "").replace(/^models\//, "").trim();
   if (
@@ -1161,7 +1227,10 @@ function getValidGeminiModels(requestedModel?: string): string[] {
     primary,
     "gemini-4-hydrogen",
     "gemini-3.1-flash-lite",
-    "gemini-2.5-flash"
+    "gemini-3-flash-preview",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite"
   ];
   return Array.from(new Set(list));
 }
@@ -1181,13 +1250,13 @@ function normalizeGeminiContents(rawContents: any): any[] {
 }
 
 async function generateWithFallback(req: any, payloadOptions: any, _res?: any) {
-  const clients: { client: GoogleGenAI; isCustom: boolean }[] = getAiClients(req);
+  const clients: { client: GoogleGenAI; isCustom: boolean; apiKey: string }[] = getAiClients(req);
 
   let customKeyFailed = false;
   const basePreferred: string[] = Array.isArray(payloadOptions?.preferredModels) && payloadOptions.preferredModels.length > 0
     ? payloadOptions.preferredModels.map((m: any) => String(m || "").replace(/^models\//, "").trim()).filter((m: string) => m.length > 0)
     : [];
-  const models: string[] = Array.from(
+  const baseModels: string[] = Array.from(
     new Set<string>([
       ...getValidGeminiModels(payloadOptions?.model),
       ...basePreferred,
@@ -1232,13 +1301,21 @@ async function generateWithFallback(req: any, payloadOptions: any, _res?: any) {
     );
   };
 
-  for (const { client, isCustom } of clients) {
-    for (const model of models) {
-      const maxModelAttempts = model === models[0] ? 2 : 1;
+  for (const { client, isCustom, apiKey } of clients) {
+    const cachedWorking = workingModelByKey.get(apiKey);
+    const clientModels = cachedWorking
+      ? Array.from(new Set<string>([cachedWorking, ...baseModels]))
+      : [...baseModels];
+    let triedDiscovery = false;
+    let allNotFoundForClient = true;
+
+    for (let mIdx = 0; mIdx < clientModels.length; mIdx++) {
+      const model = clientModels[mIdx];
+      const maxModelAttempts = mIdx === 0 ? 2 : 1;
       for (let attempt = 0; attempt < maxModelAttempts; attempt++) {
         try {
           const rawConfig = { ...(payloadOptions.config || {}) };
-          if (model.includes("3.8") || model.includes("4-") || model.includes("3.1")) {
+          if (model.includes("3.8") || model.includes("4-") || model.includes("3.1") || model.includes("3-")) {
             delete rawConfig.temperature;
             delete rawConfig.topP;
             delete rawConfig.topK;
@@ -1287,10 +1364,15 @@ async function generateWithFallback(req: any, payloadOptions: any, _res?: any) {
           }
           const normText = extractTextFromResponse(response);
           if (!normText) {
+            allNotFoundForClient = false;
             break;
+          }
+          if (apiKey) {
+            workingModelByKey.set(apiKey, model);
           }
           return {
             text: normText,
+            modelUsed: model,
             candidates: response.candidates ? response.candidates.map((c: any) => ({ finishReason: c.finishReason, index: c.index })) : undefined,
             customKeyFailed
           } as any;
@@ -1299,6 +1381,11 @@ async function generateWithFallback(req: any, payloadOptions: any, _res?: any) {
           lastFailedIsCustom = isCustom;
           if (isCustom) {
             customKeyFailed = true;
+          }
+          if (!isModelNotFoundError(e)) {
+            allNotFoundForClient = false;
+          } else if (cachedWorking === model && apiKey) {
+            workingModelByKey.delete(apiKey);
           }
           const errLower = String(e?.message || "").toLowerCase();
           // If key itself is invalid or unauthorized, do not waste time retrying other models with the same key
@@ -1335,6 +1422,16 @@ async function generateWithFallback(req: any, payloadOptions: any, _res?: any) {
       ) {
         break;
       }
+
+      // If all static models 404'd for this API key, auto-discover active models from Google AI Studio and retry immediately
+      if (mIdx === clientModels.length - 1 && allNotFoundForClient && !triedDiscovery && apiKey) {
+        triedDiscovery = true;
+        const discovered = await discoverAvailableGeminiModels(apiKey);
+        const extras = discovered.filter((m) => !clientModels.includes(m)).slice(0, 3);
+        if (extras.length > 0) {
+          clientModels.push(...extras);
+        }
+      }
     }
   }
 
@@ -1356,13 +1453,13 @@ async function generateWithFallback(req: any, payloadOptions: any, _res?: any) {
 }
 
 async function generateWithFallbackStream(req: any, res: any, payloadOptions: any) {
-  let clients: { client: GoogleGenAI; isCustom: boolean }[];
+  let clients: { client: GoogleGenAI; isCustom: boolean; apiKey: string }[];
   try {
     clients = getAiClients(req);
   } catch (err: any) {
     return handleAiError(err, req, res);
   }
-  const models = getValidGeminiModels(payloadOptions?.model);
+  const baseStreamModels = getValidGeminiModels(payloadOptions?.model);
 
   const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán.
 - LUÔN LUÔN sử dụng \\frac thay thế cho \\dfrac.
@@ -1399,11 +1496,19 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
   let primaryError: any = null;
   let streamStarted = false;
 
-  for (const { client, isCustom } of clients) {
-    for (const model of models) {
+  for (const { client, isCustom, apiKey } of clients) {
+    const cachedWorking = workingModelByKey.get(apiKey);
+    const streamModels = cachedWorking
+      ? Array.from(new Set<string>([cachedWorking, ...baseStreamModels]))
+      : [...baseStreamModels];
+    let triedDiscovery = false;
+    let allNotFoundForClient = true;
+
+    for (let mIdx = 0; mIdx < streamModels.length; mIdx++) {
+      const model = streamModels[mIdx];
       try {
         const rawConfig = { ...(payloadOptions.config || {}) };
-        if (model.includes("3.8") || model.includes("4-") || model.includes("3.1")) {
+        if (model.includes("3.8") || model.includes("4-") || model.includes("3.1") || model.includes("3-")) {
           delete rawConfig.temperature;
           delete rawConfig.topP;
           delete rawConfig.topK;
@@ -1532,12 +1637,25 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
           }
         }
         primaryError = e;
+        if (!isModelNotFoundError(e)) {
+          allNotFoundForClient = false;
+        } else if (cachedWorking === model && apiKey) {
+          workingModelByKey.delete(apiKey);
+        }
         if (streamStarted) {
           res.write('\n\n⚠️ GIÁN ĐOẠN DỮ LIỆU: Quá trình truyền dữ liệu từ AI bị gián đoạn. Vui lòng bấm "Thử tạo lại".');
           res.end();
           return;
         }
-        if (e?.status !== 404 && !String(e?.message || "").toLowerCase().includes("not found")) {
+        if (mIdx === streamModels.length - 1 && allNotFoundForClient && !triedDiscovery && apiKey) {
+          triedDiscovery = true;
+          const discovered = await discoverAvailableGeminiModels(apiKey);
+          const extras = discovered.filter((m) => !streamModels.includes(m)).slice(0, 3);
+          if (extras.length > 0) {
+            streamModels.push(...extras);
+          }
+        }
+        if (!isModelNotFoundError(e)) {
           await delay(150);
         }
         continue;
@@ -5134,8 +5252,8 @@ Tuyệt đối chỉ trả về JSON hợp lệ, không kèm bất kỳ lời d�
 // Adding back chat route
 app.post("/api/chat", async (req, res) => {
   try {
-    const { prompt, context, messages } = req.body || {};
-    let fullPrompt = prompt;
+    const { prompt, context, messages, systemInstruction: topSystemInstruction } = req.body || {};
+    let fullPrompt = typeof prompt === "string" ? prompt : "";
     if (!fullPrompt && Array.isArray(messages) && messages.length > 0) {
       const lastMsg = messages[messages.length - 1];
       fullPrompt = typeof lastMsg === 'string' ? lastMsg : (lastMsg?.content || lastMsg?.parts?.[0]?.text || '');
@@ -5143,11 +5261,44 @@ app.post("/api/chat", async (req, res) => {
     if (!fullPrompt) {
       return res.status(400).json({ error: "Vui lòng nhập nội dung câu hỏi (prompt)." });
     }
-    if (context) {
-      fullPrompt = `Ngữ cảnh: ${JSON.stringify(context)}\n\nCâu hỏi: ${fullPrompt}`;
+
+    let resolvedSystemInstruction = typeof topSystemInstruction === "string" ? topSystemInstruction : "";
+    let extraContext = context;
+    if (context && typeof context === "object" && !Array.isArray(context)) {
+      if (typeof context.systemInstruction === "string" && context.systemInstruction.trim()) {
+        resolvedSystemInstruction = resolvedSystemInstruction
+          ? `${resolvedSystemInstruction}\n\n${context.systemInstruction}`
+          : context.systemInstruction;
+      }
+      const { systemInstruction: _omit, ...restCtx } = context;
+      extraContext = Object.keys(restCtx).length > 0 ? restCtx : null;
     }
+
+    if (extraContext) {
+      fullPrompt = `Ngữ cảnh: ${typeof extraContext === "string" ? extraContext : JSON.stringify(extraContext)}\n\nCâu hỏi: ${fullPrompt}`;
+    }
+
+    let contents: any[] = [{ role: "user", parts: [{ text: fullPrompt }] }];
+    if (Array.isArray(messages) && messages.length > 1) {
+      const normalizedHistory: any[] = [];
+      for (let i = 0; i < messages.length - 1; i++) {
+        const m = messages[i];
+        const rawText = typeof m === "string" ? m : (m?.parts?.[0]?.text || m?.content || "");
+        if (!rawText || !String(rawText).trim()) continue;
+        const role = m?.role === "assistant" || m?.role === "model" ? "model" : "user";
+        normalizedHistory.push({ role, parts: [{ text: String(rawText) }] });
+      }
+      normalizedHistory.push({ role: "user", parts: [{ text: fullPrompt }] });
+      // Ensure conversation starts with a 'user' turn as required by Gemini API
+      while (normalizedHistory.length > 1 && normalizedHistory[0].role !== "user") {
+        normalizedHistory.shift();
+      }
+      contents = normalizedHistory;
+    }
+
     const response = await generateWithFallback(req, {
-      contents: [{ role: "user", parts: [{ text: fullPrompt }] }]
+      contents,
+      ...(resolvedSystemInstruction ? { config: { systemInstruction: resolvedSystemInstruction } } : {})
     });
     res.json({ text: response.text });
   } catch (error: any) {
