@@ -6,7 +6,7 @@ import {
   ChevronLeft, ChevronRight, Maximize2, FileText, BookmarkPlus, Camera, 
   Image as ImageIcon, Send, ArrowLeft, Crop, CheckCircle2, ImagePlus, 
   Clipboard, Eye, EyeOff, RefreshCw, Trash2, Scissors, Calculator, Wand2,
-  ShieldCheck, AlertTriangle, XCircle, Check, Globe, BookOpen, ArrowLeftRight, Table as TableIcon, LayoutGrid, Compass, Lightbulb, HelpCircle
+  ShieldCheck, AlertTriangle, XCircle, Check, Globe, BookOpen, ArrowLeftRight, Table as TableIcon, LayoutGrid, Compass, Lightbulb, HelpCircle, Volume2, Square, Play
 } from 'lucide-react';
 
 import { MarkdownRenderer, fixMath } from "../components/MarkdownRenderer";
@@ -35,6 +35,14 @@ import {
   extractMatchedMathTerms,
   exportMathTerminologyToDocx,
   formatTerminologyMarkdownTable,
+  lookupMathTermPhonetic,
+  isEnglishTtsSupported,
+  formatEnglishTermForSpeech,
+  formatEnglishSolutionForSpeech,
+  speakEnglishText,
+  speakEnglishSequence,
+  stopEnglishSpeech,
+  EnglishTtsAccent,
   MathTermEntry,
 } from '../lib/mathTerminology';
 
@@ -179,6 +187,11 @@ export function ExerciseSolver() {
   const [isExportingGlossaryDocx, setIsExportingGlossaryDocx] = useState(false);
   const [glossaryAppended, setGlossaryAppended] = useState(false);
   const [copiedGlossaryTable, setCopiedGlossaryTable] = useState(false);
+  const [speakingKey, setSpeakingKey] = useState<string | null>(null);
+  const [isPlayingAllTerms, setIsPlayingAllTerms] = useState(false);
+  const [ttsAccent, setTtsAccent] = useState<EnglishTtsAccent>('en-GB');
+  const [ttsRate, setTtsRate] = useState<number>(0.95);
+  const ttsSupported = useMemo(() => isEnglishTtsSupported(), []);
   const [error, setError] = useState<string | null>(null);
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
 
@@ -888,11 +901,17 @@ export function ExerciseSolver() {
       const extractedTerms: MathTermEntry[] = Array.isArray(payload?.terminology)
         ? payload.terminology
             .filter((t: any) => t && t.vi && t.en)
-            .map((t: any) => ({
-              vi: String(t.vi).trim(),
-              en: String(t.en).trim(),
-              category: t.category ? String(t.category).trim() : 'Toán học'
-            }))
+            .map((t: any) => {
+              const viStr = String(t.vi).trim();
+              const enStr = String(t.en).trim();
+              const rawPhonetic = typeof t.phonetic === 'string' ? t.phonetic.trim() : '';
+              return {
+                vi: viStr,
+                en: enStr,
+                phonetic: rawPhonetic || lookupMathTermPhonetic(enStr, viStr),
+                category: t.category ? String(t.category).trim() : 'Toán học'
+              };
+            })
         : [];
 
       setSolutionByLang(prev => ({
@@ -924,7 +943,10 @@ export function ExerciseSolver() {
       const key = `${item.vi.toLowerCase()}::${item.en.toLowerCase()}`;
       if (!seen.has(key)) {
         seen.add(key);
-        merged.push(item);
+        merged.push({
+          ...item,
+          phonetic: item.phonetic?.trim() || lookupMathTermPhonetic(item.en, item.vi),
+        });
       }
     };
 
@@ -938,6 +960,7 @@ export function ExerciseSolver() {
         if (
           entry.vi.toLowerCase().includes(q) ||
           entry.en.toLowerCase().includes(q) ||
+          (entry.phonetic || '').toLowerCase().includes(q) ||
           entry.category.toLowerCase().includes(q)
         ) {
           addEntry(entry);
@@ -947,6 +970,7 @@ export function ExerciseSolver() {
         entry =>
           entry.vi.toLowerCase().includes(q) ||
           entry.en.toLowerCase().includes(q) ||
+          (entry.phonetic || '').toLowerCase().includes(q) ||
           entry.category.toLowerCase().includes(q)
       );
     }
@@ -999,6 +1023,81 @@ export function ExerciseSolver() {
     } catch {
       setError('Trình duyệt chưa cấp quyền sao chép clipboard.');
     }
+  };
+
+  useEffect(() => {
+    if (ttsSupported && typeof window !== 'undefined') {
+      try {
+        window.speechSynthesis.getVoices();
+      } catch (_) {}
+    }
+    return () => {
+      stopEnglishSpeech();
+    };
+  }, [ttsSupported]);
+
+  const handleStopTts = () => {
+    stopEnglishSpeech();
+    setSpeakingKey(null);
+    setIsPlayingAllTerms(false);
+  };
+
+  const handleSpeakTerm = (term: MathTermEntry, idx: number) => {
+    if (!ttsSupported) return;
+    const key = `term:${idx}:${term.en}`;
+    if (speakingKey === key && !isPlayingAllTerms) {
+      handleStopTts();
+      return;
+    }
+    setIsPlayingAllTerms(false);
+    setSpeakingKey(key);
+    const spokenText = formatEnglishTermForSpeech(term.en);
+    speakEnglishText(spokenText, {
+      accent: ttsAccent,
+      rate: ttsRate,
+      onEnd: () => setSpeakingKey(prev => (prev === key ? null : prev)),
+      onError: () => setSpeakingKey(prev => (prev === key ? null : prev)),
+    });
+  };
+
+  const handleTogglePlayAllTerms = () => {
+    if (!ttsSupported || displayedTerminology.length === 0) return;
+    if (isPlayingAllTerms) {
+      handleStopTts();
+      return;
+    }
+    setIsPlayingAllTerms(true);
+    const queue = displayedTerminology.map((term, idx) => ({
+      key: `term:${idx}:${term.en}`,
+      text: formatEnglishTermForSpeech(term.en),
+    }));
+    speakEnglishSequence(queue, {
+      accent: ttsAccent,
+      rate: ttsRate,
+      pauseMs: 450,
+      onItemStart: (key) => setSpeakingKey(key),
+      onDone: () => {
+        setIsPlayingAllTerms(false);
+        setSpeakingKey(null);
+      },
+    });
+  };
+
+  const handleToggleSpeakEnglishSolution = () => {
+    if (!ttsSupported || !solution) return;
+    if (speakingKey === '__SOLUTION__') {
+      handleStopTts();
+      return;
+    }
+    setIsPlayingAllTerms(false);
+    setSpeakingKey('__SOLUTION__');
+    const spoken = formatEnglishSolutionForSpeech(solution);
+    speakEnglishText(spoken, {
+      accent: ttsAccent,
+      rate: ttsRate,
+      onEnd: () => setSpeakingKey(prev => (prev === '__SOLUTION__' ? null : prev)),
+      onError: () => setSpeakingKey(prev => (prev === '__SOLUTION__' ? null : prev)),
+    });
   };
 
   const handleAnalyzeMistakes = async (overrideAttempt?: string) => {
@@ -1940,10 +2039,40 @@ export function ExerciseSolver() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                {/* English Solution Text-to-Speech Toggle when viewing English solution */}
+                {ttsSupported && solveLanguage === 'en' && (
+                  <button
+                    type="button"
+                    onClick={handleToggleSpeakEnglishSolution}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-colors shadow-2xs cursor-pointer ${
+                      speakingKey === '__SOLUTION__'
+                        ? 'bg-rose-600 text-white border-rose-700'
+                        : 'bg-indigo-50 border-indigo-200 text-indigo-800 hover:bg-indigo-100'
+                    }`}
+                    title={
+                      speakingKey === '__SOLUTION__'
+                        ? 'Dừng đọc bài giải Tiếng Anh'
+                        : 'Nghe phát âm nội dung đề bài & lời giải Tiếng Anh'
+                    }
+                  >
+                    {speakingKey === '__SOLUTION__' ? (
+                      <Square className="w-3.5 h-3.5 fill-current" />
+                    ) : (
+                      <Volume2 className="w-3.5 h-3.5" />
+                    )}
+                    <span>{speakingKey === '__SOLUTION__' ? 'Dừng đọc (EN)' : 'Nghe lời giải (EN)'}</span>
+                  </button>
+                )}
+
                 {/* Bilingual Math Terminology Toggle & Quick Docx Export */}
                 <button
                   type="button"
-                  onClick={() => setShowTerminologyPanel(prev => !prev)}
+                  onClick={() => {
+                    if (showTerminologyPanel && speakingKey?.startsWith('term:')) {
+                      handleStopTts();
+                    }
+                    setShowTerminologyPanel(prev => !prev);
+                  }}
                   className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-colors shadow-2xs cursor-pointer ${
                     showTerminologyPanel
                       ? 'bg-teal-600 text-white border-teal-700'
@@ -2388,7 +2517,10 @@ export function ExerciseSolver() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => setShowTerminologyPanel(false)}
+                      onClick={() => {
+                        if (speakingKey?.startsWith('term:')) handleStopTts();
+                        setShowTerminologyPanel(false);
+                      }}
                       className="p-1.5 text-teal-700 hover:text-teal-950 hover:bg-teal-100 rounded-lg transition-colors cursor-pointer"
                       title="Đóng bảng thuật ngữ"
                     >
@@ -2397,11 +2529,75 @@ export function ExerciseSolver() {
                   </div>
                 </div>
 
-                {/* Action bar for exporting / attaching glossary */}
+                {/* Action bar for audio pronunciation + exporting / attaching glossary */}
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-1 pb-2 border-b border-teal-200/80">
-                  <span className="text-xs font-semibold text-teal-900">
-                    Đang hiển thị: <span className="text-teal-700 font-bold">{displayedTerminology.length} thuật ngữ chuyên ngành</span>
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-semibold text-teal-900">
+                      Đang hiển thị: <span className="text-teal-700 font-bold">{displayedTerminology.length} thuật ngữ chuyên ngành</span>
+                    </span>
+                    {ttsSupported && (
+                      <div className="flex flex-wrap items-center gap-1.5 pl-2 border-l border-teal-200">
+                        <div className="inline-flex items-center p-0.5 bg-white border border-teal-200 rounded-lg text-[11px] font-semibold">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (speakingKey) handleStopTts();
+                              setTtsAccent('en-GB');
+                            }}
+                            className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
+                              ttsAccent === 'en-GB' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-indigo-50'
+                            }`}
+                            title="Giọng Anh – Anh (British English, khớp chuẩn IPA)"
+                          >
+                            UK
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (speakingKey) handleStopTts();
+                              setTtsAccent('en-US');
+                            }}
+                            className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
+                              ttsAccent === 'en-US' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-indigo-50'
+                            }`}
+                            title="Giọng Anh – Mỹ (American English)"
+                          >
+                            US
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setTtsRate(prev => (prev < 0.85 ? 0.95 : 0.72))}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer ${
+                            ttsRate < 0.85
+                              ? 'bg-amber-50 border-amber-300 text-amber-800'
+                              : 'bg-white border-teal-200 text-slate-700 hover:bg-teal-50'
+                          }`}
+                          title="Chuyển đổi tốc độ đọc chuẩn / chậm để luyện nghe phiên âm rõ hơn"
+                        >
+                          {ttsRate < 0.85 ? '0.7x Chậm' : '1.0x Chuẩn'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleTogglePlayAllTerms}
+                          disabled={displayedTerminology.length === 0}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-colors cursor-pointer disabled:opacity-50 ${
+                            isPlayingAllTerms
+                              ? 'bg-rose-600 border-rose-700 text-white hover:bg-rose-700'
+                              : 'bg-indigo-50 border-indigo-200 text-indigo-800 hover:bg-indigo-100'
+                          }`}
+                          title="Phát âm lần lượt toàn bộ các thuật ngữ Tiếng Anh trong bảng"
+                        >
+                          {isPlayingAllTerms ? (
+                            <Square className="w-3 h-3 fill-current" />
+                          ) : (
+                            <Play className="w-3 h-3 fill-current" />
+                          )}
+                          <span>{isPlayingAllTerms ? 'Dừng đọc' : 'Nghe tất cả'}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
@@ -2444,53 +2640,144 @@ export function ExerciseSolver() {
                             <th className="py-2.5 px-3 font-bold text-center w-12 border-r border-teal-600">STT</th>
                             <th className="py-2.5 px-3 font-bold border-r border-teal-600">Thuật ngữ Tiếng Việt</th>
                             <th className="py-2.5 px-3 font-bold border-r border-teal-600">Thuật ngữ Tiếng Anh (English Term)</th>
-                            <th className="py-2.5 px-3 font-bold text-center w-36">Chuyên đề</th>
+                            <th className="py-2.5 px-3 font-bold border-r border-teal-600">Phiên âm Tiếng Anh (IPA)</th>
+                            <th className="py-2.5 px-3 font-bold text-center w-32">Chuyên đề</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-teal-100">
-                          {displayedTerminology.map((term, idx) => (
-                            <tr
-                              key={`${term.vi}-${idx}`}
-                              className={idx % 2 === 1 ? 'bg-teal-50/40 hover:bg-teal-50' : 'bg-white hover:bg-teal-50/70'}
-                            >
-                              <td className="py-2 px-3 text-center font-medium text-slate-500 border-r border-teal-100">
-                                {idx + 1}
-                              </td>
-                              <td className="py-2 px-3 font-semibold text-slate-800 border-r border-teal-100">
-                                {term.vi}
-                              </td>
-                              <td className="py-2 px-3 font-bold text-emerald-700 border-r border-teal-100">
-                                {term.en}
-                              </td>
-                              <td className="py-2 px-3 text-center">
-                                <span className="inline-block px-2 py-0.5 text-[10px] font-semibold rounded-full bg-slate-100 text-slate-600">
-                                  {term.category}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
+                          {displayedTerminology.map((term, idx) => {
+                            const rowSpeechKey = `term:${idx}:${term.en}`;
+                            const isRowSpeaking = speakingKey === rowSpeechKey;
+                            return (
+                              <tr
+                                key={`${term.vi}-${idx}`}
+                                className={
+                                  isRowSpeaking
+                                    ? 'bg-indigo-50/90'
+                                    : idx % 2 === 1
+                                      ? 'bg-teal-50/40 hover:bg-teal-50'
+                                      : 'bg-white hover:bg-teal-50/70'
+                                }
+                              >
+                                <td className="py-2 px-3 text-center font-medium text-slate-500 border-r border-teal-100">
+                                  {idx + 1}
+                                </td>
+                                <td className="py-2 px-3 font-semibold text-slate-800 border-r border-teal-100">
+                                  {term.vi}
+                                </td>
+                                <td className="py-2 px-3 font-bold text-emerald-700 border-r border-teal-100">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span>{term.en}</span>
+                                    {ttsSupported && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSpeakTerm(term, idx)}
+                                        className={`p-1.5 rounded-full shrink-0 transition-all cursor-pointer ${
+                                          isRowSpeaking
+                                            ? 'bg-indigo-600 text-white shadow-xs animate-pulse'
+                                            : 'text-teal-700 bg-teal-50 hover:bg-indigo-100 hover:text-indigo-700'
+                                        }`}
+                                        title={isRowSpeaking ? 'Dừng phát âm' : `Nghe phát âm: ${term.en} (${ttsAccent === 'en-GB' ? 'UK' : 'US'})`}
+                                        aria-label={`Phát âm ${term.en}`}
+                                      >
+                                        {isRowSpeaking ? (
+                                          <Square className="w-3 h-3 fill-current" />
+                                        ) : (
+                                          <Volume2 className="w-3.5 h-3.5" />
+                                        )}
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-2 px-3 italic text-indigo-700 border-r border-teal-100 font-sans">
+                                  {ttsSupported ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSpeakTerm(term, idx)}
+                                      className="text-left hover:underline cursor-pointer"
+                                      title={`Bấm để nghe phát âm chuẩn (${ttsAccent === 'en-GB' ? 'UK' : 'US'})`}
+                                    >
+                                      {term.phonetic || '—'}
+                                    </button>
+                                  ) : (
+                                    term.phonetic || '—'
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 text-center">
+                                  <span className="inline-block px-2 py-0.5 text-[10px] font-semibold rounded-full bg-slate-100 text-slate-600">
+                                    {term.category}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-72 overflow-y-auto pr-1">
-                      {displayedTerminology.map((term, idx) => (
-                        <div
-                          key={`${term.vi}-${idx}`}
-                          className="p-2.5 bg-white border border-teal-100 rounded-lg shadow-2xs flex flex-col justify-between gap-1"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <span className="text-xs font-bold text-slate-800">{term.vi}</span>
-                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
-                              {term.category}
-                            </span>
+                      {displayedTerminology.map((term, idx) => {
+                        const cardSpeechKey = `term:${idx}:${term.en}`;
+                        const isCardSpeaking = speakingKey === cardSpeechKey;
+                        return (
+                          <div
+                            key={`${term.vi}-${idx}`}
+                            className={`p-2.5 border rounded-lg shadow-2xs flex flex-col justify-between gap-1 transition-colors ${
+                              isCardSpeaking
+                                ? 'bg-indigo-50/80 border-indigo-300'
+                                : 'bg-white border-teal-100'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="text-xs font-bold text-slate-800">{term.vi}</span>
+                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
+                                {term.category}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-1.5 text-xs font-semibold text-emerald-700">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <ArrowLeftRight className="w-3 h-3 text-teal-500 shrink-0" />
+                                <span className="truncate">{term.en}</span>
+                              </div>
+                              {ttsSupported && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSpeakTerm(term, idx)}
+                                  className={`p-1 rounded-full shrink-0 transition-all cursor-pointer ${
+                                    isCardSpeaking
+                                      ? 'bg-indigo-600 text-white animate-pulse'
+                                      : 'text-teal-700 bg-teal-50 hover:bg-indigo-100 hover:text-indigo-700'
+                                  }`}
+                                  title={isCardSpeaking ? 'Dừng phát âm' : `Nghe phát âm: ${term.en}`}
+                                  aria-label={`Phát âm ${term.en}`}
+                                >
+                                  {isCardSpeaking ? (
+                                    <Square className="w-2.5 h-2.5 fill-current" />
+                                  ) : (
+                                    <Volume2 className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                            {term.phonetic && (
+                              <div className="text-[11px] italic text-indigo-700 pl-4 font-sans">
+                                {ttsSupported ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSpeakTerm(term, idx)}
+                                    className="text-left hover:underline cursor-pointer"
+                                    title="Bấm để nghe phát âm chuẩn"
+                                  >
+                                    {term.phonetic}
+                                  </button>
+                                ) : (
+                                  term.phonetic
+                                )}
+                              </div>
+                            )}
                           </div>
-                          <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
-                            <ArrowLeftRight className="w-3 h-3 text-teal-500 shrink-0" />
-                            <span>{term.en}</span>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )
                 ) : (

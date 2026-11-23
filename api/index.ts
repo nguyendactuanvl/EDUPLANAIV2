@@ -4086,7 +4086,7 @@ FORMATTING & PRESERVATION RULES:
 1. Structure sections cleanly with H2 Markdown headings: \`## Problem Statement\` and \`## Detailed Solution\`.
 2. Preserve 100% of numbers, mathematical expressions, equations, LaTeX delimiters (\`$...$\`, \`$$...$$\`), \`\\frac{a}{b}\` (never \`\\dfrac\`), Markdown tables (translate column/row words naturally), and \`\`\`tikz\`\`\` blocks intact.
 3. Preserve image placeholders \`[HÌNH_ẢNH_ĐỀ_BÀI]\` and \`[HÌNH_ẢNH_ĐÁP_ÁN]\` verbatim if present in the source text.
-4. Also extract 6 to 15 key mathematical terms/phrases that appear in this specific exercise along with their exact Vietnamese and English terminology pairs in the \`terminology\` array.
+4. Also extract 6 to 15 key mathematical terms/phrases that appear in this specific exercise along with their exact Vietnamese term, English term, and standard IPA English pronunciation (e.g. \`/dɪˈrɪvətɪv/\`) in the \`terminology\` array.
 
 SOURCE CONTENT TO TRANSLATE:
 """
@@ -4100,7 +4100,7 @@ QUY TẮC BẢO TOÀN & ĐỊNH DẠNG:
 1. Định dạng 2 tiêu đề H2 rõ ràng: \`## Đề bài\` và \`## Lời giải chi tiết\`.
 2. Giữ nguyên 100% số liệu, biểu thức toán học, dấu LaTeX (\`$...$\`, \`$$...$$\`), dùng \`\\frac{a}{b}\` (không dùng \`\\dfrac\`), giữ nguyên bảng Markdown và khối \`\`\`tikz\`\`\` (chỉ Việt hóa các từ tiếng Anh nếu có).
 3. Giữ nguyên vị trí thẻ ảnh \`[HÌNH_ẢNH_ĐỀ_BÀI]\` và \`[HÌNH_ẢNH_ĐÁP_ÁN]\` nếu có trong văn bản nguồn.
-4. Trích xuất 6 đến 15 từ vựng/thuật ngữ Toán học quan trọng xuất hiện trong bài toán này kèm cặp đối chiếu Tiếng Việt – Tiếng Anh vào mảng \`terminology\`.
+4. Trích xuất 6 đến 15 từ vựng/thuật ngữ Toán học quan trọng xuất hiện trong bài toán này kèm cặp đối chiếu Tiếng Việt – Tiếng Anh và phiên âm chuẩn IPA Tiếng Anh (ví dụ \`/dɪˈrɪvətɪv/\`) vào mảng \`terminology\`.
 
 NỘI DUNG NGUỒN CẦN CHUYỂN NGÔN NGỮ:
 """
@@ -4134,9 +4134,10 @@ ${cleanedSolutionText.slice(0, 45000)}
                 properties: {
                   vi: { type: Type.STRING },
                   en: { type: Type.STRING },
+                  phonetic: { type: Type.STRING, description: 'Standard IPA pronunciation of the English term enclosed in slashes, e.g. /ˈfʌŋkʃən/' },
                   category: { type: Type.STRING }
                 },
-                required: ['vi', 'en']
+                required: ['vi', 'en', 'phonetic']
               }
             }
           },
@@ -4171,6 +4172,7 @@ ${cleanedSolutionText.slice(0, 45000)}
           .map((t: any) => ({
             vi: t.vi.trim(),
             en: t.en.trim(),
+            phonetic: typeof t.phonetic === 'string' && t.phonetic.trim() ? t.phonetic.trim() : '',
             category: typeof t.category === 'string' && t.category.trim() ? t.category.trim() : 'Toán học'
           }))
       : [];
