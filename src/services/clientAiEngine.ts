@@ -404,32 +404,45 @@ app.post("/api/test-gemini-key", async (req, res) => {
     'gemini-3.1-flash-lite-preview',
     'gemini-3.1-flash-lite',
     'gemini-4-hydrogen',
+    'gemini-2.5-flash-lite',
   ];
-  let lastErr: any = null;
+  let bestNonNotFoundErr: any = null;
+  let lastNotFoundErr: any = null;
+  let triedDiscovery = false;
 
-  for (const model of testModels) {
+  for (let i = 0; i < testModels.length; i++) {
+    const model = testModels[i];
     try {
       await client.models.generateContent({
         model,
         contents: 'OK',
         config: { maxOutputTokens: 4 },
       });
+      workingModelByKey.set(cleanKey, model);
       return res.status(200).json({
         valid: true,
         status: 'valid',
         message: 'Sẵn sàng',
       });
     } catch (err: any) {
-      lastErr = err;
-      const errMsg = String(err?.message || '').toLowerCase();
-      // Only try next test model if 404 model not found
-      if (err?.status === 404 || errMsg.includes('not found')) {
+      if (isModelNotFoundError(err)) {
+        lastNotFoundErr = err;
+        if (i === testModels.length - 1 && !triedDiscovery) {
+          triedDiscovery = true;
+          const discovered = await discoverAvailableGeminiModels(cleanKey);
+          const extras = discovered.filter((m) => !testModels.includes(m)).slice(0, 4);
+          if (extras.length > 0) {
+            testModels.push(...extras);
+          }
+        }
         continue;
       }
+      bestNonNotFoundErr = err;
       break;
     }
   }
 
+  const lastErr = bestNonNotFoundErr || lastNotFoundErr;
   const errMsg = String(lastErr?.message || lastErr || '');
   const lower = errMsg.toLowerCase();
   const status = lastErr?.status || 0;
@@ -445,6 +458,14 @@ app.post("/api/test-gemini-key", async (req, res) => {
       valid: false,
       status: 'rate_limited',
       error: 'Tạm quá tải 429 (Đã chạm giới hạn request của Google)',
+    });
+  }
+
+  if (status === 404 || lower.includes('not found')) {
+    return res.status(404).json({
+      valid: false,
+      status: 'invalid',
+      error: 'Không tìm thấy mô hình Gemini khả dụng cho API Key này (Lỗi 404). Vui lòng kiểm tra lại key tại Google AI Studio.',
     });
   }
 
@@ -706,6 +727,7 @@ function getCustomAiApiKey(req?: any): string {
 function createGoogleGenAIClient(apiKey: string): GoogleGenAI {
   return new GoogleGenAI({
     apiKey,
+    apiVersion: "v1beta",
     httpOptions: {
       fetch: directBrowserFetch as any,
     },
@@ -1190,7 +1212,7 @@ async function discoverAvailableGeminiModels(apiKey: string): Promise<string[]> 
   }
   try {
     const resp = await directBrowserFetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`
+      `https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000&key=${encodeURIComponent(apiKey)}`
     );
     if (!resp.ok) return [];
     const data = await resp.json();
@@ -1263,6 +1285,8 @@ async function generateWithFallback(req: any, payloadOptions: any, _res?: any) {
     ])
   );
   let primaryError: any = null;
+  let bestNonNotFoundError: any = null;
+  let lastNotFoundError: any = null;
   let lastFailedIsCustom = clients[0]?.isCustom || false;
 
   const defaultSystemInstruction = `Bạn là chuyên gia Toán học và Khảo thí GDPT 2018. BẮT BUỘC dùng cú pháp LaTeX chuẩn kẹp trong cặp dấu $...$ (nội dòng) hoặc $$...$$ (khối dòng) cho TẤT CẢ các thành phần toán:
@@ -1307,11 +1331,11 @@ async function generateWithFallback(req: any, payloadOptions: any, _res?: any) {
       ? Array.from(new Set<string>([cachedWorking, ...baseModels]))
       : [...baseModels];
     let triedDiscovery = false;
-    let allNotFoundForClient = true;
 
     for (let mIdx = 0; mIdx < clientModels.length; mIdx++) {
       const model = clientModels[mIdx];
       const maxModelAttempts = mIdx === 0 ? 2 : 1;
+      let lastModelErr: any = null;
       for (let attempt = 0; attempt < maxModelAttempts; attempt++) {
         try {
           const rawConfig = { ...(payloadOptions.config || {}) };
@@ -1355,8 +1379,8 @@ async function generateWithFallback(req: any, payloadOptions: any, _res?: any) {
               const noThinkConfig = { ...basePayload.config };
               delete (noThinkConfig as any).thinkingConfig;
               response = await client.models.generateContent({ ...basePayload, config: noThinkConfig });
-            } else if (requestedMaxTokens > 32768 && /maxOutputTokens|token|invalid|argument/i.test(errStr)) {
-              basePayload.config.maxOutputTokens = 32768;
+            } else if (requestedMaxTokens > 8192 && /maxOutputTokens|token|invalid|argument/i.test(errStr)) {
+              basePayload.config.maxOutputTokens = requestedMaxTokens > 32768 ? 32768 : 8192;
               response = await client.models.generateContent(basePayload);
             } else {
               throw tokenErr;
@@ -1364,7 +1388,6 @@ async function generateWithFallback(req: any, payloadOptions: any, _res?: any) {
           }
           const normText = extractTextFromResponse(response);
           if (!normText) {
-            allNotFoundForClient = false;
             break;
           }
           if (apiKey) {
@@ -1377,15 +1400,19 @@ async function generateWithFallback(req: any, payloadOptions: any, _res?: any) {
             customKeyFailed
           } as any;
         } catch (e: any) {
+          lastModelErr = e;
           primaryError = e;
           lastFailedIsCustom = isCustom;
           if (isCustom) {
             customKeyFailed = true;
           }
-          if (!isModelNotFoundError(e)) {
-            allNotFoundForClient = false;
-          } else if (cachedWorking === model && apiKey) {
-            workingModelByKey.delete(apiKey);
+          if (isModelNotFoundError(e)) {
+            lastNotFoundError = e;
+            if (cachedWorking === model && apiKey) {
+              workingModelByKey.delete(apiKey);
+            }
+          } else {
+            bestNonNotFoundError = e;
           }
           const errLower = String(e?.message || "").toLowerCase();
           // If key itself is invalid or unauthorized, do not waste time retrying other models with the same key
@@ -1409,10 +1436,10 @@ async function generateWithFallback(req: any, payloadOptions: any, _res?: any) {
         }
       }
       // If auth failed on this client, break outer model loop to rotate client
-      const pLower = String(primaryError?.message || "").toLowerCase();
+      const pLower = String(lastModelErr?.message || "").toLowerCase();
       if (
-        primaryError?.status === 401 ||
-        primaryError?.status === 403 ||
+        lastModelErr?.status === 401 ||
+        lastModelErr?.status === 403 ||
         pLower.includes("api_key_invalid") ||
         pLower.includes("api key not valid") ||
         pLower.includes("api key expired") ||
@@ -1423,11 +1450,11 @@ async function generateWithFallback(req: any, payloadOptions: any, _res?: any) {
         break;
       }
 
-      // If all static models 404'd for this API key, auto-discover active models from Google AI Studio and retry immediately
-      if (mIdx === clientModels.length - 1 && allNotFoundForClient && !triedDiscovery && apiKey) {
+      // Before giving up on this API key, auto-discover active v1beta models from Google AI Studio and try additional candidates
+      if (mIdx === clientModels.length - 1 && !triedDiscovery && apiKey) {
         triedDiscovery = true;
         const discovered = await discoverAvailableGeminiModels(apiKey);
-        const extras = discovered.filter((m) => !clientModels.includes(m)).slice(0, 3);
+        const extras = discovered.filter((m) => !clientModels.includes(m)).slice(0, 4);
         if (extras.length > 0) {
           clientModels.push(...extras);
         }
@@ -1435,19 +1462,30 @@ async function generateWithFallback(req: any, payloadOptions: any, _res?: any) {
     }
   }
 
-  if (primaryError) {
+  const effectiveError = bestNonNotFoundError || lastNotFoundError || primaryError;
+  if (effectiveError) {
     if (lastFailedIsCustom) {
-      const errMsg = primaryError?.message || "";
-      if (errMsg.includes("429") || errMsg.includes("quota") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("Free Tier")) {
+      const errMsg = effectiveError?.message || "";
+      if (errMsg.includes("429") || errMsg.includes("quota") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("Free Tier") || effectiveError?.status === 429) {
         const quotaErr: any = new Error("API Key cá nhân của bạn đã chạm ngưỡng hạn mức miễn phí trong ngày của Google (Lỗi 429 Quota Exceeded). Hệ thống sẽ tự động xoay vòng sang Key tiếp theo hoặc bạn có thể thêm Key mới trong Cài đặt.");
         quotaErr.status = 429;
         throw quotaErr;
       }
+      if (effectiveError?.status === 404 || isModelNotFoundError(effectiveError)) {
+        const nfErr: any = new Error(errMsg || "Model not found (404)");
+        nfErr.status = 404;
+        throw nfErr;
+      }
+      if (effectiveError?.status === 503 || errMsg.toLowerCase().includes("high demand") || errMsg.toLowerCase().includes("unavailable") || errMsg.toLowerCase().includes("overloaded")) {
+        const busyErr: any = new Error(errMsg || "503 Service Unavailable");
+        busyErr.status = 503;
+        throw busyErr;
+      }
       const customErr: any = new Error(`Lỗi từ API Key cá nhân của bạn: ${errMsg}`);
-      customErr.status = primaryError?.status || 401;
+      customErr.status = effectiveError?.status || 401;
       throw customErr;
     }
-    throw primaryError;
+    throw effectiveError;
   }
   throw new Error("429 RESOURCE_EXHAUSTED: Hệ thống đang quá tải hoặc tạm thời không khả dụng. Vui lòng thử lại sau ít phút.");
 }
@@ -1494,6 +1532,8 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
   };
 
   let primaryError: any = null;
+  let bestNonNotFoundError: any = null;
+  let lastNotFoundError: any = null;
   let streamStarted = false;
 
   for (const { client, isCustom, apiKey } of clients) {
@@ -1502,7 +1542,6 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
       ? Array.from(new Set<string>([cachedWorking, ...baseStreamModels]))
       : [...baseStreamModels];
     let triedDiscovery = false;
-    let allNotFoundForClient = true;
 
     for (let mIdx = 0; mIdx < streamModels.length; mIdx++) {
       const model = streamModels[mIdx];
@@ -1538,6 +1577,7 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
           const nonStreamResp = await client.models.generateContent(updatedPayload);
           const fullText = extractNonStreamText(nonStreamResp);
           if (fullText) {
+            if (apiKey) workingModelByKey.set(apiKey, model);
             emitStreamHeaders();
             res.write(fullText);
             res.end();
@@ -1558,6 +1598,7 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
             }
           }
           if (streamStarted) {
+            if (apiKey) workingModelByKey.set(apiKey, model);
             res.end();
             return;
           }
@@ -1571,6 +1612,7 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
             const nonStreamResp = await client.models.generateContent(updatedPayload);
             const fullText = extractNonStreamText(nonStreamResp);
             if (fullText) {
+              if (apiKey) workingModelByKey.set(apiKey, model);
               emitStreamHeaders();
               res.write(fullText);
               res.end();
@@ -1585,7 +1627,7 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
           try {
             const fallbackConfig = { ...(payloadOptions.config || {}) };
             delete fallbackConfig.thinkingConfig;
-            if (model.includes("3.8") || model.includes("4-") || model.includes("3.1")) {
+            if (model.includes("3.8") || model.includes("4-") || model.includes("3.1") || model.includes("3-")) {
               delete fallbackConfig.temperature;
               delete fallbackConfig.topP;
               delete fallbackConfig.topK;
@@ -1610,6 +1652,7 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
                 }
               }
               if (streamStarted) {
+                if (apiKey) workingModelByKey.set(apiKey, model);
                 res.end();
                 return;
               }
@@ -1623,6 +1666,7 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
                 const nonStreamResp = await client.models.generateContent(fallbackPayload);
                 const fullText = extractNonStreamText(nonStreamResp);
                 if (fullText) {
+                  if (apiKey) workingModelByKey.set(apiKey, model);
                   emitStreamHeaders();
                   res.write(fullText);
                   res.end();
@@ -1637,20 +1681,36 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
           }
         }
         primaryError = e;
-        if (!isModelNotFoundError(e)) {
-          allNotFoundForClient = false;
-        } else if (cachedWorking === model && apiKey) {
-          workingModelByKey.delete(apiKey);
+        if (isModelNotFoundError(e)) {
+          lastNotFoundError = e;
+          if (cachedWorking === model && apiKey) {
+            workingModelByKey.delete(apiKey);
+          }
+        } else {
+          bestNonNotFoundError = e;
         }
         if (streamStarted) {
           res.write('\n\n⚠️ GIÁN ĐOẠN DỮ LIỆU: Quá trình truyền dữ liệu từ AI bị gián đoạn. Vui lòng bấm "Thử tạo lại".');
           res.end();
           return;
         }
-        if (mIdx === streamModels.length - 1 && allNotFoundForClient && !triedDiscovery && apiKey) {
+        const errLower = String(e?.message || "").toLowerCase();
+        if (
+          e?.status === 401 ||
+          e?.status === 403 ||
+          errLower.includes("api_key_invalid") ||
+          errLower.includes("api key not valid") ||
+          errLower.includes("api key expired") ||
+          errLower.includes("permission_denied") ||
+          errLower.includes("unauthenticated") ||
+          errLower.includes("proxy_generation_disabled")
+        ) {
+          break;
+        }
+        if (mIdx === streamModels.length - 1 && !triedDiscovery && apiKey) {
           triedDiscovery = true;
           const discovered = await discoverAvailableGeminiModels(apiKey);
-          const extras = discovered.filter((m) => !streamModels.includes(m)).slice(0, 3);
+          const extras = discovered.filter((m) => !streamModels.includes(m)).slice(0, 4);
           if (extras.length > 0) {
             streamModels.push(...extras);
           }
@@ -1664,8 +1724,9 @@ async function generateWithFallbackStream(req: any, res: any, payloadOptions: an
   }
 
   if (!streamStarted) {
-    if (primaryError) {
-      return handleAiError(primaryError, req, res);
+    const effectiveError = bestNonNotFoundError || lastNotFoundError || primaryError;
+    if (effectiveError) {
+      return handleAiError(effectiveError, req, res);
     }
     return res.status(503).json({
       error: "Hệ thống AI hiện đang quá tải (Lỗi 503 Service Unavailable). Thầy cô vui lòng bấm 'Thử tạo lại' sau ít phút hoặc kiểm tra lại API Key trong Cài đặt."
