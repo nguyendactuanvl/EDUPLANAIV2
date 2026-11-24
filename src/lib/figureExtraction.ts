@@ -10,6 +10,11 @@ export const UNRESOLVED_FIG_PLACEHOLDER_RE =
 export const VISUAL_QUESTION_CUE_RE =
   /(?:hình\s*(?:vẽ|bên|dưới|trên|sau|minh\s*họa|dưới\s*đây|bên\s*dưới|bên\s*phải|bên\s*trái|\d+)|như\s*hình|trong\s*hình|quan\s*sát\s*hình|cho\s*hình|biểu\s*diễn\s*đúng\s*như\s*sau|đồ\s*thị|miền\s*nghiệm|gạch\s*chéo|tô\s*đậm|mặt\s*phẳng\s*tọa\s*độ|hệ\s*trục|parabol|đường\s*cong|hình\s*chóp|lăng\s*trụ|tứ\s*diện|hình\s*nón|hình\s*trụ|hình\s*cầu|đường\s*tròn|sơ\s*đồ|biểu\s*đồ|mạch\s*điện|\[Hình|\[Đồ\s*thị|figure|diagram|graph|shaded|shown\s+below|shown\s+above|coordinate\s+plane)/i;
 
+// High-precision cues that explicitly indicate a printed figure/diagram exists on the page
+// (avoids triggering a slow redundant Pass-2 Vision API call on pure-text geometry/algebra questions)
+export const EXPLICIT_PRINTED_FIGURE_CUE_RE =
+  /(?:hình\s*(?:vẽ|bên|dưới|trên|sau|minh\s*họa|dưới\s*đây|bên\s*dưới|bên\s*phải|bên\s*trái|\d+)|như\s*hình|trong\s*hình|quan\s*sát\s*hình|cho\s*hình\s*vẽ|biểu\s*diễn\s*đúng\s*như\s*sau|(?:phần\s*(?:mặt\s*phẳng\s*)?(?:không\s*bị\s*)?gạch\s*chéo)|(?:miền\s*không\s*bị\s*gạch)|(?:tô\s*đậm\s*(?:trong|ở|như|bên|dưới))|(?:đồ\s*thị\s*(?:như\s*hình|bên|dưới|trên|sau))|(?:đường\s*cong\s*(?:trong\s*hình|bên|dưới|sau))|(?:sơ\s*đồ\s*(?:bên|dưới|sau|mạch\s*điện))|(?:biểu\s*đồ\s*(?:bên|dưới|sau|hình))|\[Hình|\[Đồ\s*thị|shown\s+(?:below|above|in\s+the\s+figure)|in\s+the\s+(?:figure|diagram|graph)|shaded\s+region\s+(?:in|below|above))/i;
+
 const PROBLEM_IMAGE_TOKEN_RE = /\[HÌNH_ẢNH_ĐỀ_BÀI\]|\[PROBLEM_IMAGE\]/g;
 const SOLUTION_IMAGE_TOKEN_RE = /\[HÌNH_ẢNH_ĐÁP_ÁN\]|\[HÌNH_ẢNH_LỜI_GIẢI\]|\[SOLUTION_IMAGE\]/g;
 
@@ -507,7 +512,7 @@ export const shouldRunPass2FigureDetection = (pageText: string): boolean => {
     return true;
   }
 
-  // Count how many question blocks mention visual cues vs how many already have an <img>
+  // Count how many question blocks explicitly reference a printed figure vs how many already have an <img>
   const qHeaders = Array.from(
     pageText.matchAll(/(?:^|\n)([ \t]*(?:#{1,4}\s*)?(?:\*{0,2})(?:Câu|Bài|Question|Problem)\s+\d+\s*[:.\)]?(?:\*{0,2}))/gi)
   );
@@ -516,15 +521,15 @@ export const shouldRunPass2FigureDetection = (pageText: string): boolean => {
       const start = qHeaders[i].index ?? 0;
       const end = i + 1 < qHeaders.length ? (qHeaders[i + 1].index ?? pageText.length) : pageText.length;
       const block = pageText.slice(start, end);
-      if (VISUAL_QUESTION_CUE_RE.test(block) && !/<img\b/i.test(block)) {
+      if (EXPLICIT_PRINTED_FIGURE_CUE_RE.test(block) && !/<img\b/i.test(block)) {
         return true;
       }
     }
     return false;
   }
 
-  // Standalone snippet / rubric table (no Câu/Bài header): run Pass 2 if visual cues exist and no <img> was cropped
-  return VISUAL_QUESTION_CUE_RE.test(pageText) && !/<img\b/i.test(pageText);
+  // Standalone snippet / rubric table (no Câu/Bài header): run Pass 2 only if explicit printed figure cues exist and no <img> was cropped
+  return EXPLICIT_PRINTED_FIGURE_CUE_RE.test(pageText) && !/<img\b/i.test(pageText);
 };
 
 export const detectPageFiguresViaVision = async (

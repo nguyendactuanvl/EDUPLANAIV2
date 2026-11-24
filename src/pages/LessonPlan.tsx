@@ -2,7 +2,7 @@ import { apiFetch } from '../lib/apiFetch';
 import { useSubjects } from '../lib/subjects';
 import { exportHtmlToWord, generateDocxBlobFromElement } from '../lib/exportUtils';
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Sparkles, Save, BookOpen, Download, FileText, AlertCircle, Upload, Edit3, Eye, Presentation, TrendingUp, BarChart2, X, Box, BarChart3, Wand2, Cloud } from "lucide-react";
+import { Sparkles, Save, BookOpen, Download, FileText, AlertCircle, Upload, Edit3, Eye, Presentation, TrendingUp, BarChart2, X, Box, BarChart3, Wand2, Cloud, LayoutTemplate, Layers, Cpu, ArrowRight } from "lucide-react";
 import { GoogleDriveSaveModal } from "../components/GoogleDriveSaveModal";
 import { fullPlan } from "../data/mockData";
 import { MarkdownRenderer, fixMath } from "../components/MarkdownRenderer";
@@ -19,6 +19,13 @@ import { Textbook } from '../lib/textbooks';
 import { printElement } from '../lib/print';
 import { parseApiResponse, rescueCodeAndNestedText } from '../lib/utils';
 import { FeatureQuickGuideBanner } from '../components/FeatureQuickGuideBanner';
+import {
+  LESSON_PLAN_TEMPLATES,
+  LessonPlanTemplate,
+  getLessonPlanTemplateById,
+  buildLessonPlanTemplateSkeleton,
+} from '../data/lessonPlanTemplates';
+import { LessonPlanTemplateLibrary } from '../components/LessonPlanTemplateLibrary';
 
 
 export function LessonPlan() {
@@ -44,6 +51,40 @@ export function LessonPlan() {
   const [selectedTextbook, setSelectedTextbook] = useState<Textbook | null>(null);
   const [showVisualizerModal, setShowVisualizerModal] = useState<boolean>(false);
   const [visualizerTab, setVisualizerTab] = useState<"bbt" | "graph" | "geometry3d" | "statistics">("bbt");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("standard-cv5512-core");
+  const [showTemplateLibrary, setShowTemplateLibrary] = useState<boolean>(false);
+
+  const activeTemplate = useMemo<LessonPlanTemplate>(() => {
+    return (
+      getLessonPlanTemplateById(selectedTemplateId) ||
+      getLessonPlanTemplateById("standard-cv5512-core") ||
+      LESSON_PLAN_TEMPLATES[0]
+    );
+  }, [selectedTemplateId]);
+
+  const quickPresetTemplates = useMemo<LessonPlanTemplate[]>(() => {
+    const ids = [
+      "stem-cv3089-5step",
+      "steam-5e-creative",
+      "digital-tt02-2025",
+      "standard-cv5512-core",
+    ];
+    return ids
+      .map((id) => getLessonPlanTemplateById(id))
+      .filter((t): t is LessonPlanTemplate => Boolean(t));
+  }, []);
+
+  const featuredEmptyTemplates = useMemo<LessonPlanTemplate[]>(() => {
+    const ids = [
+      "stem-cv3089-5step",
+      "steam-5e-creative",
+      "digital-tt02-2025",
+      "digital-ai-critical-2422",
+    ];
+    return ids
+      .map((id) => getLessonPlanTemplateById(id))
+      .filter((t): t is LessonPlanTemplate => Boolean(t));
+  }, []);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
@@ -80,7 +121,7 @@ export function LessonPlan() {
         const fileType = file.type || '';
         const validTypes = ['application/pdf', 'text/plain', 'text/csv', 'text/html', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
         if (!validTypes.includes(fileType) && !file.name.match(/\.(pdf|txt|csv|html|doc|docx)$/i)) {
-          alert(`File "${file.name}" không được hỗ trợ. Trí tuệ nhân tạo (AI) hiện tại chỉ đọc được định dạng PDF, TXT, CSV, HTML, DOC, DOCX.`);
+          setError(`File "${file.name}" không được hỗ trợ. Trí tuệ nhân tạo (AI) hiện tại chỉ đọc được định dạng PDF, TXT, CSV, HTML, DOC, DOCX.`);
           return;
         }
         let mimeType = fileType;
@@ -173,10 +214,69 @@ export function LessonPlan() {
     }
   };
 
-  const generateLessonPlan = async () => {
+  const resolveActiveLessonLabel = () => {
+    if (activeTab === "system" && selectedLesson) {
+      return selectedLesson.lesson;
+    }
+    return customLessonName.trim() || selectedLesson?.lesson || "";
+  };
+
+  const handleSelectTemplate = (tpl: LessonPlanTemplate) => {
+    setSelectedTemplateId(tpl.id);
+    setError(null);
+  };
+
+  const handleInsertTemplateSkeleton = (tpl: LessonPlanTemplate) => {
+    setSelectedTemplateId(tpl.id);
+    setError(null);
+    const lessonTitle = resolveActiveLessonLabel() || `Bài học mẫu ${subject} ${selectedGrade}`;
+    const periods =
+      customPeriods ||
+      (activeTab === "system" && selectedLesson?.periods) ||
+      tpl.recommendedPeriods ||
+      2;
+    const skeleton = buildLessonPlanTemplateSkeleton(tpl, {
+      lesson: lessonTitle,
+      subject,
+      grade: selectedGrade,
+      periods,
+      textbook: selectedTextbook?.name || "Kết nối tri thức với cuộc sống",
+      requirement: activeTab === "system" ? selectedLesson?.requirement : undefined,
+    });
+    setSuggestion(skeleton);
+    setIsEditing(false);
+    try {
+      saveToHistory({
+        type: "KHBD",
+        grade: selectedGrade,
+        subject,
+        lessonName: `${lessonTitle} (${tpl.shortName})`,
+        content: skeleton,
+      });
+    } catch (saveErr) {
+      console.warn("Could not save skeleton to history:", saveErr);
+    }
+  };
+
+  const generateLessonPlan = async (overrideTemplate?: LessonPlanTemplate) => {
+    const tpl = overrideTemplate || activeTemplate;
     let endpoint = '/api/generate-lesson-plan';
     let payload: any = {};
     let displayName = "";
+
+    const mergeFocus = (lessonValue: string | undefined, templateDefault: string) => {
+      const cleanLesson = (lessonValue || "").trim();
+      if (!cleanLesson) return templateDefault;
+      if (tpl.id === "standard-cv5512-core") return cleanLesson;
+      return `${cleanLesson}. Trọng tâm khung mẫu (${tpl.shortName}): ${templateDefault}`;
+    };
+
+    const templatePayloadFields = {
+      templateId: tpl.id,
+      templateName: tpl.name,
+      templateStandardRef: tpl.standardRef,
+      templatePromptDirective: tpl.promptDirective,
+    };
 
     if (activeTab === "system") {
       if (selectedLesson) {
@@ -184,28 +284,30 @@ export function LessonPlan() {
         payload = {
           lesson: selectedLesson.lesson,
           requirement: selectedLesson.requirement,
-          digitalComp: selectedLesson.digitalComp,
-          aiComp: selectedLesson.aiComp,
-          stem: selectedLesson.stem,
+          digitalComp: mergeFocus(selectedLesson.digitalComp, tpl.defaultDigitalComp),
+          aiComp: mergeFocus(selectedLesson.aiComp, tpl.defaultAiComp),
+          stem: mergeFocus(selectedLesson.stem, tpl.defaultStem),
           grade: selectedLesson.grade || selectedGrade,
-          periods: customPeriods || selectedLesson.periods || 2,
+          periods: customPeriods || selectedLesson.periods || tpl.recommendedPeriods || 2,
           subject: subject,
           textbook: selectedTextbook?.name || "Kết nối tri thức với cuộc sống",
-          includeInclusiveEducation
+          includeInclusiveEducation,
+          ...templatePayloadFields,
         };
       } else if (customLessonName.trim()) {
         displayName = customLessonName.trim();
         payload = {
           lesson: customLessonName.trim(),
           requirement: "",
-          digitalComp: "Ứng dụng phần mềm và học liệu số tương tác",
-          aiComp: "Sử dụng AI hỗ trợ học sinh phân tích, phản biện",
-          stem: "Gắn liền thực tiễn và định hướng STEM",
+          digitalComp: tpl.defaultDigitalComp,
+          aiComp: tpl.defaultAiComp,
+          stem: tpl.defaultStem,
           grade: selectedGrade,
-          periods: customPeriods || 2,
+          periods: customPeriods || tpl.recommendedPeriods || 2,
           subject: subject,
           textbook: selectedTextbook?.name || "Kết nối tri thức với cuộc sống",
-          includeInclusiveEducation
+          includeInclusiveEducation,
+          ...templatePayloadFields,
         };
       } else {
         setError("Vui lòng chọn bài học từ danh sách hoặc nhập tên bài học cần soạn.");
@@ -222,10 +324,14 @@ export function LessonPlan() {
         lesson: displayName,
         subject: subject,
         grade: selectedGrade,
-        periods: customPeriods || 2,
+        periods: customPeriods || tpl.recommendedPeriods || 2,
         textbook: selectedTextbook?.name || "Kết nối tri thức với cuộc sống",
+        digitalComp: tpl.defaultDigitalComp,
+        aiComp: tpl.defaultAiComp,
+        stem: tpl.defaultStem,
         files: uploadedFiles,
-        includeInclusiveEducation
+        includeInclusiveEducation,
+        ...templatePayloadFields,
       };
     } else if (activeTab === "upgrade") {
       if (!customLessonName.trim() && uploadedFiles.length === 0) {
@@ -241,7 +347,10 @@ export function LessonPlan() {
         periods: customPeriods || 2,
         files: uploadedFiles,
         templateMode: upgradeTemplateMode,
-        customTemplateInstructions: customTemplateInstructions,
+        customTemplateInstructions:
+          upgradeTemplateMode === "system" && tpl.id !== "standard-cv5512-core"
+            ? `${tpl.name} (${tpl.standardRef}): ${tpl.promptDirective}`
+            : customTemplateInstructions,
         includeInclusiveEducation
       };
     } else if (activeTab === "inclusive") {
@@ -265,6 +374,14 @@ export function LessonPlan() {
     }
 
     await executePlanGeneration(payload, endpoint, displayName);
+  };
+
+  const handleApplyTemplateAndGenerate = async (tpl: LessonPlanTemplate) => {
+    setSelectedTemplateId(tpl.id);
+    if (activeTab === "inclusive") {
+      setActiveTab("system");
+    }
+    await generateLessonPlan(tpl);
   };
 
   const continuePlanGeneration = async () => {
@@ -344,7 +461,7 @@ export function LessonPlan() {
   const handleExportWord = () => {
     if (!suggestion || !exportRef.current) {
       if (isEditing) {
-        alert("Vui lòng tắt chế độ chỉnh sửa (ấn biểu tượng Con mắt) để lưu tệp Word có định dạng đầy đủ.");
+        setError("Vui lòng tắt chế độ chỉnh sửa (ấn biểu tượng Con mắt) để lưu tệp Word có định dạng đầy đủ.");
       }
       return;
     }
@@ -354,7 +471,7 @@ export function LessonPlan() {
   const handleExportWordLatex = () => {
     if (!suggestion || !exportRef.current) {
       if (isEditing) {
-        alert("Vui lòng tắt chế độ chỉnh sửa (ấn biểu tượng Con mắt) để lưu tệp Word có định dạng đầy đủ.");
+        setError("Vui lòng tắt chế độ chỉnh sửa (ấn biểu tượng Con mắt) để lưu tệp Word có định dạng đầy đủ.");
       }
       return;
     }
@@ -740,6 +857,76 @@ export function LessonPlan() {
         )}
 
         {activeTab !== 'inclusive' && (
+          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <LayoutTemplate className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span className="text-xs font-bold text-slate-800 truncate">
+                  Khung mẫu Giáo án GDPT 2018
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTemplateLibrary(true)}
+                className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 hover:underline whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                Thư viện ({LESSON_PLAN_TEMPLATES.length})
+              </button>
+            </div>
+
+            <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
+              <p className="text-xs font-bold text-slate-900 leading-snug">
+                {activeTemplate.name}
+              </p>
+              <p className="text-[11px] text-slate-500 mt-1">
+                {activeTemplate.categoryLabel} · {activeTemplate.periodsLabel} · {activeTemplate.standardRef}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-1.5">
+              {quickPresetTemplates.map((tpl) => {
+                const isSelected = tpl.id === activeTemplate.id;
+                return (
+                  <button
+                    key={tpl.id}
+                    type="button"
+                    onClick={() => handleSelectTemplate(tpl)}
+                    className={`px-2.5 py-1.5 text-left text-[11px] font-semibold rounded-lg border transition-colors truncate cursor-pointer ${
+                      isSelected
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-emerald-400 hover:text-emerald-800'
+                    }`}
+                    title={tpl.name}
+                  >
+                    {tpl.shortName}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-2 pt-0.5">
+              <button
+                type="button"
+                onClick={() => setShowTemplateLibrary(true)}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+              >
+                <LayoutTemplate className="w-3.5 h-3.5 shrink-0" />
+                <span>Xem tất cả mẫu</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleInsertTemplateSkeleton(activeTemplate)}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+                title="Mở ngay khung sườn chuẩn GDPT 2018 để tự chỉnh sửa"
+              >
+                <FileText className="w-3.5 h-3.5 shrink-0" />
+                <span>Mở khung sườn</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {activeTab !== 'inclusive' && (
           <div className="p-3 bg-indigo-50/80 border border-indigo-200 rounded-xl space-y-1.5">
             <label className="flex items-start gap-2.5 cursor-pointer">
               <input 
@@ -766,7 +953,7 @@ export function LessonPlan() {
           </button>
         )}
         <button 
-          onClick={generateLessonPlan}
+          onClick={() => generateLessonPlan()}
           disabled={isLoading}
           className={`w-full flex items-center justify-center gap-2 px-4 py-3 text-white font-medium rounded-lg transition-colors disabled:opacity-70 disabled:cursor-not-allowed mt-2 shadow-sm cursor-pointer ${
             activeTab === 'inclusive' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-emerald-600 hover:bg-emerald-700'
@@ -775,12 +962,27 @@ export function LessonPlan() {
           <Sparkles className={`h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} />
           {isLoading 
             ? (activeTab === 'inclusive' ? "AI đang soạn KHDH hòa nhập..." : activeTab === 'upgrade' ? "Đang nâng cấp..." : "AI đang soạn bài...") 
-            : (activeTab === 'inclusive' ? "Soạn KHDH Hòa nhập riêng (TT 03/2018)" : activeTab === 'upgrade' ? "Nâng cấp Giáo án (Thêm NLS & AI)" : "Soạn Giáo án chuẩn công văn 5512")}
+            : (activeTab === 'inclusive'
+                ? "Soạn KHDH Hòa nhập riêng (TT 03/2018)"
+                : activeTab === 'upgrade'
+                  ? "Nâng cấp Giáo án (Thêm NLS & AI)"
+                  : activeTemplate.id === "standard-cv5512-core"
+                    ? "Soạn Giáo án chuẩn công văn 5512"
+                    : `Soạn Giáo án (${activeTemplate.shortName})`)}
         </button>
       </div>
 
       <div className="flex-1 bg-white p-8 rounded-xl border border-slate-200 shadow-sm relative flex flex-col h-[calc(100vh-4rem)]">
         <div className="absolute top-4 right-4 flex flex-wrap items-center gap-2 z-10 bg-white shadow-sm border border-slate-100 rounded-lg p-1">
+          <button
+            type="button"
+            className="px-2.5 py-1 text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 rounded-md transition-colors flex items-center gap-1 cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
+            title="Mở Thư viện Mẫu Kế hoạch Bài dạy chuẩn GDPT 2018 (STEM/STEAM, Năng lực số, AI, CV 5512)"
+            onClick={() => setShowTemplateLibrary(true)}
+          >
+            <LayoutTemplate className="h-4 w-4" />
+            <span>Thư viện mẫu</span>
+          </button>
           <button 
             type="button"
             className="px-2.5 py-1 text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-300 rounded-md transition-colors flex items-center gap-1 cursor-pointer shadow-2xs"
@@ -899,24 +1101,122 @@ export function LessonPlan() {
               </div>
             )
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-slate-400">
+            <div className="h-full flex flex-col justify-center py-6">
               {isLoading ? (
-                <>
+                <div className="flex flex-col items-center justify-center text-slate-400">
                   <div className="animate-spin rounded-full h-12 w-12 border-4 border-emerald-500 border-t-transparent mb-4"></div>
-                  <p className="text-emerald-600 font-medium">Hệ thống AI đang đọc Kế hoạch giáo dục và soạn bài...</p>
-                  <p className="text-sm mt-2 text-slate-400">Quá trình này có thể mất 15-20 giây.</p>
-                </>
+                  <p className="text-emerald-600 font-medium">
+                    Hệ thống AI đang soạn bài theo khung "{activeTemplate.shortName}"...
+                  </p>
+                  <p className="text-sm mt-2 text-slate-400">Quá trình này có thể mất 15–20 giây.</p>
+                </div>
               ) : (
-                <>
-                  <Sparkles className="h-16 w-16 mb-4 text-slate-200" />
-                  <p className="text-lg font-medium text-slate-500">Giáo án AI (Chuẩn CV 5512)</p>
-                  <p className="mt-2 text-center max-w-md">Chọn bài học từ danh sách bên trái hoặc tải lên tệp Kế hoạch giáo dục của bạn và nhấn nút Soạn Giáo án để AI tự động tạo kế hoạch bài dạy bám sát các yêu cầu Năng lực số, AI và STEM.</p>
-                </>
+                <div className="max-w-3xl mx-auto w-full space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 pb-4 border-b border-slate-200">
+                    <div>
+                      <p className="text-xs font-semibold text-emerald-700">
+                        Thư viện mẫu Kế hoạch bài dạy · Chương trình GDPT 2018
+                      </p>
+                      <h3 className="text-xl font-bold text-slate-900 mt-1">
+                        Chọn nhanh khung mẫu STEM/STEAM &amp; Năng lực số
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                        Chọn một khung mẫu bên dưới để mở khung sườn chuẩn ngay hoặc để AI triển khai chi tiết theo bài học đã chọn bên trái.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowTemplateLibrary(true)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer self-start sm:self-auto"
+                    >
+                      <LayoutTemplate className="w-4 h-4 shrink-0" />
+                      <span>Xem tất cả {LESSON_PLAN_TEMPLATES.length} mẫu</span>
+                      <ArrowRight className="w-3.5 h-3.5 shrink-0" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {featuredEmptyTemplates.map((tpl) => {
+                      const isSelected = tpl.id === activeTemplate.id;
+                      const isStem = tpl.category === "stem";
+                      return (
+                        <div
+                          key={tpl.id}
+                          className={`p-4 rounded-xl border bg-white flex flex-col justify-between gap-3 transition-all ${
+                            isSelected
+                              ? 'border-emerald-500 ring-1 ring-emerald-500/25 shadow-xs'
+                              : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
+                              <span className="inline-flex items-center gap-1.5 font-medium text-slate-600 truncate">
+                                {isStem ? (
+                                  <Layers className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                                ) : (
+                                  <Cpu className="w-3.5 h-3.5 text-sky-700 shrink-0" />
+                                )}
+                                <span className="truncate">
+                                  {tpl.categoryLabel} · {tpl.periodsLabel}
+                                </span>
+                              </span>
+                              <span className="text-[11px] text-slate-400 whitespace-nowrap shrink-0">
+                                {tpl.stages.length} bước
+                              </span>
+                            </div>
+
+                            <h4 className="text-sm font-bold text-slate-900 mt-2 leading-snug">
+                              {tpl.name}
+                            </h4>
+                            <p className="text-xs text-slate-600 mt-1.5 leading-relaxed line-clamp-2">
+                              {tpl.summary}
+                            </p>
+                            <p className="text-[11px] text-slate-400 mt-2 truncate">
+                              Căn cứ: {tpl.standardRef}
+                            </p>
+                          </div>
+
+                          <div className="pt-3 border-t border-slate-100 flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleInsertTemplateSkeleton(tpl)}
+                              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+                            >
+                              <FileText className="w-3.5 h-3.5 shrink-0" />
+                              <span>Mở khung sườn</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleApplyTemplateAndGenerate(tpl)}
+                              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                              <span>Soạn bằng AI</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
             </div>
           )}
         </div>
       </div>
+
+      {/* Thư viện Mẫu Kế hoạch Bài dạy chuẩn GDPT 2018 */}
+      <LessonPlanTemplateLibrary
+        isOpen={showTemplateLibrary}
+        selectedTemplateId={activeTemplate.id}
+        onClose={() => setShowTemplateLibrary(false)}
+        onSelectTemplate={handleSelectTemplate}
+        onApplyAndGenerate={handleApplyTemplateAndGenerate}
+        onInsertSkeleton={handleInsertTemplateSkeleton}
+        subject={subject}
+        grade={selectedGrade}
+        lessonName={resolveActiveLessonLabel()}
+      />
 
       {/* Modal Tích hợp Bảng biến thiên (BBT) & Đồ thị Chuẩn SGK */}
       {showVisualizerModal && (

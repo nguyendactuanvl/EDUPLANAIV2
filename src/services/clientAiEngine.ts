@@ -1274,15 +1274,24 @@ function normalizeGeminiContents(rawContents: any): any[] {
 async function generateWithFallback(req: any, payloadOptions: any, _res?: any) {
   const clients: { client: GoogleGenAI; isCustom: boolean; apiKey: string }[] = getAiClients(req);
 
+  const fastMode = Boolean(payloadOptions?.fastMode);
+  const requestTimeoutMs =
+    typeof payloadOptions?.timeoutMs === "number" && payloadOptions.timeoutMs > 0
+      ? payloadOptions.timeoutMs
+      : fastMode
+        ? 45000
+        : 0;
+
   let customKeyFailed = false;
   const basePreferred: string[] = Array.isArray(payloadOptions?.preferredModels) && payloadOptions.preferredModels.length > 0
     ? payloadOptions.preferredModels.map((m: any) => String(m || "").replace(/^models\//, "").trim()).filter((m: string) => m.length > 0)
     : [];
   const baseModels: string[] = Array.from(
-    new Set<string>([
-      ...getValidGeminiModels(payloadOptions?.model),
-      ...basePreferred,
-    ])
+    new Set<string>(
+      fastMode && basePreferred.length > 0
+        ? [...basePreferred, ...getValidGeminiModels(payloadOptions?.model)]
+        : [...getValidGeminiModels(payloadOptions?.model), ...basePreferred]
+    )
   );
   let primaryError: any = null;
   let bestNonNotFoundError: any = null;
@@ -1325,16 +1334,53 @@ async function generateWithFallback(req: any, payloadOptions: any, _res?: any) {
     );
   };
 
+  const invokeWithTimeout = async (client: GoogleGenAI, callPayload: any): Promise<any> => {
+    if (!requestTimeoutMs || requestTimeoutMs <= 0) {
+      return client.models.generateContent(callPayload);
+    }
+    const controller = new AbortController();
+    let timerId: any = null;
+    const timeoutPromise = new Promise<never>((_resolve, reject) => {
+      timerId = setTimeout(() => {
+        try {
+          controller.abort();
+        } catch (_) {}
+        const tErr: any = new Error(`AI request timed out after ${Math.round(requestTimeoutMs / 1000)}s`);
+        tErr.status = 504;
+        tErr.isTimeout = true;
+        reject(tErr);
+      }, requestTimeoutMs);
+    });
+    const payloadWithSignal = {
+      ...callPayload,
+      config: {
+        ...(callPayload.config || {}),
+        abortSignal: controller.signal,
+      },
+    };
+    try {
+      return await Promise.race([
+        client.models.generateContent(payloadWithSignal),
+        timeoutPromise,
+      ]);
+    } finally {
+      if (timerId) clearTimeout(timerId);
+    }
+  };
+
   for (const { client, isCustom, apiKey } of clients) {
     const cachedWorking = workingModelByKey.get(apiKey);
-    const clientModels = cachedWorking
+    const useCachedFirst =
+      Boolean(cachedWorking) &&
+      (!fastMode || (cachedWorking!.includes("flash") && !cachedWorking!.includes("pro")));
+    const clientModels = useCachedFirst && cachedWorking
       ? Array.from(new Set<string>([cachedWorking, ...baseModels]))
       : [...baseModels];
     let triedDiscovery = false;
 
     for (let mIdx = 0; mIdx < clientModels.length; mIdx++) {
       const model = clientModels[mIdx];
-      const maxModelAttempts = mIdx === 0 ? 2 : 1;
+      const maxModelAttempts = !fastMode && mIdx === 0 ? 2 : 1;
       let lastModelErr: any = null;
       for (let attempt = 0; attempt < maxModelAttempts; attempt++) {
         try {
@@ -1349,6 +1395,13 @@ async function generateWithFallback(req: any, payloadOptions: any, _res?: any) {
           }
           if (model.includes("lite")) {
             delete rawConfig.thinkingConfig;
+          } else if (fastMode) {
+            // Fast OCR / figure-detection path: disable or minimize hidden thinking tokens (5x-15x faster!)
+            if (model.includes("2.5-flash") || model.includes("2.5")) {
+              rawConfig.thinkingConfig = { thinkingBudget: 0 };
+            } else {
+              rawConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.MINIMAL };
+            }
           } else if (model === "gemini-4-hydrogen") {
             if (!rawConfig.thinkingConfig) {
               rawConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
@@ -1369,19 +1422,32 @@ async function generateWithFallback(req: any, payloadOptions: any, _res?: any) {
             }
           };
           delete (basePayload as any).preferredModels;
+          delete (basePayload as any).fastMode;
+          delete (basePayload as any).timeoutMs;
 
           let response: any;
           try {
-            response = await client.models.generateContent(basePayload);
+            response = await invokeWithTimeout(client, basePayload);
           } catch (tokenErr: any) {
             const errStr = String(tokenErr?.message || "");
             if (/thinkingConfig|thinkingBudget|thinkingLevel/i.test(errStr)) {
-              const noThinkConfig = { ...basePayload.config };
-              delete (noThinkConfig as any).thinkingConfig;
-              response = await client.models.generateContent({ ...basePayload, config: noThinkConfig });
+              const fallbackConfig = { ...basePayload.config };
+              if (fastMode && (fallbackConfig as any).thinkingConfig?.thinkingLevel === ThinkingLevel.MINIMAL) {
+                (fallbackConfig as any).thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
+                try {
+                  response = await invokeWithTimeout(client, { ...basePayload, config: fallbackConfig });
+                } catch {
+                  const noThinkConfig = { ...basePayload.config };
+                  delete (noThinkConfig as any).thinkingConfig;
+                  response = await invokeWithTimeout(client, { ...basePayload, config: noThinkConfig });
+                }
+              } else {
+                delete (fallbackConfig as any).thinkingConfig;
+                response = await invokeWithTimeout(client, { ...basePayload, config: fallbackConfig });
+              }
             } else if (requestedMaxTokens > 8192 && /maxOutputTokens|token|invalid|argument/i.test(errStr)) {
               basePayload.config.maxOutputTokens = requestedMaxTokens > 32768 ? 32768 : 8192;
-              response = await client.models.generateContent(basePayload);
+              response = await invokeWithTimeout(client, basePayload);
             } else {
               throw tokenErr;
             }
@@ -2967,8 +3033,15 @@ app.all(["/api/generate-lesson-plan", "/api/generate-lesson-plan-file"], async (
     const stem = req.body.stem || "";
     const textbook = req.body.textbook || "Kết nối tri thức với cuộc sống";
     const includeInclusiveEducation = req.body.includeInclusiveEducation === true;
+    const templateName = typeof req.body.templateName === "string" ? req.body.templateName.trim() : "";
+    const templateStandardRef = typeof req.body.templateStandardRef === "string" ? req.body.templateStandardRef.trim() : "";
+    const templatePromptDirective = typeof req.body.templatePromptDirective === "string" ? req.body.templatePromptDirective.trim() : "";
     const maxOutputTokens = 16384;
     const files = resolveFiles(req.body);
+
+    const templateDirectiveBlock = templatePromptDirective
+      ? `\n\nYÊU CẦU ĐẶC THÙ CỦA KHUNG MẪU GIÁO ÁN ĐÃ CHỌN (${templateName || "Khung mẫu GDPT 2018"}${templateStandardRef ? ` — ${templateStandardRef}` : ""}):\n${templatePromptDirective}\n(Lưu ý ưu tiên cao nhất: Tuân thủ chính xác cấu trúc hoạt động, bảng biểu, mã chỉ báo Năng lực số, yếu tố STEM/STEAM và Phụ lục Rubric/Bảng kiểm của khung mẫu này, đồng thời vẫn phân bổ đầy đủ từ Tiết 1 đến Tiết ${periods} và đảm bảo mọi hoạt động đều có đầy đủ 4 mục a, b, c, d chuẩn CV 5512.)`
+      : "";
 
     const inclusiveEducationBlock = includeInclusiveEducation ? `
 
@@ -3040,25 +3113,27 @@ CÁC NGUYÊN TẮC CỐT LÕI BẮT BUỘC TUÂN THỦ NGHIÊM NGẶT:
 - Soạn đầy đủ, chi tiết từ đầu đến cuối cho tất cả các tiết (từ Tiết 1 đến Tiết ${periods}).
 - Tuyệt đối KHÔNG viết tóm tắt, KHÔNG để dấu ba chấm (...), KHÔNG ghi "(tương tự tiết 1)".
 - Đảm bảo công thức toán học dùng chuẩn LaTeX kẹp trong $...$ hoặc $$...$$.
-- Đối với đoạn mã lập trình (Code Python, Scratch, thuật toán, lệnh if, for, while, print, input...): BẮT BUỘC đặt trong khối mã \`\`\`python ... \`\`\` hoặc bọc dấu backtick inline \`...\` (Ví dụ: \`if score > 5: print("Pass")\`). TUYỆT ĐỐI KHÔNG bọc dấu $...$ hay LaTeX vào mã lập trình hoặc chuỗi string.`;
+- Đối với đoạn mã lập trình (Code Python, Scratch, thuật toán, lệnh if, for, while, print, input...): BẮT BUỘC đặt trong khối mã \`\`\`python ... \`\`\` hoặc bọc dấu backtick inline \`...\` (Ví dụ: \`if score > 5: print("Pass")\`). TUYỆT ĐỐI KHÔNG bọc dấu $...$ hay LaTeX vào mã lập trình hoặc chuỗi string.${templateDirectiveBlock}`;
 
-    const prompt = `Hãy biên soạn toàn diện KẾ HOẠCH BÀI DẠY chuẩn Công văn 5512/BGDĐT-GDTrH và bộ sách "${textbook}" cho bài học sau:
+    const prompt = `Hãy biên soạn toàn diện KẾ HOẠCH BÀI DẠY chuẩn Công văn 5512/BGDĐT-GDTrH${templateName ? ` theo khung mẫu "${templateName}"` : ''} và bộ sách "${textbook}" cho bài học sau:
 
 THÔNG TIN BÀI DẠY:
 - Môn học: ${subject}
 - Lớp: ${grade}
 - Tên bài dạy: ${lesson}
-- Thời lượng: ${periods} tiết (BẮT BUỘC: Tiến trình dạy học ở Phần III phải chia cụ thể và viết ĐẦY ĐỦ từ TIẾT 1 đến TIẾT ${periods}, mỗi tiết có đủ 4 hoạt động. Tuyệt đối không dừng giữa chừng)
+- Thời lượng: ${periods} tiết (BẮT BUỘC: Tiến trình dạy học ở Phần III phải chia cụ thể và viết ĐẦY ĐỦ từ TIẾT 1 đến TIẾT ${periods}. Tuyệt đối không dừng giữa chừng)
 - Bộ sách giáo khoa: ${textbook}
+${templateName ? `- Khung mẫu giáo án áp dụng: ${templateName}${templateStandardRef ? ` (${templateStandardRef})` : ''}` : ''}
 ${requirement ? `- Yêu cầu cần đạt: ${requirement}` : ''}
 ${digitalComp ? `- Năng lực số (NLS) cần lồng ghép: ${digitalComp}` : ''}
 ${aiComp ? `- Năng lực Trí tuệ nhân tạo (AI) cần lồng ghép: ${aiComp}` : ''}
 ${stem ? `- Định hướng STEM/STEAM: ${stem}` : ''}
+${templateDirectiveBlock}
 
 CẤU TRÚC KẾ HOẠCH BÀI DẠY BẮT BUỘC (VIẾT CHI TIẾT TOÀN DIỆN TỪ TIẾT 1 ĐẾN TIẾT ${periods}):
 
 # KẾ HOẠCH BÀI DẠY: ${lesson.toUpperCase()}
-**Môn học:** ${subject} | **Lớp:** ${grade} | **Thời lượng:** ${periods} tiết  
+${templateName ? `**Khung mẫu:** ${templateName}${templateStandardRef ? ` (${templateStandardRef})` : ''}  \n` : ''}**Môn học:** ${subject} | **Lớp:** ${grade} | **Thời lượng:** ${periods} tiết  
 **Bộ sách:** ${textbook}
 
 ---
@@ -4153,6 +4228,14 @@ ${figureInstruction}
 Đầu ra của bạn phải hoàn toàn là nội dung tài liệu đã được số hóa dạng Markdown chuẩn, không thêm lời chào hay giải thích ngoài lề!`;
 
       const response = await generateWithFallback(req, {
+        fastMode: true,
+        timeoutMs: isSinglePageMode ? 45000 : 90000,
+        preferredModels: [
+          "gemini-2.5-flash",
+          "gemini-3-flash-preview",
+          "gemini-2.5-flash-lite",
+          "gemini-3.1-flash-lite-preview",
+        ],
         contents: [
           {
             role: "user",
@@ -4166,7 +4249,7 @@ ${figureInstruction}
         ],
         config: {
           temperature: 0.1,
-          maxOutputTokens: 16384,
+          maxOutputTokens: isSinglePageMode ? 8192 : 16384,
         }
       });
       
@@ -4224,13 +4307,20 @@ QUY TẮC BẮT BUỘC:
 ${questionSummary ? `\nVăn bản đã OCR trên trang để bạn đối chiếu đúng số câu (questionLabel):\n${questionSummary}` : ''}`;
 
     const response = await generateWithFallback(req, {
+      fastMode: true,
+      timeoutMs: 22000,
+      preferredModels: [
+        "gemini-2.5-flash",
+        "gemini-3-flash-preview",
+        "gemini-2.5-flash-lite",
+      ],
       contents: [
         {
           role: "user",
           parts: [
             {
               inlineData: {
-                mimeType: mimeType || 'image/png',
+                mimeType: mimeType || 'image/jpeg',
                 data: cleanBase64
               }
             },
@@ -4240,7 +4330,7 @@ ${questionSummary ? `\nVăn bản đã OCR trên trang để bạn đối chiế
       ],
       config: {
         systemInstruction: "You are a precise document figure bounding-box detector. Always return strictly valid JSON matching the requested schema with plain text descriptions (no LaTeX backslashes).",
-        maxOutputTokens: 8192,
+        maxOutputTokens: 2048,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -5048,21 +5138,128 @@ app.all("/api/translate-academic", async (req, res) => {
   }
 
   return keepAliveExecute(req, res, async () => {
-    const { text, targetLang = 'en', subject = 'Toán' } = req.body || {};
+    const { text, questions, targetLang = 'en', subject = 'Toán' } = req.body || {};
+    const hasQuestions = Array.isArray(questions) && questions.length > 0;
+    const hasText = typeof text === 'string' && text.trim().length > 0;
 
-    if (!text || typeof text !== 'string' || !text.trim()) {
+    if (!hasText && !hasQuestions) {
       return res.status(400).json({ error: "Nội dung cần dịch không được để trống." });
     }
 
     const langName = targetLang === 'en' ? 'Tiếng Anh chuyên ngành' : 'Tiếng Việt chuẩn GDPT';
 
-    const prompt = `Bạn là một chuyên gia dịch thuật và biên soạn giáo trình quốc tế thuộc bộ môn ${subject}.
+    const imagePlaceholders: string[] = [];
+    const maskDataUris = (input: string): string =>
+      input.replace(/data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g, (match) => {
+        const idx = imagePlaceholders.length;
+        imagePlaceholders.push(match);
+        return `__EDUPLAN_IMG_TOKEN_${idx}__`;
+      });
+    const restoreDataUris = (input: string): string =>
+      input.replace(/__EDUPLAN_IMG_TOKEN_(\d+)__/g, (full, idxStr) => {
+        const idx = Number(idxStr);
+        return Number.isInteger(idx) && imagePlaceholders[idx] !== undefined ? imagePlaceholders[idx] : full;
+      });
+    const restoreDeep = (val: any): any => {
+      if (typeof val === 'string') return restoreDataUris(val);
+      if (Array.isArray(val)) return val.map(restoreDeep);
+      if (val && typeof val === 'object') {
+        const out: Record<string, any> = {};
+        for (const [k, v] of Object.entries(val)) {
+          out[k] = restoreDeep(v);
+        }
+        return out;
+      }
+      return val;
+    };
+
+    const resultPayload: { success: boolean; translatedQuestions?: any[]; translatedText?: string } = {
+      success: true,
+    };
+
+    if (hasQuestions) {
+      const compactQuestions = questions.map((q: any, idx: number) => ({
+        idx,
+        content: typeof q?.content === 'string' ? maskDataUris(q.content) : undefined,
+        question: typeof q?.question === 'string' ? maskDataUris(q.question) : undefined,
+        options: Array.isArray(q?.options) ? q.options.map((o: any) => (typeof o === 'string' ? maskDataUris(o) : o)) : undefined,
+        tfStatements: Array.isArray(q?.tfStatements)
+          ? q.tfStatements.map((tf: any) => ({
+              statement: typeof tf?.statement === 'string' ? maskDataUris(tf.statement) : tf?.statement,
+              correct: tf?.correct,
+            }))
+          : undefined,
+        solution: typeof q?.solution === 'string' ? maskDataUris(q.solution) : undefined,
+        explanation: typeof q?.explanation === 'string' ? maskDataUris(q.explanation) : undefined,
+      }));
+
+      const qPrompt = `Bạn là chuyên gia dịch thuật tài liệu giáo dục và đề thi THPT môn ${subject}.
+Nhiệm vụ: Dịch toàn bộ danh sách câu hỏi sau sang ${langName}.
+
+YÊU CẦU BẮT BUỘC:
+1. Dịch chuẩn xác thuật ngữ chuyên ngành môn ${subject} (VD: "Hàm số" -> "Function", "Đạo hàm" -> "Derivative", "Cấp số cộng" -> "Arithmetic Progression", "Bảng biến thiên" -> "Table of Variation", "Cực đại" -> "Local maximum", "Cực tiểu" -> "Local minimum", "Tiệm cận" -> "Asymptote").
+2. GIỮ NGUYÊN 100% CÁC CÔNG THỨC TOÁN LATEX BỌC TRONG $...$ HOẶC $$...$$, KHÔNG SỬA MÃ LATEX VÀ KHÔNG DỊCH TÊN BIẾN.
+3. GIỮ NGUYÊN MỌI TOKEN __EDUPLAN_IMG_TOKEN_...__ VÀ BẢNG MARKDOWN.
+4. Giữ nguyên chỉ số "idx" và cấu trúc JSON. Chỉ trả về duy nhất 1 mảng JSON hợp lệ có đúng ${compactQuestions.length} phần tử.
+
+Danh sách câu hỏi gốc:
+${JSON.stringify(compactQuestions)}`;
+
+      const qResp = await generateWithFallback(req, {
+        contents: [{ role: "user", parts: [{ text: qPrompt }] }],
+        config: {
+          responseMimeType: "application/json",
+          temperature: 0.1,
+        }
+      });
+
+      const parsedRaw: any = safeJsonParse(qResp?.text?.trim() || "[]", []);
+      const parsedArr = Array.isArray(parsedRaw)
+        ? parsedRaw
+        : Array.isArray(parsedRaw?.translatedQuestions)
+        ? parsedRaw.translatedQuestions
+        : Array.isArray(parsedRaw?.questions)
+        ? parsedRaw.questions
+        : [];
+
+      if (parsedArr.length > 0) {
+        const byIdx = new Map<number, any>();
+        parsedArr.forEach((item: any, i: number) => {
+          const key = typeof item?.idx === 'number' ? item.idx : i;
+          byIdx.set(key, restoreDeep(item));
+        });
+
+        resultPayload.translatedQuestions = questions.map((orig: any, idx: number) => {
+          const tr = byIdx.get(idx);
+          if (!tr) return orig;
+          const mergedTf = Array.isArray(orig?.tfStatements)
+            ? orig.tfStatements.map((origTf: any, tfIdx: number) => ({
+                ...origTf,
+                statement: tr.tfStatements?.[tfIdx]?.statement ?? origTf.statement,
+              }))
+            : orig?.tfStatements;
+          return {
+            ...orig,
+            ...(tr.content !== undefined ? { content: tr.content } : {}),
+            ...(tr.question !== undefined ? { question: tr.question } : {}),
+            ...(Array.isArray(tr.options) ? { options: tr.options } : {}),
+            ...(mergedTf !== undefined ? { tfStatements: mergedTf } : {}),
+            ...(tr.solution !== undefined ? { solution: tr.solution } : {}),
+            ...(tr.explanation !== undefined ? { explanation: tr.explanation } : {}),
+          };
+        });
+      }
+    }
+
+    if (hasText) {
+      const maskedText = maskDataUris(text);
+      const prompt = `Bạn là một chuyên gia dịch thuật và biên soạn giáo trình quốc tế thuộc bộ môn ${subject}.
 Nhiệm vụ của bạn là chuyển đổi toàn bộ văn bản / đề thi / phiếu học tập sau sang ${langName} theo đúng thuật ngữ chuyên môn chính xác nhất của môn ${subject}.
 
 QUY TẮC BẮT BUỘC (GIỮ NGUYÊN BẢN CẤU TRÚC VÀ CÔNG THỨC TOÁN):
 1. GIỮ NGUYÊN 100% CẤU TRÚC:
    - Các tiêu đề (PHẦN I, PHẦN II, Câu 1, Câu 2, Question 1, Part I, Part II,...), thứ tự câu hỏi, danh sách các phương án A., B., C., D., a), b), c), d).
-   - Thẻ hình ảnh (<svg-wrapper...>, <img...>, ![](...) ), khối TikZ (\`\`\`tikz ... \`\`\`), bảng biểu Markdown Table.
+   - Thẻ hình ảnh (<svg-wrapper...>, <img...>, ![](...) ), mọi token __EDUPLAN_IMG_TOKEN_...__, khối TikZ (\`\`\`tikz ... \`\`\`), bảng biểu Markdown Table.
 2. THUẬT NGỮ CHUYÊN NGÀNH CHUẨN XÁC THEO MÔN HỌC (${subject}):
    - Toán học: "Cấp số cộng" -> "Arithmetic Progression", "Bảng biến thiên" -> "Table of Variation", "Cực trị" -> "Extrema", "Hàm số" -> "Function", "Đạo hàm" -> "Derivative", "Tiệm cận" -> "Asymptote", "Tập xác định" -> "Domain", "Tập giá trị" -> "Range".
    - Vật lý: "Chuyển động thẳng biến đổi đều" -> "Uniformly accelerated linear motion", "Cơ học" -> "Mechanics", "Điện từ" -> "Electromagnetism".
@@ -5077,15 +5274,17 @@ Chỉ trả về nội dung đã chuyển ngữ hoàn chỉnh dưới dạng Mar
 ${MATH_FORMATTING_RULES}
 
 VĂN BẢN CẦN DỊCH:
-${text}`;
+${maskedText}`;
 
-    const response = await generateWithFallback(req, {
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: { temperature: 0.1 }
-    });
+      const response = await generateWithFallback(req, {
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: { temperature: 0.1 }
+      });
 
-    const translatedText = response.text || "";
-    return { translatedText };
+      resultPayload.translatedText = restoreDataUris(response?.text?.trim() || maskedText);
+    }
+
+    return resultPayload;
   });
 });
 
@@ -6419,92 +6618,7 @@ app.post("/api/science-solve", async (req, res) => {
   }
 });
 
-// Endpoint Dịch thuật Chuyên ngành GDPT (Tiếng Việt ⇆ Tiếng Anh academic)
-app.post("/api/translate-academic", async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-  if (req.method === 'OPTIONS') return res.status(200).end();
-
-  try {
-    const { text, questions, targetLang = 'en', subject = 'Toán' } = req.body || {};
-
-    if (!text && (!questions || !Array.isArray(questions) || questions.length === 0)) {
-      return res.status(400).json({ error: "Không có nội dung để chuyển ngữ." });
-    }
-
-    const langName = targetLang === 'en' ? 'Tiếng Anh chuyên ngành' : 'Tiếng Việt chuẩn GDPT';
-    
-    if (questions && Array.isArray(questions) && questions.length > 0) {
-      const promptText = `Bạn là chuyên gia dịch thuật tài liệu giáo dục và đề thi THPT môn ${subject}.
-Nhiệm vụ: Dịch toàn bộ danh sách câu hỏi đề thi sau sang ${langName}.
-
-YÊU CẦU QUAN TRỌNG:
-1. Dịch chính xác thuật ngữ chuyên ngành môn ${subject} (Ví dụ: "Hàm số" -> "Function", "Đạo hàm" -> "Derivative", "Bảng biến thiên" -> "Variation table", "Đồng biến" -> "Increasing", "Nghịch biến" -> "Decreasing", "Cực đại" -> "Local maximum", "Cực tiểu" -> "Local minimum", "Tiệm cận" -> "Asymptote", "Đúng/Sai" -> "True/False", "Trả lời ngắn" -> "Short answer").
-2. GIỮ NGUYÊN 100% CÁC CÔNG THỨC TOÁN LATEX BỌC TRONG DẤU $...$ HOẶC $$...$$. TUYỆT ĐỐI KHÔNG SỬA, KHÔNG MẤT DẤU $ VÀ KHÔNG DỊCH TÊN BIẾN.
-3. GIỮ NGUYÊN BẢNG MARKDOWN (NẾU CÓ BẢNG BIẾN THIÊN).
-4. Giữ nguyên cấu trúc mảng JSON các câu hỏi.
-
-Danh sách câu hỏi gốc:
-${JSON.stringify(questions, null, 2)}
-
-BẮT BUỘC TRẢ VỀ DUY NHẤT 1 MẢNG JSON CÁC CÂU HỎI ĐÃ DỊCH CÓ CẤU TRÚC GIỐNG HỆT ĐẦU VÀO:
-[
-  {
-    "id": 1,
-    "type": "mc",
-    "content": "Nội dung câu hỏi đã dịch...",
-    "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
-    "tfStatements": [...],
-    "correctAnswer": "...",
-    "explanation": "..."
-  }
-]`;
-
-      const response = await generateWithFallback(req, {
-        contents: [{ role: "user", parts: [{ text: promptText }] }],
-        config: {
-          responseMimeType: "application/json",
-          temperature: 0.2
-        }
-      });
-
-      if (response && response.text) {
-        const parsed = safeJsonParse(response.text.trim());
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return res.json({ success: true, translatedQuestions: parsed });
-        }
-      }
-    }
-
-    // Default text translation
-    const promptText = `Bạn là chuyên gia dịch thuật tài liệu giáo dục và đề thi môn ${subject}.
-Nhiệm vụ: Dịch văn bản / đề thi / phiếu học tập dưới đây sang ${langName}.
-
-YÊU CẦU BẮT BUỘC:
-1. Dịch chuẩn xác thuật ngữ chuyên ngành giáo dục môn ${subject}.
-2. "Câu 1", "Câu 2"... dịch thành "Question 1", "Question 2"... (nếu sang tiếng Anh) hoặc ngược lại.
-3. GIỮ NGUYÊN 100% CÔNG THỨC TOÁN LATEX BỌC TRONG DẤU $...$ HOẶC $$...$$. CẤM LÀM MẤT HOẶC BIẾN DẠNG CÔNG THỨC TOÁN.
-4. GIỮ NGUYÊN CÁC BẢNG MARKDOWN VÀ ĐỊNH DẠNG VĂN BẢN.
-
-Văn bản gốc:
-${text}
-
-Hãy trả về duy nhất văn bản đã dịch hoàn chỉnh, không thêm bớt bình luận.`;
-
-    const response = await generateWithFallback(req, {
-      contents: [{ role: "user", parts: [{ text: promptText }] }]
-    });
-
-    const translatedText = response?.text?.trim() || text;
-    return res.json({ success: true, translatedText });
-
-  } catch (error: any) {
-    console.error("Lỗi dịch thuật chuyên ngành:", error);
-    return handleAiError(error, req, res);
-  }
-});
+// (Unified /api/translate-academic handler is registered above)
 
 // Endpoint Nhật ký giáo viên hỗ trợ AI
 app.post("/api/journal-ai", async (req, res) => {

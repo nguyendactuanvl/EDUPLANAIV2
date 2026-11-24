@@ -4,12 +4,19 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   Upload, X, FileText, Loader2, Download, AlertCircle, 
   Clipboard, CheckCircle2, Clock, Layers, Sliders, Sparkles, Zap, Wand2,
-  Image as ImageIcon, Scissors, FileCode, Palette, TrendingUp
+  Image as ImageIcon, Scissors, FileCode, Palette, TrendingUp,
+  Plus, Trash2, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { parseApiResponse, normalizeOcrChoicesAndFormatting, normalizeMathText } from '../lib/utils';
 import { run1ClickMathFix } from '../components/math-tools/MathFormulaFixer';
-import { getPdfTotalPages, renderPdfPageWithFigures, PdfDetectedFigure } from '../lib/pdfUtils';
+import {
+  getPdfTotalPages,
+  openPdfDocument,
+  renderLoadedPdfPageWithFigures,
+  renderPdfPageWithFigures,
+  PdfDetectedFigure,
+} from '../lib/pdfUtils';
 import {
   BoxTuple,
   CROP_FIG_TAG_RE,
@@ -41,7 +48,7 @@ const optimizeImageForOcr = async (file: File): Promise<{ data: string; type: st
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => {
-        const MAX_DIM = 1800; // Optimal resolution for Gemini math & OCR
+        const MAX_DIM = 1600; // Crisp & fast payload size (~150-250KB JPEG) for Gemini math & OCR
         let { width, height } = img;
         if (width > MAX_DIM || height > MAX_DIM) {
           if (width > height) {
@@ -57,14 +64,15 @@ const optimizeImageForOcr = async (file: File): Promise<{ data: string; type: st
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         if (ctx) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, width, height);
           ctx.drawImage(img, 0, 0, width, height);
-          const mimeType = file.type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
-          const quality = mimeType === 'image/jpeg' ? 0.92 : undefined;
-          const dataUrl = canvas.toDataURL(mimeType, quality);
+          const mimeType = 'image/jpeg';
+          const dataUrl = canvas.toDataURL(mimeType, 0.88);
           resolve({
             data: dataUrl.split(',')[1],
             type: mimeType,
-            name: file.name
+            name: file.name.replace(/\.png$/i, '.jpg')
           });
           return;
         }
@@ -182,8 +190,19 @@ const cleanAndNormalizePageMarkdown = (rawText: string): string => {
 type PageMode = 'recommended' | 'range' | 'all';
 type VisualMode = 'auto_crop' | 'crop_manual' | 'tables_only';
 
+interface QueuedImage {
+  id: string;
+  file: File;
+  previewUrl: string;
+  name: string;
+  size: number;
+  source: 'clipboard' | 'upload';
+}
+
 export function PdfToWord() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [imageFiles, setImageFiles] = useState<QueuedImage[]>([]);
+  const [pasteNotice, setPasteNotice] = useState<string | null>(null);
   const [fileArrayBuffer, setFileArrayBuffer] = useState<ArrayBuffer | null>(null);
   const [pdfTotalPages, setPdfTotalPages] = useState<number>(1);
   
@@ -217,10 +236,15 @@ export function PdfToWord() {
 
   const exportRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const addMoreImagesInputRef = useRef<HTMLInputElement>(null);
   const progressIntervalRef = useRef<any>(null);
+  const pasteNoticeTimerRef = useRef<any>(null);
   const pdfPageImagesRef = useRef<{ [pageNum: number]: string }>({});
   const resultTextRef = useRef<string>('');
   const fromPageRef = useRef<number>(1);
+  const isUploadingRef = useRef<boolean>(false);
+  const cancelRunIdRef = useRef<number>(0);
+  const createdUrlsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     pdfPageImagesRef.current = pdfPageImages;
@@ -234,15 +258,118 @@ export function PdfToWord() {
     fromPageRef.current = fromPage;
   }, [fromPage]);
 
-  // Clean up progress timer
+  useEffect(() => {
+    isUploadingRef.current = isUploading;
+  }, [isUploading]);
+
+  // Clean up progress timer, paste toast timer, and object URLs on unmount
   useEffect(() => {
     return () => {
       if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+      if (pasteNoticeTimerRef.current) clearTimeout(pasteNoticeTimerRef.current);
+      createdUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      createdUrlsRef.current.clear();
     };
   }, []);
 
+  const showTransientPasteNotice = (msg: string) => {
+    setPasteNotice(msg);
+    if (pasteNoticeTimerRef.current) clearTimeout(pasteNoticeTimerRef.current);
+    pasteNoticeTimerRef.current = setTimeout(() => {
+      setPasteNotice(null);
+    }, 3500);
+  };
+
+  const clearQueuedImages = () => {
+    setImageFiles((prev) => {
+      prev.forEach((item) => {
+        URL.revokeObjectURL(item.previewUrl);
+        createdUrlsRef.current.delete(item.previewUrl);
+      });
+      return [];
+    });
+  };
+
+  const clearAllInputs = () => {
+    setSelectedFile(null);
+    setFileArrayBuffer(null);
+    clearQueuedImages();
+    setPdfPageImages({});
+    setError(null);
+    setPasteNotice(null);
+  };
+
+  const addImagesToQueue = (files: File[], source: 'clipboard' | 'upload') => {
+    if (!files || files.length === 0) return;
+
+    const now = Date.now();
+    const newItems: QueuedImage[] = files.map((file, idx) => {
+      const previewUrl = URL.createObjectURL(file);
+      createdUrlsRef.current.add(previewUrl);
+      return {
+        id: `img_${now}_${idx}_${Math.random().toString(36).slice(2, 7)}`,
+        file,
+        previewUrl,
+        name: file.name,
+        size: file.size,
+        source,
+      };
+    });
+
+    // Switch from PDF/DOCX mode to multi-image queue cleanly
+    setSelectedFile(null);
+    setFileArrayBuffer(null);
+    setError(null);
+    setPageMode('all');
+
+    setImageFiles((prev) => {
+      const next = [...prev, ...newItems];
+      setPdfTotalPages(next.length);
+      setFromPage(1);
+      setToPage(next.length);
+      showTransientPasteNotice(
+        source === 'clipboard'
+          ? `Đã dán thêm ${newItems.length} ảnh từ Clipboard (Tổng: ${next.length} ảnh) — Nhấn Ctrl + V để dán tiếp`
+          : `Đã thêm ${newItems.length} ảnh vào danh sách (Tổng: ${next.length} ảnh)`
+      );
+      return next;
+    });
+  };
+
+  const removeQueuedImage = (id: string) => {
+    setImageFiles((prev) => {
+      const target = prev.find((item) => item.id === id);
+      if (target) {
+        URL.revokeObjectURL(target.previewUrl);
+        createdUrlsRef.current.delete(target.previewUrl);
+      }
+      const next = prev.filter((item) => item.id !== id);
+      setPdfTotalPages(Math.max(1, next.length));
+      setFromPage(1);
+      setToPage(Math.max(1, next.length));
+      return next;
+    });
+  };
+
+  const moveQueuedImage = (index: number, direction: -1 | 1) => {
+    setImageFiles((prev) => {
+      const targetIdx = index + direction;
+      if (targetIdx < 0 || targetIdx >= prev.length) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(index, 1);
+      next.splice(targetIdx, 0, moved);
+      return next;
+    });
+  };
+
   // Detect total pages when file is selected
   const handleInspectFile = async (file: File) => {
+    if (file.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif)$/i.test(file.name)) {
+      addImagesToQueue([file], 'upload');
+      return;
+    }
+
+    clearQueuedImages();
     setSelectedFile(file);
     setError(null);
     setResultText('');
@@ -276,46 +403,93 @@ export function PdfToWord() {
       setPageMode('all');
       setFromPage(1);
       setToPage(1);
-      if (file.type.startsWith('image/')) {
-        const base64 = await fileToBase64(file);
-        setPdfPageImages({ 1: `data:${file.type || 'image/png'};base64,${base64}` });
-      }
+    }
+  };
+
+  const handleIncomingFiles = (fileList: FileList | File[]) => {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return;
+
+    const imageList = files.filter(
+      (f) => f.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif)$/i.test(f.name)
+    );
+    const nonImage = files.find(
+      (f) => !f.type.startsWith('image/') && !/\.(png|jpe?g|webp|bmp|gif)$/i.test(f.name)
+    );
+
+    if (imageList.length > 0 && !nonImage) {
+      addImagesToQueue(imageList, 'upload');
+    } else if (nonImage) {
+      handleInspectFile(nonImage);
     }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      handleInspectFile(file);
+    if (e.target.files && e.target.files.length > 0) {
+      handleIncomingFiles(e.target.files);
     }
+    e.target.value = '';
+  };
+
+  const handleAddMoreImagesSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const imgs = Array.from(e.target.files).filter(
+        (f) => f.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif)$/i.test(f.name)
+      );
+      if (imgs.length > 0) {
+        addImagesToQueue(imgs, 'upload');
+      }
+    }
+    e.target.value = '';
   };
 
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      handleInspectFile(file);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleIncomingFiles(e.dataTransfer.files);
     }
   };
 
-  // Clipboard Paste Support (Ctrl + V / Cmd + V)
+  // Multi-image Clipboard Paste Support (Ctrl + V / Cmd + V)
   const processClipboardData = (clipboardData: DataTransfer | null) => {
-    if (!clipboardData || !clipboardData.items) return false;
-    const items = clipboardData.items;
+    if (!clipboardData || isUploadingRef.current) return false;
 
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item.type.indexOf('image') !== -1) {
-        const file = item.getAsFile();
-        if (file) {
-          const dateStr = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-          const namedFile = new File([file], `Anh_Dan_Clipboard_${dateStr}.png`, { type: file.type || 'image/png' });
-          handleInspectFile(namedFile);
-          return true;
+    const extractedImages: File[] = [];
+    const dateStr = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+    if (clipboardData.items && clipboardData.items.length > 0) {
+      for (let i = 0; i < clipboardData.items.length; i++) {
+        const item = clipboardData.items[i];
+        if (item.kind === 'file' && item.type.indexOf('image') !== -1) {
+          const file = item.getAsFile();
+          if (file) {
+            const ext = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/webp' ? 'webp' : 'png';
+            const namedFile = new File(
+              [file],
+              `Anh_Clipboard_${dateStr}_${extractedImages.length + 1}.${ext}`,
+              { type: file.type || 'image/png' }
+            );
+            extractedImages.push(namedFile);
+          }
         }
       }
+    }
+
+    // Fallback: some OS file-copy operations expose multiple image files via clipboardData.files
+    if (extractedImages.length === 0 && clipboardData.files && clipboardData.files.length > 0) {
+      for (let i = 0; i < clipboardData.files.length; i++) {
+        const file = clipboardData.files[i];
+        if (file.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif)$/i.test(file.name)) {
+          extractedImages.push(file);
+        }
+      }
+    }
+
+    if (extractedImages.length > 0) {
+      addImagesToQueue(extractedImages, 'clipboard');
+      return true;
     }
     return false;
   };
@@ -323,7 +497,42 @@ export function PdfToWord() {
   const handlePasteEvent = (e: React.ClipboardEvent) => {
     if (processClipboardData(e.clipboardData)) {
       e.preventDefault();
+      e.stopPropagation();
     }
+  };
+
+  const handleReadClipboardButton = async () => {
+    if (isUploadingRef.current) return;
+    if (navigator.clipboard && typeof navigator.clipboard.read === 'function') {
+      try {
+        const clipboardItems = await navigator.clipboard.read();
+        const extracted: File[] = [];
+        const dateStr = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+        for (const item of clipboardItems) {
+          const imageType = item.types.find((t) => t.startsWith('image/'));
+          if (imageType) {
+            const blob = await item.getType(imageType);
+            const ext = imageType === 'image/jpeg' ? 'jpg' : imageType === 'image/webp' ? 'webp' : 'png';
+            extracted.push(
+              new File([blob], `Anh_Clipboard_${dateStr}_${extracted.length + 1}.${ext}`, {
+                type: imageType,
+              })
+            );
+          }
+        }
+
+        if (extracted.length > 0) {
+          addImagesToQueue(extracted, 'clipboard');
+          return;
+        }
+        showTransientPasteNotice('Clipboard hiện chưa có hình ảnh. Hãy chụp/sao chép ảnh rồi nhấn Ctrl + V.');
+        return;
+      } catch {
+        // Fallback hint when iframe/browser restricts navigator.clipboard.read()
+      }
+    }
+    showTransientPasteNotice('Hãy nhấn phím tắt Ctrl + V (hoặc Cmd + V) trực tiếp trên bàn phím để dán ảnh.');
   };
 
   const detectPageForPlaceholder = (text: string, placeholderTag?: string): number => {
@@ -350,6 +559,7 @@ export function PdfToWord() {
 
   useEffect(() => {
     const onGlobalPaste = (e: ClipboardEvent) => {
+      if (e.defaultPrevented) return;
       const target = e.target as HTMLElement;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
         return;
@@ -398,12 +608,16 @@ export function PdfToWord() {
   };
 
   // Start real-time progress animation
-  const startProgressTracking = (targetPages: number) => {
-    const estimatedSec = Math.max(10, Math.round(targetPages * 4.5));
+  const startProgressTracking = (targetPages: number, isImageBatch = false) => {
+    const estimatedSec = Math.max(6, Math.round(targetPages * 3.5));
     setEstimatedTimeSec(estimatedSec);
     setElapsedSec(0);
     setProgressPercent(5);
-    setProgressStatus(`📄 Đang khởi tạo và chuẩn bị phân tích ${targetPages} trang...`);
+    setProgressStatus(
+      isImageBatch
+        ? `🖼️ Đang khởi tạo và chuẩn bị số hóa ${targetPages} ảnh...`
+        : `📄 Đang khởi tạo và chuẩn bị phân tích ${targetPages} trang...`
+    );
 
     if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
 
@@ -412,27 +626,49 @@ export function PdfToWord() {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       setElapsedSec(elapsed);
 
-      // Smooth percentage calculation up to 96%
+      // Smooth percentage calculation up to 94% without regressing real page completion progress
       const ratio = elapsed / estimatedSec;
-      let currentPercent = Math.min(96, Math.round(ratio * 90 + 5));
+      const currentPercent = Math.min(94, Math.round(ratio * 88 + 5));
 
-      if (currentPercent < 25) {
-        setProgressStatus(`📄 Đang đọc và tách trang PDF từ trang ${fromPage} đến trang ${toPage}...`);
-      } else if (currentPercent < 55) {
-        setProgressStatus(`🧮 Đang bóc tách hình ảnh, chữ số và công thức Toán/Lý/Hóa...`);
-      } else if (currentPercent < 80) {
-        setProgressStatus(`✂️ Đang dò khung hình vẽ gốc và chuẩn hóa công thức LaTeX...`);
-      } else {
-        setProgressStatus(`✨ Đang kiểm tra định dạng và tổng hợp văn bản Word (.docx)...`);
-      }
+      setProgressStatus((prev) => {
+        if (
+          prev.startsWith('✨ Đã số hóa xong') ||
+          prev.startsWith('📄 Đang số hóa') ||
+          prev.startsWith('🖼️ Đang số hóa')
+        ) {
+          return prev;
+        }
+        if (currentPercent < 25) {
+          return isImageBatch
+            ? `🖼️ Đang tối ưu độ nét và xử lý ${targetPages} ảnh theo thứ tự...`
+            : `📄 Đang đọc và tách trang PDF...`;
+        }
+        if (currentPercent < 55) {
+          return `🧮 Đang bóc tách hình ảnh, chữ số và công thức Toán/Lý/Hóa...`;
+        }
+        if (currentPercent < 80) {
+          return `✂️ Đang dò khung hình vẽ gốc và chuẩn hóa công thức LaTeX...`;
+        }
+        return `✨ Đang kiểm tra định dạng và tổng hợp văn bản Word (.docx)...`;
+      });
 
-      setProgressPercent(currentPercent);
+      setProgressPercent((prev) => Math.max(prev, currentPercent));
     }, 400);
   };
 
+  const handleCancelConvert = () => {
+    cancelRunIdRef.current += 1;
+    if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    setIsUploading(false);
+    setProgressPercent(0);
+    setProgressStatus('');
+    setError('Đã hủy quá trình chuyển đổi theo yêu cầu.');
+  };
+
   const handleConvert = async () => {
-    if (!selectedFile) {
-      setError('Vui lòng chọn file trước.');
+    const hasImages = imageFiles.length > 0 && !selectedFile;
+    if (!selectedFile && !hasImages) {
+      setError('Vui lòng chọn file hoặc dán ảnh bằng Ctrl + V trước.');
       return;
     }
 
@@ -440,11 +676,13 @@ export function PdfToWord() {
     setError(null);
     setResultText('');
 
-    const isPdf = selectedFile.type === 'application/pdf' || selectedFile.name.toLowerCase().endsWith('.pdf');
+    const isPdf = Boolean(
+      selectedFile && (selectedFile.type === 'application/pdf' || selectedFile.name.toLowerCase().endsWith('.pdf'))
+    );
     
     // Determine target page range
     let startP = 1;
-    let endP = pdfTotalPages;
+    let endP = hasImages ? imageFiles.length : pdfTotalPages;
     if (isPdf) {
       if (pageMode === 'recommended') {
         startP = 1;
@@ -456,95 +694,257 @@ export function PdfToWord() {
         startP = 1;
         endP = pdfTotalPages;
       }
+    } else if (hasImages) {
+      setFromPage(1);
+      setToPage(imageFiles.length);
+      setPdfTotalPages(imageFiles.length);
     }
 
-    const pagesToProcess = isPdf ? (endP - startP + 1) : 1;
-    startProgressTracking(pagesToProcess);
+    const runId = ++cancelRunIdRef.current;
+    const isCancelled = () => cancelRunIdRef.current !== runId;
+
+    const pagesToProcess = isPdf ? (endP - startP + 1) : (hasImages ? imageFiles.length : 1);
+    startProgressTracking(pagesToProcess, hasImages);
 
     try {
       let finalResult = '';
 
-      if (isPdf && selectedFile) {
-        // Multi-page PDF: Process page-by-page when possible for crisp progress tracking & cropping,
-        // with automatic fallback to direct multimodal PDF AI processing if page rendering encounters any issue
+      if (hasImages) {
+        // Multi-image batch OCR (from Ctrl+V clipboard paste or multi-image upload)
+        const totalImages = imageFiles.length;
         const pageImagesMap: { [pageNum: number]: string } = {};
-        const pageDetectedFiguresMap: { [pageNum: number]: PdfDetectedFigure[] } = {};
+        const pageResults: string[] = new Array(totalImages);
+        let completedCount = 0;
 
-        try {
-          const freshBuffer = await selectedFile.arrayBuffer();
-          const pageResults: string[] = new Array(pagesToProcess);
+        const batchSize = 4;
+        for (let i = 0; i < totalImages; i += batchSize) {
+          if (isCancelled()) return;
+          const batchIndices: number[] = [];
+          for (let j = i; j < i + batchSize && j < totalImages; j++) {
+            batchIndices.push(j);
+          }
 
-          const batchSize = 3;
-          for (let i = 0; i < pagesToProcess; i += batchSize) {
-            const batch = [];
-            for (let j = i; j < i + batchSize && j < pagesToProcess; j++) {
-              batch.push(j);
-            }
-
-            await Promise.all(batch.map(async (batchIdx) => {
-              const p = startP + batchIdx;
-              const { dataUrl, detectedFigures } = await renderPdfPageWithFigures(freshBuffer.slice(0), p, 2.0);
+          await Promise.all(
+            batchIndices.map(async (imgIdx) => {
+              const p = imgIdx + 1;
+              const imgItem = imageFiles[imgIdx];
+              const optimized = await optimizeImageForOcr(imgItem.file);
+              if (isCancelled()) return;
+              const dataUrl = `data:${optimized.type};base64,${optimized.data}`;
               pageImagesMap[p] = dataUrl;
-              pageDetectedFiguresMap[p] = detectedFigures;
 
               const payload = JSON.stringify({
-                files: [{
-                  data: dataUrl.split(',')[1],
-                  type: 'image/png',
-                  name: `Trang_${p}.png`
-                }],
+                files: [optimized],
                 pageNum: p,
-                totalPages: pdfTotalPages
+                totalPages: totalImages,
               });
 
               let response = await apiFetch('/api/pdf-to-word', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: payload
+                body: payload,
               });
 
-              if (!response.ok) {
-                await new Promise((r) => setTimeout(r, 900));
+              if (!response.ok && response.status >= 500) {
+                await new Promise((r) => setTimeout(r, 700));
                 response = await apiFetch('/api/pdf-to-word', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: payload
+                  body: payload,
                 });
               }
 
-              if (!response.ok) throw new Error(`Lỗi xử lý trang ${p}`);
-              const text = await response.text();
+              if (!response.ok) {
+                let errorData: any;
+                const errText = await response.text();
+                try { errorData = JSON.parse(errText); } catch { errorData = { error: errText }; }
+                const errorMsg = typeof errorData.error === 'object' ? JSON.stringify(errorData.error) : (errorData.error || `Lỗi xử lý ảnh ${p}`);
+                throw new Error(errorMsg);
+              }
+
+              let text = await response.text();
+              if (!text || !text.trim()) {
+                await new Promise((r) => setTimeout(r, 700));
+                response = await apiFetch('/api/pdf-to-word', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: payload,
+                });
+                text = await response.text();
+              }
+
               const data = parseApiResponse<any>(text);
-              let pageText = typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || '');
-              
+              let pageText =
+                typeof data.result === 'string'
+                  ? data.result
+                  : data.result?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
               if (pageText) {
                 pageText = cleanAndNormalizePageMarkdown(pageText);
                 const resolved = await resolveCropFigMarkers(pageText, pageImagesMap, visualMode === 'auto_crop', p);
                 pageText = resolved.text;
-                let croppedBoxes = resolved.croppedBoxes;
-
-                // Layer 2: Deterministic PDF vector/image figure recovery (guarantees 100% figures from digital PDFs like LaTeX/TikZ/Word)
-                if (visualMode === 'auto_crop' && pageImagesMap[p] && detectedFigures.length > 0) {
-                  const pdfFigRes = await applyPdfDetectedFigures(
-                    pageText,
-                    pageImagesMap[p],
-                    p,
-                    detectedFigures,
-                    croppedBoxes
-                  );
-                  pageText = pdfFigRes.text;
-                  croppedBoxes = pdfFigRes.croppedBoxes;
-                }
-
-                // Layer 3: Pass-2 Vision recovery for scanned PDFs / raster pages where vector paths aren't exposed
                 if (visualMode === 'auto_crop' && pageImagesMap[p]) {
-                  pageText = await recoverMissingPageFigures(pageText, pageImagesMap[p], p, croppedBoxes);
+                  pageText = await recoverMissingPageFigures(pageText, pageImagesMap[p], p, resolved.croppedBoxes);
                 }
               }
-              pageResults[batchIdx] = pageText.trim();
-            }));
+
+              pageResults[imgIdx] = pageText.trim();
+              completedCount += 1;
+              if (!isCancelled()) {
+                setProgressPercent(Math.min(96, Math.round((completedCount / totalImages) * 90 + 5)));
+                setProgressStatus(`✨ Đã số hóa xong ${completedCount}/${totalImages} ảnh...`);
+              }
+            })
+          );
+        }
+
+        if (isCancelled()) return;
+        setPdfPageImages(pageImagesMap);
+
+        finalResult = pageResults
+          .map((t, idx) => {
+            const currP = idx + 1;
+            const nextP = currP + 1;
+            const sep = idx < pageResults.length - 1 ? `\n\n--- [Hết Trang ${currP} / Sang Trang ${nextP}] ---\n\n` : '';
+            return t + sep;
+          })
+          .join('');
+      } else if (isPdf && selectedFile) {
+        // Multi-page PDF: Open PDF ONCE, render crisp compact JPEGs (~180KB), process in parallel batches of 4,
+        // and only fall back to direct PDF processing if PDF.js rendering itself fails (never on AI API/quota errors!)
+        const pageImagesMap: { [pageNum: number]: string } = {};
+        const pageDetectedFiguresMap: { [pageNum: number]: PdfDetectedFigure[] } = {};
+
+        let renderFailed = false;
+        try {
+          const freshBuffer = await selectedFile.arrayBuffer();
+          const pageResults: string[] = new Array(pagesToProcess);
+          let completedCount = 0;
+
+          let docHandle: { pdf: any; numPages: number; destroy: () => Promise<void> } | null = null;
+          try {
+            docHandle = await openPdfDocument(freshBuffer.slice(0));
+          } catch (openErr) {
+            renderFailed = true;
+            throw openErr;
           }
 
+          try {
+            const batchSize = 4;
+            for (let i = 0; i < pagesToProcess; i += batchSize) {
+              if (isCancelled()) return;
+              const batch: number[] = [];
+              for (let j = i; j < i + batchSize && j < pagesToProcess; j++) {
+                batch.push(j);
+              }
+
+              // Render page canvases sequentially on the shared PDF handle (very fast: ~120ms/page), then fire AI calls in parallel
+              const renderedBatch: Array<{
+                batchIdx: number;
+                p: number;
+                dataUrl: string;
+                mimeType: string;
+                detectedFigures: PdfDetectedFigure[];
+              }> = [];
+
+              for (const batchIdx of batch) {
+                const p = startP + batchIdx;
+                try {
+                  const rendered = await renderLoadedPdfPageWithFigures(docHandle.pdf, p, 1.65, 'jpeg');
+                  pageImagesMap[p] = rendered.dataUrl;
+                  pageDetectedFiguresMap[p] = rendered.detectedFigures;
+                  renderedBatch.push({
+                    batchIdx,
+                    p,
+                    dataUrl: rendered.dataUrl,
+                    mimeType: rendered.mimeType,
+                    detectedFigures: rendered.detectedFigures,
+                  });
+                } catch (rErr) {
+                  renderFailed = true;
+                  throw rErr;
+                }
+              }
+
+              if (isCancelled()) return;
+
+              await Promise.all(
+                renderedBatch.map(async ({ batchIdx, p, dataUrl, mimeType, detectedFigures }) => {
+                  const payload = JSON.stringify({
+                    files: [{
+                      data: dataUrl.split(',')[1],
+                      type: mimeType,
+                      name: `Trang_${p}.jpg`
+                    }],
+                    pageNum: p,
+                    totalPages: pdfTotalPages
+                  });
+
+                  let response = await apiFetch('/api/pdf-to-word', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: payload
+                  });
+
+                  if (!response.ok && response.status >= 500) {
+                    await new Promise((r) => setTimeout(r, 700));
+                    response = await apiFetch('/api/pdf-to-word', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: payload
+                    });
+                  }
+
+                  if (!response.ok) {
+                    let errorData: any;
+                    const errText = await response.text();
+                    try { errorData = JSON.parse(errText); } catch { errorData = { error: errText }; }
+                    const errorMsg = typeof errorData.error === 'object' ? JSON.stringify(errorData.error) : (errorData.error || `Lỗi xử lý trang ${p}`);
+                    throw new Error(errorMsg);
+                  }
+
+                  const text = await response.text();
+                  const data = parseApiResponse<any>(text);
+                  let pageText = typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || '');
+
+                  if (pageText) {
+                    pageText = cleanAndNormalizePageMarkdown(pageText);
+                    const resolved = await resolveCropFigMarkers(pageText, pageImagesMap, visualMode === 'auto_crop', p);
+                    pageText = resolved.text;
+                    let croppedBoxes = resolved.croppedBoxes;
+
+                    // Layer 2: Deterministic PDF vector/image figure recovery (instant, zero AI calls)
+                    if (visualMode === 'auto_crop' && pageImagesMap[p] && detectedFigures.length > 0) {
+                      const pdfFigRes = await applyPdfDetectedFigures(
+                        pageText,
+                        pageImagesMap[p],
+                        p,
+                        detectedFigures,
+                        croppedBoxes
+                      );
+                      pageText = pdfFigRes.text;
+                      croppedBoxes = pdfFigRes.croppedBoxes;
+                    }
+
+                    // Layer 3: Pass-2 Vision recovery ONLY when a printed figure is explicitly missing
+                    if (visualMode === 'auto_crop' && pageImagesMap[p]) {
+                      pageText = await recoverMissingPageFigures(pageText, pageImagesMap[p], p, croppedBoxes);
+                    }
+                  }
+                  pageResults[batchIdx] = pageText.trim();
+                  completedCount += 1;
+                  if (!isCancelled()) {
+                    setProgressPercent(Math.min(96, Math.round((completedCount / pagesToProcess) * 90 + 5)));
+                    setProgressStatus(`✨ Đã số hóa xong ${completedCount}/${pagesToProcess} trang PDF...`);
+                  }
+                })
+              );
+            }
+          } finally {
+            await docHandle?.destroy();
+          }
+
+          if (isCancelled()) return;
           setPdfPageImages(pageImagesMap);
 
           // Combine all pages with standard page separation markers
@@ -555,7 +955,12 @@ export function PdfToWord() {
             return t + sep;
           }).join('');
         } catch (pageErr: any) {
-          console.warn('Page-by-page render failed, falling back to direct server-side PDF processing:', pageErr);
+          if (isCancelled()) return;
+          // Never waste 60s+ retrying whole-PDF fallback if the error came from Gemini API (401/404/429/503/timeout)
+          if (!renderFailed) {
+            throw pageErr;
+          }
+          console.warn('PDF.js page render failed, falling back to direct multimodal PDF processing:', pageErr);
           setProgressStatus('⚡ Đang xử lý bóc tách tài liệu PDF trực tiếp bằng AI...');
           setProgressPercent(60);
 
@@ -631,7 +1036,7 @@ export function PdfToWord() {
 
         // Tuyệt đối không tự bịa đồ thị vector bằng autoEnrichTextWithVisuals khi chuyển PDF sang Word
 
-      } else {
+      } else if (selectedFile) {
         // Single Image or DOCX
         let fileListForApi: { data: string; type: string; name: string }[] = [];
         const isDocx = selectedFile.name.toLowerCase().endsWith('.docx');
@@ -713,22 +1118,28 @@ export function PdfToWord() {
         }
       }
 
+      if (isCancelled()) return;
+
       // Stop progress timer & jump to 100%
       if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
       setProgressPercent(100);
       setProgressStatus('🎉 Số hóa hoàn tất thành công!');
 
       setTimeout(() => {
+        if (isCancelled()) return;
         setResultText(finalResult);
         setIsUploading(false);
-      }, 400);
+      }, 300);
 
     } catch (err: any) {
       if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+      if (isCancelled()) return;
       console.error(err);
       const errorMsg = err.message || '';
       if (errorMsg.includes("429") || errorMsg.includes("quota") || errorMsg.includes("RESOURCE_EXHAUSTED")) {
         setError("Hệ thống đang quá tải hoặc tạm thời không khả dụng do nhu cầu cao. Vui lòng thử lại sau ít phút hoặc chọn khoảng trang ngắn hơn.");
+      } else if (errorMsg.includes("timed out") || errorMsg.includes("504") || errorMsg.includes("quá thời gian") || errorMsg.includes("AbortError")) {
+        setError("Máy chủ AI phản hồi quá thời gian chờ. Vui lòng bấm chuyển đổi lại (hoặc kiểm tra kết nối mạng / API Key).");
       } else if (errorMsg.includes('{"error":')) {
         try {
           const parsed = JSON.parse(errorMsg);
@@ -783,11 +1194,21 @@ export function PdfToWord() {
 
   const handleExportLatex = () => {
     if (!resultText) return;
-    const rawName = selectedFile ? selectedFile.name.replace(/\.[^/.]+$/, '') : 'TaiLieu_DaChuyenDoi';
+    const rawName = selectedFile
+      ? selectedFile.name.replace(/\.[^/.]+$/, '')
+      : imageFiles.length === 1
+        ? imageFiles[0].name.replace(/\.[^/.]+$/, '')
+        : imageFiles.length > 1
+          ? `TaiLieu_${imageFiles.length}_Anh`
+          : 'TaiLieu_DaChuyenDoi';
     exportToLatexTexFile(resultText, `${rawName}_LaTeX.tex`);
   };
 
-  const isPdf = selectedFile && (selectedFile.type === 'application/pdf' || selectedFile.name.toLowerCase().endsWith('.pdf'));
+  const isPdf = Boolean(
+    selectedFile && (selectedFile.type === 'application/pdf' || selectedFile.name.toLowerCase().endsWith('.pdf'))
+  );
+  const isImageQueue = imageFiles.length > 0 && !selectedFile;
+  const hasInput = Boolean(selectedFile) || isImageQueue;
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 p-4 lg:p-8">
@@ -799,12 +1220,29 @@ export function PdfToWord() {
             Chuyển đổi tài liệu (PDF/Ảnh) sang Word
           </h2>
           <p className="text-slate-600 max-w-2xl mx-auto">
-            Công cụ số hóa tài liệu thông minh bám sát chuẩn 100% công thức Toán/Lý/Hóa LaTeX, tự động phân đoạn trang và bảo toàn cấu trúc đề thi.
+            Công cụ số hóa tài liệu thông minh bám sát chuẩn 100% công thức Toán/Lý/Hóa LaTeX, hỗ trợ dán liên tiếp nhiều ảnh bằng Ctrl + V, tự động phân đoạn trang và bảo toàn cấu trúc đề thi.
           </p>
         </div>
 
         <div className="max-w-3xl mx-auto space-y-6">
-          {!selectedFile ? (
+          {pasteNotice && (
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl text-xs font-semibold animate-in fade-in">
+              <div className="flex items-center gap-2 min-w-0">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="truncate">{pasteNotice}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPasteNotice(null)}
+                className="text-emerald-700 hover:text-emerald-900 p-0.5 rounded shrink-0 cursor-pointer"
+                aria-label="Đóng thông báo"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {!hasInput ? (
             <div 
               tabIndex={0}
               className="border-2 border-dashed border-slate-300 rounded-2xl p-6 lg:p-12 text-center hover:bg-slate-50/80 transition-all cursor-pointer focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100 shadow-2xs"
@@ -818,49 +1256,204 @@ export function PdfToWord() {
                 ref={fileInputRef}
                 onChange={handleFileSelect}
                 className="hidden"
-                accept=".pdf,.png,.jpg,.jpeg,.docx"
+                accept=".pdf,.png,.jpg,.jpeg,.webp,.docx"
+                multiple
               />
               <div className="bg-blue-100/80 p-4 rounded-2xl w-16 h-16 mx-auto flex items-center justify-center mb-4 text-blue-600 shadow-2xs">
                 <Upload className="w-8 h-8" />
               </div>
               <h3 className="text-lg font-bold text-slate-800 mb-1">Kéo thả file hoặc nhấn để tải lên</h3>
-              <p className="text-slate-500 mb-4 text-sm">Hỗ trợ file PDF, Ảnh (.png, .jpg), hoặc Word (.docx)</p>
+              <p className="text-slate-500 mb-4 text-sm">Hỗ trợ file PDF, chọn nhiều Ảnh (.png, .jpg, .webp), hoặc Word (.docx)</p>
               
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-full text-xs font-semibold mb-6 border border-blue-200 shadow-2xs">
-                <Clipboard className="w-4 h-4 text-blue-600" />
-                <span>Hoặc nhấn <b>Ctrl + V</b> (Cmd + V) để dán ảnh trực tiếp từ Clipboard</span>
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold mb-6 border border-blue-200 shadow-2xs">
+                <Clipboard className="w-4 h-4 text-blue-600 shrink-0" />
+                <span>Nhấn <b>Ctrl + V</b> (Cmd + V) liên tiếp để dán <b>nhiều ảnh</b> trực tiếp từ Clipboard</span>
               </div>
 
-              <div>
-                <button className="px-6 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-sm">
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <button
+                  type="button"
+                  className="px-6 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-sm cursor-pointer"
+                >
                   Chọn File Tài Liệu
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleReadClipboardButton();
+                  }}
+                  className="px-5 py-2.5 bg-white text-blue-700 border border-blue-300 font-bold rounded-xl hover:bg-blue-50 transition-all shadow-2xs inline-flex items-center gap-2 cursor-pointer"
+                >
+                  <Clipboard className="w-4 h-4" />
+                  <span>Dán ảnh từ Clipboard</span>
                 </button>
               </div>
             </div>
           ) : (
-            <div className="border border-slate-200 rounded-2xl p-6 bg-slate-50/50 shadow-2xs space-y-6">
-              {/* Selected File Overview */}
-              <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-slate-200/80">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="bg-emerald-100 p-3 rounded-xl text-emerald-600 shrink-0">
-                    <FileText className="w-6 h-6" />
+            <div
+              className="border border-slate-200 rounded-2xl p-6 bg-slate-50/50 shadow-2xs space-y-6"
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              onPaste={handlePasteEvent}
+            >
+              {/* Selected Single File Overview OR Multi-Image Queue */}
+              {isImageQueue ? (
+                <div className="bg-white p-4 rounded-xl border border-slate-200/80 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="bg-blue-100 p-2.5 rounded-xl text-blue-700 shrink-0">
+                        <ImageIcon className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="text-sm sm:text-base font-bold text-slate-900">
+                          Danh sách ảnh chờ số hóa ({imageFiles.length} ảnh)
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Nhấn <b className="text-slate-700">Ctrl + V</b> để dán thêm ảnh tiếp theo · Kéo thả hoặc sắp xếp thứ tự trước khi chuyển sang Word
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <input
+                        type="file"
+                        ref={addMoreImagesInputRef}
+                        onChange={handleAddMoreImagesSelect}
+                        className="hidden"
+                        accept=".png,.jpg,.jpeg,.webp"
+                        multiple
+                      />
+                      <button
+                        type="button"
+                        onClick={handleReadClipboardButton}
+                        disabled={isUploading}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+                        title="Đọc ảnh đang có trong Clipboard hoặc nhấn Ctrl + V"
+                      >
+                        <Clipboard className="w-3.5 h-3.5" />
+                        <span>Dán thêm (Ctrl+V)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => addMoreImagesInputRef.current?.click()}
+                        disabled={isUploading}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Chọn thêm ảnh</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={clearAllInputs}
+                        disabled={isUploading}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+                        title="Xóa toàn bộ ảnh đã dán"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Xóa hết</span>
+                      </button>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <h3 className="text-base font-bold text-slate-800 truncate">{selectedFile.name}</h3>
-                    <p className="text-xs text-slate-500 font-medium">
-                      {(selectedFile.size / 1024 / 1024).toFixed(2)} MB {isPdf && `• ${pdfTotalPages} trang PDF`}
-                    </p>
+
+                  {/* Thumbnail Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    {imageFiles.map((img, idx) => (
+                      <div
+                        key={img.id}
+                        className="group bg-slate-50 border border-slate-200 rounded-xl overflow-hidden flex flex-col hover:border-blue-400 transition-colors"
+                      >
+                        <div className="relative aspect-[4/3] bg-slate-100 flex items-center justify-center overflow-hidden">
+                          <img
+                            src={img.previewUrl}
+                            alt={`Ảnh ${idx + 1}`}
+                            className="w-full h-full object-contain"
+                          />
+                          <span className="absolute top-1.5 left-1.5 px-2 py-0.5 bg-slate-900/80 text-white text-[11px] font-bold rounded-md tabular-nums">
+                            Trang {idx + 1}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeQueuedImage(img.id)}
+                            disabled={isUploading}
+                            className="absolute top-1.5 right-1.5 p-1 bg-white/90 hover:bg-rose-600 text-slate-600 hover:text-white rounded-md shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                            title="Xóa ảnh này"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        <div className="p-2 bg-white border-t border-slate-100 flex items-center justify-between gap-1">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[11px] font-semibold text-slate-700 truncate" title={img.name}>
+                              {img.name}
+                            </p>
+                            <p className="text-[10px] text-slate-400 tabular-nums">
+                              {(img.size / 1024).toFixed(0)} KB · {img.source === 'clipboard' ? 'Ctrl+V' : 'Tải lên'}
+                            </p>
+                          </div>
+                          {imageFiles.length > 1 && (
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => moveQueuedImage(idx, -1)}
+                                disabled={idx === 0 || isUploading}
+                                className="p-1 text-slate-500 hover:text-blue-700 hover:bg-blue-50 rounded disabled:opacity-30 cursor-pointer"
+                                title="Di chuyển lên trước"
+                              >
+                                <ChevronLeft className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveQueuedImage(idx, 1)}
+                                disabled={idx === imageFiles.length - 1 || isUploading}
+                                className="p-1 text-slate-500 hover:text-blue-700 hover:bg-blue-50 rounded disabled:opacity-30 cursor-pointer"
+                                title="Di chuyển ra sau"
+                              >
+                                <ChevronRight className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Quick Paste / Add Card */}
+                    <button
+                      type="button"
+                      onClick={() => addMoreImagesInputRef.current?.click()}
+                      disabled={isUploading}
+                      className="min-h-[140px] border-2 border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50/40 rounded-xl flex flex-col items-center justify-center gap-1.5 p-3 text-center text-slate-500 hover:text-blue-700 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <Plus className="w-5 h-5" />
+                      <span className="text-xs font-bold">Thêm ảnh</span>
+                      <span className="text-[11px] text-slate-400">Hoặc nhấn Ctrl + V</span>
+                    </button>
                   </div>
                 </div>
-                <button 
-                  className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                  onClick={() => setSelectedFile(null)}
-                  title="Đổi file khác"
-                  disabled={isUploading}
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+              ) : selectedFile ? (
+                <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-slate-200/80">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="bg-emerald-100 p-3 rounded-xl text-emerald-600 shrink-0">
+                      <FileText className="w-6 h-6" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-base font-bold text-slate-800 truncate">{selectedFile.name}</h3>
+                      <p className="text-xs text-slate-500 font-medium">
+                        {(selectedFile.size / 1024 / 1024).toFixed(2)} MB {isPdf && `• ${pdfTotalPages} trang PDF`}
+                      </p>
+                    </div>
+                  </div>
+                  <button 
+                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                    onClick={clearAllInputs}
+                    title="Đổi file khác"
+                    disabled={isUploading}
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              ) : null}
 
               {/* PDF Page Selection Controls & Recommendation */}
               {isPdf && (
@@ -1065,31 +1658,50 @@ export function PdfToWord() {
                     />
                   </div>
 
-                  <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 font-medium">
                     <span className="flex items-center gap-1.5">
                       <Layers className="w-3.5 h-3.5 text-blue-600" />
-                      <span>Số trang chọn: <b>{isPdf ? `${fromPage} - ${toPage}` : '1'}</b> ({isPdf ? toPage - fromPage + 1 : 1} trang)</span>
+                      <span>
+                        {isImageQueue ? (
+                          <>Số ảnh xử lý: <b>{imageFiles.length} ảnh</b> (Trang 1 – {imageFiles.length})</>
+                        ) : (
+                          <>Số trang chọn: <b>{isPdf ? `${fromPage} - ${toPage}` : '1'}</b> ({isPdf ? toPage - fromPage + 1 : 1} trang)</>
+                        )}
+                      </span>
                     </span>
-                    <span className="flex items-center gap-1.5 text-slate-600">
-                      <Clock className="w-3.5 h-3.5 text-indigo-600" />
-                      <span>Thời gian: <b>{elapsedSec}s</b> / Dự kiến ~{estimatedTimeSec}s</span>
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="flex items-center gap-1.5 text-slate-600">
+                        <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Thời gian: <b>{elapsedSec}s</b> / Dự kiến ~{estimatedTimeSec}s</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCancelConvert}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 font-semibold transition-colors cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" /> Hủy xử lý
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : (
                 <div className="flex justify-center gap-3">
                   <button 
-                    className="px-4 py-2.5 border border-slate-300 text-slate-600 rounded-xl hover:bg-white flex items-center gap-2 font-medium text-sm transition-colors"
-                    onClick={() => setSelectedFile(null)}
+                    className="px-4 py-2.5 border border-slate-300 text-slate-600 rounded-xl hover:bg-white flex items-center gap-2 font-medium text-sm transition-colors cursor-pointer"
+                    onClick={clearAllInputs}
                   >
                     <X className="w-4 h-4" /> Hủy
                   </button>
                   <button 
-                    className="px-8 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 flex items-center gap-2 text-sm shadow-md hover:shadow-lg transition-all"
+                    className="px-8 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 flex items-center gap-2 text-sm shadow-md hover:shadow-lg transition-all cursor-pointer"
                     onClick={handleConvert}
                   >
                     <Sparkles className="w-4 h-4" />
-                    <span>Số hóa sang Word</span>
+                    <span>
+                      {isImageQueue && imageFiles.length > 1
+                        ? `Số hóa ${imageFiles.length} ảnh sang Word`
+                        : 'Số hóa sang Word'}
+                    </span>
                   </button>
                 </div>
               )}
@@ -1160,8 +1772,11 @@ export function PdfToWord() {
                 <span>⚡ Sửa lỗi Toán OCR 1-Click</span>
               </button>
               <button 
-                onClick={() => setResultText('')}
-                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-xs font-bold"
+                onClick={() => {
+                  clearAllInputs();
+                  setResultText('');
+                }}
+                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-xs font-bold cursor-pointer"
               >
                 Chuyển file khác
               </button>
@@ -1250,10 +1865,16 @@ export function PdfToWord() {
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <span>Cắt hình vẽ / Đồ thị từ trang PDF gốc chèn vào Word:</span>
+                    <span>
+                      {isImageQueue
+                        ? 'Cắt hình vẽ / Đồ thị từ ảnh gốc đã dán chèn vào Word:'
+                        : 'Cắt hình vẽ / Đồ thị từ trang PDF gốc chèn vào Word:'}
+                    </span>
                     <span className="text-[10px] px-2 py-0.5 bg-blue-100 text-blue-700 font-semibold rounded-full">Tiện ích</span>
                   </h4>
-                  <p className="text-[11px] text-slate-500 mt-0.5">Nếu cần chỉnh vùng cắt ảnh, bấm chọn trang dưới đây để cắt lại và nhúng trực tiếp vào văn bản:</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Nếu cần chỉnh vùng cắt ảnh, bấm chọn {isImageQueue ? 'ảnh' : 'trang'} dưới đây để cắt lại và nhúng trực tiếp vào văn bản:
+                  </p>
                 </div>
               </div>
 
@@ -1264,10 +1885,10 @@ export function PdfToWord() {
                     <button
                       key={pNum}
                       onClick={() => handleOpenCropper(pNum)}
-                      className="px-3 py-1.5 bg-white border border-blue-300 text-blue-700 hover:bg-blue-600 hover:text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs hover:shadow-xs"
+                      className="px-3 py-1.5 bg-white border border-blue-300 text-blue-700 hover:bg-blue-600 hover:text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs hover:shadow-xs cursor-pointer"
                     >
                       <ImageIcon className="w-3.5 h-3.5" />
-                      <span>Cắt Trang {pNum}</span>
+                      <span>{isImageQueue ? `Cắt Ảnh ${pNum}` : `Cắt Trang ${pNum}`}</span>
                     </button>
                   );
                 })}

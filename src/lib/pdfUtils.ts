@@ -453,25 +453,45 @@ export async function getPdfTotalPages(pdfData: ArrayBuffer | Uint8Array): Promi
 }
 
 /**
- * Render a single page of PDF to PNG Data URL AND deterministically extract bounding boxes
- * of vector figures / embedded images on that page.
+ * Open a PDF document once so multiple pages can be rendered without re-parsing the PDF each time.
  */
-export async function renderPdfPageWithFigures(
-  pdfData: ArrayBuffer | Uint8Array,
+export async function openPdfDocument(pdfData: ArrayBuffer | Uint8Array): Promise<{
+  pdf: any;
+  numPages: number;
+  destroy: () => Promise<void>;
+}> {
+  const safeData = getSafePdfData(pdfData);
+  const loadingTask = pdfjsLib.getDocument(getDocumentOptions(safeData));
+  const pdf = await loadingTask.promise;
+  return {
+    pdf,
+    numPages: pdf.numPages,
+    destroy: async () => {
+      try {
+        if (loadingTask?.destroy) await loadingTask.destroy();
+      } catch {}
+    },
+  };
+}
+
+/**
+ * Render a single page from an already-opened PDF.js document to crisp JPEG (15x smaller than PNG)
+ * and deterministically extract vector/embedded figure bounding boxes.
+ */
+export async function renderLoadedPdfPageWithFigures(
+  pdf: any,
   pageNum: number = 1,
-  scale: number = 2.0
+  scale: number = 1.65,
+  format: 'jpeg' | 'png' = 'jpeg'
 ): Promise<{
   dataUrl: string;
+  mimeType: string;
   width: number;
   height: number;
   numPages: number;
   detectedFigures: PdfDetectedFigure[];
 }> {
-  const safeData = getSafePdfData(pdfData);
-  const loadingTask = pdfjsLib.getDocument(getDocumentOptions(safeData));
-  const pdf = await loadingTask.promise;
   const numPages = pdf.numPages;
-
   const validPageNum = Math.max(1, Math.min(pageNum, numPages));
   const page = await pdf.getPage(validPageNum);
   const viewport = page.getViewport({ scale });
@@ -483,7 +503,7 @@ export async function renderPdfPageWithFigures(
   canvas.width = viewport.width;
   canvas.height = viewport.height;
 
-  // White background
+  // White background (critical for JPEG and transparent PDF pages)
   context.fillStyle = '#ffffff';
   context.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -496,18 +516,46 @@ export async function renderPdfPageWithFigures(
   await page.render(renderContext).promise;
   const detectedFigures = await detectFiguresFromPdfPage(page);
 
-  const dataUrl = canvas.toDataURL('image/png');
+  const mimeType = format === 'png' ? 'image/png' : 'image/jpeg';
+  const dataUrl = format === 'png' ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.86);
+
   try {
-    if (loadingTask?.destroy) await loadingTask.destroy();
+    page.cleanup?.();
   } catch {}
 
   return {
     dataUrl,
+    mimeType,
     width: viewport.width,
     height: viewport.height,
     numPages,
     detectedFigures,
   };
+}
+
+/**
+ * Render a single page of PDF to Data URL AND deterministically extract bounding boxes
+ * of vector figures / embedded images on that page.
+ */
+export async function renderPdfPageWithFigures(
+  pdfData: ArrayBuffer | Uint8Array,
+  pageNum: number = 1,
+  scale: number = 1.65,
+  format: 'jpeg' | 'png' = 'jpeg'
+): Promise<{
+  dataUrl: string;
+  mimeType: string;
+  width: number;
+  height: number;
+  numPages: number;
+  detectedFigures: PdfDetectedFigure[];
+}> {
+  const docHandle = await openPdfDocument(pdfData);
+  try {
+    return await renderLoadedPdfPageWithFigures(docHandle.pdf, pageNum, scale, format);
+  } finally {
+    await docHandle.destroy();
+  }
 }
 
 /**

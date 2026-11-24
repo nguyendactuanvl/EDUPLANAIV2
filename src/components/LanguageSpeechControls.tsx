@@ -27,6 +27,7 @@ export const LanguageSpeechControls: React.FC<LanguageSpeechControlsProps> = Rea
   const [isTranslating, setIsTranslating] = useState(false);
   const [originalContentCache, setOriginalContentCache] = useState<Record<string, string>>({});
   const [questionsCache, setQuestionsCache] = useState<Record<string, any[]>>({});
+  const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
 
   // Audio Reader state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -92,9 +93,33 @@ export const LanguageSpeechControls: React.FC<LanguageSpeechControlsProps> = Rea
     };
   }, []);
 
+  const extractResponseError = async (res: Response): Promise<string> => {
+    try {
+      const raw = await res.text();
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (typeof parsed?.error === 'string' && parsed.error.trim()) return parsed.error.trim();
+          if (typeof parsed?.message === 'string' && parsed.message.trim()) return parsed.message.trim();
+        } catch {
+          if (!raw.trim().startsWith('<')) return raw.trim();
+        }
+      }
+    } catch {}
+    return `Không thể chuyển ngữ chuyên ngành (HTTP ${res.status}). Vui lòng thử lại sau.`;
+  };
+
   // Handle Translate button
   const handleToggleLanguage = async () => {
+    setNoticeMessage(null);
     const targetLang = currentLang === 'vi' ? 'en' : 'vi';
+    const hasQuestions = Boolean(questions && Array.isArray(questions) && questions.length > 0);
+    const hasText = Boolean(content && content.trim().length > 0);
+
+    if (!hasQuestions && !hasText) {
+      setNoticeMessage('Chưa có nội dung để chuyển ngữ.');
+      return;
+    }
 
     // Check if we have cached translation
     if (questionsCache[targetLang] && onQuestionsChange) {
@@ -106,7 +131,7 @@ export const LanguageSpeechControls: React.FC<LanguageSpeechControlsProps> = Rea
       return;
     }
 
-    if (originalContentCache[targetLang] && !questions) {
+    if (originalContentCache[targetLang] && !hasQuestions) {
       setCurrentLang(targetLang);
       if (onContentChange) {
         onContentChange(originalContentCache[targetLang], targetLang);
@@ -116,36 +141,45 @@ export const LanguageSpeechControls: React.FC<LanguageSpeechControlsProps> = Rea
 
     setIsTranslating(true);
     try {
-      if (questions && Array.isArray(questions) && questions.length > 0) {
+      if (hasQuestions && questions) {
         setQuestionsCache(prev => ({ ...prev, [currentLang]: questions }));
-        if (content) setOriginalContentCache(prev => ({ ...prev, [currentLang]: content }));
+        if (hasText) setOriginalContentCache(prev => ({ ...prev, [currentLang]: content }));
 
         const res = await apiFetch('/api/translate-academic', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             questions,
-            text: content,
+            text: hasText ? content : undefined,
             targetLang,
             subject
           })
         });
 
-        if (!res.ok) throw new Error('Dịch thuật gián đoạn.');
+        if (!res.ok) {
+          throw new Error(await extractResponseError(res));
+        }
         const data = await res.json();
 
-        if (data.translatedQuestions && Array.isArray(data.translatedQuestions)) {
+        let applied = false;
+        if (data.translatedQuestions && Array.isArray(data.translatedQuestions) && data.translatedQuestions.length > 0) {
           setQuestionsCache(prev => ({ ...prev, [targetLang]: data.translatedQuestions }));
-          setCurrentLang(targetLang);
           if (onQuestionsChange) {
             onQuestionsChange(data.translatedQuestions, targetLang);
           }
+          applied = true;
         }
         if (data.translatedText) {
           setOriginalContentCache(prev => ({ ...prev, [targetLang]: data.translatedText }));
           if (onContentChange) {
             onContentChange(data.translatedText, targetLang);
           }
+          applied = true;
+        }
+        if (applied) {
+          setCurrentLang(targetLang);
+        } else {
+          throw new Error('Phản hồi chuyển ngữ không có dữ liệu câu hỏi. Vui lòng thử lại.');
         }
       } else {
         setOriginalContentCache(prev => ({ ...prev, [currentLang]: content }));
@@ -160,7 +194,9 @@ export const LanguageSpeechControls: React.FC<LanguageSpeechControlsProps> = Rea
           })
         });
 
-        if (!res.ok) throw new Error('Dịch thuật gián đoạn.');
+        if (!res.ok) {
+          throw new Error(await extractResponseError(res));
+        }
 
         const data = await res.json();
         const translated = data.translatedText || content;
@@ -171,9 +207,9 @@ export const LanguageSpeechControls: React.FC<LanguageSpeechControlsProps> = Rea
           onContentChange(translated, targetLang);
         }
       }
-    } catch (e) {
-      console.error('Translation error:', e);
-      alert('Không thể chuyển ngữ chuyên ngành. Vui lòng thử lại sau.');
+    } catch (e: any) {
+      console.warn('Translation notice:', e);
+      setNoticeMessage(e?.message || 'Không thể chuyển ngữ chuyên ngành. Vui lòng thử lại sau.');
     } finally {
       setIsTranslating(false);
     }
@@ -181,8 +217,9 @@ export const LanguageSpeechControls: React.FC<LanguageSpeechControlsProps> = Rea
 
   // Speech controls
   const handlePlaySpeech = () => {
+    setNoticeMessage(null);
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      alert('Trình duyệt của bạn không hỗ trợ tính năng Đọc thành tiếng (Speech Synthesis).');
+      setNoticeMessage('Trình duyệt của bạn không hỗ trợ tính năng Đọc thành tiếng (Speech Synthesis).');
       return;
     }
 
@@ -198,7 +235,7 @@ export const LanguageSpeechControls: React.FC<LanguageSpeechControlsProps> = Rea
     // Convert Math formulas to spoken language
     const spokenText = convertMathToSpeech(content, currentLang);
     if (!spokenText) {
-      alert('Không có nội dung văn bản để đọc.');
+      setNoticeMessage('Không có nội dung văn bản để đọc.');
       return;
     }
 
@@ -378,6 +415,20 @@ export const LanguageSpeechControls: React.FC<LanguageSpeechControlsProps> = Rea
             }}
             className="ml-auto text-amber-400 hover:text-amber-200 p-1"
             title="Đóng thanh điều khiển đọc"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {noticeMessage && (
+        <div className="w-full flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+          <span>{noticeMessage}</span>
+          <button
+            type="button"
+            onClick={() => setNoticeMessage(null)}
+            className="text-rose-500 hover:text-rose-700 font-bold px-1"
+            title="Đóng thông báo"
           >
             ✕
           </button>
