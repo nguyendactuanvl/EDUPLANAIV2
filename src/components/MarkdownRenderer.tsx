@@ -22,6 +22,7 @@ export const safeMarkdownUrlTransform = (url: string, key?: string): string => {
 import { rehypeSanitizeEventHandlers, cleanProps, cleanMathAndUnwrapHeadings, fixAndMergeMathArrows, scheduleBatchedMathJaxTypeset, protectHtmlMediaTags, restoreHtmlMediaTags } from '../lib/globalMath';
 import { TikzRenderer, getTikzSvg } from './TikzRenderer';
 import { convertBbtTableToSvg, unflattenMarkdownTables } from '../lib/bbtRenderer';
+import { resolveRealWorldFiguresInText } from '../lib/realWorldMathVisuals';
 import { MathView, preprocessMath, wrapRawSvgBlocks } from './MathView';
 import { 
   fixMath, 
@@ -161,12 +162,13 @@ const SvgImageRenderer: React.FC<{ svgCode: string }> = ({ svgCode }) => {
   const [isExporting, setIsExporting] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const isGraph = svgCode.includes('arrow-axis') || svgCode.includes('plot') || svgCode.includes('grid') || /<path[^>]*class=["'](?:graph|curve)/.test(svgCode) || (svgCode.includes('x') && svgCode.includes('y') && svgCode.includes('path') && !svgCode.includes('bbt-'));
-  const isBbt = svgCode.includes('bbt-') || (!isGraph && (svgCode.includes("y'") || (svgCode.includes('x') && svgCode.includes('y'))));
-  const badgeLabel = isBbt ? 'BBT Chuẩn SGK' : isGraph ? 'Đồ thị Chuẩn SGK' : 'Hình vẽ SGK';
-  const downloadFilename = isBbt ? `Bang_Bien_Thien_${Date.now()}.png` : isGraph ? `Do_Thi_Ham_So_${Date.now()}.png` : `Hinh_Ve_${Date.now()}.png`;
-  const copyBtnLabel = isBbt ? '📋 Chép BBT' : isGraph ? '📋 Chép Đồ thị' : '📋 Chép ảnh';
-  const downloadBtnLabel = isBbt ? '📸 Tải BBT (PNG)' : isGraph ? '📸 Tải Đồ thị (PNG)' : '📸 Tải ảnh (PNG)';
+  const isRealWorld = svgCode.includes('data-realworld-figure') || svgCode.includes('realworld-math-figure');
+  const isGraph = !isRealWorld && (svgCode.includes('arrow-axis') || svgCode.includes('plot') || svgCode.includes('grid') || /<path[^>]*class=["'](?:graph|curve)/.test(svgCode) || (svgCode.includes('x') && svgCode.includes('y') && svgCode.includes('path') && !svgCode.includes('bbt-')));
+  const isBbt = !isRealWorld && (svgCode.includes('bbt-') || (!isGraph && (svgCode.includes("y'") || (svgCode.includes('x') && svgCode.includes('y')))));
+  const badgeLabel = isRealWorld ? 'Hình minh họa Toán thực tế' : isBbt ? 'BBT Chuẩn SGK' : isGraph ? 'Đồ thị Chuẩn SGK' : 'Hình vẽ SGK';
+  const downloadFilename = isRealWorld ? `Hinh_Minh_Hoa_Thuc_Te_${Date.now()}.png` : isBbt ? `Bang_Bien_Thien_${Date.now()}.png` : isGraph ? `Do_Thi_Ham_So_${Date.now()}.png` : `Hinh_Ve_${Date.now()}.png`;
+  const copyBtnLabel = isRealWorld ? '📋 Chép hình' : isBbt ? '📋 Chép BBT' : isGraph ? '📋 Chép Đồ thị' : '📋 Chép ảnh';
+  const downloadBtnLabel = isRealWorld ? '📸 Tải hình (PNG)' : isBbt ? '📸 Tải BBT (PNG)' : isGraph ? '📸 Tải Đồ thị (PNG)' : '📸 Tải ảnh (PNG)';
 
   const getCanvasFromSvg = async (scale = 3): Promise<HTMLCanvasElement> => {
     const parser = new DOMParser();
@@ -897,6 +899,9 @@ export const MarkdownRenderer = React.memo(({
         return match;
       }
     });
+
+    // Resolve parametric real-world math illustration specs into exact SVG wrappers
+    res = resolveRealWorldFiguresInText(res);
 
     // Wrap raw <svg> blocks safely
     res = wrapRawSvgBlocks(res);

@@ -3565,6 +3565,109 @@ BẮT BUỘC kiểm tra và SỬA LỖI CHÍNH TẢ tiếng Việt thật cẩn 
 });
 
 
+function buildRealWorldWorksheetDirective(opts: {
+  totalCount: number;
+  realWorldPercent?: number;
+  includeRealWorldVD?: boolean;
+  realWorldVDPercent?: number;
+  includeRealWorldVDC?: boolean;
+  realWorldVDCPercent?: number;
+  includeRealWorldVisuals?: boolean;
+  isJsonInteractive?: boolean;
+}): string {
+  const {
+    totalCount,
+    realWorldPercent = 40,
+    includeRealWorldVD,
+    realWorldVDPercent,
+    includeRealWorldVDC,
+    realWorldVDCPercent,
+    includeRealWorldVisuals = true,
+    isJsonInteractive = false
+  } = opts;
+
+  const hasSplitConfig =
+    includeRealWorldVD !== undefined ||
+    includeRealWorldVDC !== undefined ||
+    realWorldVDPercent !== undefined ||
+    realWorldVDCPercent !== undefined;
+
+  let effVD = 0;
+  let effVDC = 0;
+  if (hasSplitConfig) {
+    effVD = includeRealWorldVD === false ? 0 : Math.max(0, Math.min(100, Number(realWorldVDPercent ?? 0)));
+    effVDC = includeRealWorldVDC === false ? 0 : Math.max(0, Math.min(100 - effVD, Number(realWorldVDCPercent ?? 0)));
+  } else {
+    const legacyTotal = Math.max(0, Math.min(100, Number(realWorldPercent ?? 40)));
+    effVD = Math.round(legacyTotal * 0.65);
+    effVDC = legacyTotal - effVD;
+  }
+
+  const totalRWPercent = Math.min(100, effVD + effVDC);
+  const vdCount = effVD > 0 ? Math.max(1, Math.round((totalCount * effVD) / 100)) : 0;
+  const vdcCount = effVDC > 0 ? Math.max(1, Math.round((totalCount * effVDC) / 100)) : 0;
+  const totalRWCount = Math.min(totalCount, vdCount + vdcCount);
+
+  if (totalRWPercent <= 0 || totalRWCount <= 0) {
+    return `- Tỷ lệ bài tập có nội dung thực tế: 0% (tập trung rèn luyện kỹ năng toán học thuần túy, lý thuyết và tính toán chuẩn SGK).`;
+  }
+
+  const lines: string[] = [];
+  lines.push(`- PHÂN BỔ BÀI TẬP THỰC TẾ THEO MỨC ĐỘ NHẬN THỨC (TỔNG ${totalRWPercent}% ~ ${totalRWCount}/${totalCount} câu toàn phiếu):`);
+  if (effVD > 0) {
+    lines.push(`  + **Bài tập Vận dụng (VD) có nội dung thực tế**: Tỷ lệ **${effVD}%** (khoảng **${vdCount} câu**). Bối cảnh đời sống, kinh tế, kỹ thuật, đo đạc hoặc khoa học tự nhiên quen thuộc; yêu cầu học sinh chuyển ngữ bài toán thực tế sang mô hình toán học của chính bài học này và giải trong 1–2 bước lập luận rõ ràng. Gắn nhãn nhẹ *(Vận dụng thực tế)* ngay đầu câu hoặc phân bố tự nhiên vào nhóm câu mức Vận dụng ở các phần.`);
+  } else {
+    lines.push(`  + Bài tập Vận dụng (VD) có nội dung thực tế: 0% (không chọn).`);
+  }
+  if (effVDC > 0) {
+    lines.push(`  + **Bài tập Vận dụng cao (VDC) có nội dung thực tế**: Tỷ lệ **${effVDC}%** (khoảng **${vdcCount} câu**). Bối cảnh thực tiễn sâu sắc, đòi hỏi tư duy mô hình hóa bậc cao, bài toán tối ưu hóa (GTLN/GTNN), thiết kế kỹ thuật, tài chính/kinh tế đa bước hoặc tích hợp STEM/STEAM có tính phân hóa mạnh (ưu tiên đặt ở các câu cuối của Phần II, Phần III và Phần IV). Gắn nhãn nhẹ *(Vận dụng cao thực tế)* để giáo viên dễ nhận diện.`);
+  } else {
+    lines.push(`  + Bài tập Vận dụng cao (VDC) có nội dung thực tế: 0% (không chọn).`);
+  }
+
+  if (includeRealWorldVisuals !== false) {
+    if (isJsonInteractive) {
+      lines.push(`- HÌNH ẢNH MINH HỌA SÁT ĐỀ & CHÍNH XÁC TOÁN HỌC 100% CHO MỌI BÀI TẬP THỰC TẾ (BẮT BUỘC):
+  + Đối với MỖI câu hỏi có nội dung thực tế (VD thực tế và VDC thực tế), BẮT BUỘC bổ sung trường "figureSpec" trong object câu hỏi đó (không dùng mô tả chữ rỗng "[Hình vẽ minh họa]"). Hệ thống sẽ dùng công thức toán học để vẽ hình vector chính xác 100% từ "figureSpec"!
+  + MỌI số liệu, hàm số, kích thước, góc, đơn vị, tên điểm trong "figureSpec" PHẢI KHỚP CHÍNH XÁC 100% với đề bài và thỏa mãn đúng quan hệ hình học/đại số (ví dụ: điểm nằm đúng trên đồ thị $y = f(x)$, $\\beta > \\alpha$ trong đo đạc 2 vị trí, tổng xác suất các nhánh con bằng $1$).
+  + Các loại "type" hợp lệ cho "figureSpec":
+    1) "function_plot": {"type":"function_plot","title":"...","params":{"fn":"-0.25*x^2+4","fnLabel":"y = -0.25x² + 4","xMin":-5,"xMax":5,"yMin":0,"yMax":5,"xLabel":"x (m)","yLabel":"y (m)","theme":"gate|bridge|projectile|economic|wave","shadeFrom":-4,"shadeTo":4,"points":[{"x":0,"y":4,"label":"I(0; 4)"}]}}
+    2) "triangle_survey": {"type":"triangle_survey","title":"...","params":{"mode":"right|two_stations|general","base":40,"height":30,"angleDeg":35,"alphaDeg":30,"betaDeg":45,"distanceAB":50,"b":12,"c":15,"angleADeg":60,"unit":"m","baseLabel":"40 m","heightLabel":"h = ?","dLabel":"AB = 50 m","hLabel":"h = ?","labelA":"A","labelB":"B","labelC":"C","labelH":"H","labelS":"S"}}
+    3) "geometry_2d": {"type":"geometry_2d","title":"...","params":{"points":[{"name":"A","x":0,"y":0},{"name":"B","x":12,"y":0},{"name":"C","x":12,"y":8},{"name":"D","x":0,"y":8}],"polygons":[{"vertices":["A","B","C","D"]}],"rightAngles":[["B","A","D"]],"dims":[{"from":"A","to":"B","label":"12 m"},{"from":"B","to":"C","label":"8 m"}]}}
+    4) "solid_3d": {"type":"solid_3d","title":"...","params":{"shape":"cylinder|cone|frustum|box|open_box_cut|pyramid|sphere","r":4,"R":6,"h":10,"a":30,"b":20,"x":4,"unit":"cm","rLabel":"r = 4 cm","hLabel":"h = 10 cm","aLabel":"30 cm","bLabel":"20 cm","xLabel":"x"}}
+    5) "sequence_chart": {"type":"sequence_chart","title":"...","params":{"subtype":"bars|seats|bouncing_ball","labels":["T1","T2","T3","T4"],"values":[10,14,18,22],"u1":20,"d":4,"n":15,"h0":16,"q":0.75,"bounces":5,"unit":"m","yLabel":"Giá trị"}}
+    6) "vector_physics": {"type":"vector_physics","title":"...","params":{"vectors":[{"label":"F₁ = 40 N","magnitude":40,"angleDeg":0},{"label":"F₂ = 30 N","magnitude":30,"angleDeg":60}],"showResultant":true,"resultantLabel":"F"}}
+    7) "statistics_chart": {"type":"statistics_chart","title":"...","params":{"xLabel":"Nhóm","yLabel":"Tần số","bins":[{"label":"[10;20)","value":6},{"label":"[20;30)","value":14}]}}
+    8) "probability_tree": {"type":"probability_tree","title":"...","params":{"branches":[{"label":"A","prob":"0,6","children":[{"label":"B","prob":"0,8"},{"label":"B̄","prob":"0,2"}]},{"label":"Ā","prob":"0,4","children":[{"label":"B","prob":"0,3"},{"label":"B̄","prob":"0,7"}]}]}}`);
+    } else {
+      lines.push(`- HÌNH ẢNH MINH HỌA SÁT ĐỀ & CHÍNH XÁC TOÁN HỌC 100% CHO MỌI BÀI TẬP THỰC TẾ (BẮT BUỘC):
+  + Đối với MỖI bài tập có nội dung thực tế (cả Vận dụng thực tế và Vận dụng cao thực tế), BẮT BUỘC chèn ngay 1 thẻ đồ họa tham số \`[REALWORLD_FIG:{...}]\` nằm trên 1 dòng riêng ngay sau phần đề dẫn của câu đó (trước các phương án A., B., C., D. hoặc a), b), c), d)).
+  + TUYỆT ĐỐI KHÔNG viết placeholder rỗng như "[Hình vẽ minh họa]" hay bọc thẻ trong dấu \`\`\`json \`\`\`. Xuất trực tiếp thẻ \`[REALWORLD_FIG:{...}]\` với JSON hợp lệ trên 1 dòng duy nhất (dùng dấu nháy kép ", số thập phân dùng dấu chấm . trong trường số).
+  + ĐẢM BẢO CHÍNH XÁC TOÁN HỌC 100%: Mọi biểu thức hàm số, kích thước, số đo góc, tọa độ điểm, đơn vị, giá trị dãy số, nhánh xác suất bên trong \`[REALWORLD_FIG:{...}]\` PHẢI KHỚP TUYỆT ĐỐI với đề bài vừa soạn (ví dụ: điểm trên đồ thị phải thỏa $y = f(x)$, góc nâng trạm gần lớn hơn trạm xa $\\beta > \\alpha$, tổng xác suất các nhánh con tại mỗi nút bằng $1$).
+  + Chọn đúng 1 trong 8 loại hình chuẩn của hệ thống sát nhất với bối cảnh bài toán:
+    1) Đồ thị / Parabol / Cổng vòm / Cầu / Quỹ đạo / Kinh tế / Sóng / Tích phân:
+       [REALWORLD_FIG:{"type":"function_plot","title":"Cổng vòm Parabol","params":{"fn":"-0.25*x^2+4","fnLabel":"y = -0.25x² + 4","xMin":-5,"xMax":5,"yMin":0,"yMax":5,"xLabel":"x (m)","yLabel":"y (m)","theme":"gate","shadeFrom":-4,"shadeTo":4,"points":[{"x":0,"y":4,"label":"I(0; 4)"},{"x":4,"y":0,"label":"B(4; 0)"}]}}]
+    2) Đo đạc chiều cao / Khoảng cách / Góc nâng / Tam giác ("mode": "right" | "two_stations" | "general"):
+       [REALWORLD_FIG:{"type":"triangle_survey","title":"Đo chiều cao tháp từ hai vị trí A, B","params":{"mode":"two_stations","alphaDeg":30,"betaDeg":45,"distanceAB":50,"unit":"m","dLabel":"AB = 50 m","hLabel":"h = ?","labelA":"A","labelB":"B","labelH":"H","labelS":"S"}}]
+    3) Hình phẳng tọa độ thực tế (mảnh đất, hàng rào, đường tròn, miền nghiệm quy hoạch):
+       [REALWORLD_FIG:{"type":"geometry_2d","title":"Sơ đồ khu vườn hình chữ nhật","params":{"points":[{"name":"A","x":0,"y":0},{"name":"B","x":12,"y":0},{"name":"C","x":12,"y":8},{"name":"D","x":0,"y":8}],"polygons":[{"vertices":["A","B","C","D"]}],"rightAngles":[["B","A","D"]],"dims":[{"from":"A","to":"B","label":"12 m"},{"from":"B","to":"C","label":"8 m"}]}}]
+    4) Khối 3D thực tế ("shape": "cylinder" | "cone" | "frustum" | "box" | "open_box_cut" | "pyramid" | "sphere"):
+       [REALWORLD_FIG:{"type":"solid_3d","title":"Cắt 4 góc tấm bìa tạo hộp không nắp","params":{"shape":"open_box_cut","a":30,"b":20,"x":4,"unit":"cm","aLabel":"30 cm","bLabel":"20 cm","xLabel":"x"}}]
+    5) Cấp số cộng / Cấp số nhân / Quả bóng nảy / Khán đài / Biểu đồ tăng trưởng ("subtype": "bars" | "seats" | "bouncing_ball"):
+       [REALWORLD_FIG:{"type":"sequence_chart","title":"Sơ đồ hàng ghế khán đài","params":{"subtype":"seats","u1":20,"d":4,"n":15}}]
+    6) Lực vật lý / Thuyền qua sông / Máy bay gặp gió / Hợp lực vectơ:
+       [REALWORLD_FIG:{"type":"vector_physics","title":"Tổng hợp hai lực tác dụng lên vật","params":{"vectors":[{"label":"F₁ = 40 N","magnitude":40,"angleDeg":0},{"label":"F₂ = 30 N","magnitude":30,"angleDeg":60}],"showResultant":true,"resultantLabel":"F"}}]
+    7) Thống kê thực tế / Biểu đồ tần số ghép nhóm:
+       [REALWORLD_FIG:{"type":"statistics_chart","title":"Biểu đồ phân bố số liệu","params":{"xLabel":"Nhóm giá trị","yLabel":"Tần số","bins":[{"label":"[10;20)","value":6},{"label":"[20;30)","value":14},{"label":"[30;40)","value":12}]}}]
+    8) Sơ đồ cây xác suất có điều kiện / Bayes:
+       [REALWORLD_FIG:{"type":"probability_tree","title":"Sơ đồ cây xác suất","params":{"branches":[{"label":"A","prob":"0,6","children":[{"label":"B","prob":"0,8"},{"label":"B̄","prob":"0,2"}]},{"label":"Ā","prob":"0,4","children":[{"label":"B","prob":"0,3"},{"label":"B̄","prob":"0,7"}]}]}}]`
+      );
+    }
+  }
+
+  return lines.join('\n');
+}
+
 app.all("/api/generate-interactive-worksheet", async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -3585,6 +3688,11 @@ app.all("/api/generate-interactive-worksheet", async (req, res) => {
       numPartIII = 6,
       numPartIV = 2,
       realWorldPercent = 40,
+      includeRealWorldVD,
+      realWorldVDPercent,
+      includeRealWorldVDC,
+      realWorldVDCPercent,
+      includeRealWorldVisuals = true,
       hasParametric = true,
       additionalNotes = ''
     } = req.body || {};
@@ -3701,7 +3809,16 @@ app.all("/api/generate-interactive-worksheet", async (req, res) => {
     ${countIII > 0 ? `3. PHẦN III (sa): BẮT BUỘC ĐỦ CHÍNH XÁC ${countIII} CÂU Trắc nghiệm Trả lời ngắn (loại "sa") - "correctAnswer" là 1 số cụ thể có độ dài tối đa 4 ký tự.` : ''}
     ${partIVRule}
 
-    - Tỷ lệ thực tế: Khoảng ${realWorldPercent}%.
+    ${buildRealWorldWorksheetDirective({
+      totalCount,
+      realWorldPercent,
+      includeRealWorldVD,
+      realWorldVDPercent,
+      includeRealWorldVDC,
+      realWorldVDCPercent,
+      includeRealWorldVisuals,
+      isJsonInteractive: true
+    })}
     - ${parametricRule}
     ${additionalNotes ? `- Ghi chú riêng từ giáo viên: ${additionalNotes}` : ''}
 
@@ -3843,6 +3960,11 @@ app.all("/api/generate-worksheet", async (req, res) => {
         numPartIII = 4,
         numPartIV = 2,
         realWorldPercent = 40,
+        includeRealWorldVD,
+        realWorldVDPercent,
+        includeRealWorldVDC,
+        realWorldVDCPercent,
+        includeRealWorldVisuals = true,
         hasParametric = true
       } = req.body;
       
@@ -3916,7 +4038,17 @@ YÊU CẦU PHONG CÁCH: A4 CHUẨN IN ẤN (Đen trắng / Tiết kiệm mực -
         exercisePrompt += `\n- CẤM TUYỆT ĐỐI PHẦN IV (TỰ LUẬN): Số câu là 0. TUYỆT ĐỐI KHÔNG ĐƯỢC CÓ PHẦN IV HAY BÀI TẬP TỰ LUẬN. KHÔNG TẠO MỤC PHẦN IV TRONG ĐỀ BÀI CŨNG NHƯ TRONG BẢNG ĐÁP ÁN VÀ HƯỚNG DẪN GIẢI!`;
       }
 
-      exercisePrompt += `\n- Tỷ lệ bài toán gắn với thực tiễn cuộc sống hoặc liên môn: Khoảng ${realWorldPercent}%.`;
+      const totalQuestionsCount = nPartI + nPartII + nPartIII + nPartIV;
+      exercisePrompt += `\n${buildRealWorldWorksheetDirective({
+        totalCount: Math.max(1, totalQuestionsCount),
+        realWorldPercent,
+        includeRealWorldVD,
+        realWorldVDPercent,
+        includeRealWorldVDC,
+        realWorldVDCPercent,
+        includeRealWorldVisuals,
+        isJsonInteractive: false
+      })}`;
       exercisePrompt += hasParametric 
         ? `\n- Phân hóa học sinh: CÓ một số bài toán ở mức độ vận dụng chứa tham số thực ($m, a, b, ...$).`
         : `\n- QUY ĐỊNH CẤM THAM SỐ (BẮT BUỘC 100%): Giáo viên đã chọn "Không có bài toán chứa tham số". TUYỆT ĐỐI KHÔNG xuất hiện bất kỳ tham số nào (như m, k, a, b tham số). TUYỆT ĐỐI KHÔNG có các câu hỏi tìm m hay chứa tham số m. TẤT CẢ các hệ số, phương trình, hàm số và bài toán PHẢI 100% là số cụ thể.`;
@@ -4043,6 +4175,11 @@ app.all("/api/generate-worksheet-stream", async (req, res) => {
     numPartIII = 6,
     numPartIV = 2,
     realWorldPercent = 40,
+    includeRealWorldVD,
+    realWorldVDPercent,
+    includeRealWorldVDC,
+    realWorldVDCPercent,
+    includeRealWorldVisuals = true,
     hasParametric = true,
     additionalNotes = "",
     answerMode = "full"
@@ -4060,7 +4197,16 @@ app.all("/api/generate-worksheet-stream", async (req, res) => {
     exercisePrompt += `\n- CẤM TUYỆT ĐỐI PHẦN IV / TỰ LUẬN: Giáo viên đã chọn cấu trúc ĐỀ 3 PHẦN. TUYỆT ĐỐI KHÔNG SINH PHẦN IV, KHÔNG CÓ BÀI TẬP TỰ LUẬN TRONG ĐỀ BÀI, BẢNG ĐÁP ÁN HAY LỜI GIẢI!`;
   }
 
-  exercisePrompt += `\n- Tỷ lệ thực tế: ${realWorldPercent}%.`;
+  exercisePrompt += `\n${buildRealWorldWorksheetDirective({
+    totalCount: Math.max(1, totalCount),
+    realWorldPercent,
+    includeRealWorldVD,
+    realWorldVDPercent,
+    includeRealWorldVDC,
+    realWorldVDCPercent,
+    includeRealWorldVisuals,
+    isJsonInteractive: false
+  })}`;
   exercisePrompt += hasParametric 
     ? `\n- Phân hóa: Có bài toán chứa tham số m ở mức vận dụng.`
     : `\n- QUY ĐỊNH CẤM THAM SỐ (BẮT BUỘC 100%): Giáo viên đã chọn "Không có bài toán chứa tham số". TUYỆT ĐỐI KHÔNG xuất hiện bất kỳ tham số nào (như $m$, $k$, $a$, $b$ tham số). CẤM các câu hỏi tìm m hoặc chứa tham số m. TẤT CẢ các hệ số, phương trình, hàm số và bài toán PHẢI 100% là số cụ thể.`;

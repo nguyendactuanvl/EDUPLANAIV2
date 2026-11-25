@@ -30,6 +30,7 @@ import { QuestionVisualizerPanel } from "../components/math-tools/QuestionVisual
 import { WorksheetAiInspectorModal } from "../components/WorksheetAiInspectorModal";
 import { fetchExamFromCloud, saveExamToCloud, saveExamToWebhook, deleteExamFromLocalStore, fetchSubmissionsFromGoogleSheets } from "../lib/cloudExamStore";
 import { analyzeFunctionToBbt, generateBbtSvg, convertBbtTableToSvg, autoEnrichTextWithVisuals } from "../lib/bbtRenderer";
+import { renderRealWorldMathFigureSvg, resolveRealWorldFiguresInText } from "../lib/realWorldMathVisuals";
 import { getTikzSvg, embedTikzSvgsInText } from "../components/TikzRenderer";
 import { saveToHistory, getHistory, deleteFromHistory } from '../lib/history';
 import { HistoryItem } from '../types';
@@ -84,6 +85,9 @@ export function getFormattedLessonTitle(rawName?: string): string {
 export function cleanDocumentContent(content: string, lessonName?: string, skipVisualEnrich: boolean = false, isSolution: boolean = false): string {
   if (!content) return '';
   let cleaned = content.trim();
+
+  // 0.0. Chuyển đổi ngay các thẻ đồ họa thực tế [REALWORLD_FIG:{...}] sang <svg-wrapper> để không bị bộ lọc LaTeX làm biến đổi JSON
+  cleaned = resolveRealWorldFiguresInText(cleaned, false);
 
   // 0. Làm sạch công thức LaTeX và giải phóng tiêu đề bị bọc $$
   cleaned = cleanMathAndUnwrapHeadings(normalizeMathText(cleaned));
@@ -443,13 +447,24 @@ export function Worksheets() {
   const [numPartIII, setNumPartIII] = useState<number>(6); // Trắc nghiệm Trả lời ngắn
   const [numPartIV, setNumPartIV] = useState<number>(2); // Tự luận rèn luyện
 
-  const [realWorldPercent, setRealWorldPercent] = useState<number>(40); // 0% - 100%
+  // Bài tập thực tế theo mức độ Vận dụng (VD) & Vận dụng cao (VDC)
+  const [includeRealWorldVD, setIncludeRealWorldVD] = useState<boolean>(true);
+  const [realWorldVDPercent, setRealWorldVDPercent] = useState<number>(25); // 0% - 100%
+  const [includeRealWorldVDC, setIncludeRealWorldVDC] = useState<boolean>(true);
+  const [realWorldVDCPercent, setRealWorldVDCPercent] = useState<number>(15); // 0% - 100%
+  const [includeRealWorldVisuals, setIncludeRealWorldVisuals] = useState<boolean>(true);
+
+  const effectiveVDPercent = includeRealWorldVD ? realWorldVDPercent : 0;
+  const effectiveVDCPercent = includeRealWorldVDC ? Math.min(realWorldVDCPercent, Math.max(0, 100 - effectiveVDPercent)) : 0;
+  const realWorldPercent = Math.min(100, effectiveVDPercent + effectiveVDCPercent);
+  const totalConfiguredQuestions = Math.max(1, numPartI + numPartII + numPartIII + numPartIV);
+
   const [hasParametric, setHasParametric] = useState<boolean>(true); // Có tham số
 
   // Legacy compatibility fallbacks
   const [numMC, setNumMC] = useState<string>("auto");
   const [numEssay, setNumEssay] = useState<string>("auto");
-  const [includeRealWorld, setIncludeRealWorld] = useState<boolean>(true);
+  const includeRealWorld = realWorldPercent > 0;
   const [answerMode, setAnswerMode] = useState<'full' | 'summary' | 'none'>('full');
 
   // Synchronize customLessonName with selected KNTT Lesson and Subject
@@ -1332,6 +1347,11 @@ export function Worksheets() {
           numPartIII,
           numPartIV,
           realWorldPercent,
+          includeRealWorldVD,
+          realWorldVDPercent: effectiveVDPercent,
+          includeRealWorldVDC,
+          realWorldVDCPercent: effectiveVDCPercent,
+          includeRealWorldVisuals,
           hasParametric
         })
       });
@@ -1387,23 +1407,36 @@ export function Worksheets() {
         throw new Error("Dữ liệu phiếu bài tập trả về từ AI rỗng hoặc chưa đúng định dạng. Thầy cô vui lòng nhấn 'Tự động tạo Phiếu học tập' để thử lại.");
       }
       
-      // Clean and sanitize math formulas for MathJax in interactive online worksheet questions
+      // Clean and sanitize math formulas & embed mathematically exact real-world figures for interactive online worksheet questions
       const sanitizedInteractiveQuestions = (examData.questions || []).map((q: any, idx: number) => {
         const sol = (q.solution || q.explanation || "").trim();
+        let cleanContent = resolveRealWorldFiguresInText(sanitizeExamQuestion(q.content || q.question || ''), false);
+        let cleanSolution = resolveRealWorldFiguresInText(sanitizeAndPolishMath(sol), false);
+
+        if (includeRealWorldVisuals && q.figureSpec && typeof q.figureSpec === 'object' && !cleanContent.includes('<svg-wrapper')) {
+          const figSvg = renderRealWorldMathFigureSvg(q.figureSpec);
+          if (figSvg) {
+            const b64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(figSvg)) : '';
+            if (b64) {
+              cleanContent = `${cleanContent.trimEnd()}\n\n<svg-wrapper data-svg="${b64}"></svg-wrapper>\n\n`;
+            }
+          }
+        }
+
         return {
           ...q,
           id: idx + 1,
           number: idx + 1,
-          content: sanitizeExamQuestion(q.content || q.question || ''),
-          question: sanitizeExamQuestion(q.question || q.content || ''),
+          content: cleanContent,
+          question: cleanContent,
           options: Array.isArray(q.options) ? q.options.map((opt: string) => cleanOptionText(opt)) : q.options,
           tfStatements: Array.isArray(q.tfStatements) ? q.tfStatements.map((tf: any) => ({
             ...tf,
             statement: sanitizeExamQuestion(tf.statement || '')
           })) : q.tfStatements,
           correctAnswer: q.correctAnswer ? sanitizeAndPolishMath(q.correctAnswer) : undefined,
-          solution: sanitizeAndPolishMath(sol),
-          explanation: sanitizeAndPolishMath(sol)
+          solution: cleanSolution,
+          explanation: cleanSolution
         };
       });
 
@@ -1480,9 +1513,9 @@ export function Worksheets() {
       localStorage.setItem(`examCache_${roomCode}`, JSON.stringify(payload));
       
       // Cập nhật danh sách câu hỏi để giáo viên kiểm tra lời giải chi tiết trực quan
-      const formattedQuestions = (examData.questions || []).map((q: any, idx: number) => {
-        let content = embedTikzSvgsInText(q.content || q.question || '');
-        let solution = embedTikzSvgsInText((q.solution || q.explanation || "").trim());
+      const formattedQuestions = (sanitizedInteractiveQuestions || []).map((q: any, idx: number) => {
+        let content = resolveRealWorldFiguresInText(embedTikzSvgsInText(q.content || q.question || ''), false);
+        let solution = resolveRealWorldFiguresInText(embedTikzSvgsInText((q.solution || q.explanation || "").trim()), false);
 
         // Chuyển đổi toàn bộ BBT markdown tables sang SVG vector chuẩn SGK
         content = content.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
@@ -1620,6 +1653,11 @@ export function Worksheets() {
           numPartIII,
           numPartIV,
           realWorldPercent,
+          includeRealWorldVD,
+          realWorldVDPercent: effectiveVDPercent,
+          includeRealWorldVDC,
+          realWorldVDCPercent: effectiveVDCPercent,
+          includeRealWorldVisuals,
           hasParametric,
           includeDottedLines
         })
@@ -1655,7 +1693,15 @@ export function Worksheets() {
               subject,
               grade: selectedGrade,
               type: worksheetType, layoutStyle, answerMode, additionalNotes,
-              numPartI, numPartII, numPartIII, numPartIV, realWorldPercent, hasParametric, includeDottedLines
+              numPartI, numPartII, numPartIII, numPartIV,
+              realWorldPercent,
+              includeRealWorldVD,
+              realWorldVDPercent: effectiveVDPercent,
+              includeRealWorldVDC,
+              realWorldVDCPercent: effectiveVDCPercent,
+              includeRealWorldVisuals,
+              hasParametric,
+              includeDottedLines
             })
           });
           const data = await resNonStream.json();
@@ -1669,7 +1715,8 @@ export function Worksheets() {
                 }
               } catch (e) {}
             }
-            setSuggestion(normalizeMathText(resText || ''));
+            const resolvedNonStream = resolveRealWorldFiguresInText(normalizeMathText(resText || ''), false);
+            setSuggestion(resolvedNonStream);
             setStreamProgress({ percentage: 100, text: "Tạo phiếu học tập hoàn tất!" });
             setTimeout(() => setStreamProgress(null), 1000);
             setIsLoading(false);
@@ -1723,7 +1770,7 @@ export function Worksheets() {
         if (now - lastPreviewTime > 450) {
           lastPreviewTime = now;
           if (!rawAccumulated.trim().startsWith('{')) {
-            setSuggestion(rawAccumulated);
+            setSuggestion(resolveRealWorldFiguresInText(rawAccumulated, true));
           }
         }
 
@@ -1757,6 +1804,7 @@ export function Worksheets() {
       }
 
       let processedResult = preProcessMathContent(inputToFormat);
+      processedResult = resolveRealWorldFiguresInText(processedResult, false);
       processedResult = embedTikzSvgsInText(processedResult);
       processedResult = processedResult.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
         if (/(?:y'|f'\(x\)|\\searrow|\\nearrow)/i.test(match)) {
@@ -1777,8 +1825,8 @@ export function Worksheets() {
         const parsed = parseRawExamText(processedResult);
         if (parsed && parsed.length > 0) {
           const enriched = parsed.map((q, idx) => {
-            let content = embedTikzSvgsInText(q.content || '');
-            let solution = embedTikzSvgsInText(q.solution || q.explanation || '');
+            let content = resolveRealWorldFiguresInText(embedTikzSvgsInText(q.content || ''), false);
+            let solution = resolveRealWorldFiguresInText(embedTikzSvgsInText(q.solution || q.explanation || ''), false);
 
             content = content.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match) => {
               if (/(?:y'|f'\(x\)|\\searrow|\\nearrow)/i.test(match)) {
@@ -2573,21 +2621,149 @@ export function Worksheets() {
                   </div>
                 </div>
 
-                {/* Real-world percentage slider */}
-                <div className="bg-white p-2.5 border border-slate-200 rounded-lg space-y-1.5">
-                  <div className="flex justify-between items-center text-[11px] font-bold text-slate-600">
-                    <span>Tỷ lệ bài toán thực tế</span>
-                    <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-mono">{realWorldPercent}%</span>
+                {/* Bài tập Vận dụng & Vận dụng cao có nội dung thực tế */}
+                <div className="bg-white p-3 border border-emerald-200/80 rounded-xl space-y-2.5 shadow-2xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>Bài tập thực tế (Vận dụng &amp; Vận dụng cao)</span>
+                    </span>
+                    <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md font-mono shrink-0">
+                      Tổng: {realWorldPercent}%
+                    </span>
                   </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    step="5"
-                    className="w-full accent-emerald-600 cursor-pointer h-1.5 bg-slate-100 rounded-lg"
-                    value={realWorldPercent}
-                    onChange={(e) => setRealWorldPercent(Number(e.target.value))}
-                  />
+
+                  {/* Thanh phân bổ trực quan: VD thực tế | VDC thực tế | Cơ bản */}
+                  <div className="space-y-1">
+                    <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden flex border border-slate-200/70">
+                      {effectiveVDPercent > 0 && (
+                        <div
+                          className="h-full bg-emerald-500 transition-all duration-200"
+                          style={{ width: `${effectiveVDPercent}%` }}
+                          title={`Bài tập vận dụng thực tế: ${effectiveVDPercent}%`}
+                        />
+                      )}
+                      {effectiveVDCPercent > 0 && (
+                        <div
+                          className="h-full bg-amber-500 transition-all duration-200"
+                          style={{ width: `${effectiveVDCPercent}%` }}
+                          title={`Bài tập vận dụng cao thực tế: ${effectiveVDCPercent}%`}
+                        />
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-1 text-[10px] text-slate-500 font-medium">
+                      <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                        VD thực tế ({effectiveVDPercent}%)
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
+                        VDC thực tế ({effectiveVDCPercent}%)
+                      </span>
+                      <span>Cơ bản ({Math.max(0, 100 - realWorldPercent)}%)</span>
+                    </div>
+                  </div>
+
+                  {/* Tùy chọn 1: Bài tập vận dụng có nội dung thực tế */}
+                  <div className={`p-2 rounded-lg border transition-colors ${includeRealWorldVD ? 'bg-emerald-50/40 border-emerald-200/90' : 'bg-slate-50/70 border-slate-200'}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="flex items-center gap-2 cursor-pointer text-[11.5px] font-semibold text-slate-700 select-none">
+                        <input
+                          type="checkbox"
+                          checked={includeRealWorldVD}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setIncludeRealWorldVD(checked);
+                            if (checked && realWorldVDPercent === 0) {
+                              setRealWorldVDPercent(Math.min(25, Math.max(5, 100 - (includeRealWorldVDC ? realWorldVDCPercent : 0))));
+                            }
+                          }}
+                          className="w-3.5 h-3.5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer shrink-0"
+                        />
+                        <span>Bài tập vận dụng có nội dung thực tế</span>
+                      </label>
+                      <span className={`text-[11px] font-mono font-bold px-1.5 py-0.5 rounded shrink-0 ${includeRealWorldVD ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-500'}`}>
+                        {effectiveVDPercent}%{effectiveVDPercent > 0 ? ` (~${Math.max(1, Math.round((totalConfiguredQuestions * effectiveVDPercent) / 100))} câu)` : ''}
+                      </span>
+                    </div>
+                    {includeRealWorldVD && (
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="5"
+                          className="w-full accent-emerald-600 cursor-pointer h-1.5 bg-white rounded-lg"
+                          value={realWorldVDPercent}
+                          onChange={(e) => {
+                            const nextVD = Number(e.target.value);
+                            setRealWorldVDPercent(nextVD);
+                            if (includeRealWorldVDC && nextVD + realWorldVDCPercent > 100) {
+                              setRealWorldVDCPercent(Math.max(0, 100 - nextVD));
+                            }
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Tùy chọn 2: Bài tập vận dụng cao có nội dung thực tế */}
+                  <div className={`p-2 rounded-lg border transition-colors ${includeRealWorldVDC ? 'bg-amber-50/40 border-amber-200/90' : 'bg-slate-50/70 border-slate-200'}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="flex items-center gap-2 cursor-pointer text-[11.5px] font-semibold text-slate-700 select-none">
+                        <input
+                          type="checkbox"
+                          checked={includeRealWorldVDC}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setIncludeRealWorldVDC(checked);
+                            if (checked && realWorldVDCPercent === 0) {
+                              setRealWorldVDCPercent(Math.min(15, Math.max(5, 100 - (includeRealWorldVD ? realWorldVDPercent : 0))));
+                            }
+                          }}
+                          className="w-3.5 h-3.5 rounded text-amber-600 focus:ring-amber-500 border-slate-300 cursor-pointer shrink-0"
+                        />
+                        <span>Bài tập vận dụng cao có nội dung thực tế</span>
+                      </label>
+                      <span className={`text-[11px] font-mono font-bold px-1.5 py-0.5 rounded shrink-0 ${includeRealWorldVDC ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-500'}`}>
+                        {effectiveVDCPercent}%{effectiveVDCPercent > 0 ? ` (~${Math.max(1, Math.round((totalConfiguredQuestions * effectiveVDCPercent) / 100))} câu)` : ''}
+                      </span>
+                    </div>
+                    {includeRealWorldVDC && (
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="5"
+                          className="w-full accent-amber-500 cursor-pointer h-1.5 bg-white rounded-lg"
+                          value={realWorldVDCPercent}
+                          onChange={(e) => {
+                            const nextVDC = Number(e.target.value);
+                            setRealWorldVDCPercent(nextVDC);
+                            if (includeRealWorldVD && nextVDC + realWorldVDPercent > 100) {
+                              setRealWorldVDPercent(Math.max(0, 100 - nextVDC));
+                            }
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Tùy chọn kèm hình ảnh minh họa chuẩn toán học 100% */}
+                  {realWorldPercent > 0 && (
+                    <label className="flex items-start gap-2 pt-1.5 border-t border-slate-100 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={includeRealWorldVisuals}
+                        onChange={(e) => setIncludeRealWorldVisuals(e.target.checked)}
+                        className="mt-0.5 w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 cursor-pointer shrink-0"
+                      />
+                      <span className="text-[11px] text-slate-600 leading-snug">
+                        <strong className="text-indigo-700">Kèm hình minh họa sát đề, chuẩn Toán học 100%</strong> (tự động dựng vector đồ thị, đo đạc, hình phẳng, khối 3D, vectơ, sơ đồ cây khớp đúng số liệu đề bài).
+                      </span>
+                    </label>
+                  )}
                 </div>
 
                 {/* Parametric switch */}
