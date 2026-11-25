@@ -1,4 +1,4 @@
-import { apiFetch } from '../lib/apiFetch';
+import { apiFetch, getActiveApiKeyPool } from '../lib/apiFetch';
 import { exportHtmlToWord, exportToLatexTexFile } from '../lib/exportUtils';
 import React, { useState, useRef, useEffect } from 'react';
 import { 
@@ -42,53 +42,128 @@ const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
-const optimizeImageForOcr = async (file: File): Promise<{ data: string; type: string; name: string }> => {
+const optimizeImageForOcr = async (
+  file: File
+): Promise<{
+  data: string;
+  type: string;
+  name: string;
+  hdDataUrl: string;
+}> => {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (e) => {
+      const originalDataUrl = (e.target?.result as string) || '';
       const img = new Image();
       img.onload = () => {
-        const MAX_DIM = 1600; // Crisp & fast payload size (~150-250KB JPEG) for Gemini math & OCR
-        let { width, height } = img;
-        if (width > MAX_DIM || height > MAX_DIM) {
-          if (width > height) {
-            height = Math.round((height * MAX_DIM) / width);
-            width = MAX_DIM;
+        // Keep a crisp HD copy (up to 1800px) for razor-sharp original-figure cropping (BBT/graphs)
+        const HD_DIM = 1800;
+        let hdW = img.width;
+        let hdH = img.height;
+        if (hdW > HD_DIM || hdH > HD_DIM) {
+          if (hdW > hdH) {
+            hdH = Math.round((hdH * HD_DIM) / hdW);
+            hdW = HD_DIM;
           } else {
-            width = Math.round((width * MAX_DIM) / height);
-            height = MAX_DIM;
+            hdW = Math.round((hdW * HD_DIM) / hdH);
+            hdH = HD_DIM;
           }
         }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, width, height);
-          ctx.drawImage(img, 0, 0, width, height);
+        let hdDataUrl = originalDataUrl;
+        const hdCanvas = document.createElement('canvas');
+        hdCanvas.width = hdW;
+        hdCanvas.height = hdH;
+        const hdCtx = hdCanvas.getContext('2d');
+        if (hdCtx) {
+          hdCtx.fillStyle = '#ffffff';
+          hdCtx.fillRect(0, 0, hdW, hdH);
+          hdCtx.drawImage(img, 0, 0, hdW, hdH);
+          hdDataUrl = hdCanvas.toDataURL('image/jpeg', 0.9);
+        }
+
+        // Send a lean 1200px JPEG (~80-140KB) to Gemini Vision for 40% faster upload & tokenization
+        const AI_DIM = 1200;
+        let aiW = img.width;
+        let aiH = img.height;
+        if (aiW > AI_DIM || aiH > AI_DIM) {
+          if (aiW > aiH) {
+            aiH = Math.round((aiH * AI_DIM) / aiW);
+            aiW = AI_DIM;
+          } else {
+            aiW = Math.round((aiW * AI_DIM) / aiH);
+            aiH = AI_DIM;
+          }
+        }
+        const aiCanvas = document.createElement('canvas');
+        aiCanvas.width = aiW;
+        aiCanvas.height = aiH;
+        const aiCtx = aiCanvas.getContext('2d');
+        if (aiCtx) {
+          aiCtx.fillStyle = '#ffffff';
+          aiCtx.fillRect(0, 0, aiW, aiH);
+          aiCtx.drawImage(img, 0, 0, aiW, aiH);
           const mimeType = 'image/jpeg';
-          const dataUrl = canvas.toDataURL(mimeType, 0.88);
+          const aiDataUrl = aiCanvas.toDataURL(mimeType, 0.78);
           resolve({
-            data: dataUrl.split(',')[1],
+            data: aiDataUrl.split(',')[1],
             type: mimeType,
-            name: file.name.replace(/\.png$/i, '.jpg')
+            name: file.name.replace(/\.png$/i, '.jpg'),
+            hdDataUrl,
           });
           return;
         }
-        const raw = (e.target?.result as string).split(',')[1];
-        resolve({ data: raw, type: file.type || 'image/png', name: file.name });
+        const raw = originalDataUrl.split(',')[1] || '';
+        resolve({ data: raw, type: file.type || 'image/png', name: file.name, hdDataUrl: originalDataUrl });
       };
       img.onerror = () => {
-        const raw = (e.target?.result as string).split(',')[1];
-        resolve({ data: raw, type: file.type || 'image/png', name: file.name });
+        const raw = originalDataUrl.split(',')[1] || '';
+        resolve({ data: raw, type: file.type || 'image/png', name: file.name, hdDataUrl: originalDataUrl });
       };
-      img.src = e.target?.result as string;
+      img.src = originalDataUrl;
     };
     reader.onerror = () => {
-      resolve({ data: '', type: file.type || 'image/png', name: file.name });
+      resolve({ data: '', type: file.type || 'image/png', name: file.name, hdDataUrl: '' });
     };
     reader.readAsDataURL(file);
+  });
+};
+
+const downscaleDataUrlForAi = async (
+  dataUrl: string,
+  maxDim = 1200,
+  quality = 0.78
+): Promise<{ data: string; mimeType: string }> => {
+  return new Promise((resolve) => {
+    const fallbackMime = dataUrl.match(/^data:([^;]+);base64,/)?.[1] || 'image/jpeg';
+    const fallbackData = dataUrl.split(',')[1] || '';
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve({ data: fallbackData, mimeType: fallbackMime });
+        return;
+      }
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+      const compactUrl = canvas.toDataURL('image/jpeg', quality);
+      resolve({ data: compactUrl.split(',')[1] || fallbackData, mimeType: 'image/jpeg' });
+    };
+    img.onerror = () => resolve({ data: fallbackData, mimeType: fallbackMime });
+    img.src = dataUrl;
   });
 };
 
@@ -712,118 +787,218 @@ export function PdfToWord() {
     try {
       let finalResult = '';
 
-      if (hasImages) {
-        // Multi-image batch OCR (from Ctrl+V clipboard paste or multi-image upload)
-        const totalImages = imageFiles.length;
-        const pageImagesMap: { [pageNum: number]: string } = {};
-        const pageResults: string[] = new Array(totalImages);
-        let completedCount = 0;
+      const fetchPdfToWordWithRetry = async (
+        payloadObj: Record<string, any>,
+        pageLabel: string,
+        onTransientBusy?: () => void
+      ): Promise<{ ok: boolean; status: number; text: string }> => {
+        const retryDelaysMs = [1500, 3500, 6500];
+        let lastStatus = 500;
+        let lastText = '';
 
-        const batchSize = 4;
-        for (let i = 0; i < totalImages; i += batchSize) {
-          if (isCancelled()) return;
-          const batchIndices: number[] = [];
-          for (let j = i; j < i + batchSize && j < totalImages; j++) {
-            batchIndices.push(j);
+        for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
+          if (isCancelled()) {
+            return { ok: false, status: 499, text: '' };
           }
+          // Use fast unary generateContent by default (with automatic stream recovery inside generateWithFallback),
+          // and explicitly try stream-first transport on retry attempt 2 if unary encounters sustained 503 spikes
+          const attemptPayload = JSON.stringify({
+            ...payloadObj,
+            preferStream: attempt === 2,
+          });
+          try {
+            const resp = await apiFetch('/api/pdf-to-word', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: attemptPayload,
+            });
+            lastStatus = resp.status;
+            lastText = await resp.text();
 
-          await Promise.all(
-            batchIndices.map(async (imgIdx) => {
-              const p = imgIdx + 1;
-              const imgItem = imageFiles[imgIdx];
-              const optimized = await optimizeImageForOcr(imgItem.file);
-              if (isCancelled()) return;
-              const dataUrl = `data:${optimized.type};base64,${optimized.data}`;
-              pageImagesMap[p] = dataUrl;
-
-              const payload = JSON.stringify({
-                files: [optimized],
-                pageNum: p,
-                totalPages: totalImages,
-              });
-
-              let response = await apiFetch('/api/pdf-to-word', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: payload,
-              });
-
-              if (!response.ok && response.status >= 500) {
-                await new Promise((r) => setTimeout(r, 700));
-                response = await apiFetch('/api/pdf-to-word', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: payload,
-                });
-              }
-
-              if (!response.ok) {
-                let errorData: any;
-                const errText = await response.text();
-                try { errorData = JSON.parse(errText); } catch { errorData = { error: errText }; }
-                const errorMsg = typeof errorData.error === 'object' ? JSON.stringify(errorData.error) : (errorData.error || `Lỗi xử lý ảnh ${p}`);
-                throw new Error(errorMsg);
-              }
-
-              let text = await response.text();
-              if (!text || !text.trim()) {
-                await new Promise((r) => setTimeout(r, 700));
-                response = await apiFetch('/api/pdf-to-word', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: payload,
-                });
-                text = await response.text();
-              }
-
-              const data = parseApiResponse<any>(text);
-              let pageText =
-                typeof data.result === 'string'
-                  ? data.result
-                  : data.result?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-              if (pageText) {
-                pageText = cleanAndNormalizePageMarkdown(pageText);
-                const resolved = await resolveCropFigMarkers(pageText, pageImagesMap, visualMode === 'auto_crop', p);
-                pageText = resolved.text;
-                if (visualMode === 'auto_crop' && pageImagesMap[p]) {
-                  pageText = await recoverMissingPageFigures(pageText, pageImagesMap[p], p, resolved.croppedBoxes, {
-                    replaceLeakedBbtTable: true,
-                  });
+            const trimmedText = lastText.trim();
+            let bodyErrorMsg = '';
+            if (trimmedText.startsWith('{')) {
+              try {
+                const parsedBody = JSON.parse(trimmedText);
+                if (parsedBody && parsedBody.error && !parsedBody.result) {
+                  bodyErrorMsg =
+                    typeof parsedBody.error === 'string'
+                      ? parsedBody.error
+                      : parsedBody.error?.message || JSON.stringify(parsedBody.error);
                 }
-              }
+              } catch (_) {}
+            }
 
-              pageResults[imgIdx] = pageText.trim();
-              completedCount += 1;
+            const isEmptyOk = resp.ok && !trimmedText;
+            const isBodyError = resp.ok && Boolean(bodyErrorMsg);
+            const combinedErrText = (bodyErrorMsg || trimmedText).toLowerCase();
+
+            const isHardAuthOrBadReq =
+              resp.status === 400 ||
+              resp.status === 401 ||
+              resp.status === 403 ||
+              combinedErrText.includes('api_key_invalid') ||
+              combinedErrText.includes('api key not valid') ||
+              combinedErrText.includes('missing gemini api key');
+
+            const isTransientStatus =
+              resp.status === 503 ||
+              resp.status === 504 ||
+              resp.status === 500 ||
+              resp.status === 502 ||
+              resp.status === 429;
+            const isBodyTransientError =
+              isBodyError &&
+              /high demand|unavailable|overloaded|503|504|429|quota|rate.?limit|resource_exhausted|try again later|timed?\s*out|timeout|quá tải/i.test(
+                combinedErrText
+              );
+
+            if (resp.ok && !isEmptyOk && !isBodyError) {
+              return { ok: true, status: resp.status, text: lastText };
+            }
+
+            if (
+              !isHardAuthOrBadReq &&
+              (isTransientStatus || isEmptyOk || isBodyTransientError) &&
+              attempt < retryDelaysMs.length
+            ) {
+              onTransientBusy?.();
+              const waitMs = retryDelaysMs[attempt] + Math.floor(Math.random() * 500);
               if (!isCancelled()) {
-                setProgressPercent(Math.min(96, Math.round((completedCount / totalImages) * 90 + 5)));
-                setProgressStatus(`✨ Đã số hóa xong ${completedCount}/${totalImages} ảnh...`);
+                setProgressStatus(`⏳ Máy chủ AI đang bận, tự động thử lại ${pageLabel} (lần ${attempt + 2})...`);
               }
-            })
-          );
+              await new Promise((r) => setTimeout(r, waitMs));
+              continue;
+            }
+
+            return { ok: false, status: isBodyError ? 503 : resp.status, text: lastText };
+          } catch (netErr: any) {
+            onTransientBusy?.();
+            lastStatus = 503;
+            lastText = JSON.stringify({ error: netErr?.message || 'Lỗi kết nối mạng tới dịch vụ AI.' });
+            if (attempt < retryDelaysMs.length) {
+              const waitMs = retryDelaysMs[attempt] + Math.floor(Math.random() * 500);
+              await new Promise((r) => setTimeout(r, waitMs));
+              continue;
+            }
+          }
         }
+        return { ok: false, status: lastStatus, text: lastText };
+      };
 
-        if (isCancelled()) return;
-        setPdfPageImages(pageImagesMap);
-
-        finalResult = pageResults
-          .map((t, idx) => {
-            const currP = idx + 1;
-            const nextP = currP + 1;
-            const sep = idx < pageResults.length - 1 ? `\n\n--- [Hết Trang ${currP} / Sang Trang ${nextP}] ---\n\n` : '';
-            return t + sep;
+      const joinCompletedPages = (results: Array<string | undefined>, firstPageNum: number): string => {
+        const completedParts: Array<{ pageNum: number; text: string }> = [];
+        for (let idx = 0; idx < results.length; idx++) {
+          if (typeof results[idx] === 'string' && results[idx]!.trim().length > 0) {
+            completedParts.push({ pageNum: firstPageNum + idx, text: results[idx]! });
+          }
+        }
+        return completedParts
+          .map((item, idx) => {
+            const sep =
+              idx < completedParts.length - 1
+                ? `\n\n--- [Hết Trang ${item.pageNum} / Sang Trang ${completedParts[idx + 1].pageNum}] ---\n\n`
+                : '';
+            return item.text + sep;
           })
           .join('');
+      };
+
+      // Continuous adaptive concurrency: 3 workers when >=2 active keys, 2 workers for 1 key,
+      // automatically throttling to 1 worker immediately if Google returns 503/429.
+      const initialConcurrency = getActiveApiKeyPool().length >= 2 ? 3 : 2;
+
+      if (hasImages) {
+        // Multi-image OCR with continuous worker pool & live progressive preview
+        const totalImages = imageFiles.length;
+        const pageImagesMap: { [pageNum: number]: string } = {};
+        const pageResults: Array<string | undefined> = new Array(totalImages);
+        let completedCount = 0;
+        let maxActiveWorkers = Math.min(initialConcurrency, totalImages);
+        let nextIndex = 0;
+        let firstError: Error | null = null;
+
+        const runImageWorker = async (workerId: number) => {
+          if (workerId > 0) {
+            await new Promise((r) => setTimeout(r, workerId * 220));
+          }
+          while (!isCancelled() && !firstError) {
+            if (workerId >= maxActiveWorkers) {
+              return;
+            }
+            const imgIdx = nextIndex++;
+            if (imgIdx >= totalImages) return;
+
+            const p = imgIdx + 1;
+            const imgItem = imageFiles[imgIdx];
+            const optimized = await optimizeImageForOcr(imgItem.file);
+            if (isCancelled() || firstError) return;
+            pageImagesMap[p] = optimized.hdDataUrl || `data:${optimized.type};base64,${optimized.data}`;
+
+            const payloadObj = {
+              files: [{ data: optimized.data, type: optimized.type, name: optimized.name }],
+              pageNum: p,
+              totalPages: totalImages,
+            };
+
+            const fetched = await fetchPdfToWordWithRetry(payloadObj, `ảnh ${p}`, () => {
+              maxActiveWorkers = 1;
+            });
+            if (isCancelled() || firstError) return;
+
+            if (!fetched.ok) {
+              let errorData: any;
+              try { errorData = JSON.parse(fetched.text); } catch { errorData = { error: fetched.text }; }
+              const errorMsg = typeof errorData.error === 'object' ? JSON.stringify(errorData.error) : (errorData.error || `Lỗi xử lý ảnh ${p}`);
+              firstError = new Error(errorMsg);
+              return;
+            }
+
+            const data = parseApiResponse<any>(fetched.text);
+            let pageText =
+              typeof data.result === 'string'
+                ? data.result
+                : data.result?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+            if (pageText) {
+              pageText = cleanAndNormalizePageMarkdown(pageText);
+              const resolved = await resolveCropFigMarkers(pageText, pageImagesMap, visualMode === 'auto_crop', p);
+              pageText = resolved.text;
+              if (visualMode === 'auto_crop' && pageImagesMap[p]) {
+                pageText = await recoverMissingPageFigures(pageText, pageImagesMap[p], p, resolved.croppedBoxes, {
+                  replaceLeakedBbtTable: true,
+                });
+              }
+            }
+
+            pageResults[imgIdx] = pageText.trim();
+            completedCount += 1;
+            if (!isCancelled() && !firstError) {
+              setPdfPageImages({ ...pageImagesMap });
+              setResultText(joinCompletedPages(pageResults, 1));
+              setProgressPercent(Math.min(96, Math.round((completedCount / totalImages) * 90 + 5)));
+              setProgressStatus(`✨ Đã số hóa xong ${completedCount}/${totalImages} ảnh...`);
+            }
+          }
+        };
+
+        await Promise.all(
+          Array.from({ length: maxActiveWorkers }, (_v, idx) => runImageWorker(idx))
+        );
+        if (firstError) throw firstError;
+        if (isCancelled()) return;
+        setPdfPageImages({ ...pageImagesMap });
+        finalResult = joinCompletedPages(pageResults, 1);
       } else if (isPdf && selectedFile) {
-        // Multi-page PDF: Open PDF ONCE, render crisp compact JPEGs (~180KB), process in parallel batches of 4,
-        // and only fall back to direct PDF processing if PDF.js rendering itself fails (never on AI API/quota errors!)
+        // Multi-page PDF: Open PDF ONCE, render HD page for figure cropping + lean 1200px JPEG for fast AI OCR,
+        // stream through continuous worker pool with live page-by-page preview!
         const pageImagesMap: { [pageNum: number]: string } = {};
         const pageDetectedFiguresMap: { [pageNum: number]: PdfDetectedFigure[] } = {};
 
         let renderFailed = false;
         try {
           const freshBuffer = await selectedFile.arrayBuffer();
-          const pageResults: string[] = new Array(pagesToProcess);
+          const pageResults: Array<string | undefined> = new Array(pagesToProcess);
           let completedCount = 0;
 
           let docHandle: { pdf: any; numPages: number; destroy: () => Promise<void> } | null = null;
@@ -835,133 +1010,154 @@ export function PdfToWord() {
           }
 
           try {
-            const batchSize = 4;
-            for (let i = 0; i < pagesToProcess; i += batchSize) {
-              if (isCancelled()) return;
-              const batch: number[] = [];
-              for (let j = i; j < i + batchSize && j < pagesToProcess; j++) {
-                batch.push(j);
+            // Pre-render pages into HD map + compact AI copy sequentially on the single PDF.js handle (~120ms/page)
+            // while AI workers consume pages as soon as each page is rendered!
+            type RenderedJob = {
+              batchIdx: number;
+              p: number;
+              aiData: string;
+              aiMimeType: string;
+              detectedFigures: PdfDetectedFigure[];
+            };
+            const renderedJobs: Array<Promise<RenderedJob>> = [];
+            let renderChain: Promise<void> = Promise.resolve();
+
+            for (let j = 0; j < pagesToProcess; j++) {
+              const batchIdx = j;
+              const p = startP + batchIdx;
+              const jobPromise = new Promise<RenderedJob>((resolve, reject) => {
+                renderChain = renderChain.then(async () => {
+                  if (isCancelled()) {
+                    reject(new Error('CANCELLED'));
+                    return;
+                  }
+                  try {
+                    const rendered = await renderLoadedPdfPageWithFigures(docHandle!.pdf, p, 1.55, 'jpeg');
+                    pageImagesMap[p] = rendered.dataUrl;
+                    pageDetectedFiguresMap[p] = rendered.detectedFigures;
+                    const compact = await downscaleDataUrlForAi(rendered.dataUrl, 1200, 0.78);
+                    resolve({
+                      batchIdx,
+                      p,
+                      aiData: compact.data,
+                      aiMimeType: compact.mimeType,
+                      detectedFigures: rendered.detectedFigures,
+                    });
+                  } catch (rErr) {
+                    renderFailed = true;
+                    reject(rErr);
+                  }
+                });
+              });
+              // Prevent unhandled rejection if worker aborts early
+              jobPromise.catch(() => {});
+              renderedJobs.push(jobPromise);
+            }
+
+            let maxActiveWorkers = Math.min(initialConcurrency, pagesToProcess);
+            let nextIdx = 0;
+            let firstError: any = null;
+
+            const runPdfWorker = async (workerId: number) => {
+              if (workerId > 0) {
+                await new Promise((r) => setTimeout(r, workerId * 220));
               }
-
-              // Render page canvases sequentially on the shared PDF handle (very fast: ~120ms/page), then fire AI calls in parallel
-              const renderedBatch: Array<{
-                batchIdx: number;
-                p: number;
-                dataUrl: string;
-                mimeType: string;
-                detectedFigures: PdfDetectedFigure[];
-              }> = [];
-
-              for (const batchIdx of batch) {
-                const p = startP + batchIdx;
-                try {
-                  const rendered = await renderLoadedPdfPageWithFigures(docHandle.pdf, p, 1.65, 'jpeg');
-                  pageImagesMap[p] = rendered.dataUrl;
-                  pageDetectedFiguresMap[p] = rendered.detectedFigures;
-                  renderedBatch.push({
-                    batchIdx,
-                    p,
-                    dataUrl: rendered.dataUrl,
-                    mimeType: rendered.mimeType,
-                    detectedFigures: rendered.detectedFigures,
-                  });
-                } catch (rErr) {
-                  renderFailed = true;
-                  throw rErr;
+              while (!isCancelled() && !firstError) {
+                if (workerId >= maxActiveWorkers) {
+                  return;
                 }
-              }
+                const idx = nextIdx++;
+                if (idx >= pagesToProcess) return;
 
-              if (isCancelled()) return;
+                let job: RenderedJob;
+                try {
+                  job = await renderedJobs[idx];
+                } catch (rErr: any) {
+                  if (rErr?.message !== 'CANCELLED' && !firstError) {
+                    firstError = rErr;
+                  }
+                  return;
+                }
+                if (isCancelled() || firstError) return;
 
-              await Promise.all(
-                renderedBatch.map(async ({ batchIdx, p, dataUrl, mimeType, detectedFigures }) => {
-                  const payload = JSON.stringify({
-                    files: [{
-                      data: dataUrl.split(',')[1],
-                      type: mimeType,
-                      name: `Trang_${p}.jpg`
-                    }],
-                    pageNum: p,
-                    totalPages: pdfTotalPages
-                  });
+                const { batchIdx, p, aiData, aiMimeType, detectedFigures } = job;
+                const payloadObj = {
+                  files: [{
+                    data: aiData,
+                    type: aiMimeType,
+                    name: `Trang_${p}.jpg`
+                  }],
+                  pageNum: p,
+                  totalPages: pdfTotalPages
+                };
 
-                  let response = await apiFetch('/api/pdf-to-word', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: payload
-                  });
+                const fetched = await fetchPdfToWordWithRetry(payloadObj, `trang ${p}`, () => {
+                  maxActiveWorkers = 1;
+                });
+                if (isCancelled() || firstError) return;
 
-                  if (!response.ok && response.status >= 500) {
-                    await new Promise((r) => setTimeout(r, 700));
-                    response = await apiFetch('/api/pdf-to-word', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: payload
+                if (!fetched.ok) {
+                  let errorData: any;
+                  try { errorData = JSON.parse(fetched.text); } catch { errorData = { error: fetched.text }; }
+                  const errorMsg = typeof errorData.error === 'object' ? JSON.stringify(errorData.error) : (errorData.error || `Lỗi xử lý trang ${p}`);
+                  firstError = new Error(errorMsg);
+                  return;
+                }
+
+                const data = parseApiResponse<any>(fetched.text);
+                let pageText = typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || '');
+
+                if (pageText) {
+                  pageText = cleanAndNormalizePageMarkdown(pageText);
+                  const resolved = await resolveCropFigMarkers(pageText, pageImagesMap, visualMode === 'auto_crop', p);
+                  pageText = resolved.text;
+                  let croppedBoxes = resolved.croppedBoxes;
+
+                  // Layer 2: Deterministic PDF vector/image figure recovery (instant, zero AI calls)
+                  if (visualMode === 'auto_crop' && pageImagesMap[p] && detectedFigures.length > 0) {
+                    const pdfFigRes = await applyPdfDetectedFigures(
+                      pageText,
+                      pageImagesMap[p],
+                      p,
+                      detectedFigures,
+                      croppedBoxes,
+                      { replaceLeakedBbtTable: true }
+                    );
+                    pageText = pdfFigRes.text;
+                    croppedBoxes = pdfFigRes.croppedBoxes;
+                  }
+
+                  // Layer 3: Pass-2 Vision recovery ONLY when a printed figure/BBT/graph is explicitly missing
+                  if (visualMode === 'auto_crop' && pageImagesMap[p]) {
+                    pageText = await recoverMissingPageFigures(pageText, pageImagesMap[p], p, croppedBoxes, {
+                      replaceLeakedBbtTable: true,
                     });
                   }
+                }
+                pageResults[batchIdx] = pageText.trim();
+                completedCount += 1;
+                if (!isCancelled() && !firstError) {
+                  setPdfPageImages({ ...pageImagesMap });
+                  setResultText(joinCompletedPages(pageResults, startP));
+                  setProgressPercent(Math.min(96, Math.round((completedCount / pagesToProcess) * 90 + 5)));
+                  setProgressStatus(`✨ Đã số hóa xong ${completedCount}/${pagesToProcess} trang PDF...`);
+                }
+              }
+            };
 
-                  if (!response.ok) {
-                    let errorData: any;
-                    const errText = await response.text();
-                    try { errorData = JSON.parse(errText); } catch { errorData = { error: errText }; }
-                    const errorMsg = typeof errorData.error === 'object' ? JSON.stringify(errorData.error) : (errorData.error || `Lỗi xử lý trang ${p}`);
-                    throw new Error(errorMsg);
-                  }
-
-                  const text = await response.text();
-                  const data = parseApiResponse<any>(text);
-                  let pageText = typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || '');
-
-                  if (pageText) {
-                    pageText = cleanAndNormalizePageMarkdown(pageText);
-                    const resolved = await resolveCropFigMarkers(pageText, pageImagesMap, visualMode === 'auto_crop', p);
-                    pageText = resolved.text;
-                    let croppedBoxes = resolved.croppedBoxes;
-
-                    // Layer 2: Deterministic PDF vector/image figure recovery (instant, zero AI calls)
-                    if (visualMode === 'auto_crop' && pageImagesMap[p] && detectedFigures.length > 0) {
-                      const pdfFigRes = await applyPdfDetectedFigures(
-                        pageText,
-                        pageImagesMap[p],
-                        p,
-                        detectedFigures,
-                        croppedBoxes,
-                        { replaceLeakedBbtTable: true }
-                      );
-                      pageText = pdfFigRes.text;
-                      croppedBoxes = pdfFigRes.croppedBoxes;
-                    }
-
-                    // Layer 3: Pass-2 Vision recovery ONLY when a printed figure/BBT/graph is explicitly missing
-                    if (visualMode === 'auto_crop' && pageImagesMap[p]) {
-                      pageText = await recoverMissingPageFigures(pageText, pageImagesMap[p], p, croppedBoxes, {
-                        replaceLeakedBbtTable: true,
-                      });
-                    }
-                  }
-                  pageResults[batchIdx] = pageText.trim();
-                  completedCount += 1;
-                  if (!isCancelled()) {
-                    setProgressPercent(Math.min(96, Math.round((completedCount / pagesToProcess) * 90 + 5)));
-                    setProgressStatus(`✨ Đã số hóa xong ${completedCount}/${pagesToProcess} trang PDF...`);
-                  }
-                })
-              );
-            }
+            await Promise.all(
+              Array.from({ length: maxActiveWorkers }, (_v, idx) => runPdfWorker(idx))
+            );
+            if (firstError) throw firstError;
           } finally {
             await docHandle?.destroy();
           }
 
           if (isCancelled()) return;
-          setPdfPageImages(pageImagesMap);
+          setPdfPageImages({ ...pageImagesMap });
 
           // Combine all pages with standard page separation markers
-          finalResult = pageResults.map((t, idx) => {
-            const currP = startP + idx;
-            const nextP = currP + 1;
-            const sep = idx < pageResults.length - 1 ? `\n\n--- [Hết Trang ${currP} / Sang Trang ${nextP}] ---\n\n` : '';
-            return t + sep;
-          }).join('');
+          finalResult = joinCompletedPages(pageResults, startP);
         } catch (pageErr: any) {
           if (isCancelled()) return;
           // Never waste 60s+ retrying whole-PDF fallback if the error came from Gemini API (401/404/429/503/timeout)
@@ -973,30 +1169,26 @@ export function PdfToWord() {
           setProgressPercent(60);
 
           const rawBase64 = await fileToBase64(selectedFile);
-          const response = await apiFetch('/api/pdf-to-word', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              files: [{
-                data: rawBase64,
-                type: 'application/pdf',
-                name: selectedFile.name
-              }],
-              totalPages: pdfTotalPages
-            })
-          });
+          const directPayloadObj = {
+            files: [{
+              data: rawBase64,
+              type: 'application/pdf',
+              name: selectedFile.name
+            }],
+            totalPages: pdfTotalPages
+          };
+          const fetchedDirect = await fetchPdfToWordWithRetry(directPayloadObj, 'tài liệu PDF');
+          if (isCancelled()) return;
 
-          if (!response.ok) {
+          if (!fetchedDirect.ok) {
             let errorData;
-            let errText = await response.text();
-            try { errorData = JSON.parse(errText); } catch { errorData = { error: errText }; }
+            try { errorData = JSON.parse(fetchedDirect.text); } catch { errorData = { error: fetchedDirect.text }; }
             let errorMsg = errorData.error || 'Có lỗi xảy ra khi số hóa tài liệu PDF';
             if (typeof errorMsg === 'object') errorMsg = JSON.stringify(errorMsg);
             throw new Error(errorMsg);
           }
 
-          const text = await response.text();
-          const data = parseApiResponse<any>(text);
+          const data = parseApiResponse<any>(fetchedDirect.text);
           let rawRes = typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(data.result));
           finalResult = cleanAndNormalizePageMarkdown(rawRes);
 
@@ -1061,52 +1253,33 @@ export function PdfToWord() {
           const fileData = btoa(unescape(encodeURIComponent(textWithPlaceholders)));
           fileListForApi = [{ data: fileData, type: 'text/plain', name: selectedFile.name }];
         } else {
-          // Optimize image (downscale to max 1800px if large, keeping math/text razor sharp)
+          // Keep HD copy for cropping original figures & send lean 1200px JPEG to Gemini for fast OCR
           const optimized = await optimizeImageForOcr(selectedFile);
-          fileListForApi = [optimized];
-          singlePageImages[1] = `data:${optimized.type};base64,${optimized.data}`;
+          fileListForApi = [{ data: optimized.data, type: optimized.type, name: optimized.name }];
+          singlePageImages[1] = optimized.hdDataUrl || `data:${optimized.type};base64,${optimized.data}`;
           setPdfPageImages(singlePageImages);
         }
 
-        let response = await apiFetch('/api/pdf-to-word', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            files: fileListForApi,
-            ...(isDocx ? {} : { pageNum: 1, totalPages: 1 })
-          })
-        });
+        const singlePayloadObj = {
+          files: fileListForApi,
+          ...(isDocx ? {} : { pageNum: 1, totalPages: 1 })
+        };
+        const fetchedSingle = await fetchPdfToWordWithRetry(singlePayloadObj, selectedFile.name);
+        if (isCancelled()) return;
 
-        if (!response.ok) {
+        if (!fetchedSingle.ok) {
           let errorData;
-          let errText = await response.text();
           try {
-             errorData = JSON.parse(errText);
+             errorData = JSON.parse(fetchedSingle.text);
           } catch {
-             errorData = { error: errText };
+             errorData = { error: fetchedSingle.text };
           }
           let errorMsg = errorData.error || 'Có lỗi xảy ra khi xử lý file';
           if (typeof errorMsg === 'object') errorMsg = JSON.stringify(errorMsg);
           throw new Error(errorMsg);
         }
 
-        let text = await response.text();
-        // If response is empty or whitespace, retry once seamlessly
-        if (!text || !text.trim()) {
-          setProgressStatus('⏳ Đang kết nối lại máy chủ để hoàn tất bóc tách...');
-          await new Promise(r => setTimeout(r, 1200));
-          response = await apiFetch('/api/pdf-to-word', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              files: fileListForApi,
-              ...(isDocx ? {} : { pageNum: 1, totalPages: 1 })
-            })
-          });
-          text = await response.text();
-        }
-
-        const data = parseApiResponse<any>(text);
+        const data = parseApiResponse<any>(fetchedSingle.text);
         let rawRes = typeof data.result === 'string' ? data.result : (data.result?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(data.result));
         finalResult = cleanAndNormalizePageMarkdown(rawRes);
 
@@ -1754,8 +1927,17 @@ export function PdfToWord() {
           <div className="flex flex-wrap items-center justify-between mb-6 gap-4 pb-4 border-b border-slate-100">
             <div>
               <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                <CheckCircle2 className="w-6 h-6 text-emerald-600" />
-                <span>Tài liệu đã số hóa thành công!</span>
+                {isUploading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                    <span>Đang hiển thị kết quả từng trang...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                    <span>Tài liệu đã số hóa thành công!</span>
+                  </>
+                )}
               </h3>
               <p className="text-xs text-slate-500 mt-1">
                 Đã chuẩn hóa công thức LaTeX và đánh dấu phân đoạn trang từ {fromPage} đến {toPage}.

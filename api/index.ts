@@ -1050,6 +1050,7 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
   }
 
   const fastMode = Boolean(payloadOptions?.fastMode);
+  const preferStream = Boolean(payloadOptions?.preferStream);
   const requestTimeoutMs =
     typeof payloadOptions?.timeoutMs === "number" && payloadOptions.timeoutMs > 0
       ? payloadOptions.timeoutMs
@@ -1092,7 +1093,7 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
     return text;
   };
 
-  const invokeWithTimeout = async (client: GoogleGenAI, callPayload: any): Promise<any> => {
+  const invokeUnaryWithTimeout = async (client: GoogleGenAI, callPayload: any): Promise<any> => {
     if (!requestTimeoutMs || requestTimeoutMs <= 0) {
       return client.models.generateContent(callPayload);
     }
@@ -1126,6 +1127,70 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
     }
   };
 
+  const invokeStreamCollectedWithTimeout = async (client: GoogleGenAI, callPayload: any): Promise<any> => {
+    const controller = new AbortController();
+    let timerId: any = null;
+    const streamTask = async () => {
+      const payloadWithSignal =
+        requestTimeoutMs > 0
+          ? {
+              ...callPayload,
+              config: {
+                ...(callPayload.config || {}),
+                abortSignal: controller.signal,
+              },
+            }
+          : callPayload;
+      const stream = await client.models.generateContentStream(payloadWithSignal);
+      let combined = "";
+      let lastCandidates: any = undefined;
+      for await (const chunk of stream) {
+        if (chunk?.text) {
+          combined += chunk.text;
+        } else if (chunk?.candidates?.[0]?.content?.parts) {
+          const piece = chunk.candidates[0].content.parts
+            .filter((p: any) => !p.thought && p.text)
+            .map((p: any) => p.text)
+            .join("");
+          if (piece) combined += piece;
+        }
+        if (chunk?.candidates) {
+          lastCandidates = chunk.candidates;
+        }
+      }
+      return {
+        text: combined,
+        candidates: lastCandidates,
+      };
+    };
+
+    if (!requestTimeoutMs || requestTimeoutMs <= 0) {
+      return streamTask();
+    }
+    const timeoutPromise = new Promise<never>((_resolve, reject) => {
+      timerId = setTimeout(() => {
+        try {
+          controller.abort();
+        } catch (_) {}
+        const tErr: any = new Error(`AI stream request timed out after ${Math.round(requestTimeoutMs / 1000)}s`);
+        tErr.status = 504;
+        tErr.isTimeout = true;
+        reject(tErr);
+      }, requestTimeoutMs);
+    });
+    try {
+      return await Promise.race([streamTask(), timeoutPromise]);
+    } finally {
+      if (timerId) clearTimeout(timerId);
+    }
+  };
+
+  const invokeWithTimeout = async (client: GoogleGenAI, callPayload: any, useStream = preferStream): Promise<any> => {
+    return useStream
+      ? invokeStreamCollectedWithTimeout(client, callPayload)
+      : invokeUnaryWithTimeout(client, callPayload);
+  };
+
   for (const { client, isCustom, apiKey } of clients) {
     const cachedWorking = serverWorkingModelByKey.get(apiKey);
     const useCachedFirst =
@@ -1134,6 +1199,7 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
     const clientModels = useCachedFirst && cachedWorking
       ? Array.from(new Set<string>([cachedWorking, ...baseModels]))
       : [...baseModels];
+    const notFoundModelsForClient = new Set<string>();
     let triedDiscovery = false;
 
     for (let mIdx = 0; mIdx < clientModels.length; mIdx++) {
@@ -1151,12 +1217,14 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
         if (model.includes("lite")) {
           delete rawConfig.thinkingConfig;
         } else if (fastMode) {
-          if (model.includes("2.5-flash") || model.includes("2.5")) {
+          if (model.includes("2.5-flash")) {
             rawConfig.thinkingConfig = { thinkingBudget: 0 };
           } else if (model.includes("4-")) {
             rawConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
-          } else {
+          } else if (model.includes("3-") || model.includes("3.1")) {
             rawConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.MINIMAL };
+          } else {
+            delete rawConfig.thinkingConfig;
           }
         } else if ((model === "gemini-4-hydrogen" || model.includes("4-")) && !rawConfig.thinkingConfig) {
           rawConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
@@ -1178,10 +1246,11 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
         delete (basePayload as any).preferredModels;
         delete (basePayload as any).fastMode;
         delete (basePayload as any).timeoutMs;
+        delete (basePayload as any).preferStream;
 
         let response: any;
         try {
-          response = await invokeWithTimeout(client, basePayload);
+          response = await invokeWithTimeout(client, basePayload, preferStream);
         } catch (tokenErr: any) {
           const errStr = String(tokenErr?.message || "");
           if (/thinkingConfig|thinkingBudget|thinkingLevel/i.test(errStr)) {
@@ -1189,19 +1258,19 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
             if (fastMode && (fallbackConfig as any).thinkingConfig?.thinkingLevel === ThinkingLevel.MINIMAL) {
               (fallbackConfig as any).thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
               try {
-                response = await invokeWithTimeout(client, { ...basePayload, config: fallbackConfig });
+                response = await invokeWithTimeout(client, { ...basePayload, config: fallbackConfig }, preferStream);
               } catch {
                 const noThinkConfig = { ...basePayload.config };
                 delete (noThinkConfig as any).thinkingConfig;
-                response = await invokeWithTimeout(client, { ...basePayload, config: noThinkConfig });
+                response = await invokeWithTimeout(client, { ...basePayload, config: noThinkConfig }, preferStream);
               }
             } else {
               delete (fallbackConfig as any).thinkingConfig;
-              response = await invokeWithTimeout(client, { ...basePayload, config: fallbackConfig });
+              response = await invokeWithTimeout(client, { ...basePayload, config: fallbackConfig }, preferStream);
             }
           } else if (requestedMaxTokens > 8192 && /maxOutputTokens|token|invalid|argument/i.test(errStr)) {
             basePayload.config.maxOutputTokens = requestedMaxTokens > 32768 ? 32768 : 8192;
-            response = await invokeWithTimeout(client, basePayload);
+            response = await invokeWithTimeout(client, basePayload, preferStream);
           } else {
             throw tokenErr;
           }
@@ -1226,6 +1295,7 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
         }
         if (isServerModelNotFoundError(e)) {
           lastNotFoundError = e;
+          notFoundModelsForClient.add(model);
           if (cachedWorking === model && apiKey) {
             serverWorkingModelByKey.delete(apiKey);
           }
@@ -1263,15 +1333,122 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
         if (mIdx === clientModels.length - 1 && !triedDiscovery && apiKey) {
           triedDiscovery = true;
           const discovered = await discoverServerGeminiModels(apiKey);
-          const extras = discovered.filter((m) => !clientModels.includes(m)).slice(0, 4);
+          const extras = discovered
+            .filter((m) => {
+              if (clientModels.includes(m) || notFoundModelsForClient.has(m)) return false;
+              if (fastMode) {
+                const ml = m.toLowerCase();
+                return (
+                  (ml.includes("flash") || ml.includes("lite") || ml.includes("hydrogen")) &&
+                  !ml.includes("pro") &&
+                  !ml.includes("carbon") &&
+                  !ml.includes("argon") &&
+                  !ml.includes("neon")
+                );
+              }
+              return true;
+            })
+            .slice(0, fastMode ? 4 : 8);
           if (extras.length > 0) {
             clientModels.push(...extras);
           }
         }
         if (!isServerModelNotFoundError(e)) {
-          await delay(150);
+          await delay(fastMode ? 120 + Math.floor(Math.random() * 120) : 300 + Math.floor(Math.random() * 250));
         }
         continue;
+      }
+    }
+
+    // Transient 503/504 recovery sweep: if a brief Google High Demand spike swept all models,
+    // wait a short jittered cooldown and retry across diverse capacity pools using the opposite
+    // transport mode (streaming <-> unary) so unary 503 workers are bypassed via streamGenerateContent.
+    const transientErr = bestNonNotFoundError || primaryError;
+    const transientMsg = String(transientErr?.message || "").toLowerCase();
+    const isTransientSpike =
+      Boolean(transientErr) &&
+      (transientErr?.status === 503 ||
+        transientErr?.status === 504 ||
+        transientMsg.includes("503") ||
+        transientMsg.includes("high demand") ||
+        transientMsg.includes("spikes in demand") ||
+        transientMsg.includes("unavailable") ||
+        transientMsg.includes("overloaded"));
+    if (isTransientSpike) {
+      await delay(fastMode ? 700 + Math.floor(Math.random() * 400) : 1400 + Math.floor(Math.random() * 600));
+      const recoveryUseStream = !preferStream;
+      const baseRecoveryList = fastMode
+        ? [
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-3.1-flash-lite-preview",
+            "gemini-4-hydrogen",
+            "gemini-3-flash-preview",
+          ]
+        : [
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-4-hydrogen",
+            "gemini-3-flash-preview",
+            "gemini-3.1-flash-lite-preview",
+            "gemini-2.5-pro",
+          ];
+      const recoveryModels = Array.from(new Set<string>(baseRecoveryList)).filter(
+        (m) => !notFoundModelsForClient.has(m)
+      );
+      for (const recModel of recoveryModels) {
+        try {
+          const recConfig = { ...(payloadOptions.config || {}) };
+          if (recModel.includes("4-") || recModel.includes("3-") || recModel.includes("3.1")) {
+            delete recConfig.temperature;
+            delete recConfig.topP;
+            delete recConfig.topK;
+            delete recConfig.candidateCount;
+          }
+          if (recModel.includes("lite") || recModel.includes("pro")) {
+            delete recConfig.thinkingConfig;
+          } else if (recModel.includes("4-")) {
+            recConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
+          } else if (fastMode && recModel.includes("2.5-flash")) {
+            recConfig.thinkingConfig = { thinkingBudget: 0 };
+          } else {
+            delete recConfig.thinkingConfig;
+          }
+          const recPayload = {
+            ...payloadOptions,
+            contents: normalizeGeminiContents(payloadOptions.contents),
+            model: recModel,
+            config: {
+              ...recConfig,
+              maxOutputTokens: recConfig.maxOutputTokens || 32768,
+              systemInstruction: recConfig.systemInstruction || defaultSystemInstruction,
+            },
+          };
+          delete (recPayload as any).preferredModels;
+          delete (recPayload as any).fastMode;
+          delete (recPayload as any).timeoutMs;
+          delete (recPayload as any).preferStream;
+          const recResp = await invokeWithTimeout(client, recPayload, recoveryUseStream);
+          const recText = extractTextFromResponse(recResp);
+          if (recText) {
+            if (apiKey) serverWorkingModelByKey.set(apiKey, recModel);
+            return {
+              text: recText,
+              candidates: recResp.candidates
+                ? recResp.candidates.map((c: any) => ({ finishReason: c.finishReason, index: c.index }))
+                : undefined,
+              customKeyFailed,
+            } as any;
+          }
+        } catch (recErr: any) {
+          primaryError = recErr;
+          if (isServerModelNotFoundError(recErr)) {
+            notFoundModelsForClient.add(recModel);
+          } else {
+            bestNonNotFoundError = recErr;
+          }
+          await delay(350 + Math.floor(Math.random() * 250));
+        }
       }
     }
   }
@@ -3951,66 +4128,46 @@ app.all("/api/pdf-to-word", async (req, res) => {
       }
 
       const isSinglePageMode = typeof pageNum === 'number';
+      const preferStream = req.body?.preferStream === true;
       const figureInstruction = isSinglePageMode
-        ? `- BẮT BUỘC PHÁT HIỆN & CẮT ẢNH GỐC 100% CHO MỌI BẢNG BIẾN THIÊN (BBT), BẢNG XÉT DẤU, ĐỒ THỊ, HÌNH VẼ & SƠ ĐỒ (QUAN TRỌNG SỐ 1):
-  + KHI GẶP BẤT KỲ: **BẢNG BIẾN THIÊN (BBT)**, **BẢNG XÉT DẤU** (bảng có các dòng $x, y', y$ hoặc $f'(x), f(x)$ và mũi tên $\\nearrow, \\searrow$), **ĐỒ THỊ HÀM SỐ**, MẶT PHẲNG TỌA ĐỘ $Oxy$, MIỀN NGHIỆM GẠCH CHÉO/TÔ ĐẬM, HÌNH VẼ HÌNH HỌC (2D/3D), SƠ ĐỒ MẠCH ĐIỆN, BIỂU ĐỒ, HOẶC HÌNH MINH HỌA NÀO — KỂ CẢ KHI NẰM CẠNH BÊN PHẢI/TRÁI ĐOẠN CHỮ ĐỀ BÀI HOẶC TRONG BẢNG HƯỚNG DẪN CHẤM:
-  + **TUYỆT ĐỐI CẤM TỰ Ý VẼ LẠI**: KHÔNG chuyển Bảng biến thiên (BBT) hay Bảng xét dấu thành Markdown Table (\`| x | ... | y' | ... | y |\`), KHÔNG tự vẽ đồ thị/BBT bằng TikZ, SVG, ASCII hay bịa công thức. PHẢI giữ nguyên $100\\%$ ảnh gốc từ đề bằng thẻ \`[CROP_FIG ...]\`!
-  + TUYỆT ĐỐI CẤM bỏ qua hình vẽ/BBT/đồ thị ngay cả khi đề bài đã ghi sẵn tọa độ điểm hay mô tả trong ngoặc đơn.
-  + HÃY xác định khung bao hình chữ nhật chính xác chứa TOÀN BỘ Bảng biến thiên / Đồ thị / Hình vẽ đó trên ảnh trang:
-    * Với **Bảng biến thiên / Bảng xét dấu**: ôm trọn toàn bộ khung viền bảng, cột trái $x, y', y$ (hoặc $f'(x), f(x)$), toàn bộ dấu $+, -, 0$, vạch đôi không xác định, các mũi tên $\\nearrow, \\searrow$, và các giá trị $-\\infty, +\\infty$, cực trị; KHÔNG dính dòng đề bài phía trên hay phương án A, B, C, D phía dưới.
-    * Với **Đồ thị / Hình vẽ**: ôm trọn toàn bộ mũi tên trục, nhãn $O, x, y$, các số trên trục tọa độ, tên điểm $A, B, C, S...$, ký hiệu góc/độ dài, đường nét gạch chéo miền nghiệm; KHÔNG dính dòng đề bài phía trên hay đáp án A, B, C, D phía dưới.
-  + Xuất ĐÚNG MỘT thẻ đánh dấu trên một dòng riêng ngay tại ĐÚNG VỊ TRÍ xuất hiện BBT/đồ thị/hình vẽ (ví dụ giữa câu dẫn và 4 phương án A, B, C, D) theo cú pháp chuẩn sau (hệ tọa độ chuẩn hóa 0..1000 của ảnh trang: ymin,xmin,ymax,xmax với 0 là mép trên/trái, 1000 là mép dưới/phải; mô tả ngắn gọn KHÔNG chứa ký tự [ hoặc ] hay dấu "):
-    [CROP_FIG page="${pageNum}" box="ymin,xmin,ymax,xmax" desc="Mô tả ngắn gọn"]
-  + Ví dụ 1 (Bảng biến thiên): [CROP_FIG page="${pageNum}" box="210,140,345,860" desc="Bảng biến thiên của hàm số"]
-  + Ví dụ 2 (Đồ thị hàm số): [CROP_FIG page="${pageNum}" box="330,620,475,895" desc="Đồ thị hàm số trên mặt phẳng Oxy"]
-  + Ví dụ 3 (Hình học không gian): [CROP_FIG page="${pageNum}" box="180,260,440,740" desc="Hình chóp S.ABCD"]`
-        : `- Khi gặp Bảng biến thiên (BBT), Bảng xét dấu, biểu đồ, hình vẽ, đồ thị, mặt phẳng tọa độ, miền nghiệm gạch chéo, hình lăng trụ, hình chóp hay hình ảnh minh họa: TUYỆT ĐỐI KHÔNG tự ý vẽ lại (không chuyển BBT sang Markdown table, không vẽ SVG/TikZ) và KHÔNG bỏ qua; hãy ghi thẻ chú thích ngắn gọn ngay đúng vị trí xuất hiện: [Bảng biến thiên: mô tả ngắn gọn], [Đồ thị: mô tả ngắn gọn] hoặc [Hình vẽ: mô tả ngắn gọn].`;
+        ? `- BẮT BUỘC CẮT ẢNH GỐC 100% CHO MỌI: **Bảng biến thiên (BBT)**, **Bảng xét dấu** ($x, y', y$ hoặc $f'(x), f(x)$), **Đồ thị hàm số**, hệ trục $Oxy$, miền nghiệm gạch chéo/tô đậm, hình học 2D/3D, sơ đồ, biểu đồ (kể cả nằm bên phải/trái chữ đề bài).
+- TUYỆT ĐỐI CẤM tự ý vẽ lại (KHÔNG chuyển BBT/bảng xét dấu thành Markdown table, KHÔNG vẽ SVG/TikZ/ASCII) và KHÔNG bỏ qua.
+- Xuất ĐÚNG 1 thẻ trên dòng riêng ngay đúng vị trí xuất hiện (hệ tọa độ chuẩn hóa 0..1000: ymin,xmin,ymax,xmax ôm trọn khung viền BBT/mũi tên trục/nhãn điểm, KHÔNG dính chữ đề bài hay phương án A,B,C,D; desc ngắn gọn không chứa [, ], "):
+  [CROP_FIG page="${pageNum}" box="ymin,xmin,ymax,xmax" desc="Mô tả ngắn gọn"]
+  Ví dụ: [CROP_FIG page="${pageNum}" box="210,140,345,860" desc="Bảng biến thiên của hàm số"] hoặc [CROP_FIG page="${pageNum}" box="330,620,475,895" desc="Đồ thị hàm số trên mặt phẳng Oxy"]`
+        : `- Khi gặp Bảng biến thiên (BBT), Bảng xét dấu, đồ thị, hình vẽ, miền nghiệm gạch chéo, sơ đồ, biểu đồ: TUYỆT ĐỐI KHÔNG tự vẽ lại (không chuyển BBT sang Markdown table, không vẽ SVG/TikZ) và KHÔNG bỏ qua; ghi đúng vị trí: [Bảng biến thiên: mô tả], [Đồ thị: mô tả] hoặc [Hình vẽ: mô tả].`;
 
-      const prompt = `Bạn là một trợ lý AI chuyên gia số hóa tài liệu giáo dục và chuyển đổi định dạng từ PDF/Hình ảnh sang văn bản Word (.docx).
-Nhiệm vụ của bạn là đọc toàn bộ nội dung từ ${isSinglePageMode ? `Trang ${pageNum}/${totalPages || 1} của tài liệu đính kèm` : 'tất cả các trang của tài liệu đính kèm'} và xuất ra văn bản chính xác 100%, tuân thủ nghiêm ngặt toàn bộ các quy tắc sau:
+      const prompt = `Số hóa chính xác 100% nội dung ${isSinglePageMode ? `Trang ${pageNum}/${totalPages || 1}` : 'toàn bộ tài liệu'} sang Markdown chuẩn để xuất Word (.docx):
 
-1. QUY TẮC SỐ HÓA, GIỮ NGUYÊN HÌNH ẢNH & ĐẦY ĐỦ 100% (BẮT BUỘC):
-- Đọc và số hóa 100% toàn bộ nội dung chính của đề thi/tài liệu trên trang (tiêu đề đề thi, đề mục PHẦN I/II/III, tất cả câu hỏi, hình vẽ minh họa, các ý a), b), c), d), các phương án A, B, C, D, bảng biểu, lời giải).
-- Nếu đầu vào có chứa các mã đánh dấu ảnh sẵn dạng [DOCX_IMG_1], [DOCX_IMG_2]... thì PHẢI GIỮ NGUYÊN CHÍNH XÁC các mã [DOCX_IMG_N] đó tại đúng vị trí câu hỏi, TUYỆT ĐỐI KHÔNG xóa hay đổi tên!
-- TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG CẮT XÉN, KHÔNG BỎ QUA BẤT KỲ CÂU HỎI HOẶC HÌNH VẼ NÀO.
-- LOẠI BỎ HEADER / FOOTER LẶP LẠI: Bỏ qua các dòng tiêu đề đầu trang hoặc chân trang mang tính trang trí/lề trang (ví dụ tên giảng viên, số điện thoại liên hệ ở mép trên/dưới, dòng "Trang X/Y", dòng chú thích chân trang lặp lại ở mỗi trang) nếu không thuộc nội dung đề bài.
-- TRÌNH BÀY TIÊU ĐỀ ĐỀ THI & CHÂN ĐỀ (QUAN TRỌNG):
-  + Nếu đầu trang có phần tiêu đề đề thi chia 2 cột (cột trái thường ghi: UBND / SỞ GIÁO DỤC / PHÒNG GIÁO DỤC / TRƯỜNG / ĐỀ THI / (Đề thi gồm ... trang); cột phải thường ghi: KÌ THI / KỲ THI / NĂM HỌC / Môn thi / Thời gian làm bài...), BẮT BUỘC xuất dưới dạng bảng HTML không viền 2 cột đúng cấu trúc sau:
-<table class="borderless" style="width: 100%; border: none;"><tbody><tr><td style="text-align: center; border: none; width: 45%; vertical-align: top;">DÒNG 1 CỘT TRÁI<br/>DÒNG 2 CỘT TRÁI<br/>...</td><td style="text-align: center; border: none; width: 55%; vertical-align: top;">DÒNG 1 CỘT PHẢI<br/>DÒNG 2 CỘT PHẢI<br/>...</td></tr></tbody></table>
-  + Bên trong các ô bảng tiêu đề đó, dùng thẻ <strong>...</strong> (in đậm), <em>...</em> (in nghiêng) và <br/> để ngắt từng dòng chính xác (TUYỆT ĐỐI KHÔNG viết dính **...***...*). Sau thẻ </table> phải xuống 2 dòng (\\n\\n) trước khi sang Câu 1. hoặc PHẦN I.
-  + Nếu tiêu đề chỉ có 1 cột hoặc ở phần cuối đề thi (như ------ HẾT ------, Họ và tên thí sinh: ...), PHẢI đặt dòng trống (\\n\\n) tách biệt từng dòng để không bao giờ bị dồn thành một đoạn văn dính chữ.
-- LUÔN xuống hai dòng (\\n\\n) tách biệt rõ ràng giữa tên đề thi/tiêu đề với các đề mục như PHẦN I., PHẦN II., PHẦN III., Câu 1. (tuyệt đối không viết dính chữ vào nhau).
-- Nếu trang có phần chuyển tiếp từ trang trước, PHẢI gõ đầy đủ các câu chữ tiếp theo đó.
-${!isSinglePageMode ? '- Ở ranh giới chuyển tiếp giữa các trang, đánh dấu bằng dòng: "--- [Hết Trang X / Sang Trang Y] ---".' : ''}
+1. NỘI DUNG & BỐ CỤC:
+- Số hóa đầy đủ 100% đề bài, tiêu đề, PHẦN I/II/III, các câu hỏi, ý a), b), c), d), phương án A., B., C., D., bảng số liệu, lời giải; KHÔNG tóm tắt hay bỏ sót. Bỏ header/footer trang trí lặp lại ở mép trang (số trang, tên/SĐT lề).
+- Giữ nguyên tuyệt đối các mã [DOCX_IMG_N] nếu có và GIỮ NGUYÊN chính xác số thứ tự câu gốc (vd: Câu 17. giữ đúng Câu 17., không đánh lại từ Câu 1.).
+- Tiêu đề đề thi 2 cột (cột trái: SỞ/PHÒNG/TRƯỜNG/ĐỀ THI...; cột phải: KÌ THI/NĂM HỌC/Môn thi/Thời gian...): xuất đúng bảng HTML không viền:
+<table class="borderless" style="width: 100%; border: none;"><tbody><tr><td style="text-align: center; border: none; width: 45%; vertical-align: top;">...</td><td style="text-align: center; border: none; width: 55%; vertical-align: top;">...</td></tr></tbody></table>
+  Dùng <strong>, <em>, <br/> bên trong ô (không viết dính **...***...*), sau </table> xuống 2 dòng (\\n\\n). Xuống 2 dòng tách biệt trước PHẦN I/II/III, Câu 1., ------ HẾT ------.
+- Trình bày A., B., C., D. và a), b), c), d) rõ ràng trên từng dòng riêng (không thêm bullet).
+- Bảng số liệu thống kê/tần số/giá trị/đáp án thông thường -> Markdown Table (| ... |). RIÊNG Bảng biến thiên (BBT), Bảng xét dấu, Đồ thị -> giữ 100% ảnh gốc bằng [CROP_FIG ...].
+${!isSinglePageMode ? '- Giữa các trang ghi: "--- [Hết Trang X / Sang Trang Y] ---".' : ''}
 
-2. XỬ LÝ HÌNH VẼ, ĐỒ THỊ, SƠ ĐỒ TỪ FILE GỐC (BẮT BUỘC TUÂN THỦ):
+2. HÌNH VẼ, BẢNG BIẾN THIÊN & ĐỒ THỊ (GIỮ 100% ẢNH GỐC):
 ${figureInstruction}
 
-3. CHUẨN HÓA CÔNG THỨC TOÁN / LÝ / HÓA (CHUẨN LATEX NGHIÊM NGẶT):
-- MỌI biến số, số liệu toán học, biểu thức đại số, hàm số, phương trình, bất phương trình, tọa độ, ký hiệu hình học, vectơ, và 100% các phương án A, B, C, D chứa toán học BẮT BUỘC phải đặt trong dấu đô la: $công_thức$.
-- TUYỆT ĐỐI KHÔNG ĐỂ BẤT PHƯƠNG TRÌNH HAY ĐẲNG THỨC NÀO Ở DẠNG TEXT THƯỜNG THIẾU $: Ví dụ $x - 1 \\ge 0$, $a \\ge 1$, $-\\frac{1}{2} < x \\le 3$.
-- LUÔN CÓ KHOẢNG TRẮNG sau các lệnh so sánh: \\ge 0, \\le 0, \\neq 0.
-- TẬP HỢP: viết chuẩn $A = \\{x \\in \\mathbb{R} \\mid x + 2y \\le 0\\}$.
-- KHÔNG BAO GIỜ bọc cả câu tiếng Việt (như "ta được:", "với:") vào bên trong dấu $. Dấu $ chỉ bọc riêng biểu thức toán.
-- LUÔN DÙNG \\frac thay cho \\dfrac. DÙNG \\ge thay cho \\geq, \\le thay cho \\leq.
+3. LATEX CHUẨN:
+- Bọc MỌI biến số đơn ($x$, $y$, $m$), biểu thức, phương trình, bất phương trình, tọa độ, vectơ và phương án chứa toán trong $...$ hoặc $$...$$.
+- Dùng \\frac (không dùng \\dfrac), \\ge, \\le (luôn có dấu cách sau \\ge, \\le, \\neq); không bọc câu tiếng Việt trong dấu $.
 
-4. GIỮ NGUYÊN CẤU TRÚC, SỐ THỨ TỰ CÂU & BẢNG BIỂU:
-- BẮT BUỘC GIỮ NGUYÊN CHÍNH XÁC 100% SỐ THỨ TỰ CÂU HỎI như bản gốc (ví dụ: nếu bản gốc ghi Câu 17., Câu 18., Câu 19., Câu 20., Câu 21., Câu 22. thì PHẢI giữ đúng Câu 17., Câu 18.,... TUYỆT ĐỐI KHÔNG tự ý đánh số lại thành Câu 1., Câu 2.).
-- Với các phương án trắc nghiệm: trình bày rõ ràng A., B., C., D. trên từng dòng độc lập; không thêm ký hiệu bullet phía trước.
-- Với các ý Đúng/Sai hoặc tự luận nhỏ: trình bày a), b), c), d) rõ ràng trên từng dòng.
-- CÁC BẢNG SỐ LIỆU THÔNG THƯỜNG (bảng số liệu thống kê, bảng tần số ghép nhóm, bảng giá trị, bảng phân bố xác suất, bảng đáp án): trình bày dưới dạng Markdown Table chuẩn (| ... |) đúng chính xác các hàng và cột như bản gốc.
-- RIÊNG BẢNG BIẾN THIÊN (BBT), BẢNG XÉT DẤU VÀ ĐỒ THỊ HÀM SỐ: TUYỆT ĐỐI KHÔNG chuyển thành Markdown Table hay tự ý vẽ lại dưới bất kỳ dạng nào — BẮT BUỘC giữ nguyên $100\\%$ ảnh gốc bằng thẻ \`[CROP_FIG ...]\` như mục 2!
-
-Đầu ra của bạn phải hoàn toàn là nội dung tài liệu đã được số hóa dạng Markdown chuẩn, không thêm lời chào hay giải thích ngoài lề!`;
+Chỉ xuất nội dung Markdown đã số hóa, không thêm lời chào hay giải thích.`;
 
       const response = await generateWithFallback(req, {
         fastMode: true,
-        timeoutMs: isSinglePageMode ? 45000 : 90000,
+        preferStream,
+        timeoutMs: isSinglePageMode ? 20000 : 60000,
         preferredModels: [
           "gemini-2.5-flash",
-          "gemini-3-flash-preview",
           "gemini-2.5-flash-lite",
           "gemini-3.1-flash-lite-preview",
+          "gemini-4-hydrogen",
+          "gemini-3-flash-preview",
         ],
         contents: [
           {
@@ -4024,6 +4181,7 @@ ${figureInstruction}
           }
         ],
         config: {
+          systemInstruction: "Chuyên gia OCR tài liệu giáo dục Việt Nam sang Markdown + LaTeX ($...$, \\frac). Luôn giữ nguyên 100% ảnh gốc cho Bảng biến thiên, Bảng xét dấu, Đồ thị, Hình vẽ bằng thẻ [CROP_FIG ...].",
           temperature: 0.1,
           maxOutputTokens: isSinglePageMode ? 8192 : 16384,
         }
