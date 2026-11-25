@@ -6,14 +6,58 @@ export type BoxTuple = [number, number, number, number];
 
 export const CROP_FIG_TAG_RE = /`?\\?\[CROP_FIG\b((?:[^\[\]]|\[[^\]]*\])*)\\?\]`?/gi;
 export const UNRESOLVED_FIG_PLACEHOLDER_RE =
-  /\[(?:Hình\s*(?:vẽ|ảnh)|Đồ\s*thị|Biểu\s*đồ|Sơ\s*đồ|Hình\s*minh\s*họa|Hình)(?:\s*\([^)]*\))?(?:\s*:[^\]]*)?\]/i;
+  /\[(?:Hình\s*(?:vẽ|ảnh)|Đồ\s*thị|Bảng\s*biến\s*thiên|Bảng\s*xét\s*dấu|BBT|Biểu\s*đồ|Sơ\s*đồ|Hình\s*minh\s*họa|Hình)(?:\s*\([^)]*\))?(?:\s*:[^\]]*)?\]/i;
 export const VISUAL_QUESTION_CUE_RE =
-  /(?:hình\s*(?:vẽ|bên|dưới|trên|sau|minh\s*họa|dưới\s*đây|bên\s*dưới|bên\s*phải|bên\s*trái|\d+)|như\s*hình|trong\s*hình|quan\s*sát\s*hình|cho\s*hình|biểu\s*diễn\s*đúng\s*như\s*sau|đồ\s*thị|miền\s*nghiệm|gạch\s*chéo|tô\s*đậm|mặt\s*phẳng\s*tọa\s*độ|hệ\s*trục|parabol|đường\s*cong|hình\s*chóp|lăng\s*trụ|tứ\s*diện|hình\s*nón|hình\s*trụ|hình\s*cầu|đường\s*tròn|sơ\s*đồ|biểu\s*đồ|mạch\s*điện|\[Hình|\[Đồ\s*thị|figure|diagram|graph|shaded|shown\s+below|shown\s+above|coordinate\s+plane)/i;
+  /(?:hình\s*(?:vẽ|bên|dưới|trên|sau|minh\s*họa|dưới\s*đây|bên\s*dưới|bên\s*phải|bên\s*trái|\d+)|như\s*hình|trong\s*hình|quan\s*sát\s*hình|cho\s*hình|biểu\s*diễn\s*đúng\s*như\s*sau|bảng\s*biến\s*thiên|bảng\s*xét\s*dấu|đồ\s*thị|miền\s*nghiệm|gạch\s*chéo|tô\s*đậm|mặt\s*phẳng\s*tọa\s*độ|hệ\s*trục|parabol|đường\s*cong|hình\s*chóp|lăng\s*trụ|tứ\s*diện|hình\s*nón|hình\s*trụ|hình\s*cầu|đường\s*tròn|sơ\s*đồ|biểu\s*đồ|mạch\s*điện|\[Hình|\[Đồ\s*thị|\[Bảng\s*biến\s*thiên|\[Bảng\s*xét\s*dấu|\[BBT|figure|diagram|graph|variation\s+table|shaded|shown\s+below|shown\s+above|coordinate\s+plane)/i;
 
-// High-precision cues that explicitly indicate a printed figure/diagram exists on the page
+// High-precision cues that explicitly indicate a printed figure/BBT/graph exists on the page
 // (avoids triggering a slow redundant Pass-2 Vision API call on pure-text geometry/algebra questions)
 export const EXPLICIT_PRINTED_FIGURE_CUE_RE =
-  /(?:hình\s*(?:vẽ|bên|dưới|trên|sau|minh\s*họa|dưới\s*đây|bên\s*dưới|bên\s*phải|bên\s*trái|\d+)|như\s*hình|trong\s*hình|quan\s*sát\s*hình|cho\s*hình\s*vẽ|biểu\s*diễn\s*đúng\s*như\s*sau|(?:phần\s*(?:mặt\s*phẳng\s*)?(?:không\s*bị\s*)?gạch\s*chéo)|(?:miền\s*không\s*bị\s*gạch)|(?:tô\s*đậm\s*(?:trong|ở|như|bên|dưới))|(?:đồ\s*thị\s*(?:như\s*hình|bên|dưới|trên|sau))|(?:đường\s*cong\s*(?:trong\s*hình|bên|dưới|sau))|(?:sơ\s*đồ\s*(?:bên|dưới|sau|mạch\s*điện))|(?:biểu\s*đồ\s*(?:bên|dưới|sau|hình))|\[Hình|\[Đồ\s*thị|shown\s+(?:below|above|in\s+the\s+figure)|in\s+the\s+(?:figure|diagram|graph)|shaded\s+region\s+(?:in|below|above))/i;
+  /(?:hình\s*(?:vẽ|bên|dưới|trên|sau|minh\s*họa|dưới\s*đây|bên\s*dưới|bên\s*phải|bên\s*trái|\d+)|như\s*hình|trong\s*hình|quan\s*sát\s*hình|cho\s*hình\s*vẽ|biểu\s*diễn\s*đúng\s*như\s*sau|(?:có|cho|như)\s*bảng\s*biến\s*thiên|bảng\s*biến\s*thiên\s*(?:như|sau|dưới|bên|ở|trên|của\s*hàm)|(?:có|cho|như)\s*bảng\s*xét\s*dấu|bảng\s*xét\s*dấu\s*(?:như|sau|dưới|bên|ở)|(?:phần\s*(?:mặt\s*phẳng\s*)?(?:không\s*bị\s*)?gạch\s*chéo)|(?:miền\s*không\s*bị\s*gạch)|(?:tô\s*đậm\s*(?:trong|ở|như|bên|dưới))|(?:(?:có\s*)?đồ\s*thị\s*(?:như\s*hình|hàm\s*số\s*như|bên|dưới|trên|sau|ở\s*hình|là\s*đường\s*cong))|(?:đường\s*cong\s*(?:trong\s*hình|ở\s*hình|như\s*hình|bên|dưới|sau))|(?:sơ\s*đồ\s*(?:bên|dưới|sau|mạch\s*điện))|(?:biểu\s*đồ\s*(?:bên|dưới|sau|hình))|\[Hình|\[Đồ\s*thị|\[Bảng\s*biến\s*thiên|\[Bảng\s*xét\s*dấu|\[BBT|shown\s+(?:below|above|in\s+the\s+figure)|in\s+the\s+(?:figure|diagram|graph)|variation\s+table\s+(?:below|above)|shaded\s+region\s+(?:in|below|above))/i;
+
+const MARKDOWN_TABLE_BLOCK_RE = /((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$)){2,})/gm;
+
+export const isMarkdownBbtTable = (tableBlock: string): boolean => {
+  if (!tableBlock) return false;
+  if (/(?:tần\s*số|tần\s*suất|phân\s*bố\s*xác\s*suất|biến\s*ngẫu\s*nhiên|số\s*học\s*sinh|nhóm\s*tuổi|điểm\s*thi)/i.test(tableBlock)) {
+    return false;
+  }
+  const rows = tableBlock
+    .trim()
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('|') && line.endsWith('|') && !/^\|\s*[-:|\s]+\|$/.test(line));
+  if (rows.length < 2) return false;
+
+  const firstCells = rows.map((row) => {
+    const cells = row.split('|').slice(1, -1);
+    return (cells[0] || '').replace(/[\$\s\\*_{}]/g, '').toLowerCase();
+  });
+
+  const hasXRow = firstCells.some((c) => c === 'x' || c === 't');
+  const hasDerivOrYRow = firstCells.some(
+    (c) =>
+      c === "y'" ||
+      c === "f'(x)" ||
+      c === "g'(x)" ||
+      c === "h'(x)" ||
+      c === 'y' ||
+      c === 'f(x)' ||
+      c === 'g(x)'
+  );
+  const hasBbtMarkers =
+    /\\nearrow|\\searrow|↗|↘|-\s*\\infty|\+\s*\\infty|-∞|\+∞|\|\||\\Vert/.test(tableBlock) ||
+    (firstCells.some((c) => c.includes("'")) && /[+-]/.test(tableBlock));
+
+  return hasXRow && hasDerivOrYRow && hasBbtMarkers;
+};
+
+export const hasLeakedMarkdownBbtTable = (text: string): boolean => {
+  if (!text || !text.includes('|')) return false;
+  const matches = text.match(MARKDOWN_TABLE_BLOCK_RE);
+  if (!matches) return false;
+  return matches.some((tbl) => isMarkdownBbtTable(tbl));
+};
 
 const PROBLEM_IMAGE_TOKEN_RE = /\[HÌNH_ẢNH_ĐỀ_BÀI\]|\[PROBLEM_IMAGE\]/g;
 const SOLUTION_IMAGE_TOKEN_RE = /\[HÌNH_ẢNH_ĐÁP_ÁN\]|\[HÌNH_ẢNH_LỜI_GIẢI\]|\[SOLUTION_IMAGE\]/g;
@@ -299,16 +343,31 @@ export const resolveCropFigMarkers = async (
 export const injectFigureIntoPageMarkdown = (
   pageText: string,
   questionLabel: string,
-  imgTag: string
+  imgTag: string,
+  options?: { replaceLeakedBbtTable?: boolean }
 ): string => {
   if (!pageText) return imgTag;
 
+  const replaceLeakedBbtTable = Boolean(options?.replaceLeakedBbtTable);
   const trimmedLabel = (questionLabel || '').trim();
   const labelNumMatch = trimmedLabel.match(/(Câu|Bài|Question|Problem)\s*(\d+)/i);
   const subOptionMatch = trimmedLabel.match(/[-–—]\s*([A-D])\b/i);
 
   const insertBeforeChoicesOrEnd = (block: string): string => {
-    // 1. Replace an explicit [HÌNH_ẢNH_ĐỀ_BÀI] / [PROBLEM_IMAGE] / [Hình vẽ...] placeholder first
+    // 0. If opted in (PdfToWord) and block contains a leaked Markdown BBT table, replace it directly with the original cropped BBT image
+    if (replaceLeakedBbtTable && !subOptionMatch && block.includes('|')) {
+      let replacedBbt = false;
+      const nextBlock = block.replace(MARKDOWN_TABLE_BLOCK_RE, (tbl) => {
+        if (!replacedBbt && isMarkdownBbtTable(tbl)) {
+          replacedBbt = true;
+          return imgTag;
+        }
+        return tbl;
+      });
+      if (replacedBbt) return nextBlock;
+    }
+
+    // 1. Replace an explicit [HÌNH_ẢNH_ĐỀ_BÀI] / [PROBLEM_IMAGE] / [Hình vẽ...] / [Bảng biến thiên...] placeholder first
     if (/\[HÌNH_ẢNH_ĐỀ_BÀI\]|\[PROBLEM_IMAGE\]|\[HÌNH_ẢNH_ĐÁP_ÁN\]|\[HÌNH_ẢNH_LỜI_GIẢI\]|\[SOLUTION_IMAGE\]/.test(block)) {
       return block.replace(
         /\[HÌNH_ẢNH_ĐỀ_BÀI\]|\[PROBLEM_IMAGE\]|\[HÌNH_ẢNH_ĐÁP_ÁN\]|\[HÌNH_ẢNH_LỜI_GIẢI\]|\[SOLUTION_IMAGE\]/,
@@ -362,6 +421,7 @@ export const injectFigureIntoPageMarkdown = (
         block: string;
         hasImg: boolean;
         hasPlaceholder: boolean;
+        hasLeakedBbt: boolean;
         hasVisualCue: boolean;
       }
       const candidates: CandidateBlock[] = allMatches.map((m) => {
@@ -381,15 +441,16 @@ export const injectFigureIntoPageMarkdown = (
           hasPlaceholder:
             UNRESOLVED_FIG_PLACEHOLDER_RE.test(block) ||
             /\[HÌNH_ẢNH_ĐỀ_BÀI\]|\[PROBLEM_IMAGE\]|\[HÌNH_ẢNH_ĐÁP_ÁN\]|\[HÌNH_ẢNH_LỜI_GIẢI\]|\[SOLUTION_IMAGE\]/.test(block),
+          hasLeakedBbt: replaceLeakedBbtTable && hasLeakedMarkdownBbtTable(block),
           hasVisualCue: VISUAL_QUESTION_CUE_RE.test(block),
         };
       });
 
-      // Prefer a matching question block that (1) has placeholder or sub-option,
+      // Prefer a matching question block that (1) has placeholder, leaked BBT table, or sub-option,
       // (2) has no <img> yet AND mentions visual cues (avoids putting Part IV Câu 1 figure into Part I Câu 1),
       // (3) any matching block without an <img> yet.
       const chosen =
-        candidates.find((c) => c.hasPlaceholder || Boolean(subOptionMatch)) ||
+        candidates.find((c) => c.hasPlaceholder || c.hasLeakedBbt || Boolean(subOptionMatch)) ||
         candidates.find((c) => !c.hasImg && c.hasVisualCue) ||
         candidates.find((c) => !c.hasImg);
 
@@ -468,7 +529,8 @@ export const applyPdfDetectedFigures = async (
   pageDataUrl: string,
   pageNum: number,
   detectedFigures: PdfDetectedFigure[],
-  existingBoxes: BoxTuple[]
+  existingBoxes: BoxTuple[],
+  options?: { replaceLeakedBbtTable?: boolean }
 ): Promise<{ text: string; croppedBoxes: BoxTuple[] }> => {
   if (!pageDataUrl || !detectedFigures || detectedFigures.length === 0) {
     return { text: pageText, croppedBoxes: existingBoxes };
@@ -496,15 +558,18 @@ export const applyPdfDetectedFigures = async (
       cropped.displayW,
       cropped.displayH
     );
-    updated = injectFigureIntoPageMarkdown(updated, fig.questionLabel || '', imgTag);
+    updated = injectFigureIntoPageMarkdown(updated, fig.questionLabel || '', imgTag, options);
   }
 
   return { text: updated, croppedBoxes: allBoxes };
 };
 
-export const shouldRunPass2FigureDetection = (pageText: string): boolean => {
+export const shouldRunPass2FigureDetection = (
+  pageText: string,
+  options?: { replaceLeakedBbtTable?: boolean }
+): boolean => {
   if (!pageText || !pageText.trim()) return false;
-  // Always run Pass 2 if there is an unresolved [Hình vẽ...] / [Đồ thị...] / [HÌNH_ẢNH_ĐỀ_BÀI] placeholder
+  // Always run Pass 2 if there is an unresolved [Hình vẽ...] / [Đồ thị...] / [Bảng biến thiên...] / [HÌNH_ẢNH_ĐỀ_BÀI] placeholder
   if (
     UNRESOLVED_FIG_PLACEHOLDER_RE.test(pageText) ||
     /\[HÌNH_ẢNH_ĐỀ_BÀI\]|\[PROBLEM_IMAGE\]/.test(pageText)
@@ -512,7 +577,12 @@ export const shouldRunPass2FigureDetection = (pageText: string): boolean => {
     return true;
   }
 
-  // Count how many question blocks explicitly reference a printed figure vs how many already have an <img>
+  // If PdfToWord opted in to replace leaked Markdown BBT tables with original images, trigger Pass 2 whenever a BBT table leaked
+  if (options?.replaceLeakedBbtTable && hasLeakedMarkdownBbtTable(pageText)) {
+    return true;
+  }
+
+  // Count how many question blocks explicitly reference a printed figure/BBT/graph vs how many already have an <img>
   const qHeaders = Array.from(
     pageText.matchAll(/(?:^|\n)([ \t]*(?:#{1,4}\s*)?(?:\*{0,2})(?:Câu|Bài|Question|Problem)\s+\d+\s*[:.\)]?(?:\*{0,2}))/gi)
   );
@@ -567,9 +637,10 @@ export const recoverMissingPageFigures = async (
   pageText: string,
   pageDataUrl: string,
   pageNum: number,
-  existingBoxes: BoxTuple[]
+  existingBoxes: BoxTuple[],
+  options?: { replaceLeakedBbtTable?: boolean }
 ): Promise<string> => {
-  if (!pageDataUrl || !shouldRunPass2FigureDetection(pageText)) {
+  if (!pageDataUrl || !shouldRunPass2FigureDetection(pageText, options)) {
     return pageText;
   }
 
@@ -596,7 +667,7 @@ export const recoverMissingPageFigures = async (
       cropped.displayW,
       cropped.displayH
     );
-    updated = injectFigureIntoPageMarkdown(updated, fig.questionLabel || '', imgTag);
+    updated = injectFigureIntoPageMarkdown(updated, fig.questionLabel || '', imgTag, options);
   }
 
   return updated;

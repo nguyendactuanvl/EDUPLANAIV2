@@ -3802,7 +3802,7 @@ export async function exportHtmlToWord(
         }
       } else if (node.nodeType === Node.ELEMENT_NODE) {
         const el = node as HTMLElement;
-        if (el.tagName === 'TABLE' && !el.classList.contains('borderless')) {
+        if (el.tagName === 'TABLE' && !el.classList.contains('borderless') && !el.closest('[data-no-auto-graph="true"]')) {
           const text = el.textContent || '';
           if (/(?:y'|f'\(x\)|\\searrow|\\nearrow)/i.test(text) && /\b(?:x|y)\b/i.test(text)) {
             // This is a BBT table! Convert it to a vector BBT SVG -> PNG image

@@ -127,6 +127,9 @@ const cleanAndNormalizePageMarkdown = (rawText: string): string => {
   text = text.replace(/```(?:tikz|latex)?\s*\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}\s*```/gi, '\n[Hình vẽ minh họa]\n');
   text = text.replace(/```tikz[\s\S]*?```/gi, '\n[Hình vẽ minh họa]\n');
   text = text.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/gi, '\n[Hình vẽ minh họa]\n');
+  text = text.replace(/```(?:svg|xml|html)?\s*<svg[\s\S]*?<\/svg>\s*```/gi, '\n[Hình vẽ minh họa]\n');
+  text = text.replace(/<svg\b[\s\S]*?<\/svg>/gi, '\n[Hình vẽ minh họa]\n');
+  text = text.replace(/<svg-wrapper\b[^>]*>[\s\S]*?<\/svg-wrapper>/gi, '\n[Hình vẽ minh họa]\n');
 
   const cropTokens: string[] = [];
   text = text.replace(CROP_FIG_TAG_RE, (m) => {
@@ -784,7 +787,9 @@ export function PdfToWord() {
                 const resolved = await resolveCropFigMarkers(pageText, pageImagesMap, visualMode === 'auto_crop', p);
                 pageText = resolved.text;
                 if (visualMode === 'auto_crop' && pageImagesMap[p]) {
-                  pageText = await recoverMissingPageFigures(pageText, pageImagesMap[p], p, resolved.croppedBoxes);
+                  pageText = await recoverMissingPageFigures(pageText, pageImagesMap[p], p, resolved.croppedBoxes, {
+                    replaceLeakedBbtTable: true,
+                  });
                 }
               }
 
@@ -920,15 +925,18 @@ export function PdfToWord() {
                         pageImagesMap[p],
                         p,
                         detectedFigures,
-                        croppedBoxes
+                        croppedBoxes,
+                        { replaceLeakedBbtTable: true }
                       );
                       pageText = pdfFigRes.text;
                       croppedBoxes = pdfFigRes.croppedBoxes;
                     }
 
-                    // Layer 3: Pass-2 Vision recovery ONLY when a printed figure is explicitly missing
+                    // Layer 3: Pass-2 Vision recovery ONLY when a printed figure/BBT/graph is explicitly missing
                     if (visualMode === 'auto_crop' && pageImagesMap[p]) {
-                      pageText = await recoverMissingPageFigures(pageText, pageImagesMap[p], p, croppedBoxes);
+                      pageText = await recoverMissingPageFigures(pageText, pageImagesMap[p], p, croppedBoxes, {
+                        replaceLeakedBbtTable: true,
+                      });
                     }
                   }
                   pageResults[batchIdx] = pageText.trim();
@@ -1021,11 +1029,15 @@ export function PdfToWord() {
                   let segBoxes: BoxTuple[] = [];
                   const detFigs = pageDetectedFiguresMap[pageCursor] || [];
                   if (detFigs.length > 0) {
-                    const pdfFigRes = await applyPdfDetectedFigures(segText, imgUrl, pageCursor, detFigs, segBoxes);
+                    const pdfFigRes = await applyPdfDetectedFigures(segText, imgUrl, pageCursor, detFigs, segBoxes, {
+                      replaceLeakedBbtTable: true,
+                    });
                     segText = pdfFigRes.text;
                     segBoxes = pdfFigRes.croppedBoxes;
                   }
-                  segs[sIdx] = await recoverMissingPageFigures(segText, imgUrl, pageCursor, segBoxes);
+                  segs[sIdx] = await recoverMissingPageFigures(segText, imgUrl, pageCursor, segBoxes, {
+                    replaceLeakedBbtTable: true,
+                  });
                 }
                 pageCursor += 1;
               }
@@ -1113,7 +1125,9 @@ export function PdfToWord() {
           const resolved = await resolveCropFigMarkers(finalResult, singlePageImages, visualMode === 'auto_crop', 1);
           finalResult = resolved.text;
           if (visualMode === 'auto_crop' && singlePageImages[1]) {
-            finalResult = await recoverMissingPageFigures(finalResult, singlePageImages[1], 1, resolved.croppedBoxes);
+            finalResult = await recoverMissingPageFigures(finalResult, singlePageImages[1], 1, resolved.croppedBoxes, {
+              replaceLeakedBbtTable: true,
+            });
           }
         }
       }
@@ -1591,10 +1605,10 @@ export function PdfToWord() {
                     <div>
                       <div className="font-bold text-indigo-950 flex items-center gap-1">
                         <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>Tự cắt ảnh gốc & Vẽ bảng biểu (Khuyên dùng)</span>
+                        <span>Tự cắt ảnh gốc 100% (Khuyên dùng)</span>
                       </div>
                       <div className="font-normal text-slate-500 text-[11px] mt-1 leading-relaxed">
-                        Tự động cắt chính xác đồ thị, hình vẽ từ PDF gốc chèn vào Word; chỉ chuyển bảng số liệu/BBT sang dạng bảng biểu chuẩn, không vẽ đồ thị giả.
+                        Tự động cắt chính xác 100% ảnh gốc của Bảng biến thiên (BBT), Đồ thị và Hình vẽ từ tài liệu gốc chèn vào Word — không tự ý vẽ lại.
                       </div>
                     </div>
                   </label>
@@ -1632,7 +1646,7 @@ export function PdfToWord() {
                         <span>Chỉ xuất văn bản & Bảng biểu chuẩn</span>
                       </div>
                       <div className="font-normal text-slate-500 text-[11px] mt-1 leading-relaxed">
-                        Chỉ số hóa văn bản, công thức LaTeX và bảng biểu/BBT dạng bảng; có thể mở công cụ tự vẽ BBT/đồ thị khi cần.
+                        Chỉ số hóa văn bản, công thức LaTeX và bảng số liệu thống kê; không tự động cắt ảnh hay tự vẽ lại BBT/đồ thị.
                       </div>
                     </div>
                   </label>
@@ -1718,7 +1732,7 @@ export function PdfToWord() {
                 - AI được tối ưu để nhận diện và gõ lại chuẩn 100% công thức Toán/Lý/Hóa LaTeX, giữ nguyên số thứ tự câu hỏi, loại bỏ header/footer thừa và phân đoạn trang dạng <i>--- [Hết Trang X / Sang Trang Y] ---</i>.
               </p>
               <p>
-                - Với hình vẽ, đồ thị, sơ đồ: hệ thống <b>tự động cắt ảnh trực tiếp từ trang PDF gốc</b> đúng vị trí câu hỏi (không tự bịa hay chèn đồ thị sai bản gốc). Các bảng số liệu thống kê và Bảng biến thiên được trình bày chuẩn dạng bảng biểu. Thầy/cô vẫn có thể bấm <b>Cắt Trang</b> bên dưới để tinh chỉnh lại vùng ảnh nếu muốn.
+                - Với <b>Bảng biến thiên (BBT), Bảng xét dấu, Đồ thị hàm số và Hình vẽ</b>: hệ thống <b>tự động cắt giữ nguyên 100% ảnh gốc từ trang tài liệu</b> đúng vị trí câu hỏi — tuyệt đối không tự ý vẽ lại. Chỉ các bảng số liệu thống kê thông thường mới chuyển sang dạng bảng Word. Thầy/cô vẫn có thể bấm <b>Cắt Trang</b> bên dưới để tinh chỉnh lại vùng cắt nếu muốn.
               </p>
             </div>
           </div>
@@ -1898,7 +1912,7 @@ export function PdfToWord() {
 
           <div className="bg-slate-50/70 rounded-xl p-6 lg:p-8 border border-slate-200">
             <div ref={exportRef} data-no-auto-graph="true">
-              <MarkdownRenderer content={resultText} />
+              <MarkdownRenderer content={resultText} disableAutoBbtSvg />
             </div>
           </div>
         </div>

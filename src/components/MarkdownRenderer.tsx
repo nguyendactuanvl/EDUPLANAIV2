@@ -801,12 +801,14 @@ export const MarkdownRenderer = React.memo(({
   content, 
   className, 
   inline = false,
-  skipWorksheetFormatting = false
+  skipWorksheetFormatting = false,
+  disableAutoBbtSvg = false
 }: { 
   content: string; 
   className?: string; 
   inline?: boolean; 
   skipWorksheetFormatting?: boolean;
+  disableAutoBbtSvg?: boolean;
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -824,21 +826,24 @@ export const MarkdownRenderer = React.memo(({
     res = res.replace(/(?<![a-zA-Z0-9_\$])(?:undefined|null)(?![a-zA-Z0-9_\$])/g, () => '');
 
     // 1. Chuyển đổi trực tiếp các BẢNG BIẾN THIÊN (BBT) Markdown table sang <svg-wrapper>
+    // (Bỏ qua khi disableAutoBbtSvg = true, ví dụ ở chức năng PDF sang Word để giữ nguyên ảnh gốc 100%)
     res = unflattenMarkdownTables(res);
-    res = res.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match, _g1, offset) => {
-      try {
-        const preceding = res.slice(Math.max(0, offset - 220), offset);
-        if (/(?:phân\s*bố\s*xác\s*suất|biến\s*ngẫu\s*nhiên|bảng\s*tần\s*số|bảng\s*tần\s*suất|mẫu\s*số\s*liệu|bảng\s*thống\s*kê|bảng\s*giá\s*trị)/i.test(preceding)) {
-          return match;
-        }
-        const svg = convertBbtTableToSvg(match);
-        if (svg) {
-          const base64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : Buffer.from(encodeURIComponent(svg)).toString('base64');
-          return `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n`;
-        }
-      } catch (e) {}
-      return match;
-    });
+    if (!disableAutoBbtSvg) {
+      res = res.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match, _g1, offset) => {
+        try {
+          const preceding = res.slice(Math.max(0, offset - 220), offset);
+          if (/(?:phân\s*bố\s*xác\s*suất|biến\s*ngẫu\s*nhiên|bảng\s*tần\s*số|bảng\s*tần\s*suất|mẫu\s*số\s*liệu|bảng\s*thống\s*kê|bảng\s*giá\s*trị)/i.test(preceding)) {
+            return match;
+          }
+          const svg = convertBbtTableToSvg(match);
+          if (svg) {
+            const base64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : Buffer.from(encodeURIComponent(svg)).toString('base64');
+            return `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n`;
+          }
+        } catch (e) {}
+        return match;
+      });
+    }
 
     // 2. Chuyển đổi các khối tikz code block
     res = res.replace(/```tikz\s*([\s\S]*?)```/gi, (_, inner) => {
@@ -923,7 +928,7 @@ export const MarkdownRenderer = React.memo(({
     }).join('\n');
 
     return restoreHtmlMediaTags(res, mediaTokens);
-  }, [content, skipWorksheetFormatting]);
+  }, [content, skipWorksheetFormatting, disableAutoBbtSvg]);
 
   // 4. Auto-scanner effect with batched MathJax 3 scheduler
   useEffect(() => {

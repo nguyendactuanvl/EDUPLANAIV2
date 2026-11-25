@@ -1143,9 +1143,17 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
       } catch (_) {}
 
       const errType = classifyApiErrorStatus(response.status, errText);
-      if (errType && attempt + 1 < totalKeys) {
+      const isTransientBusy =
+        response.status === 503 ||
+        response.status === 504 ||
+        /high demand|unavailable|overloaded|503/i.test(errText);
+
+      if ((errType || isTransientBusy) && attempt + 1 < totalKeys) {
         const retryableErr: any = new Error(errText || `HTTP ${response.status}`);
         retryableErr.status = response.status;
+        if (isTransientBusy && !errType) {
+          retryableErr.isNetworkError = true;
+        }
         throw retryableErr;
       }
 

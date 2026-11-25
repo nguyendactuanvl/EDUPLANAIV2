@@ -163,6 +163,7 @@ async function detectFiguresFromPdfPage(page: any): Promise<PdfDetectedFigure[]>
       segCount: number;
     }
     const rawBoxes: RawGraphicBox[] = [];
+    const hRules: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
 
     for (let i = 0; i < ops.fnArray.length; i++) {
       const fn = ops.fnArray[i];
@@ -260,6 +261,14 @@ async function detectFiguresFromPdfPage(page: any): Promise<PdfDetectedFigure[]>
         if (minX < Infinity) {
           const bw = maxX - minX;
           const bh = maxY - minY;
+          if (!hasDiagonal && bw >= 70 && bh < 4 && minY > H * 0.08 && maxY < H * 0.92) {
+            hRules.push({
+              x1: Math.max(0, minX),
+              y1: Math.max(0, minY),
+              x2: Math.min(W, maxX),
+              y2: Math.min(H, maxY),
+            });
+          }
           const isPageRule = (bw > W * 0.65 && bh < 4) || (bh > H * 0.55 && bw < 4);
           const isTinyRule = (bw < 3 && bh < 3) || (bw < 28 && bh < 3) || (bh < 28 && bw < 3);
           const isTableCellRect = !hasDiagonal && segCount <= 4 && (bw > W * 0.5 || bh > H * 0.35);
@@ -356,9 +365,31 @@ async function detectFiguresFromPdfPage(page: any): Promise<PdfDetectedFigure[]>
       })
       .sort((a, b) => a.y1 - b.y1 || a.x1 - b.x1);
 
-    // 4. Expand each vector figure box to include adjacent short diagram labels (x, y, O, A, B, 55 m, 30°, etc.)
+    // 4. Expand each vector figure box to include full BBT horizontal borders & adjacent short diagram labels (x, y, O, A, B, 55 m, 30°, etc.)
     const detected: PdfDetectedFigure[] = [];
     for (const f of validClusters) {
+      if (!f.isRasterImg && f.hasRichGraphic && hRules.length >= 2) {
+        const overlappingRules = hRules.filter(
+          (r) =>
+            r.y1 >= f.y1 - 40 &&
+            r.y2 <= f.y2 + 40 &&
+            r.x1 <= f.x2 + 45 &&
+            r.x2 >= f.x1 - 95 &&
+            r.x2 - r.x1 <= W * 0.9
+        );
+        if (overlappingRules.length >= 2) {
+          const maxRuleW = Math.max(...overlappingRules.map((r) => r.x2 - r.x1));
+          const alignedRules = overlappingRules.filter((r) => r.x2 - r.x1 >= maxRuleW * 0.72);
+          if (alignedRules.length >= 2) {
+            for (const r of alignedRules) {
+              f.x1 = Math.min(f.x1, r.x1);
+              f.x2 = Math.max(f.x2, r.x2);
+              f.y1 = Math.min(f.y1, r.y1);
+              f.y2 = Math.max(f.y2, r.y2);
+            }
+          }
+        }
+      }
       const orig = { x1: f.x1, y1: f.y1, x2: f.x2, y2: f.y2 };
 
       if (!f.isRasterImg) {

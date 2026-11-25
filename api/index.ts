@@ -1153,11 +1153,15 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
         } else if (fastMode) {
           if (model.includes("2.5-flash") || model.includes("2.5")) {
             rawConfig.thinkingConfig = { thinkingBudget: 0 };
+          } else if (model.includes("4-")) {
+            rawConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
           } else {
             rawConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.MINIMAL };
           }
-        } else if (model === "gemini-4-hydrogen" && !rawConfig.thinkingConfig) {
+        } else if ((model === "gemini-4-hydrogen" || model.includes("4-")) && !rawConfig.thinkingConfig) {
           rawConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
+        } else if (model.includes("2.5-flash") && rawConfig.thinkingConfig?.thinkingLevel) {
+          rawConfig.thinkingConfig = { thinkingBudget: 1024 };
         }
 
         const requestedMaxTokens = rawConfig.maxOutputTokens || 32768;
@@ -1227,6 +1231,21 @@ async function generateWithFallback(req: any, payloadOptions: any, res?: any) {
           }
         } else {
           bestNonNotFoundError = e;
+          const busyMsg = String(e?.message || "").toLowerCase();
+          if (
+            cachedWorking === model &&
+            apiKey &&
+            (e?.status === 503 ||
+              e?.status === 429 ||
+              e?.status === 504 ||
+              busyMsg.includes("503") ||
+              busyMsg.includes("high demand") ||
+              busyMsg.includes("unavailable") ||
+              busyMsg.includes("overloaded") ||
+              busyMsg.includes("resource_exhausted"))
+          ) {
+            serverWorkingModelByKey.delete(apiKey);
+          }
         }
         const errLower = String(e?.message || "").toLowerCase();
         // If key itself is invalid or unauthorized, do not waste time retrying other models with the same key
@@ -1769,25 +1788,25 @@ ${saCount > 0 ? `- Phần III: ĐÚNG ${saCount} câu hỏi Trắc nghiệm Tr�
 ${essayCount > 0 ? `- Phần IV: ĐÚNG ${essayCount} câu hỏi Tự luận (loại "essay") - bài toán tự luận có hướng dẫn giải và thang điểm chi tiết.` : ''}
 ${totalQuestions === 0 ? 'Nếu không chỉ định số lượng, hãy tạo 12 câu trắc nghiệm nhiều lựa chọn (mc), 4 câu Đúng/Sai (tf), 6 câu Trả lời ngắn (sa) theo đúng cấu trúc đề thi mới của Bộ GD&ĐT (tổng cộng 22 câu).' : ''}
 
-QUY TẮC BẮT BUỘC VỀ TOÁN HỌC VÀ KỸ THUẬT:
-${MATH_FORMATTING_RULES}
-- Mọi công thức, ký hiệu toán, biến số đơn lẻ (như $x, y, z, m, a, b, c, \\alpha, \\beta, \\pi, \\in, \\le, \\ge, -\\infty, +\\infty...$) BẮT BUỘC đặt trong cặp dấu đô la $...$ hoặc $$...$$. CẤM viết LaTeX trần.
-- LUÔN DÙNG \\frac THAY CHO \\dfrac (CẤM dùng \\dfrac).
-- BẢNG BIẾN THIÊN (BBT): Tuyệt đối KHÔNG để khung rỗng. Khi câu hỏi cần BBT, BẮT BUỘC 100% vẽ bảng biến thiên trực quan bằng Markdown Table chuẩn ngay trong câu hỏi đề bài, mỗi hàng BẮT BUỘC xuống dòng riêng biệt (có ký tự \\n giữa các hàng):
+QUY TẮC BẮT BUỘC VỀ TOÁN HỌC VÀ KỸ THUẬT (CHUẨN LATEX - MATHTYPE):
+- Mọi công thức, ký hiệu toán, số liệu toán học, biến số đơn lẻ ($x, y, z, m, a, b, c, d, S, \\alpha, \\beta, \\pi, \\Delta, \\in, \\le, \\ge, \\neq, -\\infty, +\\infty...$) BẮT BUỘC đặt trong cặp dấu đô la $...$ hoặc $$...$$. CẤM viết LaTeX trần; không viết "sin x = 0" mà viết "$\\sin x = 0$".
+- LUÔN DÙNG \\frac{a}{b} THAY CHO \\dfrac (CẤM dùng \\dfrac).
+- Hệ phương trình/BPT dùng $\\begin{cases} ax + by \\le c \\\\ dx + ey \\ge f \\end{cases}$. Vectơ dùng $\\vec{AB}, \\vec{u}$ đặt trong $...$. Căn thức $\\sqrt{...}$, tập hợp $\\{...\\}$, điểm có dấu phẩy $A', B'$, ký hiệu đồ thị $(C)$, lượng từ $\\forall, \\exists$ bọc trọn trong $...$.
+- KHÔNG bọc chữ tiếng Việt hay tiêu đề Phần trong dấu $. Không đặt dấu $ bên trong \\frac, \\sqrt, \\vec. Giữ nguyên font tiếng Việt UTF-8 chuẩn.
+- Ký hiệu vô cực BẮT BUỘC viết chuẩn \\infty (ví dụ: $(-\\infty; -1)$, $(-1; +\\infty)$, $[0; +\\infty)$). Dấu khác dùng \\neq hoặc \\ne.
+- BẢNG BIẾN THIÊN (BBT): Khi câu hỏi cần BBT, BẮT BUỘC vẽ trực quan bằng Markdown Table chuẩn ngay trong nội dung câu hỏi, mỗi hàng xuống dòng riêng biệt (\\n):
   | $x$ | $-\\infty$ | | $x_0$ | | $+\\infty$ |
   |---|---|---|---|---|---|
   | $y'$ | | $+$ | $0$ | $-$ | |
   | $y$ | $-\\infty$ | $\\nearrow$ | $y_{CĐ}$ | $\\searrow$ | $-\\infty$ |
-  Nếu có tiệm cận đứng hoặc điểm gián đoạn (như hàm phân thức bậc nhất/bậc nhất): dùng vạch đôi $\\|$ ở hàng $y'$ và phân tách 2 giới hạn ở hàng $y$ bằng $\\|$ (ví dụ: $2 \\searrow -\\infty \\| +\\infty \\searrow 2$). TUYỆT ĐỐI KHÔNG viết bảng biến thiên dính liền trên 1 dòng.
-- HÌNH VẼ ĐỒ THỊ: Nếu trích dẫn đồ thị mà không có URL ảnh thực tế, BẮT BUỘC 100% mô tả rõ đặc điểm đồ thị bằng lời trong đề (ví dụ: "Đồ thị đi qua điểm A(0; -1), đỉnh I(1; -2)...") hoặc sinh kèm mã SVG đồ thị nội tuyến, KHÔNG để thẻ img/div trống rỗng.
-- LỜI GIẢI CHI TIẾT ('solution' / 'explanation'): Với các câu trắc nghiệm nhận biết/thông hiểu cơ bản (như tính $u_n$, công thức cơ bản), yêu cầu trình bày lời giải ngắn gọn súc tích trong 2-3 dòng, tập trung vào công thức then chốt và bước biến đổi chính. KHÔNG lặp lại BẢNG BIẾN THIÊN hay HÌNH VẼ ĐỒ THỊ, không viết dông dài để tối ưu tối đa tốc độ sinh đề thi.
-- CẤM TUYỆT ĐỐI sinh mã HTML inline phức tạp (<mark style="...">, <span>). Chỉ dùng Markdown chuẩn (**in đậm**, *in nghiêng*).
-- Ký hiệu vô cùng/vô cực BẮT BUỘC viết chuẩn LaTeX là \\infty (ví dụ: $(-\\infty; -1)$, $(-1; +\\infty)$, $[0; +\\infty)$, $(-\\infty; +\\infty)$). Tuyệt đối KHÔNG viết thiếu dấu gạch chéo ngược thành -infty, +infty, in fty.
-- TUYỆT ĐỐI KHÔNG lặp lại các chữ A, B, C, D vào nội dung của câu hỏi hoặc phương án (hệ thống sẽ tự động gán nhãn A, B, C, D).
-- Câu trắc nghiệm (mc): mảng "options" phải có ĐÚNG 4 phần tử dạng chuỗi. "correctOptionIndex" là chỉ số đáp án đúng (0, 1, 2, 3).
-- Câu đúng/sai (tf): "tfStatements" phải là mảng ĐÚNG 4 đối tượng [{ "statement": "...", "correct": true/false }].
-- Câu trả lời ngắn (sa): "correctAnswer" BẮT BUỘC là MỘT SỐ CỤ THỂ có độ dài TỐI ĐA 4 KÝ TỰ (ví dụ: "22", "-3.5", "13", "102"). Tuyệt đối không dùng dạng mở hay công thức.
-- BẮT BUỘC KÈM TRƯỜNG "solution": Lời giải súc tích (2-3 dòng trọng tâm), kèm lý do chọn đáp án, dùng công thức LaTeX chuẩn cho TẤT CẢ các câu hỏi.
+  Nếu có tiệm cận đứng: dùng vạch đôi $\\|$ ở hàng $y'$ và phân tách giới hạn ở hàng $y$ bằng $\\|$. CẤM để khung rỗng hoặc viết BBT trên 1 dòng.
+- HÌNH VẼ ĐỒ THỊ: Nếu đề nhắc đồ thị mà không có URL ảnh, BẮT BUỘC mô tả rõ đặc điểm đồ thị (điểm đi qua, đỉnh, tiệm cận, cực trị) trong đề; KHÔNG để khung/thẻ img trống.
+- LỜI GIẢI CHI TIẾT ('solution'): Súc tích 2-3 dòng trọng tâm (công thức then chốt và lý do chọn đáp án), KHÔNG lặp lại BBT/đồ thị, KHÔNG xuất nháp hay bình luận ngoài lề.
+- CẤM HTML inline (<mark>, <span>, <div>), CẤM \\underline, CẤM \\begin{tabular}. Chỉ dùng Markdown chuẩn (**in đậm**, *in nghiêng*).
+- TUYỆT ĐỐI KHÔNG lặp lại các chữ A, B, C, D vào nội dung phương án trong mảng "options" (hệ thống tự gán nhãn).
+- Câu trắc nghiệm (mc): "options" gồm ĐÚNG 4 chuỗi; "correctOptionIndex" là 0, 1, 2 hoặc 3.
+- Câu đúng/sai (tf): "tfStatements" gồm ĐÚNG 4 đối tượng [{ "statement": "...", "correct": true/false }].
+- Câu trả lời ngắn (sa): "correctAnswer" BẮT BUỘC là MỘT SỐ CỤ THỂ tối đa 4 ký tự (ví dụ: "22", "-3.5", "13", "102").
 
 ${(() => {
   const exampleBlocks: string[] = [];
@@ -1858,21 +1877,46 @@ ${exampleBlocks.join(',\n')}
 })()}`;
 
     const processedFiles = await processFilesForAI(files);
-
-    const response = await generateWithFallback(req, {
-      contents: [
-        {
-          role: "user",
-          parts: [
-            ...processedFiles,
-            { text: promptText }
-          ]
-        }
-      ],
-      config: {
-        responseMimeType: "application/json"
+    const examContents = [
+      {
+        role: "user",
+        parts: [
+          ...processedFiles,
+          { text: promptText }
+        ]
       }
-    });
+    ];
+
+    let response: any;
+    try {
+      response = await generateWithFallback(req, {
+        contents: examContents,
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
+    } catch (primaryExamErr: any) {
+      const errMsg = String(primaryExamErr?.message || "").toLowerCase();
+      const isTransientBusy =
+        primaryExamErr?.status === 503 ||
+        primaryExamErr?.status === 504 ||
+        errMsg.includes("503") ||
+        errMsg.includes("high demand") ||
+        errMsg.includes("unavailable") ||
+        errMsg.includes("overloaded") ||
+        errMsg.includes("try again later");
+      if (!isTransientBusy) {
+        throw primaryExamErr;
+      }
+      // Retry cleanly without responseMimeType constraint on stable fast models (safeJsonParse handles extraction)
+      await delay(500);
+      response = await generateWithFallback(req, {
+        model: "gemini-2.5-flash",
+        preferredModels: ["gemini-2.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite", "gemini-4-hydrogen"],
+        contents: examContents,
+        config: {}
+      });
+    }
 
     if (!response || !response.text) {
       throw new Error("Không nhận được phản hồi từ AI");
@@ -3908,16 +3952,19 @@ app.all("/api/pdf-to-word", async (req, res) => {
 
       const isSinglePageMode = typeof pageNum === 'number';
       const figureInstruction = isSinglePageMode
-        ? `- BẮT BUỘC PHÁT HIỆN & CẮT ẢNH GỐC CHO MỌI HÌNH VẼ / ĐỒ THỊ / SƠ ĐỒ (QUAN TRỌNG SỐ 1):
-  + KHI GẶP BẤT KỲ HÌNH ẢNH, ĐỒ THỊ HÀM SỐ, MẶT PHẲNG TỌA ĐỘ $Oxy$, MIỀN NGHIỆM GẠCH CHÉO/TÔ ĐẬM, HÌNH VẼ HÌNH HỌC (2D/3D), SƠ ĐỒ MẠCH ĐIỆN, BIỂU ĐỒ, HOẶC HÌNH MINH HỌA NÀO — KỂ CẢ KHI HÌNH NẰM CẠNH BÊN PHẢI/TRÁI ĐOẠN CHỮ ĐỀ BÀI HOẶC TRONG BẢNG HƯỚNG DẪN CHẤM (KHÔNG áp dụng cho bảng số liệu thống kê, bảng giá trị, bảng đáp án hay bảng biến thiên vì các bảng đó viết thành Markdown Table ở mục 3):
-  + TUYỆT ĐỐI CẤM bỏ qua hình vẽ ngay cả khi đề bài đã ghi sẵn tọa độ điểm trong ngoặc đơn (ví dụ dù đề ghi "(Biết $d$ đi qua $(-3;0)$ và $(0;2)$...)" mà bên cạnh có hình vẽ thì VẪN BẮT BUỘC phải xuất thẻ [CROP_FIG ...]!).
-  + TUYỆT ĐỐI KHÔNG tự vẽ bằng TikZ, SVG, ASCII hay bịa công thức đồ thị.
-  + HÃY xác định khung bao hình chữ nhật chính xác chứa TOÀN BỘ hình vẽ/đồ thị đó trên ảnh trang (bao gồm đầy đủ mũi tên trục, nhãn $O, x, y$, các số trên trục tọa độ, tên điểm $A, B, C, S...$, ký hiệu góc/độ dài, đường nét gạch chéo miền nghiệm; KHÔNG bao trùm dòng đề bài phía trên hay đáp án A, B, C, D phía dưới).
-  + Xuất ĐÚNG MỘT thẻ đánh dấu trên một dòng riêng ngay tại ĐÚNG VỊ TRÍ xuất hiện hình vẽ (ví dụ giữa câu dẫn và 4 phương án A, B, C, D) theo cú pháp chuẩn sau (hệ tọa độ chuẩn hóa 0..1000 của ảnh trang: ymin,xmin,ymax,xmax với 0 là mép trên/trái, 1000 là mép dưới/phải; mô tả ngắn gọn KHÔNG chứa ký tự [ hoặc ] hay dấu "):
-    [CROP_FIG page="${pageNum}" box="ymin,xmin,ymax,xmax" desc="Mô tả ngắn gọn hình vẽ"]
-  + Ví dụ 1 (Đồ thị miền nghiệm bên phải câu hỏi): [CROP_FIG page="${pageNum}" box="330,620,475,895" desc="Đồ thị miền nghiệm bất phương trình trên mặt phẳng Oxy"]
-  + Ví dụ 2 (Hình học không gian): [CROP_FIG page="${pageNum}" box="180,260,440,740" desc="Hình chóp S.ABCD"]`
-        : `- Khi gặp biểu đồ, hình vẽ, đồ thị, mặt phẳng tọa độ, miền nghiệm gạch chéo, hình lăng trụ, hình chóp hay hình ảnh minh họa: TUYỆT ĐỐI KHÔNG bỏ qua và KHÔNG thay bằng mô tả trong ngoặc đơn; hãy ghi thẻ chú thích ngắn gọn ngay đúng vị trí hình vẽ: [Hình vẽ: mô tả ngắn gọn] hoặc [Đồ thị: mô tả ngắn gọn].`;
+        ? `- BẮT BUỘC PHÁT HIỆN & CẮT ẢNH GỐC 100% CHO MỌI BẢNG BIẾN THIÊN (BBT), BẢNG XÉT DẤU, ĐỒ THỊ, HÌNH VẼ & SƠ ĐỒ (QUAN TRỌNG SỐ 1):
+  + KHI GẶP BẤT KỲ: **BẢNG BIẾN THIÊN (BBT)**, **BẢNG XÉT DẤU** (bảng có các dòng $x, y', y$ hoặc $f'(x), f(x)$ và mũi tên $\\nearrow, \\searrow$), **ĐỒ THỊ HÀM SỐ**, MẶT PHẲNG TỌA ĐỘ $Oxy$, MIỀN NGHIỆM GẠCH CHÉO/TÔ ĐẬM, HÌNH VẼ HÌNH HỌC (2D/3D), SƠ ĐỒ MẠCH ĐIỆN, BIỂU ĐỒ, HOẶC HÌNH MINH HỌA NÀO — KỂ CẢ KHI NẰM CẠNH BÊN PHẢI/TRÁI ĐOẠN CHỮ ĐỀ BÀI HOẶC TRONG BẢNG HƯỚNG DẪN CHẤM:
+  + **TUYỆT ĐỐI CẤM TỰ Ý VẼ LẠI**: KHÔNG chuyển Bảng biến thiên (BBT) hay Bảng xét dấu thành Markdown Table (\`| x | ... | y' | ... | y |\`), KHÔNG tự vẽ đồ thị/BBT bằng TikZ, SVG, ASCII hay bịa công thức. PHẢI giữ nguyên $100\\%$ ảnh gốc từ đề bằng thẻ \`[CROP_FIG ...]\`!
+  + TUYỆT ĐỐI CẤM bỏ qua hình vẽ/BBT/đồ thị ngay cả khi đề bài đã ghi sẵn tọa độ điểm hay mô tả trong ngoặc đơn.
+  + HÃY xác định khung bao hình chữ nhật chính xác chứa TOÀN BỘ Bảng biến thiên / Đồ thị / Hình vẽ đó trên ảnh trang:
+    * Với **Bảng biến thiên / Bảng xét dấu**: ôm trọn toàn bộ khung viền bảng, cột trái $x, y', y$ (hoặc $f'(x), f(x)$), toàn bộ dấu $+, -, 0$, vạch đôi không xác định, các mũi tên $\\nearrow, \\searrow$, và các giá trị $-\\infty, +\\infty$, cực trị; KHÔNG dính dòng đề bài phía trên hay phương án A, B, C, D phía dưới.
+    * Với **Đồ thị / Hình vẽ**: ôm trọn toàn bộ mũi tên trục, nhãn $O, x, y$, các số trên trục tọa độ, tên điểm $A, B, C, S...$, ký hiệu góc/độ dài, đường nét gạch chéo miền nghiệm; KHÔNG dính dòng đề bài phía trên hay đáp án A, B, C, D phía dưới.
+  + Xuất ĐÚNG MỘT thẻ đánh dấu trên một dòng riêng ngay tại ĐÚNG VỊ TRÍ xuất hiện BBT/đồ thị/hình vẽ (ví dụ giữa câu dẫn và 4 phương án A, B, C, D) theo cú pháp chuẩn sau (hệ tọa độ chuẩn hóa 0..1000 của ảnh trang: ymin,xmin,ymax,xmax với 0 là mép trên/trái, 1000 là mép dưới/phải; mô tả ngắn gọn KHÔNG chứa ký tự [ hoặc ] hay dấu "):
+    [CROP_FIG page="${pageNum}" box="ymin,xmin,ymax,xmax" desc="Mô tả ngắn gọn"]
+  + Ví dụ 1 (Bảng biến thiên): [CROP_FIG page="${pageNum}" box="210,140,345,860" desc="Bảng biến thiên của hàm số"]
+  + Ví dụ 2 (Đồ thị hàm số): [CROP_FIG page="${pageNum}" box="330,620,475,895" desc="Đồ thị hàm số trên mặt phẳng Oxy"]
+  + Ví dụ 3 (Hình học không gian): [CROP_FIG page="${pageNum}" box="180,260,440,740" desc="Hình chóp S.ABCD"]`
+        : `- Khi gặp Bảng biến thiên (BBT), Bảng xét dấu, biểu đồ, hình vẽ, đồ thị, mặt phẳng tọa độ, miền nghiệm gạch chéo, hình lăng trụ, hình chóp hay hình ảnh minh họa: TUYỆT ĐỐI KHÔNG tự ý vẽ lại (không chuyển BBT sang Markdown table, không vẽ SVG/TikZ) và KHÔNG bỏ qua; hãy ghi thẻ chú thích ngắn gọn ngay đúng vị trí xuất hiện: [Bảng biến thiên: mô tả ngắn gọn], [Đồ thị: mô tả ngắn gọn] hoặc [Hình vẽ: mô tả ngắn gọn].`;
 
       const prompt = `Bạn là một trợ lý AI chuyên gia số hóa tài liệu giáo dục và chuyển đổi định dạng từ PDF/Hình ảnh sang văn bản Word (.docx).
 Nhiệm vụ của bạn là đọc toàn bộ nội dung từ ${isSinglePageMode ? `Trang ${pageNum}/${totalPages || 1} của tài liệu đính kèm` : 'tất cả các trang của tài liệu đính kèm'} và xuất ra văn bản chính xác 100%, tuân thủ nghiêm ngặt toàn bộ các quy tắc sau:
@@ -3951,7 +3998,8 @@ ${figureInstruction}
 - BẮT BUỘC GIỮ NGUYÊN CHÍNH XÁC 100% SỐ THỨ TỰ CÂU HỎI như bản gốc (ví dụ: nếu bản gốc ghi Câu 17., Câu 18., Câu 19., Câu 20., Câu 21., Câu 22. thì PHẢI giữ đúng Câu 17., Câu 18.,... TUYỆT ĐỐI KHÔNG tự ý đánh số lại thành Câu 1., Câu 2.).
 - Với các phương án trắc nghiệm: trình bày rõ ràng A., B., C., D. trên từng dòng độc lập; không thêm ký hiệu bullet phía trước.
 - Với các ý Đúng/Sai hoặc tự luận nhỏ: trình bày a), b), c), d) rõ ràng trên từng dòng.
-- MỌI BẢNG BIỂU (bảng số liệu thống kê, bảng tần số ghép nhóm, bảng giá trị, bảng đáp án, Bảng biến thiên / Bảng xét dấu): PHẢI trình bày dưới dạng Markdown Table chuẩn (| ... |) đúng chính xác các hàng và cột như bản gốc. Với Bảng biến thiên, ghi đầy đủ hàng $x$, $y'$, $y$ và các mũi tên $\\nearrow, \\searrow$, dấu $+$, $-$, giá trị $0$.
+- CÁC BẢNG SỐ LIỆU THÔNG THƯỜNG (bảng số liệu thống kê, bảng tần số ghép nhóm, bảng giá trị, bảng phân bố xác suất, bảng đáp án): trình bày dưới dạng Markdown Table chuẩn (| ... |) đúng chính xác các hàng và cột như bản gốc.
+- RIÊNG BẢNG BIẾN THIÊN (BBT), BẢNG XÉT DẤU VÀ ĐỒ THỊ HÀM SỐ: TUYỆT ĐỐI KHÔNG chuyển thành Markdown Table hay tự ý vẽ lại dưới bất kỳ dạng nào — BẮT BUỘC giữ nguyên $100\\%$ ảnh gốc bằng thẻ \`[CROP_FIG ...]\` như mục 2!
 
 Đầu ra của bạn phải hoàn toàn là nội dung tài liệu đã được số hóa dạng Markdown chuẩn, không thêm lời chào hay giải thích ngoài lề!`;
 
@@ -3983,10 +4031,12 @@ ${figureInstruction}
       
       let resultText = response.text || "";
       
-      // Clean up only closed TikZ code blocks safely without eating text
+      // Clean up any accidental TikZ or raw SVG redraws so Pass-2 crops the real original image instead
       resultText = resultText.replace(/```(?:tikz|latex)?\s*\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}\s*```/gi, '\n[Hình vẽ minh họa]\n');
       resultText = resultText.replace(/```tikz[\s\S]*?```/gi, '\n[Hình vẽ minh họa]\n');
       resultText = resultText.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/gi, '\n[Hình vẽ minh họa]\n');
+      resultText = resultText.replace(/```(?:svg|xml|html)?\s*<svg[\s\S]*?<\/svg>\s*```/gi, '\n[Hình vẽ minh họa]\n');
+      resultText = resultText.replace(/<svg\b[\s\S]*?<\/svg>/gi, '\n[Hình vẽ minh họa]\n');
 
       if (croppedImage) {
         const imgTag = `\n\n<img src="${croppedImage}" alt="Hình vẽ minh họa tài liệu" data-cropped-figure="true" class="max-w-[480px] mx-auto my-3 rounded-lg border border-slate-200 shadow-sm" />\n\n`;
@@ -4024,14 +4074,20 @@ app.all("/api/detect-page-figures", async (req, res) => {
     const cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
     const questionSummary = String(pageMarkdown || '').slice(0, 4500);
 
-    const detectPrompt = `Hãy quan sát thật kỹ ảnh Trang ${pageNum} đính kèm và xác định CHÍNH XÁC tọa độ khung bao (bounding box) của TẤT CẢ các hình vẽ minh họa, đồ thị hàm số, hệ trục tọa độ Oxy, miền nghiệm bất phương trình (phần gạch chéo/tô đậm), hình học phẳng/không gian (tam giác, đường tròn, hình chóp, lăng trụ, hình nón, hình trụ, hình cầu), sơ đồ, biểu đồ hoặc hình ảnh minh họa xuất hiện trên trang — KỂ CẢ HÌNH NẰM BÊN PHẢI/TRÁI CHỮ ĐỀ BÀI HOẶC TRONG BẢNG HƯỚNG DẪN CHẤM.
+    const detectPrompt = `Hãy quan sát thật kỹ ảnh Trang ${pageNum} đính kèm và xác định CHÍNH XÁC tọa độ khung bao (bounding box) của TẤT CẢ các:
+- **BẢNG BIẾN THIÊN (BBT)** và **BẢNG XÉT DẤU** (bảng gồm các hàng x, y', y hoặc f'(x), f(x) có dấu +, -, 0 và các mũi tên tăng/giảm)
+- **ĐỒ THỊ HÀM SỐ**, hệ trục tọa độ Oxy, đường cong đồ thị, miền nghiệm bất phương trình (phần gạch chéo/tô đậm)
+- **HÌNH VẼ HÌNH HỌC** phẳng/không gian (tam giác, đường tròn, hình chóp, lăng trụ, hình nón, hình trụ, hình cầu), sơ đồ, biểu đồ hoặc hình ảnh minh họa
+xuất hiện trên trang — KỂ CẢ KHI NẰM BÊN PHẢI/TRÁI CHỮ ĐỀ BÀI HOẶC TRONG BẢNG HƯỚNG DẪN CHẤM.
 
 QUY TẮC BẮT BUỘC:
-1. CHỈ khoanh vùng các HÌNH VẼ / ĐỒ THỊ / SƠ ĐỒ / BIỂU ĐỒ trực quan. KHÔNG khoanh vùng đoạn văn bản thuần, KHÔNG khoanh vùng bảng số liệu/bảng biến thiên thuần chữ và KHÔNG khoanh cả trang.
-2. Mỗi box_2d là mảng đúng 4 số nguyên [ymin, xmin, ymax, xmax] theo hệ tọa độ chuẩn hóa 0..1000 (0 = mép trên/trái, 1000 = mép dưới/phải). Khung bao phải ôm trọn toàn bộ mũi tên trục, nhãn O, x, y, các số trên trục, tên đỉnh A, B, C, S và phần gạch chéo, nhưng KHÔNG dính dòng chữ đề bài ở trên hay đáp án A, B, C, D ở dưới.
-3. Ghi rõ "questionLabel" của câu hỏi chứa hình vẽ đó đúng như trên trang (ví dụ: "Câu 3", "Câu 4", "Bài 2", hoặc "" nếu hình không gắn với số câu cụ thể). Nếu 1 câu có 4 hình nhỏ tương ứng 4 phương án A, B, C, D thì trả về 4 phần tử riêng với questionLabel là "Câu X - A", "Câu X - B", "Câu X - C", "Câu X - D" hoặc 1 khung chung bao 4 hình nếu chúng nằm liền khối.
-4. Trong trường "description" chỉ dùng chữ tiếng Việt bình thường (KHÔNG dùng ký tự backslash LaTeX hay dấu ngoặc kép).
-5. Nếu trang hoàn toàn KHÔNG có hình vẽ/đồ thị/sơ đồ nào thì trả về {"figures": []}.
+1. PHẢI khoanh vùng ĐẦY ĐỦ cả **BẢNG BIẾN THIÊN (BBT)**, **BẢNG XÉT DẤU**, **ĐỒ THỊ HÀM SỐ**, **HÌNH VẼ**, **SƠ ĐỒ**, **BIỂU ĐỒ**. KHÔNG khoanh vùng đoạn văn bản thuần, KHÔNG khoanh vùng bảng số liệu thống kê/bảng tần số ghép nhóm/bảng đáp án thông thường và KHÔNG khoanh cả trang.
+2. Mỗi box_2d là mảng đúng 4 số nguyên [ymin, xmin, ymax, xmax] theo hệ tọa độ chuẩn hóa 0..1000 (0 = mép trên/trái, 1000 = mép dưới/phải).
+   - Với **Bảng biến thiên / Bảng xét dấu**: khung bao phải ôm trọn 100% khung viền bảng, cột trái x, y', y, các vạch kẻ, dấu +, -, 0, mũi tên và giá trị cực trị, -vô cùng, +vô cùng; KHÔNG dính dòng đề bài phía trên hay đáp án A, B, C, D phía dưới.
+   - Với **Đồ thị / Hình vẽ**: khung bao phải ôm trọn toàn bộ mũi tên trục, nhãn O, x, y, các số trên trục, tên đỉnh A, B, C, S và phần gạch chéo; KHÔNG dính dòng chữ đề bài ở trên hay đáp án A, B, C, D ở dưới.
+3. Ghi rõ "questionLabel" của câu hỏi chứa BBT/đồ thị/hình vẽ đó đúng như trên trang (ví dụ: "Câu 3", "Câu 4", "Bài 2", hoặc "" nếu không gắn với số câu cụ thể). Nếu 1 câu có 4 đồ thị/BBT nhỏ tương ứng 4 phương án A, B, C, D thì trả về 4 phần tử riêng với questionLabel là "Câu X - A", "Câu X - B", "Câu X - C", "Câu X - D" hoặc 1 khung chung bao 4 hình nếu chúng nằm liền khối.
+4. Trong trường "description" ghi rõ loại hình bằng chữ tiếng Việt bình thường (ví dụ: "Bảng biến thiên", "Bảng xét dấu", "Đồ thị hàm số", "Hình chóp S.ABCD" — KHÔNG dùng ký tự backslash LaTeX hay dấu ngoặc kép).
+5. Nếu trang hoàn toàn KHÔNG có BBT/bảng xét dấu/đồ thị/hình vẽ/sơ đồ nào thì trả về {"figures": []}.
 ${questionSummary ? `\nVăn bản đã OCR trên trang để bạn đối chiếu đúng số câu (questionLabel):\n${questionSummary}` : ''}`;
 
     const response = await generateWithFallback(req, {

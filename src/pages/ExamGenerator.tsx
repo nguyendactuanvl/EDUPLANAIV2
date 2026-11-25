@@ -1673,23 +1673,6 @@ ${pin ? `🔑 Hoặc vào trang: ${publicBase} và nhập Mã phòng thi: ${pin}
         essay: qEnabled.essay ? qCounts.essay : 0
       };
 
-      let realWorldPrompt = "";
-      if (enableRealWorld) {
-        const levelText = 
-          realWorldLevel === "high" ? "Tăng cường (~50% câu thực tế)" :
-          realWorldLevel === "max" ? "Chuyên đề thực tế (~70% - 100% câu thực tế)" :
-          "Tiêu chuẩn (~30% câu thực tế)";
-        
-        realWorldPrompt = `
-ƯU TIÊN CÂU HỎI BỐI CẢNH THỰC TIỄN (CHUẨN GDPT 2018):
-- Mức độ ưu tiên: ${levelText}.
-- Thiết kế các câu hỏi có ngữ cảnh đời sống thực tế rõ ràng (kinh doanh, sản xuất xưởng cơ khí/may mặc, đo đạc hàng hải, đo chiều cao tháp/sông, bài toán chi tiêu/lãi suất).
-- Tránh các bài toán thuần túy đại số khô khan nếu chủ đề có khả năng ứng dụng thực tế cao (nhất là Hệ bất phương trình bậc nhất hai ẩn và Hệ thức lượng trong tam giác).
-- Đối với Phần III (Trả lời ngắn): Đặt câu hỏi thực tế yêu cầu tính một đại lượng cụ thể (mét, nghìn đồng, số sản phẩm, số giờ...) và làm tròn theo đúng yêu cầu để đáp số là một số nguyên hoặc số thập phân tối đa 4 ký tự.
-- ĐẶC BIỆT: Đối với mỗi câu hỏi có ngữ cảnh thực tế đời sống, hãy thêm trường "isRealWorld": true vào đối tượng câu hỏi.
-`.trim();
-      }
-
       let paramPrompt = "";
       if (parameterOption === "with_params") {
         paramPrompt = `
@@ -1723,14 +1706,7 @@ ${outputConfig.answers ? "- Có đáp án chi tiết." : ""}
 ${outputConfig.spec ? "- Kèm theo bảng đặc tả." : ""}
 ${outputConfig.matrix ? "- Kèm theo ma trận đề." : ""}
 
-${paramPrompt ? `${paramPrompt}\n\n` : ""}${realWorldPrompt ? `${realWorldPrompt}\n\n` : ""}${qEnabled.sa ? `RÀNG BUỘC ĐẶC BIỆT KHI RA CÂU HỎI PHẦN III (TRẢ LỜI NGẮN) CHO CHỦ ĐỀ TẬP HỢP:
-- TUYỆT ĐỐI KHÔNG ra đề yêu cầu "Tìm tập hợp", "Viết kết quả dưới dạng khoảng/đoạn/nửa khoảng" hay biểu diễn nghiệm dưới dạng tập hợp.
-- BẮT BUỘC câu hỏi phải có đáp số là một con số cụ thể, ví dụ:
-  + "Tập hợp $A \\cap B$ có bao nhiêu phần tử là số nguyên?"
-  + "Biết $A \\cap B = (a; b)$. Tính giá trị của biểu thức $T = a + b$ (hoặc $T = 2a - b$)?"
-  + "Tính độ dài khoảng/đoạn..."
-- Đảm bảo đáp số luôn là một số nguyên hoặc số thập phân có độ dài tối đa 4 ký tự.
-\n` : ""}${customPrompt}
+${paramPrompt ? `${paramPrompt}\n\n` : ""}${customPrompt}
 `.trim();
 
       let finalPrompt = advancedPrompt;
