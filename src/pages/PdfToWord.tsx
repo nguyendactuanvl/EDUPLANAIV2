@@ -255,6 +255,12 @@ const cleanAndNormalizePageMarkdown = (rawText: string): string => {
   }
   text = spacedLines.join('\n');
 
+  // Strip standalone leaked page footers like "Trang 3/4 – Mã đề 002", "Trang 1/4 - Mã đề 003", "**Trang 2/4**"
+  text = text.replace(
+    /^[ \t]*(?:\*{0,2}|_{0,2})Trang\s+\d+\s*\/\s*\d+(?:\s*[-–—|]\s*(?:Mã\s*đề\s*[\w-]+|[^\n]{1,40}))?(?:\*{0,2}|_{0,2})[ \t]*$/gmi,
+    ''
+  );
+
   // Ensure line break before PHẦN I / PHẦN II / PHẦN III if glued to title
   text = text.replace(/([^\n])(PHẦN\s+[IVX]+[\.\:\s])/g, '$1\n\n$2');
   text = normalizeMathText(normalizeOcrChoicesAndFormatting(text));
@@ -496,6 +502,10 @@ export function PdfToWord() {
     );
 
     if (imageList.length > 0 && !nonImage) {
+      // Giữ đúng thứ tự số tự nhiên theo tên file khi chọn nhiều ảnh cùng lúc (vd: Trang_1, Trang_2, ..., Trang_10)
+      if (imageList.length > 1) {
+        imageList.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+      }
       addImagesToQueue(imageList, 'upload');
     } else if (nonImage) {
       handleInspectFile(nonImage);
@@ -515,6 +525,9 @@ export function PdfToWord() {
         (f) => f.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif)$/i.test(f.name)
       );
       if (imgs.length > 0) {
+        if (imgs.length > 1) {
+          imgs.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+        }
         addImagesToQueue(imgs, 'upload');
       }
     }
@@ -886,11 +899,22 @@ export function PdfToWord() {
         return { ok: false, status: lastStatus, text: lastText };
       };
 
-      const joinCompletedPages = (results: Array<string | undefined>, firstPageNum: number): string => {
+      const joinCompletedPages = (
+        results: Array<string | undefined>,
+        firstPageNum: number,
+        contiguousOnly: boolean = false
+      ): string => {
         const completedParts: Array<{ pageNum: number; text: string }> = [];
         for (let idx = 0; idx < results.length; idx++) {
-          if (typeof results[idx] === 'string' && results[idx]!.trim().length > 0) {
-            completedParts.push({ pageNum: firstPageNum + idx, text: results[idx]! });
+          const val = results[idx];
+          if (val === undefined) {
+            // Khi đang chạy song song nhiều trang: chỉ hiển thị chuỗi trang liên tiếp từ đầu (Trang 1 -> 2 -> 3...)
+            // để tuyệt đối không bao giờ hiển thị nhảy cóc Trang 2 trước Trang 1
+            if (contiguousOnly) break;
+            continue;
+          }
+          if (val.trim().length > 0) {
+            completedParts.push({ pageNum: firstPageNum + idx, text: val });
           }
         }
         return completedParts
@@ -962,7 +986,9 @@ export function PdfToWord() {
 
             if (pageText) {
               pageText = cleanAndNormalizePageMarkdown(pageText);
-              const resolved = await resolveCropFigMarkers(pageText, pageImagesMap, visualMode === 'auto_crop', p);
+              const resolved = await resolveCropFigMarkers(pageText, pageImagesMap, visualMode === 'auto_crop', p, {
+                lockToDefaultPage: true,
+              });
               pageText = resolved.text;
               if (visualMode === 'auto_crop' && pageImagesMap[p]) {
                 pageText = await recoverMissingPageFigures(pageText, pageImagesMap[p], p, resolved.croppedBoxes, {
@@ -975,9 +1001,12 @@ export function PdfToWord() {
             completedCount += 1;
             if (!isCancelled() && !firstError) {
               setPdfPageImages({ ...pageImagesMap });
-              setResultText(joinCompletedPages(pageResults, 1));
+              const contiguousPreview = joinCompletedPages(pageResults, 1, true);
+              if (contiguousPreview) {
+                setResultText(contiguousPreview);
+              }
               setProgressPercent(Math.min(96, Math.round((completedCount / totalImages) * 90 + 5)));
-              setProgressStatus(`✨ Đã số hóa xong ${completedCount}/${totalImages} ảnh...`);
+              setProgressStatus(`✨ Đã số hóa xong ${completedCount}/${totalImages} ảnh (giữ đúng thứ tự gốc)...`);
             }
           }
         };
@@ -988,12 +1017,13 @@ export function PdfToWord() {
         if (firstError) throw firstError;
         if (isCancelled()) return;
         setPdfPageImages({ ...pageImagesMap });
-        finalResult = joinCompletedPages(pageResults, 1);
+        finalResult = joinCompletedPages(pageResults, 1, false);
       } else if (isPdf && selectedFile) {
         // Multi-page PDF: Open PDF ONCE, render HD page for figure cropping + lean 1200px JPEG for fast AI OCR,
         // stream through continuous worker pool with live page-by-page preview!
         const pageImagesMap: { [pageNum: number]: string } = {};
         const pageDetectedFiguresMap: { [pageNum: number]: PdfDetectedFigure[] } = {};
+        const pageProseLineBoxesMap: { [pageNum: number]: BoxTuple[] } = {};
 
         let renderFailed = false;
         try {
@@ -1018,6 +1048,8 @@ export function PdfToWord() {
               aiData: string;
               aiMimeType: string;
               detectedFigures: PdfDetectedFigure[];
+              detectedQuestionLabels: string[];
+              proseLineBoxes: BoxTuple[];
             };
             const renderedJobs: Array<Promise<RenderedJob>> = [];
             let renderChain: Promise<void> = Promise.resolve();
@@ -1035,6 +1067,7 @@ export function PdfToWord() {
                     const rendered = await renderLoadedPdfPageWithFigures(docHandle!.pdf, p, 1.55, 'jpeg');
                     pageImagesMap[p] = rendered.dataUrl;
                     pageDetectedFiguresMap[p] = rendered.detectedFigures;
+                    pageProseLineBoxesMap[p] = rendered.proseLineBoxes || [];
                     const compact = await downscaleDataUrlForAi(rendered.dataUrl, 1200, 0.78);
                     resolve({
                       batchIdx,
@@ -1042,6 +1075,8 @@ export function PdfToWord() {
                       aiData: compact.data,
                       aiMimeType: compact.mimeType,
                       detectedFigures: rendered.detectedFigures,
+                      detectedQuestionLabels: rendered.detectedQuestionLabels || [],
+                      proseLineBoxes: rendered.proseLineBoxes || [],
                     });
                   } catch (rErr) {
                     renderFailed = true;
@@ -1080,7 +1115,7 @@ export function PdfToWord() {
                 }
                 if (isCancelled() || firstError) return;
 
-                const { batchIdx, p, aiData, aiMimeType, detectedFigures } = job;
+                const { batchIdx, p, aiData, aiMimeType, detectedFigures, detectedQuestionLabels, proseLineBoxes } = job;
                 const payloadObj = {
                   files: [{
                     data: aiData,
@@ -1088,7 +1123,8 @@ export function PdfToWord() {
                     name: `Trang_${p}.jpg`
                   }],
                   pageNum: p,
-                  totalPages: pdfTotalPages
+                  totalPages: pdfTotalPages,
+                  ...(detectedQuestionLabels.length > 0 ? { detectedQuestionLabels } : {}),
                 };
 
                 const fetched = await fetchPdfToWordWithRetry(payloadObj, `trang ${p}`, () => {
@@ -1109,7 +1145,10 @@ export function PdfToWord() {
 
                 if (pageText) {
                   pageText = cleanAndNormalizePageMarkdown(pageText);
-                  const resolved = await resolveCropFigMarkers(pageText, pageImagesMap, visualMode === 'auto_crop', p);
+                  const resolved = await resolveCropFigMarkers(pageText, pageImagesMap, visualMode === 'auto_crop', p, {
+                    lockToDefaultPage: true,
+                    proseLineBoxes,
+                  });
                   pageText = resolved.text;
                   let croppedBoxes = resolved.croppedBoxes;
 
@@ -1121,7 +1160,7 @@ export function PdfToWord() {
                       p,
                       detectedFigures,
                       croppedBoxes,
-                      { replaceLeakedBbtTable: true }
+                      { replaceLeakedBbtTable: true, proseLineBoxes }
                     );
                     pageText = pdfFigRes.text;
                     croppedBoxes = pdfFigRes.croppedBoxes;
@@ -1131,6 +1170,7 @@ export function PdfToWord() {
                   if (visualMode === 'auto_crop' && pageImagesMap[p]) {
                     pageText = await recoverMissingPageFigures(pageText, pageImagesMap[p], p, croppedBoxes, {
                       replaceLeakedBbtTable: true,
+                      proseLineBoxes,
                     });
                   }
                 }
@@ -1138,9 +1178,12 @@ export function PdfToWord() {
                 completedCount += 1;
                 if (!isCancelled() && !firstError) {
                   setPdfPageImages({ ...pageImagesMap });
-                  setResultText(joinCompletedPages(pageResults, startP));
+                  const contiguousPreview = joinCompletedPages(pageResults, startP, true);
+                  if (contiguousPreview) {
+                    setResultText(contiguousPreview);
+                  }
                   setProgressPercent(Math.min(96, Math.round((completedCount / pagesToProcess) * 90 + 5)));
-                  setProgressStatus(`✨ Đã số hóa xong ${completedCount}/${pagesToProcess} trang PDF...`);
+                  setProgressStatus(`✨ Đã số hóa xong ${completedCount}/${pagesToProcess} trang PDF (giữ đúng thứ tự gốc)...`);
                 }
               }
             };
@@ -1156,8 +1199,8 @@ export function PdfToWord() {
           if (isCancelled()) return;
           setPdfPageImages({ ...pageImagesMap });
 
-          // Combine all pages with standard page separation markers
-          finalResult = joinCompletedPages(pageResults, startP);
+          // Combine all pages strictly in ascending original page order (startP -> endP)
+          finalResult = joinCompletedPages(pageResults, startP, false);
         } catch (pageErr: any) {
           if (isCancelled()) return;
           // Never waste 60s+ retrying whole-PDF fallback if the error came from Gemini API (401/404/429/503/timeout)
@@ -1201,6 +1244,7 @@ export function PdfToWord() {
                   const rendered = await renderPdfPageWithFigures(fallbackBuf.slice(0), p, 1.8);
                   pageImagesMap[p] = rendered.dataUrl;
                   pageDetectedFiguresMap[p] = rendered.detectedFigures;
+                  pageProseLineBoxesMap[p] = rendered.proseLineBoxes || [];
                 } catch {}
               }
             }
@@ -1220,15 +1264,18 @@ export function PdfToWord() {
                   let segText = segs[sIdx];
                   let segBoxes: BoxTuple[] = [];
                   const detFigs = pageDetectedFiguresMap[pageCursor] || [];
+                  const proseBoxes = pageProseLineBoxesMap[pageCursor] || [];
                   if (detFigs.length > 0) {
                     const pdfFigRes = await applyPdfDetectedFigures(segText, imgUrl, pageCursor, detFigs, segBoxes, {
                       replaceLeakedBbtTable: true,
+                      proseLineBoxes: proseBoxes,
                     });
                     segText = pdfFigRes.text;
                     segBoxes = pdfFigRes.croppedBoxes;
                   }
                   segs[sIdx] = await recoverMissingPageFigures(segText, imgUrl, pageCursor, segBoxes, {
                     replaceLeakedBbtTable: true,
+                    proseLineBoxes: proseBoxes,
                   });
                 }
                 pageCursor += 1;
@@ -1961,8 +2008,9 @@ export function PdfToWord() {
                 onClick={() => {
                   setResultText(prev => run1ClickMathFix(prev));
                 }}
-                className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg transition-all shadow-sm font-bold text-xs cursor-pointer active:scale-95"
-                title="Tự động phát hiện và làm sạch 100% lỗi OCR công thức Toán"
+                disabled={isUploading}
+                className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-sm font-bold text-xs cursor-pointer active:scale-95"
+                title={isUploading ? 'Vui lòng chờ số hóa hoàn tất toàn bộ trang' : 'Tự động phát hiện và làm sạch 100% lỗi OCR công thức Toán'}
               >
                 <Wand2 className="w-4 h-4 text-emerald-200 animate-pulse" />
                 <span>⚡ Sửa lỗi Toán OCR 1-Click</span>
@@ -1972,29 +2020,33 @@ export function PdfToWord() {
                   clearAllInputs();
                   setResultText('');
                 }}
-                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-xs font-bold cursor-pointer"
+                disabled={isUploading}
+                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs font-bold cursor-pointer"
               >
                 Chuyển file khác
               </button>
               <div className="flex gap-2 flex-wrap">
                 <button 
                   onClick={() => handleExportWord(false)}
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm font-bold text-xs cursor-pointer"
-                  title="Xuất file Word (.docx) công thức chuẩn Word Equation (OMML)"
+                  disabled={isUploading}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm font-bold text-xs cursor-pointer"
+                  title={isUploading ? 'Đang số hóa đầy đủ các trang theo đúng thứ tự gốc...' : 'Xuất file Word (.docx) công thức chuẩn Word Equation (OMML)'}
                 >
                   <FileText className="w-4 h-4" /> Xuất Word (Equation)
                 </button>
                 <button 
                   onClick={() => handleExportWord(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm font-bold text-xs cursor-pointer"
-                  title="Xuất file Word (.docx) công thức chuẩn Word MathType"
+                  disabled={isUploading}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm font-bold text-xs cursor-pointer"
+                  title={isUploading ? 'Đang số hóa đầy đủ các trang theo đúng thứ tự gốc...' : 'Xuất file Word (.docx) công thức chuẩn Word MathType'}
                 >
                   <Download className="w-4 h-4" /> Xuất Word (MathType)
                 </button>
                 <button 
                   onClick={handleExportLatex}
-                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all shadow-sm font-bold text-xs cursor-pointer active:scale-95"
-                  title="Tải file mã nguồn LaTeX (.tex) chuẩn biên dịch TeXMaker / Overleaf / TeXStudio"
+                  disabled={isUploading}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm font-bold text-xs cursor-pointer active:scale-95"
+                  title={isUploading ? 'Đang số hóa đầy đủ các trang theo đúng thứ tự gốc...' : 'Tải file mã nguồn LaTeX (.tex) chuẩn biên dịch TeXMaker / Overleaf / TeXStudio'}
                 >
                   <FileCode className="w-4 h-4 text-purple-200" /> Tải mã LaTeX (.tex)
                 </button>
@@ -2075,9 +2127,10 @@ export function PdfToWord() {
               </div>
 
               <div className="flex items-center gap-2 flex-wrap">
-                {Object.keys(pdfPageImages).map(pStr => {
-                  const pNum = Number(pStr);
-                  return (
+                {Object.keys(pdfPageImages)
+                  .map(Number)
+                  .sort((a, b) => a - b)
+                  .map((pNum) => (
                     <button
                       key={pNum}
                       onClick={() => handleOpenCropper(pNum)}
@@ -2086,15 +2139,14 @@ export function PdfToWord() {
                       <ImageIcon className="w-3.5 h-3.5" />
                       <span>{isImageQueue ? `Cắt Ảnh ${pNum}` : `Cắt Trang ${pNum}`}</span>
                     </button>
-                  );
-                })}
+                  ))}
               </div>
             </div>
           )}
 
           <div className="bg-slate-50/70 rounded-xl p-6 lg:p-8 border border-slate-200">
-            <div ref={exportRef} data-no-auto-graph="true">
-              <MarkdownRenderer content={resultText} disableAutoBbtSvg />
+            <div ref={exportRef} data-no-auto-graph="true" data-preserve-original-numbering="true">
+              <MarkdownRenderer content={resultText} disableAutoBbtSvg preserveOriginalNumbering />
             </div>
           </div>
         </div>

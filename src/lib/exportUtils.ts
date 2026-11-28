@@ -2851,7 +2851,9 @@ async function parseDomToDocxChildren(
           const optD = mcMatch[5].trim();
 
           if (isOrderedList && !hasExplicitNumber) {
-            stemText = stemText ? `**Câu ${ordNum}.** ${stemText}` : `**Câu ${ordNum}.**`;
+            const keepOriginalNum = !!el.closest('[data-preserve-original-numbering="true"]');
+            const prefix = keepOriginalNum ? `**${ordNum}.**` : `**Câu ${ordNum}.**`;
+            stemText = stemText ? `${prefix} ${stemText}` : prefix;
           }
 
           if (stemText) {

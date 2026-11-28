@@ -477,7 +477,7 @@ export function cleanSectionTitles(text: string): string {
   if (!text || typeof text !== 'string') return text || '';
   let s = text;
 
-  const proseBeforeNumberRe = /(?:^|\s)(?:câu|bài|phần|trang|mục|số|hình|bảng|lớp|khối|từ|đến|năm|thí\s*sinh|trả\s*lời)$/i;
+  const proseBeforeNumberRe = /(?:(?:^|\s)(?:câu|bài|phần|trang|mục|số|hình|bảng|lớp|khối|từ|đến|năm|thí\s*sinh|trả\s*lời|ý)|(?:^|\s)[a-d]\)\s*,?)$/i;
 
   // Tách riêng nếu tiêu đề PHẦN bị dính với Câu hỏi (Câu 1., Bài 1:...), mệnh đề a), hoặc mục đánh số (vd: PHẦN III: 1. Với n=4...) trên cùng 1 dòng:
   // Không cắt câu dẫn thường như "Phần I. Thí sinh trả lời từ câu 1 đến câu 12. Mỗi câu hỏi..."
@@ -924,13 +924,28 @@ export function cleanMathAndUnwrapHeadings(text: string): string {
   // 0.06 Chuẩn hóa BẢNG ĐÁP ÁN NHANH (chỉ thao tác trong section BẢNG ĐÁP ÁN, không chạm vào PHẦN I đề bài)
   s = formatQuickAnswerTables(s);
 
-  // 0.1 Gỡ bỏ khoảng trắng cách chữ trong các tiêu đề/thuật ngữ tiếng Việt bị phân tách sai
-  s = s.replace(/T\s*ổ\s*n\s*g\s*n\s*s\s*ố\s*h\s*ạ\s*n\s*g\s*đ\s*ầ\s*u\s*t\s*i\s*ê\s*n/gi, 'Tổng n số hạng đầu tiên');
-  s = s.replace(/c\s*ấ\s*p\s*s\s*ố\s*c\s*ộ\s*n\s*g/gi, 'cấp số cộng');
-  s = s.replace(/c\s*ô\s*n\s*g\s*s\s*a\s*i/gi, 'công sai');
-  s = s.replace(/l\s*ậ\s*p\s*t\s*h\s*à\s*n\s*h\s*c\s*ấ\s*p\s*s\s*ố\s*c\s*ộ\s*n\s*g/gi, 'lập thành cấp số cộng');
-  s = s.replace(/đ\s*ề\s*g\s*ố\s*c\s*p\s*h\s*ư\s*ơ\s*n\s*g\s*á\s*n/gi, 'đề gốc phương án');
-  s = s.replace(/K\s*i\s*ể\s*m\s*t\s*r\s*a/gi, 'Kiểm tra');
+  // 0.1 Gỡ bỏ khoảng trắng cách chữ trong các tiêu đề/thuật ngữ tiếng Việt bị phân tách sai (chỉ sửa khi thực sự bị cách chữ và bảo toàn chữ hoa/thường gốc)
+  s = s.replace(/T\s*ổ\s*n\s*g\s*n\s*s\s*ố\s*h\s*ạ\s*n\s*g\s*đ\s*ầ\s*u\s*t\s*i\s*ê\s*n/gi, (m) =>
+    m === 'Tổng n số hạng đầu tiên' ? m : (m === m.toUpperCase() ? 'TỔNG N SỐ HẠNG ĐẦU TIÊN' : 'Tổng n số hạng đầu tiên')
+  );
+  s = s.replace(/c\s*ấ\s*p\s*s\s*ố\s*c\s*ộ\s*n\s*g/gi, (m) =>
+    m.toLowerCase() === 'cấp số cộng' ? m : (m === m.toUpperCase() ? 'CẤP SỐ CỘNG' : (m[0] === m[0].toUpperCase() ? 'Cấp số cộng' : 'cấp số cộng'))
+  );
+  s = s.replace(/c\s*ô\s*n\s*g\s*s\s*a\s*i/gi, (m) =>
+    m.toLowerCase() === 'công sai' ? m : (m === m.toUpperCase() ? 'CÔNG SAI' : (m[0] === m[0].toUpperCase() ? 'Công sai' : 'công sai'))
+  );
+  s = s.replace(/l\s*ậ\s*p\s*t\s*h\s*à\s*n\s*h\s*c\s*ấ\s*p\s*s\s*ố\s*c\s*ộ\s*n\s*g/gi, (m) =>
+    m.toLowerCase() === 'lập thành cấp số cộng' ? m : (m === m.toUpperCase() ? 'LẬP THÀNH CẤP SỐ CỘNG' : 'lập thành cấp số cộng')
+  );
+  s = s.replace(/đ\s*ề\s*g\s*ố\s*c\s*p\s*h\s*ư\s*ơ\s*n\s*g\s*á\s*n/gi, (m) =>
+    m.toLowerCase() === 'đề gốc phương án' ? m : 'đề gốc phương án'
+  );
+  s = s.replace(/K\s*i\s*ể\s*m\s*t\s*r\s*a/gi, (m) => {
+    if (/^kiểm\s+tra$/i.test(m)) return m;
+    if (m === m.toUpperCase()) return 'KIỂM TRA';
+    if (m[0] === m[0].toUpperCase() && m[0] !== m[0].toLowerCase()) return 'Kiểm tra';
+    return 'kiểm tra';
+  });
 
   // 1. Loại bỏ các khối math rỗng trên cùng dòng (KHÔNG xóa xuống dòng giữa hai công thức)
   s = s.replace(/^[ \t]*\$\$[ \t\r\n]*\$\$[ \t]*$/gm, '');
@@ -1217,8 +1232,14 @@ export function sanitizeLatexMathAndDelimiters(raw: string): string {
   s = s.replace(/\buu_([a-zA-Z0-9]+|\{[^}]+\})/g, 'u_$1');
   s = s.replace(/(?:^|\n)\s*(?:---|--)\s*([a-zA-ZÀ-ỹ])/g, '\n- $1');
   s = s.replace(/(?<=\$\$|\$)\s*---+\s*$/gm, '');
-  s = s.replace(/\s*---\s*$/gm, '');
-  s = s.replace(/-\s*--\s*(?=\$\$|\$|\n|$)/g, '');
+  s = s
+    .split('\n')
+    .map((line) =>
+      /HẾT|\[Hết\s+Trang/i.test(line)
+        ? line
+        : line.replace(/\s*---\s*$/, '').replace(/-\s*--\s*(?=\$\$|\$|$)/g, '')
+    )
+    .join('\n');
   s = s.replace(/([uSxya-zA-Z]\b|S_|u_)\s*=\s*-\s*(?=[a-zA-Z0-9])/g, '$1 = -');
 
   // Standardize capitalized TeX arrow aliases and fix double backslashes
@@ -1235,10 +1256,16 @@ export function sanitizeLatexMathAndDelimiters(raw: string): string {
   s = s.replace(/(?:^|\n)\s*SS0\.\s*\*{0,2}Câu\s*\d+:?\*{0,2}SS\s*/gi, '\n');
   s = s.replace(/(?:^|\n)\s*d\$\.\s*/gi, '\n');
 
-  // Đảm bảo các tiêu đề câu hỏi **Câu X:** trong lời giải được ngắt dòng riêng biệt (KHÔNG cắt trong bảng Markdown |...| và KHÔNG cắt cụm chữ thường như "từ câu 1 đến câu 12.")
+  // Đảm bảo các tiêu đề câu hỏi **Câu X:** trong lời giải được ngắt dòng riêng biệt
+  // (KHÔNG cắt trong bảng Markdown |...| và KHÔNG cắt giữa câu hướng dẫn như "từ Câu 1 đến Câu 12.")
+  const câuPrepositionRe = /(?:^|\s)(?:từ|đến|tới|và|hoặc|hay|theo|ở|tại|xem|như|của|trong|với|sau|trước|giống|các|gồm)$/i;
   s = s.split('\n').map((line) => {
     if (/^\s*\|/.test(line)) return line;
-    return line.replace(/([^\n\-*•●+])\s+(\*{0,2}(?:Câu|CÂU)\s*\d+\s*[:\.]\*{0,2})/g, '$1\n\n$2');
+    return line.replace(/([^\n\-*•●+])\s+(\*{0,2}(?:Câu|CÂU)\s*\d+\s*[:\.]\*{0,2})/g, (full, prevChar, qLabel, offset) => {
+      const before = line.slice(0, offset + prevChar.length).trim();
+      if (câuPrepositionRe.test(before)) return full;
+      return `${prevChar}\n\n${qLabel}`;
+    });
   }).join('\n');
 
   // 3.4. Giải cứu thẻ <br/> nếu bị nhốt bên trong cặp dấu $...$
@@ -2157,7 +2184,7 @@ export function formatWorksheetQuestionsAndSections(markdown: string): string {
   text = text.replace(/:[ \t]*([a-zA-ZÀ-ỹ0-9])/g, ': $1');
 
   // Tách riêng nếu tiêu đề PHẦN bị dính liền với Câu 1, mệnh đề a), hoặc công thức câu 1 trên cùng 1 dòng
-  const proseBeforeNumRe = /(?:^|\s)(?:câu|bài|phần|trang|mục|số|hình|bảng|lớp|khối|từ|đến|năm|thí\s*sinh|trả\s*lời)$/i;
+  const proseBeforeNumRe = /(?:(?:^|\s)(?:câu|bài|phần|trang|mục|số|hình|bảng|lớp|khối|từ|đến|năm|thí\s*sinh|trả\s*lời|ý)|(?:^|\s)[a-d]\)\s*,?)$/i;
   text = text.replace(
     /((?:PHẦN|Phần)\s*(?:[1-4]|I{1,4}|IV)\b[^:\n]*:?)[ \t]+(?=(?:[-*]\s*)?(?:\*{0,2}(?:Câu|CÂU|Bài|BÀI)\s*\d+\s*[:.\)]|\d+[\.\)](?:\s+(?![A-D]\b)|\s*$)|\*{0,2}[a-d]\)\s+))/g,
     (match, prefix) => (proseBeforeNumRe.test(prefix.trim()) ? match : `${prefix}\n`)
@@ -2813,7 +2840,10 @@ export function wrapUnenclosedLatexMath(text: string): string {
   return s;
 }
 
-export function preprocessMathText(text: any): string {
+export function preprocessMathText(
+  text: any,
+  options?: { preserveOriginalNumbering?: boolean }
+): string {
   if (text === null || text === undefined) return '';
   const { masked: mediaMasked, tokens: mediaTokens } = protectHtmlMediaTags(String(text));
   let str = mediaMasked;
@@ -2827,7 +2857,9 @@ export function preprocessMathText(text: any): string {
   str = sanitizeLatexMathAndDelimiters(str);
   str = normalizeMathText(str);
   str = cleanMathAndUnwrapHeadings(str);
-  str = formatWorksheetQuestionsAndSections(str);
+  if (!options?.preserveOriginalNumbering) {
+    str = formatWorksheetQuestionsAndSections(str);
+  }
   str = fixAndMergeMathArrows(str);
   str = formatQuickAnswerTables(str);
   str = cleanSectionTitles(str);

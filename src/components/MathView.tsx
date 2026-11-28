@@ -48,27 +48,34 @@ export function wrapRawSvgBlocks(input: string): string {
   });
 }
 
-export function preprocessMath(raw?: string | null): string {
+export function preprocessMath(
+  raw?: string | null,
+  options?: { preserveOriginalNumbering?: boolean; disableAutoBbtSvg?: boolean }
+): string {
   if (!raw) return '';
   const { masked: mediaSafeRaw, tokens: mediaTokens } = protectHtmlMediaTags(String(raw));
-  let s = preprocessMathText(mediaSafeRaw);
+  let s = preprocessMathText(mediaSafeRaw, {
+    preserveOriginalNumbering: options?.preserveOriginalNumbering,
+  });
 
   // 1. Chuyển đổi trực tiếp các BẢNG BIẾN THIÊN (BBT) Markdown table sang <svg-wrapper>
   s = unflattenMarkdownTables(s);
-  s = s.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match, _g1, offset) => {
-    try {
-      const preceding = s.slice(Math.max(0, offset - 220), offset);
-      if (/(?:phân\s*bố\s*xác\s*suất|biến\s*ngẫu\s*nhiên|bảng\s*tần\s*số|bảng\s*tần\s*suất|mẫu\s*số\s*liệu|bảng\s*thống\s*kê|bảng\s*giá\s*trị)/i.test(preceding)) {
-        return match;
-      }
-      const svg = convertBbtTableToSvg(match);
-      if (svg) {
-        const base64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : Buffer.from(encodeURIComponent(svg)).toString('base64');
-        return `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n`;
-      }
-    } catch (e) {}
-    return match;
-  });
+  if (!options?.disableAutoBbtSvg) {
+    s = s.replace(/((?:^[ \t]*\|[^\n]+\|[ \t]*(?:\n|$))+)/gm, (match, _g1, offset) => {
+      try {
+        const preceding = s.slice(Math.max(0, offset - 220), offset);
+        if (/(?:phân\s*bố\s*xác\s*suất|biến\s*ngẫu\s*nhiên|bảng\s*tần\s*số|bảng\s*tần\s*suất|mẫu\s*số\s*liệu|bảng\s*thống\s*kê|bảng\s*giá\s*trị)/i.test(preceding)) {
+          return match;
+        }
+        const svg = convertBbtTableToSvg(match);
+        if (svg) {
+          const base64 = typeof btoa !== 'undefined' ? btoa(encodeURIComponent(svg)) : Buffer.from(encodeURIComponent(svg)).toString('base64');
+          return `\n\n<svg-wrapper data-svg="${base64}"></svg-wrapper>\n\n`;
+        }
+      } catch (e) {}
+      return match;
+    });
+  }
 
   // 2. Chuyển đổi các khối tikz code block sang <svg-wrapper> hoặc <tikz-diagram>
   s = s.replace(/(\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\})/gi, (match) => {

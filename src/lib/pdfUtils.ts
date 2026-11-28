@@ -20,6 +20,8 @@ export interface PdfDetectedFigure {
   description: string;
   /** True when the PDF page is an answer-key / grading rubric page ("ĐÁP ÁN", "HƯỚNG DẪN CHẤM") */
   isAnswerKeyPage?: boolean;
+  /** True when this figure contains an embedded raster image (paintImageXObject) */
+  isRasterImg?: boolean;
 }
 
 /**
@@ -71,17 +73,27 @@ const applyPt = (m: number[], x: number, y: number): [number, number] => [
   m[1] * x + m[3] * y + m[5],
 ];
 
+const VN_DIACRITIC_RE = /[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúụủũưừứựửữỳýỵỷỹđ]/i;
+const EXAM_HEADER_KW_RE = /(?:S\s*Ở\s*GIÁO\s*D\s*Ụ\s*C|PHÒNG\s*GIÁO\s*D\s*Ụ\s*C|TRƯỜ\s*NG\s+(?:THPT|THCS|TIỂU)|Đ\s*Ề\s*(?:KI\s*Ể\s*M\s*TRA|THI|THAM\s*KHẢO)|ĐÁP\s*ÁN\s*Đ\s*Ề|MÃ\s*ĐỀ|NĂM\s*HỌ\s*C|HỌ\s*VÀ\s*TÊN|THỜI\s*GIAN\s*LÀM\s*BÀI)/i;
+const EXAM_FOOTER_KW_RE = /^\s*Trang\s*\d+\s*\/\s*\d+/i;
+const STAT_TABLE_KW_RE = /(?:M\s*ứ\s*c\s*lương|S\s*ố\s*(?:tuổi|học\s*sinh|công\s*nhân|người|cây|tháng|ngày|giờ|lần|xe|sản\s*phẩm)|Đ\s*ộ\s*ẩ\s*m|Th\s*ờ\s*i\s*gian|Giá\s*tr\s*ị\s*đ\s*ạ\s*i\s*di\s*ệ\s*n|T\s*ầ\s*n\s*s\s*ố|T\s*ầ\s*n\s*su\s*ấ\s*t|Cân\s*nặng|Chiều\s*cao|Doanh\s*thu|Nhiệt\s*độ|Điểm\s*kiểm\s*tra|Khoảng\s*biến\s*thiên)/i;
+const QUESTION_OR_CHOICE_LINE_RE = /^(?:PH\s*ẦN\s*(?:I{1,3}|IV|[1-4])|(?:Câu|Bài|Question)\s*\d+|[A-D]\.\s|[a-d]\)\s)/i;
+
 /**
  * Deterministically detects vector drawings (TikZ/LaTeX/Word diagrams, coordinate axes,
  * shaded half-planes, geometric figures) and embedded raster images directly from a PDF page's
  * OperatorList + TextContent, and associates each figure with its question label (e.g. "Câu 3").
  */
-async function detectFiguresFromPdfPage(page: any): Promise<PdfDetectedFigure[]> {
+export async function detectFiguresAndLabelsFromPdfPage(page: any): Promise<{
+  detectedFigures: PdfDetectedFigure[];
+  detectedQuestionLabels: string[];
+  proseLineBoxes: [number, number, number, number][];
+}> {
   try {
     const vp = page.getViewport({ scale: 1 });
     const W = vp.width;
     const H = vp.height;
-    if (!W || !H) return [];
+    if (!W || !H) return { detectedFigures: [], detectedQuestionLabels: [], proseLineBoxes: [] };
 
     const [ops, textContent] = await Promise.all([
       page.getOperatorList(),
@@ -122,6 +134,10 @@ async function detectFiguresFromPdfPage(page: any): Promise<PdfDetectedFigure[]>
       x2: number;
       y2: number;
       text: string;
+      compactText: string;
+      isProse: boolean;
+      isHeader: boolean;
+      isFooter: boolean;
     }
     const lines: TextLine[] = [];
     for (const it of sortedItems) {
@@ -133,25 +149,106 @@ async function detectFiguresFromPdfPage(page: any): Promise<PdfDetectedFigure[]>
         last.y1 = Math.min(last.y1, it.y1);
         last.y2 = Math.max(last.y2, it.y2);
       } else {
-        lines.push({ items: [it], x1: it.x1, y1: it.y1, x2: it.x2, y2: it.y2, text: '' });
+        lines.push({
+          items: [it],
+          x1: it.x1,
+          y1: it.y1,
+          x2: it.x2,
+          y2: it.y2,
+          text: '',
+          compactText: '',
+          isProse: false,
+          isHeader: false,
+          isFooter: false,
+        });
       }
     }
 
-    const qHeaders: { label: string; y1: number; y2: number; x1: number }[] = [];
+    const qHeaders: { label: string; y1: number; y2: number; x1: number; col: number }[] = [];
     let isAnswerKeyPage = false;
+    let leftColLines = 0;
+    let rightColLines = 0;
+
+    // Detect if the page uses a 2-column exam layout (many independent lines on left half & right half)
     for (const ln of lines) {
       ln.items.sort((a, b) => a.x1 - b.x1);
       ln.text = ln.items.map((i) => i.str).join(' ');
-      if (/^(?:ĐÁP\s*ÁN|HƯỚNG\s*DẪN\s*CHẤM|BIỂU\s*ĐIỂM)/i.test(ln.text.trim())) {
+      ln.compactText = ln.text.replace(/\s+/g, ' ').trim();
+      if (/^(?:ĐÁP\s*ÁN|HƯỚNG\s*DẪN\s*CHẤM|BIỂU\s*ĐIỂM)/i.test(ln.compactText)) {
         isAnswerKeyPage = true;
       }
-      const m = ln.text.match(/^(Câu|Bài)\s*(\d+)\s*[\.:\)]/i);
-      if (m) {
-        qHeaders.push({ label: `${m[1]} ${m[2]}`, y1: ln.y1, y2: ln.y2, x1: ln.x1 });
+      ln.isFooter =
+        (ln.y1 > H * 0.91 && EXAM_FOOTER_KW_RE.test(ln.compactText)) ||
+        (ln.y1 > H * 0.935 && /Trang\s*\d+|Mã\s*đề/i.test(ln.compactText));
+      ln.isHeader = ln.y1 < H * 0.165 && EXAM_HEADER_KW_RE.test(ln.compactText);
+
+      const lineW = ln.x2 - ln.x1;
+      const nonSpaceLen = ln.compactText.replace(/\s+/g, '').length;
+      const hasVn = VN_DIACRITIC_RE.test(ln.compactText);
+      const isQorChoice = QUESTION_OR_CHOICE_LINE_RE.test(ln.compactText);
+      const isStat = STAT_TABLE_KW_RE.test(ln.compactText);
+      ln.isProse =
+        ln.isHeader ||
+        ln.isFooter ||
+        isQorChoice ||
+        isStat ||
+        (hasVn && nonSpaceLen >= 10 && lineW >= 48);
+
+      if (ln.x2 < W * 0.51 && lineW > W * 0.12) leftColLines++;
+      if (ln.x1 > W * 0.49 && lineW > W * 0.12) rightColLines++;
+    }
+    const isTwoColumnPage = leftColLines >= 4 && rightColLines >= 4;
+
+    const proseLineBoxes: [number, number, number, number][] = lines
+      .filter((ln) => ln.isProse)
+      .map((ln) => [
+        Math.max(0, Math.min(1000, Math.round((ln.y1 / H) * 1000))),
+        Math.max(0, Math.min(1000, Math.round((ln.x1 / W) * 1000))),
+        Math.max(0, Math.min(1000, Math.round((ln.y2 / H) * 1000))),
+        Math.max(0, Math.min(1000, Math.round((ln.x2 / W) * 1000))),
+      ]);
+
+    const footerMinY = lines
+      .filter((ln) => ln.isFooter)
+      .reduce((minY, ln) => Math.min(minY, ln.y1), H);
+
+    // Extract question/section headers from each visual line (including left & right halves on 2-col pages)
+    const headerPattern = /^(Câu\s*\d+|Bài\s*\d+|Question\s*\d+|PHẦN\s*(?:I{1,3}|IV|[1-4]))\b\s*[\.:\)]?/i;
+    for (const ln of lines) {
+      const segments = isTwoColumnPage
+        ? [
+            { col: 0, items: ln.items.filter((it) => (it.x1 + it.x2) / 2 < W * 0.5) },
+            { col: 1, items: ln.items.filter((it) => (it.x1 + it.x2) / 2 >= W * 0.5) },
+          ]
+        : [{ col: 0, items: ln.items }];
+
+      for (const seg of segments) {
+        if (seg.items.length === 0) continue;
+        const segText = seg.items.map((i) => i.str).join(' ').trim();
+        const m = segText.match(headerPattern);
+        if (m) {
+          const cleanLabel = m[1].replace(/\s+/g, ' ').trim();
+          qHeaders.push({
+            label: cleanLabel,
+            y1: ln.y1,
+            y2: ln.y2,
+            x1: seg.items[0].x1,
+            col: seg.col,
+          });
+        }
       }
     }
 
-    // 2. Walk PDF drawing operators to collect vector graphics & embedded raster images
+    // Sort strictly in natural reading order: 2-column -> left col top-to-bottom then right col; 1-column -> top-to-bottom
+    qHeaders.sort((a, b) => a.col - b.col || a.y1 - b.y1 || a.x1 - b.x1);
+    const detectedQuestionLabels: string[] = [];
+    for (const q of qHeaders) {
+      if (detectedQuestionLabels[detectedQuestionLabels.length - 1] !== q.label) {
+        detectedQuestionLabels.push(q.label);
+      }
+    }
+
+    // 2. Walk PDF drawing operators to collect embedded raster images & vector graphics SEPARATELY
     const stack: number[][] = [];
     let ctm: number[] = vpTransform.slice();
     interface RawGraphicBox {
@@ -162,7 +259,8 @@ async function detectFiguresFromPdfPage(page: any): Promise<PdfDetectedFigure[]>
       kind: 'img' | 'diag' | 'rect';
       segCount: number;
     }
-    const rawBoxes: RawGraphicBox[] = [];
+    const rawImgBoxes: RawGraphicBox[] = [];
+    const rawVecBoxes: RawGraphicBox[] = [];
     const hRules: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
 
     for (let i = 0; i < ops.fnArray.length; i++) {
@@ -192,7 +290,7 @@ async function detectFiguresFromPdfPage(page: any): Promise<PdfDetectedFigure[]>
         // Skip tiny icons or full-page scanned background images (Pass 2 handles scanned pages)
         const isFullPageScan = bw > W * 0.86 && bh > H * 0.78;
         if (bw >= 45 && bh >= 35 && !isFullPageScan) {
-          rawBoxes.push({ x1, y1, x2, y2, kind: 'img', segCount: 4 });
+          rawImgBoxes.push({ x1, y1, x2, y2, kind: 'img', segCount: 4 });
         }
       } else if (fn === OPS.constructPath && Array.isArray(args)) {
         const subOps: number[] = args[0] || [];
@@ -273,9 +371,10 @@ async function detectFiguresFromPdfPage(page: any): Promise<PdfDetectedFigure[]>
           const isTinyRule = (bw < 3 && bh < 3) || (bw < 28 && bh < 3) || (bh < 28 && bw < 3);
           const isTableCellRect = !hasDiagonal && segCount <= 4 && (bw > W * 0.5 || bh > H * 0.35);
           const isHeaderBox = minY < H * 0.14 && !hasDiagonal && bh < 35;
-          const isAnswerGridBox = !hasDiagonal && bw < 60 && bh < 26 && segCount <= 4;
-          if (!isPageRule && !isTinyRule && !isTableCellRect && !isHeaderBox && !isAnswerGridBox) {
-            rawBoxes.push({
+          const isInlineMathOrGridBox = !hasDiagonal && bw < 150 && bh < 28 && segCount <= 4;
+          const isFooterStroke = minY > footerMinY - 4;
+          if (!isPageRule && !isTinyRule && !isTableCellRect && !isHeaderBox && !isInlineMathOrGridBox && !isFooterStroke) {
+            rawVecBoxes.push({
               x1: Math.max(0, minX),
               y1: Math.max(0, minY),
               x2: Math.min(W, maxX),
@@ -288,45 +387,46 @@ async function detectFiguresFromPdfPage(page: any): Promise<PdfDetectedFigure[]>
       }
     }
 
-    if (rawBoxes.length === 0) return [];
+    if (rawImgBoxes.length === 0 && rawVecBoxes.length === 0) {
+      return { detectedFigures: [], detectedQuestionLabels, proseLineBoxes };
+    }
 
-    // 3. Cluster nearby primitives into connected figure regions
-    const pad = 18;
     interface GraphicCluster {
       x1: number;
       y1: number;
       x2: number;
       y2: number;
       count: number;
-      hasRichGraphic: boolean;
+      diagCount: number;
       isRasterImg: boolean;
     }
-    const clusters: GraphicCluster[] = [];
 
-    for (const b of rawBoxes) {
+    // 3A. Cluster vector primitives tightly (pad = 10) BEFORE considering raster images
+    const vecPad = 10;
+    const vecClusters: GraphicCluster[] = [];
+    for (const b of rawVecBoxes) {
       let merged = false;
-      for (const c of clusters) {
-        if (b.x1 <= c.x2 + pad && b.x2 >= c.x1 - pad && b.y1 <= c.y2 + pad && b.y2 >= c.y1 - pad) {
+      for (const c of vecClusters) {
+        if (b.x1 <= c.x2 + vecPad && b.x2 >= c.x1 - vecPad && b.y1 <= c.y2 + vecPad && b.y2 >= c.y1 - vecPad) {
           c.x1 = Math.min(c.x1, b.x1);
           c.y1 = Math.min(c.y1, b.y1);
           c.x2 = Math.max(c.x2, b.x2);
           c.y2 = Math.max(c.y2, b.y2);
           c.count++;
-          if (b.kind === 'diag' || b.kind === 'img') c.hasRichGraphic = true;
-          if (b.kind === 'img') c.isRasterImg = true;
+          if (b.kind === 'diag') c.diagCount++;
           merged = true;
           break;
         }
       }
       if (!merged) {
-        clusters.push({
+        vecClusters.push({
           x1: b.x1,
           y1: b.y1,
           x2: b.x2,
           y2: b.y2,
           count: 1,
-          hasRichGraphic: b.kind === 'diag' || b.kind === 'img',
-          isRasterImg: b.kind === 'img',
+          diagCount: b.kind === 'diag' ? 1 : 0,
+          isRasterImg: false,
         });
       }
     }
@@ -334,19 +434,18 @@ async function detectFiguresFromPdfPage(page: any): Promise<PdfDetectedFigure[]>
     let changed = true;
     while (changed) {
       changed = false;
-      for (let i = 0; i < clusters.length; i++) {
-        for (let j = i + 1; j < clusters.length; j++) {
-          const a = clusters[i];
-          const b = clusters[j];
-          if (b.x1 <= a.x2 + pad && b.x2 >= a.x1 - pad && b.y1 <= a.y2 + pad && b.y2 >= a.y1 - pad) {
+      for (let i = 0; i < vecClusters.length; i++) {
+        for (let j = i + 1; j < vecClusters.length; j++) {
+          const a = vecClusters[i];
+          const b = vecClusters[j];
+          if (b.x1 <= a.x2 + vecPad && b.x2 >= a.x1 - vecPad && b.y1 <= a.y2 + vecPad && b.y2 >= a.y1 - vecPad) {
             a.x1 = Math.min(a.x1, b.x1);
             a.y1 = Math.min(a.y1, b.y1);
             a.x2 = Math.max(a.x2, b.x2);
             a.y2 = Math.max(a.y2, b.y2);
             a.count += b.count;
-            a.hasRichGraphic = a.hasRichGraphic || b.hasRichGraphic;
-            a.isRasterImg = a.isRasterImg || b.isRasterImg;
-            clusters.splice(j, 1);
+            a.diagCount += b.diagCount;
+            vecClusters.splice(j, 1);
             changed = true;
             break;
           }
@@ -355,26 +454,126 @@ async function detectFiguresFromPdfPage(page: any): Promise<PdfDetectedFigure[]>
       }
     }
 
-    const validClusters = clusters
-      .filter((c) => {
-        const bw = c.x2 - c.x1;
-        const bh = c.y2 - c.y1;
-        if (bw < 52 || bh < 42) return false;
-        if (bw > W * 0.88 && bh > H * 0.55 && !c.isRasterImg) return false;
-        return c.hasRichGraphic || c.count >= 4;
-      })
-      .sort((a, b) => a.y1 - b.y1 || a.x1 - b.x1);
+    // Filter out false-positive vector clusters (page headers, footers, statistical tables, MathType equation blocks)
+    const validVecClusters = vecClusters.filter((c) => {
+      const bw = c.x2 - c.x1;
+      const bh = c.y2 - c.y1;
+      if (bw < 50 || bh < 38) return false;
+      if (bw > W * 0.88 && bh > H * 0.55) return false;
 
-    // 4. Expand each vector figure box to include full BBT horizontal borders & adjacent short diagram labels (x, y, O, A, B, 55 m, 30°, etc.)
+      const overlappingLines = lines.filter(
+        (ln) => ln.y2 >= c.y1 - 2 && ln.y1 <= c.y2 + 2 && ln.x2 >= c.x1 - 2 && ln.x1 <= c.x2 + 2
+      );
+      const joinedText = overlappingLines.map((ln) => ln.compactText).join(' ');
+
+      // Reject exam headers & footers
+      if (c.y1 < H * 0.165 && (EXAM_HEADER_KW_RE.test(joinedText) || overlappingLines.some((l) => l.isHeader))) {
+        return false;
+      }
+      if (c.y1 > H * 0.91 || (overlappingLines.length > 0 && overlappingLines.every((l) => l.isFooter))) {
+        return false;
+      }
+
+      // Reject statistical / frequency / data tables
+      if (STAT_TABLE_KW_RE.test(joinedText)) {
+        return false;
+      }
+
+      // Count real Vietnamese prose / question / choice lines strictly INSIDE this vector cluster
+      const proseLinesInside = overlappingLines.filter((ln) => {
+        if (!ln.isProse) return false;
+        const midY = (ln.y1 + ln.y2) / 2;
+        if (midY < c.y1 + 4 || midY > c.y2 - 4) return false;
+        const ox = Math.min(c.x2, ln.x2) - Math.max(c.x1, ln.x1);
+        return ox >= Math.min(25, (ln.x2 - ln.x1) * 0.4);
+      });
+      if (proseLinesInside.length >= 2) {
+        return false;
+      }
+      if (c.diagCount < 8 && proseLinesInside.some((ln) => QUESTION_OR_CHOICE_LINE_RE.test(ln.compactText))) {
+        return false;
+      }
+
+      // Purely horizontal/vertical vector cluster (diagCount === 0):
+      // ONLY keep if it clearly looks like a BBT (variation table) with y'/f'(x) and infinity symbols
+      if (c.diagCount === 0) {
+        const hasBbtHeader = /(?:y'|f'\s*\(\s*x\s*\)|g'\s*\(\s*x\s*\)|h'\s*\(\s*x\s*\))/.test(joinedText);
+        const hasBbtInfty = /[∞]|infty|-\s*∞|\+\s*∞|↗|↘/.test(joinedText);
+        return hasBbtHeader && hasBbtInfty && c.count >= 4;
+      }
+
+      return true;
+    });
+
+    // 3B. Keep embedded raster images SEPARATE (only merge two raster images if they genuinely overlap <= 2pt)
+    const imgClusters: GraphicCluster[] = [];
+    for (const imgBox of rawImgBoxes) {
+      let merged = false;
+      for (const c of imgClusters) {
+        if (imgBox.x1 <= c.x2 + 2 && imgBox.x2 >= c.x1 - 2 && imgBox.y1 <= c.y2 + 2 && imgBox.y2 >= c.y1 - 2) {
+          c.x1 = Math.min(c.x1, imgBox.x1);
+          c.y1 = Math.min(c.y1, imgBox.y1);
+          c.x2 = Math.max(c.x2, imgBox.x2);
+          c.y2 = Math.max(c.y2, imgBox.y2);
+          c.count++;
+          merged = true;
+          break;
+        }
+      }
+      if (!merged) {
+        imgClusters.push({
+          x1: imgBox.x1,
+          y1: imgBox.y1,
+          x2: imgBox.x2,
+          y2: imgBox.y2,
+          count: 1,
+          diagCount: 0,
+          isRasterImg: true,
+        });
+      }
+    }
+
+    // 3C. Merge a surviving diag-rich vector diagram into an adjacent raster image ONLY when they form
+    // a single composite illustration (e.g., side-by-side real-world photo + 3D coordinate diagram on the same Y-band)
+    const remainingVecClusters: GraphicCluster[] = [];
+    for (const vc of validVecClusters) {
+      let fusedWithImg = false;
+      if (vc.diagCount >= 4) {
+        for (const ic of imgClusters) {
+          const nearHoriz = vc.x1 <= ic.x2 + 28 && vc.x2 >= ic.x1 - 28;
+          const overlapY = Math.min(vc.y2, ic.y2) - Math.max(vc.y1, ic.y1);
+          const minH = Math.min(vc.y2 - vc.y1, ic.y2 - ic.y1);
+          const sameYBand = overlapY >= minH * 0.45;
+          if (nearHoriz && sameYBand) {
+            ic.x1 = Math.min(ic.x1, vc.x1);
+            ic.y1 = Math.min(ic.y1, vc.y1);
+            ic.x2 = Math.max(ic.x2, vc.x2);
+            ic.y2 = Math.max(ic.y2, vc.y2);
+            ic.count += vc.count;
+            ic.diagCount += vc.diagCount;
+            fusedWithImg = true;
+            break;
+          }
+        }
+      }
+      if (!fusedWithImg) {
+        remainingVecClusters.push(vc);
+      }
+    }
+
+    const validClusters = [...imgClusters, ...remainingVecClusters].sort((a, b) => a.y1 - b.y1 || a.x1 - b.x1);
+
+    // 4. Expand each vector figure box to include full BBT horizontal borders & adjacent short diagram labels
+    //    (NEVER absorb footer lines or Vietnamese prose lines)
     const detected: PdfDetectedFigure[] = [];
     for (const f of validClusters) {
-      if (!f.isRasterImg && f.hasRichGraphic && hRules.length >= 2) {
+      if (!f.isRasterImg && f.diagCount > 0 && hRules.length >= 2) {
         const overlappingRules = hRules.filter(
           (r) =>
-            r.y1 >= f.y1 - 40 &&
-            r.y2 <= f.y2 + 40 &&
-            r.x1 <= f.x2 + 45 &&
-            r.x2 >= f.x1 - 95 &&
+            r.y1 >= f.y1 - 32 &&
+            r.y2 <= Math.min(footerMinY - 4, f.y2 + 32) &&
+            r.x1 <= f.x2 + 40 &&
+            r.x2 >= f.x1 - 80 &&
             r.x2 - r.x1 <= W * 0.9
         );
         if (overlappingRules.length >= 2) {
@@ -390,48 +589,58 @@ async function detectFiguresFromPdfPage(page: any): Promise<PdfDetectedFigure[]>
           }
         }
       }
-      const orig = { x1: f.x1, y1: f.y1, x2: f.x2, y2: f.y2 };
 
-      if (!f.isRasterImg) {
+      const orig = { x1: f.x1, y1: f.y1, x2: f.x2, y2: f.y2 };
+      // Expand labels for pure vector diagrams OR composite (photo + diag) clusters
+      if (!f.isRasterImg || f.diagCount >= 4) {
         for (const it of textItems) {
           if (it.str.length > 14 || it.w > 65) continue;
+          if (it.y1 > footerMinY - 6 || it.y1 > H * 0.925) continue;
           if (/^(?:Câu|Bài|Phần|Trang|Đáp|Biểu|Họ|Mã|A\.|B\.|C\.|D\.)/i.test(it.str)) continue;
-          const nearX = it.x1 <= orig.x2 + 24 && it.x2 >= orig.x1 - 16;
-          const nearY = it.y1 <= orig.y2 + 16 && it.y2 >= orig.y1 - 20;
+          const nearX = it.x1 <= orig.x2 + 20 && it.x2 >= orig.x1 - 16;
+          const nearY = it.y1 <= orig.y2 + 14 && it.y2 >= orig.y1 - 18;
           if (!nearX || !nearY) continue;
 
           const sameLine = lines.find((ln) => Math.abs(ln.y1 - it.y1) < 5 && ln.items.includes(it));
           let isAttachedToProse = false;
           if (sameLine) {
-            const idx = sameLine.items.indexOf(it);
-            const prevItem = idx > 0 ? sameLine.items[idx - 1] : null;
-            const nextItem = idx >= 0 && idx + 1 < sameLine.items.length ? sameLine.items[idx + 1] : null;
-            const hasVietnameseProse = /[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúụủũưừứựửữỳýỵỷỹđ]/i.test(sameLine.text);
-            if (hasVietnameseProse) {
-              // If the item is immediately next to a prose word (< 22pt gap), do NOT absorb it
+            if (sameLine.isFooter || sameLine.isHeader) {
+              isAttachedToProse = true;
+            } else if (VN_DIACRITIC_RE.test(sameLine.text)) {
+              const idx = sameLine.items.indexOf(it);
+              const prevItem = idx > 0 ? sameLine.items[idx - 1] : null;
+              const nextItem = idx >= 0 && idx + 1 < sameLine.items.length ? sameLine.items[idx + 1] : null;
               const closeToLeftText = prevItem && it.x1 - prevItem.x2 < 22 && prevItem.x1 < orig.x1 - 4;
               const closeToRightText = nextItem && nextItem.x1 - it.x2 < 22 && nextItem.x2 > orig.x2 + 24;
               const insideLeftColumn = sameLine.x1 < orig.x1 - 45 && it.x1 < orig.x1 - 2;
-              if (closeToLeftText || closeToRightText || insideLeftColumn) {
+              if (closeToLeftText || closeToRightText || insideLeftColumn || sameLine.isProse) {
                 isAttachedToProse = true;
               }
             }
           }
 
           if (!isAttachedToProse) {
-            f.x1 = Math.min(f.x1, it.x1 - 3);
-            f.y1 = Math.min(f.y1, it.y1 - 3);
-            f.x2 = Math.max(f.x2, it.x2 + 3);
-            f.y2 = Math.max(f.y2, it.y2 + 3);
+            f.x1 = Math.min(f.x1, it.x1 - 2);
+            f.y1 = Math.min(f.y1, it.y1 - 2);
+            f.x2 = Math.max(f.x2, it.x2 + 2);
+            f.y2 = Math.max(f.y2, it.y2 + 2);
           }
         }
       }
 
-      // Associate nearest question header at or above the figure's vertical center
+      // Clip bottom strictly above page footer so "Trang X/Y - Mã đề ..." never bleeds into the bottom of a graph
+      if (footerMinY < H && f.y2 > footerMinY - 3) {
+        f.y2 = Math.max(f.y1 + 20, footerMinY - 3);
+      }
+
+      // Associate nearest question header (same column when 2-col) at or above the figure's top edge
+      // (anchoring to f.y1 avoids right-floated figures extending downward past the next question header from mis-labeling!)
       let questionLabel = '';
-      const figMidY = (f.y1 + f.y2) / 2;
+      const figCol = isTwoColumnPage && (f.x1 + f.x2) / 2 >= W * 0.5 ? 1 : 0;
       for (const q of qHeaders) {
-        if (q.y1 <= figMidY + 15) {
+        if (/^PHẦN/i.test(q.label)) continue;
+        if (isTwoColumnPage && q.col !== figCol) continue;
+        if (q.y1 <= f.y1 + 25) {
           questionLabel = q.label;
         }
       }
@@ -449,14 +658,15 @@ async function detectFiguresFromPdfPage(page: any): Promise<PdfDetectedFigure[]>
             ? `Hình vẽ minh họa ${questionLabel}`
             : 'Hình vẽ minh họa từ tài liệu gốc',
           isAnswerKeyPage,
+          isRasterImg: f.isRasterImg,
         });
       }
     }
 
-    return detected;
+    return { detectedFigures: detected, detectedQuestionLabels, proseLineBoxes };
   } catch (err) {
     console.warn('Deterministic PDF figure detection skipped:', err);
-    return [];
+    return { detectedFigures: [], detectedQuestionLabels: [], proseLineBoxes: [] };
   }
 }
 
@@ -521,6 +731,8 @@ export async function renderLoadedPdfPageWithFigures(
   height: number;
   numPages: number;
   detectedFigures: PdfDetectedFigure[];
+  detectedQuestionLabels: string[];
+  proseLineBoxes: [number, number, number, number][];
 }> {
   const numPages = pdf.numPages;
   const validPageNum = Math.max(1, Math.min(pageNum, numPages));
@@ -545,7 +757,7 @@ export async function renderLoadedPdfPageWithFigures(
   };
 
   await page.render(renderContext).promise;
-  const detectedFigures = await detectFiguresFromPdfPage(page);
+  const { detectedFigures, detectedQuestionLabels, proseLineBoxes } = await detectFiguresAndLabelsFromPdfPage(page);
 
   const mimeType = format === 'png' ? 'image/png' : 'image/jpeg';
   const dataUrl = format === 'png' ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.86);
@@ -561,6 +773,8 @@ export async function renderLoadedPdfPageWithFigures(
     height: viewport.height,
     numPages,
     detectedFigures,
+    detectedQuestionLabels,
+    proseLineBoxes,
   };
 }
 
@@ -580,6 +794,8 @@ export async function renderPdfPageWithFigures(
   height: number;
   numPages: number;
   detectedFigures: PdfDetectedFigure[];
+  detectedQuestionLabels: string[];
+  proseLineBoxes: [number, number, number, number][];
 }> {
   const docHandle = await openPdfDocument(pdfData);
   try {

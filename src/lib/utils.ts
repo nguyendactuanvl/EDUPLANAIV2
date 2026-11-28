@@ -1339,8 +1339,25 @@ export function normalizeOcrChoicesAndFormatting(text: string): string {
     return `${p1}\n`;
   });
 
-  // Tách các mệnh đề a), b), c), d) của câu hỏi Đúng/Sai ra từng dòng riêng biệt (chỉ tách ngoài vùng toán, tránh "(a)")
-  s = s.replace(/([^\n])\s+(?=(?:[-*]\s*)?(?:\*{0,2})[a-d]\)(?:\*{0,2})\s+)/g, '$1\n');
+  // Tách các mệnh đề a), b), c), d) của câu hỏi Đúng/Sai ra từng đoạn riêng biệt (\n\n để Markdown không gộp lại thành 1 dòng)
+  // Tuyệt đối KHÔNG cắt nhầm chuỗi liệt kê trong câu hướng dẫn như "Trong mỗi ý a), b), c), d) ở mỗi câu..."
+  s = s.replace(/([^\n])\s+(?=(?:[-*]\s*)?(?:\*{0,2})([a-d])\)(?:\*{0,2})\s+)/g, (full, p1, letter, offset) => {
+    const lineStart = s.lastIndexOf('\n', offset) + 1;
+    const beforeOnLine = s.slice(lineStart, offset + p1.length);
+    const afterLabel = s.slice(offset + full.length);
+    // Bỏ qua liệt kê nội dòng: "a), b), c), d)" hoặc "mỗi ý a)" hoặc "d) ở mỗi câu"
+    if (/(?:(?:mỗi|các|những|từng)\s+ý|\b[a-d]\)\s*,?|\b[a-d]\)\s+và)\s*$/i.test(beforeOnLine)) {
+      return full;
+    }
+    if (/^(?:[-*]\s*)?(?:\*{0,2})[a-d]\)(?:\*{0,2})\s*(?:,|ở\s+mỗi\s+câu|thí\s+sinh|học\s+sinh)/i.test(afterLabel)) {
+      return full;
+    }
+    // Bỏ qua khi là dấu ngoặc đơn đang mở chưa đóng (vd: "(a) ...")
+    const openParens = (beforeOnLine.match(/\(/g) || []).length;
+    const closeParens = (beforeOnLine.match(/\)/g) || []).length;
+    if (openParens > closeParens) return full;
+    return `${p1}\n\n`;
+  });
 
   // 2. Tách các phương án trắc nghiệm A., B., C., D. đứng cùng một dòng thành các dòng độc lập
   // Ngoại trừ các dòng bảng Markdown (| ... |)

@@ -4525,7 +4525,7 @@ app.all("/api/pdf-to-word", async (req, res) => {
     return keepAliveExecute(req, res, async () => {
 
       const files = resolveFiles(req.body);
-      const { croppedImage, pageNum, totalPages } = req.body || {};
+      const { croppedImage, pageNum, totalPages, detectedQuestionLabels } = req.body || {};
       if (!files || files.length === 0) {
         return res.status(400).json({ error: "No files provided" });
       }
@@ -4542,31 +4542,44 @@ app.all("/api/pdf-to-word", async (req, res) => {
 
       const isSinglePageMode = typeof pageNum === 'number';
       const preferStream = req.body?.preferStream === true;
+      const safeDetectedLabels = Array.isArray(detectedQuestionLabels)
+        ? detectedQuestionLabels
+            .filter((x: any): x is string => typeof x === 'string' && x.trim().length > 0)
+            .map((x: string) => x.trim())
+            .slice(0, 60)
+        : [];
+      const detectedLabelsHint =
+        isSinglePageMode && safeDetectedLabels.length > 0
+          ? `\n- DANH SÁCH THỨ TỰ NHÃN CÂU GỐC TRÊN TRANG ${pageNum} (trích trực tiếp từ file PDF gốc): ${safeDetectedLabels.join(' -> ')}. BẮT BUỘC giữ chính xác 100% đúng số câu, đúng tiền tố và đúng thứ tự này!`
+          : '';
       const figureInstruction = isSinglePageMode
-        ? `- BẮT BUỘC CẮT ẢNH GỐC 100% CHO MỌI: **Bảng biến thiên (BBT)**, **Bảng xét dấu** ($x, y', y$ hoặc $f'(x), f(x)$), **Đồ thị hàm số**, hệ trục $Oxy$, miền nghiệm gạch chéo/tô đậm, hình học 2D/3D, sơ đồ, biểu đồ (kể cả nằm bên phải/trái chữ đề bài).
+        ? `- BẮT BUỘC CẮT ẢNH GỐC 100% CHO MỌI: **Bảng biến thiên (BBT)**, **Bảng xét dấu** ($x, y', y$ hoặc $f'(x), f(x)$), **Đồ thị hàm số**, hệ trục $Oxy$, miền nghiệm gạch chéo/tô đậm, hình học 2D/3D, ảnh chụp thực tế, sơ đồ, biểu đồ (kể cả nằm bên phải/trái chữ đề bài).
 - TUYỆT ĐỐI CẤM tự ý vẽ lại (KHÔNG chuyển BBT/bảng xét dấu thành Markdown table, KHÔNG vẽ SVG/TikZ/ASCII) và KHÔNG bỏ qua.
-- Xuất ĐÚNG 1 thẻ trên dòng riêng ngay đúng vị trí xuất hiện (hệ tọa độ chuẩn hóa 0..1000: ymin,xmin,ymax,xmax ôm trọn khung viền BBT/mũi tên trục/nhãn điểm, KHÔNG dính chữ đề bài hay phương án A,B,C,D; desc ngắn gọn không chứa [, ], "):
+- TUYỆT ĐỐI KHÔNG gắn [CROP_FIG] cho tiêu đề đề thi (SỞ GIÁO DỤC / TRƯỜNG / ĐỀ KIỂM TRA / ĐÁP ÁN), KHÔNG gắn cho bảng số liệu thống kê (số tuổi, mức lương, độ ẩm, tần số...), KHÔNG gắn cho bảng đáp án, KHÔNG gắn cho đoạn văn bản hay phương trình toán thuần túy!
+- Xuất ĐÚNG 1 thẻ trên dòng riêng ngay đúng vị trí xuất hiện (BẮT BUỘC giữ nguyên page="${pageNum}", hệ tọa độ chuẩn hóa 0..1000: ymin,xmin,ymax,xmax ôm SÁT khung viền BBT/mũi tên trục/nhãn điểm, TUYỆT ĐỐI KHÔNG dính dòng chữ đề bài phía trên/dưới hay phương án A,B,C,D hay chân trang; desc ngắn gọn không chứa [, ], "):
   [CROP_FIG page="${pageNum}" box="ymin,xmin,ymax,xmax" desc="Mô tả ngắn gọn"]
   Ví dụ: [CROP_FIG page="${pageNum}" box="210,140,345,860" desc="Bảng biến thiên của hàm số"] hoặc [CROP_FIG page="${pageNum}" box="330,620,475,895" desc="Đồ thị hàm số trên mặt phẳng Oxy"]`
         : `- Khi gặp Bảng biến thiên (BBT), Bảng xét dấu, đồ thị, hình vẽ, miền nghiệm gạch chéo, sơ đồ, biểu đồ: TUYỆT ĐỐI KHÔNG tự vẽ lại (không chuyển BBT sang Markdown table, không vẽ SVG/TikZ) và KHÔNG bỏ qua; ghi đúng vị trí: [Bảng biến thiên: mô tả], [Đồ thị: mô tả] hoặc [Hình vẽ: mô tả].`;
 
       const prompt = `Số hóa chính xác 100% nội dung ${isSinglePageMode ? `Trang ${pageNum}/${totalPages || 1}` : 'toàn bộ tài liệu'} sang Markdown chuẩn để xuất Word (.docx):
 
-1. NỘI DUNG & BỐ CỤC:
-- Số hóa đầy đủ 100% đề bài, tiêu đề, PHẦN I/II/III, các câu hỏi, ý a), b), c), d), phương án A., B., C., D., bảng số liệu, lời giải; KHÔNG tóm tắt hay bỏ sót. Bỏ header/footer trang trí lặp lại ở mép trang (số trang, tên/SĐT lề).
-- Giữ nguyên tuyệt đối các mã [DOCX_IMG_N] nếu có và GIỮ NGUYÊN chính xác số thứ tự câu gốc (vd: Câu 17. giữ đúng Câu 17., không đánh lại từ Câu 1.).
+1. NỘI DUNG, THỨ TỰ TRANG & SỐ THỨ TỰ CÂU GỐC (100% NGUYÊN BẢN):
+- Số hóa đầy đủ 100% đề bài, tiêu đề, PHẦN I/II/III/IV, các câu hỏi, ý a), b), c), d), phương án A., B., C., D., bảng số liệu, bảng đáp án, lời giải; KHÔNG tóm tắt hay bỏ sót.
+- TUYỆT ĐỐI BỎ chân trang/số trang lề lặp lại (vd: "Trang 1/4 – Mã đề 002", "Trang 3/4", tên/SĐT lề). TUYỆT ĐỐI KHÔNG tự bịa thêm dòng "------ HẾT ------" nếu trang hiện tại không in chữ "HẾT"!
+- TUYỆT ĐỐI GIỮ NGUYÊN 100% THỨ TỰ CÂU VÀ SỐ HIỆU CÂU NHƯ FILE GỐC: chép y nguyên tiền tố & số câu đang in (vd: Câu 17. giữ đúng **Câu 17.**, Bài 2. giữ đúng **Bài 2.**, 15. giữ đúng **15.**). CẤM tự đánh lại từ Câu 1., CẤM đổi Bài thành Câu (hoặc ngược lại), CẤM đảo vị trí câu hay đổi thứ tự trang. Nếu trang chia 2 cột, đọc trọn cột trái từ trên xuống rồi sang cột phải từ trên xuống theo đúng thứ tự câu gốc.${detectedLabelsHint}
+- Giữ nguyên tuyệt đối các mã [DOCX_IMG_N] nếu có.
 - Tiêu đề đề thi 2 cột (cột trái: SỞ/PHÒNG/TRƯỜNG/ĐỀ THI...; cột phải: KÌ THI/NĂM HỌC/Môn thi/Thời gian...): xuất đúng bảng HTML không viền:
 <table class="borderless" style="width: 100%; border: none;"><tbody><tr><td style="text-align: center; border: none; width: 45%; vertical-align: top;">...</td><td style="text-align: center; border: none; width: 55%; vertical-align: top;">...</td></tr></tbody></table>
-  Dùng <strong>, <em>, <br/> bên trong ô (không viết dính **...***...*), sau </table> xuống 2 dòng (\\n\\n). Xuống 2 dòng tách biệt trước PHẦN I/II/III, Câu 1., ------ HẾT ------.
-- Trình bày A., B., C., D. và a), b), c), d) rõ ràng trên từng dòng riêng (không thêm bullet).
-- Bảng số liệu thống kê/tần số/giá trị/đáp án thông thường -> Markdown Table (| ... |). RIÊNG Bảng biến thiên (BBT), Bảng xét dấu, Đồ thị -> giữ 100% ảnh gốc bằng [CROP_FIG ...].
-${!isSinglePageMode ? '- Giữa các trang ghi: "--- [Hết Trang X / Sang Trang Y] ---".' : ''}
+  Dùng <strong>, <em>, <br/> bên trong ô (không viết dính **...***...*), sau </table> xuống 2 dòng (\\n\\n). Xuống 2 dòng tách biệt trước mỗi PHẦN I/II/III/IV, mỗi câu hỏi mới và dòng ------ HẾT ------ (nếu có in trên trang).
+- Trình bày A., B., C., D. và mỗi ý Đúng/Sai a), b), c), d) trên từng đoạn dòng riêng biệt (không thêm bullet, không gộp b) và c) chung 1 dòng).
+- Bảng số liệu thống kê/tần số/giá trị/bảng đáp án (ĐÁP ÁN) thông thường -> Markdown Table (| ... |). RIÊNG Bảng biến thiên (BBT), Bảng xét dấu, Đồ thị -> giữ 100% ảnh gốc bằng [CROP_FIG ...].
+${!isSinglePageMode ? '- Giữ đúng thứ tự trang 1, 2, 3... của file gốc; giữa các trang ghi: "--- [Hết Trang X / Sang Trang Y] ---".' : ''}
 
 2. HÌNH VẼ, BẢNG BIẾN THIÊN & ĐỒ THỊ (GIỮ 100% ẢNH GỐC):
 ${figureInstruction}
 
 3. LATEX CHUẨN:
-- Bọc MỌI biến số đơn ($x$, $y$, $m$), biểu thức, phương trình, bất phương trình, tọa độ, vectơ và phương án chứa toán trong $...$ hoặc $$...$$.
+- Bọc MỌI biến số đơn ($x$, $y$, $m$), tập số ($\\mathbb{R}$, $\\mathbb{Z}$, $\\mathbb{N}$), biểu thức, giới hạn ($\\lim_{x \\to 2^+}$), lượng giác ($\\sin x$, $\\cos x$), phương trình, bất phương trình, tọa độ, vectơ ($\\overrightarrow{AB}$, $\\vec{u}$) và phương án chứa toán trong $...$ hoặc $$...$$.
 - Dùng \\frac (không dùng \\dfrac), \\ge, \\le (luôn có dấu cách sau \\ge, \\le, \\neq); không bọc câu tiếng Việt trong dấu $.
 
 Chỉ xuất nội dung Markdown đã số hóa, không thêm lời chào hay giải thích.`;
@@ -4652,11 +4665,11 @@ app.all("/api/detect-page-figures", async (req, res) => {
 xuất hiện trên trang — KỂ CẢ KHI NẰM BÊN PHẢI/TRÁI CHỮ ĐỀ BÀI HOẶC TRONG BẢNG HƯỚNG DẪN CHẤM.
 
 QUY TẮC BẮT BUỘC:
-1. PHẢI khoanh vùng ĐẦY ĐỦ cả **BẢNG BIẾN THIÊN (BBT)**, **BẢNG XÉT DẤU**, **ĐỒ THỊ HÀM SỐ**, **HÌNH VẼ**, **SƠ ĐỒ**, **BIỂU ĐỒ**. KHÔNG khoanh vùng đoạn văn bản thuần, KHÔNG khoanh vùng bảng số liệu thống kê/bảng tần số ghép nhóm/bảng đáp án thông thường và KHÔNG khoanh cả trang.
+1. PHẢI khoanh vùng ĐẦY ĐỦ cả **BẢNG BIẾN THIÊN (BBT)**, **BẢNG XÉT DẤU**, **ĐỒ THỊ HÀM SỐ**, **HÌNH VẼ**, **SƠ ĐỒ**, **BIỂU ĐỒ**. TUYỆT ĐỐI KHÔNG khoanh vùng tiêu đề đề thi (SỞ GIÁO DỤC / TRƯỜNG / ĐỀ KIỂM TRA / ĐÁP ÁN), KHÔNG khoanh vùng đoạn văn bản hay khối công thức/phương án A, B, C, D thuần túy, KHÔNG khoanh vùng bảng số liệu thống kê/bảng tần số ghép nhóm/bảng đáp án thông thường và KHÔNG khoanh cả trang.
 2. Mỗi box_2d là mảng đúng 4 số nguyên [ymin, xmin, ymax, xmax] theo hệ tọa độ chuẩn hóa 0..1000 (0 = mép trên/trái, 1000 = mép dưới/phải).
-   - Với **Bảng biến thiên / Bảng xét dấu**: khung bao phải ôm trọn 100% khung viền bảng, cột trái x, y', y, các vạch kẻ, dấu +, -, 0, mũi tên và giá trị cực trị, -vô cùng, +vô cùng; KHÔNG dính dòng đề bài phía trên hay đáp án A, B, C, D phía dưới.
-   - Với **Đồ thị / Hình vẽ**: khung bao phải ôm trọn toàn bộ mũi tên trục, nhãn O, x, y, các số trên trục, tên đỉnh A, B, C, S và phần gạch chéo; KHÔNG dính dòng chữ đề bài ở trên hay đáp án A, B, C, D ở dưới.
-3. Ghi rõ "questionLabel" của câu hỏi chứa BBT/đồ thị/hình vẽ đó đúng như trên trang (ví dụ: "Câu 3", "Câu 4", "Bài 2", hoặc "" nếu không gắn với số câu cụ thể). Nếu 1 câu có 4 đồ thị/BBT nhỏ tương ứng 4 phương án A, B, C, D thì trả về 4 phần tử riêng với questionLabel là "Câu X - A", "Câu X - B", "Câu X - C", "Câu X - D" hoặc 1 khung chung bao 4 hình nếu chúng nằm liền khối.
+   - Với **Bảng biến thiên / Bảng xét dấu**: khung bao phải ôm SÁT 100% khung viền bảng, cột trái x, y', y, các vạch kẻ, dấu +, -, 0, mũi tên và giá trị cực trị, -vô cùng, +vô cùng; KHÔNG dính dòng đề bài phía trên hay đáp án A, B, C, D phía dưới.
+   - Với **Đồ thị / Hình vẽ**: khung bao phải ôm SÁT toàn bộ mũi tên trục, nhãn O, x, y, các số trên trục, tên đỉnh A, B, C, S và phần gạch chéo; KHÔNG dính dòng chữ đề bài ở trên, chân trang "Trang X/Y" ở dưới hay đáp án A, B, C, D.
+3. Ghi rõ "questionLabel" của câu hỏi chứa BBT/đồ thị/hình vẽ đó đúng như trên trang (ví dụ: "Câu 3", "Câu 4", "Bài 2", hoặc "" nếu hình nằm đầu trang thuộc câu hỏi của trang trước). Nếu 1 câu có 4 đồ thị/BBT nhỏ tương ứng 4 phương án A, B, C, D thì trả về 4 phần tử riêng với questionLabel là "Câu X - A", "Câu X - B", "Câu X - C", "Câu X - D" hoặc 1 khung chung bao 4 hình nếu chúng nằm liền khối.
 4. Trong trường "description" ghi rõ loại hình bằng chữ tiếng Việt bình thường (ví dụ: "Bảng biến thiên", "Bảng xét dấu", "Đồ thị hàm số", "Hình chóp S.ABCD" — KHÔNG dùng ký tự backslash LaTeX hay dấu ngoặc kép).
 5. Nếu trang hoàn toàn KHÔNG có BBT/bảng xét dấu/đồ thị/hình vẽ/sơ đồ nào thì trả về {"figures": []}.
 ${questionSummary ? `\nVăn bản đã OCR trên trang để bạn đối chiếu đúng số câu (questionLabel):\n${questionSummary}` : ''}`;

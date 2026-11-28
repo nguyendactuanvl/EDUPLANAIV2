@@ -802,22 +802,29 @@ export const MarkdownRenderer = React.memo(({
   className, 
   inline = false,
   skipWorksheetFormatting = false,
-  disableAutoBbtSvg = false
+  disableAutoBbtSvg = false,
+  preserveOriginalNumbering = false
 }: { 
   content: string; 
   className?: string; 
   inline?: boolean; 
   skipWorksheetFormatting?: boolean;
   disableAutoBbtSvg?: boolean;
+  preserveOriginalNumbering?: boolean;
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const processedContent = useMemo(() => {
     const { masked: mediaSafeInput, tokens: mediaTokens } = protectHtmlMediaTags(String(content || ''));
-    // Normalize math text without running worksheet-only section manglers when rendering lesson plans
+    // Normalize math text without running worksheet-only section manglers when rendering lesson plans or PDF-to-Word
     let res = skipWorksheetFormatting
       ? cleanMathAndUnwrapHeadings(normalizeMathLatex(mediaSafeInput))
-      : cleanMathAndUnwrapHeadings(preprocessMath(mediaSafeInput));
+      : cleanMathAndUnwrapHeadings(
+          preprocessMath(mediaSafeInput, {
+            preserveOriginalNumbering,
+            disableAutoBbtSvg,
+          })
+        );
 
     // Normalize array and table environments (repair \begin{array} column specifiers and remove inner blank lines)
     res = normalizeArrayAndTableEnvironments(res);
@@ -927,8 +934,36 @@ export const MarkdownRenderer = React.memo(({
       return line;
     }).join('\n');
 
+    if (preserveOriginalNumbering) {
+      // Render page-boundary markers cleanly in preview while excluding them from exported Word (.docx) via .no-print
+      res = res.replace(
+        /^[ \t]*---\s*\[Hết\s+Trang\s+(\d+)\s*\/\s*Sang\s+Trang\s+(\d+)\](?:\s*---)?[ \t]*$/gmi,
+        '\n\n<div class="no-print my-4 flex items-center gap-3 text-xs font-medium text-slate-400 select-none"><span class="flex-1 border-t border-dashed border-slate-300"></span><span>Hết Trang $1 / Sang Trang $2</span><span class="flex-1 border-t border-dashed border-slate-300"></span></div>\n\n'
+      );
+
+      // Prevent Markdown <ol> from auto-renumbering bare original numbering (e.g. "17. ...", "19. ...")
+      let inCodeFence = false;
+      let inDisplayMath = false;
+      res = res
+        .split('\n')
+        .map((line) => {
+          const t = line.trim();
+          if (t.startsWith('```')) {
+            inCodeFence = !inCodeFence;
+            return line;
+          }
+          if (!inCodeFence && t === '$$') {
+            inDisplayMath = !inDisplayMath;
+            return line;
+          }
+          if (inCodeFence || inDisplayMath) return line;
+          return line.replace(/^([ \t]*)(\d+)\.([ \t]+)/, '$1$2\\.$3');
+        })
+        .join('\n');
+    }
+
     return restoreHtmlMediaTags(res, mediaTokens);
-  }, [content, skipWorksheetFormatting, disableAutoBbtSvg]);
+  }, [content, skipWorksheetFormatting, disableAutoBbtSvg, preserveOriginalNumbering]);
 
   // 4. Auto-scanner effect with batched MathJax 3 scheduler
   useEffect(() => {

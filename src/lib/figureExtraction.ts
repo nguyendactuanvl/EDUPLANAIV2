@@ -115,6 +115,75 @@ export const computeBoxIoU = (a: BoxTuple, b: BoxTuple): number => {
   return union > 0 ? interArea / union : 0;
 };
 
+export const computeBoxContainment = (a: BoxTuple, b: BoxTuple): number => {
+  const interY1 = Math.max(a[0], b[0]);
+  const interX1 = Math.max(a[1], b[1]);
+  const interY2 = Math.min(a[2], b[2]);
+  const interX2 = Math.min(a[3], b[3]);
+  const interW = Math.max(0, interX2 - interX1);
+  const interH = Math.max(0, interY2 - interY1);
+  const interArea = interW * interH;
+  if (interArea <= 0) return 0;
+  const areaA = (a[2] - a[0]) * (a[3] - a[1]);
+  const areaB = (b[2] - b[0]) * (b[3] - b[1]);
+  const minArea = Math.min(areaA, areaB);
+  return minArea > 0 ? interArea / minArea : 0;
+};
+
+/**
+ * Validates and trims a figure bounding box against known Vietnamese prose/header/footer lines
+ * (normalized 0..1000). Rejects page headers and prose-heavy text blocks, and trims top/bottom
+ * edges that slightly graze an adjacent line of question text.
+ */
+export const sanitizeBoxAgainstProse = (
+  box: BoxTuple,
+  proseLineBoxes?: BoxTuple[]
+): BoxTuple | null => {
+  let [ymin, xmin, ymax, xmax] = box;
+  const boxH = ymax - ymin;
+  const boxW = xmax - xmin;
+
+  // Reject full-width exam title header zone at top of page (e.g. SỞ GIÁO DỤC ... ĐỀ KIỂM TRA ...)
+  if (ymax < 165 && xmin < 220 && xmax > 780) {
+    return null;
+  }
+
+  if (!proseLineBoxes || proseLineBoxes.length === 0) {
+    return box;
+  }
+
+  // Find prose lines with meaningful horizontal overlap inside this box
+  const overlappingProse = proseLineBoxes.filter((pl) => {
+    const ox = Math.min(xmax, pl[3]) - Math.max(xmin, pl[1]);
+    const oy = Math.min(ymax, pl[2]) - Math.max(ymin, pl[0]);
+    if (ox <= 0 || oy <= 0) return false;
+    const plW = Math.max(1, pl[3] - pl[1]);
+    return ox >= Math.min(45, plW * 0.35);
+  });
+
+  // Reject boxes that enclose 3 or more full prose lines (pure text / equation / statistical table block)
+  const interiorProse = overlappingProse.filter((pl) => {
+    const midY = (pl[0] + pl[2]) / 2;
+    return midY > ymin + boxH * 0.14 && midY < ymax - boxH * 0.14;
+  });
+  if (interiorProse.length >= 3) {
+    return null;
+  }
+
+  // Gently clip outer top/bottom edge if a prose line grazes ONLY the top 20% or bottom 20% edge
+  for (const pl of overlappingProse) {
+    const plMidY = (pl[0] + pl[2]) / 2;
+    if (plMidY <= ymin + boxH * 0.22 && pl[2] < ymax - 25) {
+      ymin = Math.max(ymin, pl[2] + 2);
+    } else if (plMidY >= ymax - boxH * 0.22 && pl[0] > ymin + 25) {
+      ymax = Math.min(ymax, pl[0] - 2);
+    }
+  }
+
+  if (ymax - ymin < 22 || boxW < 20) return null;
+  return [ymin, xmin, ymax, xmax];
+};
+
 export const trimWhiteBordersOnCanvas = (sourceCanvas: HTMLCanvasElement): HTMLCanvasElement | null => {
   const w = sourceCanvas.width;
   const h = sourceCanvas.height;
@@ -151,7 +220,82 @@ export const trimWhiteBordersOnCanvas = (sourceCanvas: HTMLCanvasElement): HTMLC
     if (maxX <= minX || maxY <= minY) return null;
     if (maxX - minX < 12 || maxY - minY < 12) return null;
 
-    const margin = 10;
+    // Strip thin clipped text-bleed fragments at the very top or bottom edge that are separated
+    // from the main figure body by a pure-white horizontal gap (>= 4px tall)
+    const contentH = maxY - minY + 1;
+    if (contentH >= 70) {
+      const rowHasInk = (y: number): boolean => {
+        const rowOff = y * w * 4;
+        for (let x = minX; x <= maxX; x++) {
+          const idx = rowOff + x * 4;
+          if (imgData[idx + 3] >= 20 && (imgData[idx] < 238 || imgData[idx + 1] < 238 || imgData[idx + 2] < 238)) {
+            return true;
+          }
+        }
+        return false;
+      };
+
+      const maxBleedH = Math.min(28, Math.floor(contentH * 0.19));
+      // Check top edge bleed: find first white gap of >= 4 rows after an initial thin ink strip
+      let topStripEnd = -1;
+      for (let dy = 2; dy <= maxBleedH; dy++) {
+        if (!rowHasInk(minY + dy)) {
+          let gapLen = 0;
+          while (minY + dy + gapLen < maxY && !rowHasInk(minY + dy + gapLen)) {
+            gapLen++;
+          }
+          if (gapLen >= 4 && minY + dy + gapLen < maxY - 30) {
+            topStripEnd = minY + dy + gapLen;
+            break;
+          }
+        }
+      }
+      if (topStripEnd > minY) {
+        minY = topStripEnd;
+      }
+
+      // Check bottom edge bleed: scan upward from maxY for a white gap of >= 4 rows
+      const curH = maxY - minY + 1;
+      const maxBotBleedH = Math.min(28, Math.floor(curH * 0.19));
+      let botStripStart = -1;
+      for (let dy = 2; dy <= maxBotBleedH; dy++) {
+        if (!rowHasInk(maxY - dy)) {
+          let gapLen = 0;
+          while (maxY - dy - gapLen > minY && !rowHasInk(maxY - dy - gapLen)) {
+            gapLen++;
+          }
+          if (gapLen >= 4 && maxY - dy - gapLen > minY + 30) {
+            botStripStart = maxY - dy - gapLen;
+            break;
+          }
+        }
+      }
+      if (botStripStart > minY && botStripStart < maxY) {
+        maxY = botStripStart;
+      }
+
+      // Recompute tight minX/maxX on the cleaned [minY..maxY] band
+      let nMinX = w;
+      let nMaxX = -1;
+      for (let y = minY; y <= maxY; y += step) {
+        const rowOff = y * w * 4;
+        for (let x = minX; x <= maxX; x += step) {
+          const idx = rowOff + x * 4;
+          if (imgData[idx + 3] >= 20 && (imgData[idx] < 244 || imgData[idx + 1] < 244 || imgData[idx + 2] < 244)) {
+            if (x < nMinX) nMinX = x;
+            if (x > nMaxX) nMaxX = x;
+          }
+        }
+      }
+      if (nMaxX > nMinX) {
+        minX = nMinX;
+        maxX = nMaxX;
+      }
+    }
+
+    if (maxX - minX < 12 || maxY - minY < 12) return null;
+
+    const margin = 8;
     const cropX = Math.max(0, minX - margin);
     const cropY = Math.max(0, minY - margin);
     const cropW = Math.min(w - cropX, (maxX - minX) + margin * 2 + 1);
@@ -174,7 +318,7 @@ export const trimWhiteBordersOnCanvas = (sourceCanvas: HTMLCanvasElement): HTMLC
 export const cropFigureFromDataUrl = (
   pageDataUrl: string,
   boxInput: string | number[],
-  pad: number = 18
+  pad: number = 6
 ): Promise<{ dataUrl: string; displayW: number; displayH: number; box: BoxTuple } | null> => {
   return new Promise((resolve) => {
     const parsedBox = parseBoxCoords(boxInput);
@@ -185,8 +329,8 @@ export const cropFigureFromDataUrl = (
 
     const [ymin, xmin, ymax, xmax] = parsedBox;
 
-    // Add margin padding before slicing so axis labels (O, x, y, tick marks) are never clipped;
-    // trimWhiteBordersOnCanvas cleans up any excess whitespace afterwards.
+    // Small crisp margin padding so axis labels (O, x, y, tick marks) are never clipped
+    // without pulling adjacent question text lines into the figure.
     const padYmin = Math.max(0, ymin - pad);
     const padXmin = Math.max(0, xmin - pad);
     const padYmax = Math.min(1000, ymax + pad);
@@ -276,7 +420,13 @@ export const resolveCropFigMarkers = async (
   text: string,
   pageImagesMap: { [pageNum: number]: string },
   autoCropEnabled: boolean,
-  defaultPage: number = 1
+  defaultPage: number = 1,
+  options?: {
+    /** When processing a single page image, ALWAYS crop from defaultPage (prevents multi-exam PDF footers like "Trang 1/4" on PDF page 5 from cropping PDF page 1!) */
+    lockToDefaultPage?: boolean;
+    /** Optional normalized 0..1000 prose line boxes on defaultPage to reject false-positive text/header crops and trim edge bleed */
+    proseLineBoxes?: BoxTuple[];
+  }
 ): Promise<{
   text: string;
   croppedBoxes: BoxTuple[];
@@ -307,7 +457,9 @@ export const resolveCropFigMarkers = async (
     const descMatch = attrs.match(/desc\s*=\s*["']([^"']*)["']/i);
 
     const parsedPage = pageMatch ? Number(pageMatch[1]) : defaultPage;
-    const page = pageImagesMap[parsedPage] ? parsedPage : (pageImagesMap[defaultPage] ? defaultPage : parsedPage);
+    const page = options?.lockToDefaultPage
+      ? defaultPage
+      : (pageImagesMap[parsedPage] ? parsedPage : (pageImagesMap[defaultPage] ? defaultPage : parsedPage));
     const box = boxMatch ? boxMatch[1].trim() : '';
     const rawDesc = (descMatch ? descMatch[1] : 'Hình vẽ minh họa')
       .replace(/[\[\]]/g, '')
@@ -317,19 +469,28 @@ export const resolveCropFigMarkers = async (
     let replacement = `\n\n[Hình vẽ (Trang ${page}): ${rawDesc || 'Hình vẽ minh họa'}]\n\n`;
 
     if (autoCropEnabled && box && pageImagesMap[page]) {
-      const cropped = await cropFigureFromDataUrl(pageImagesMap[page], box);
-      if (cropped) {
-        croppedBoxes.push(cropped.box);
-        if (!croppedBoxesByPage[page]) croppedBoxesByPage[page] = [];
-        croppedBoxesByPage[page].push(cropped.box);
-        replacement = buildCroppedFigureImgTag(
-          cropped.dataUrl,
-          rawDesc || 'Hình vẽ minh họa đề thi',
-          page,
-          cropped.displayW,
-          cropped.displayH
-        );
-        croppedImgTags.push(replacement);
+      const parsedRaw = parseBoxCoords(box);
+      const sanitized = parsedRaw
+        ? sanitizeBoxAgainstProse(parsedRaw, page === defaultPage ? options?.proseLineBoxes : undefined)
+        : null;
+      if (parsedRaw && !sanitized) {
+        // Rejected as an accidental header / pure-prose / statistical-table crop -> omit cleanly
+        replacement = '';
+      } else if (sanitized) {
+        const cropped = await cropFigureFromDataUrl(pageImagesMap[page], sanitized, 6);
+        if (cropped) {
+          croppedBoxes.push(cropped.box);
+          if (!croppedBoxesByPage[page]) croppedBoxesByPage[page] = [];
+          croppedBoxesByPage[page].push(cropped.box);
+          replacement = buildCroppedFigureImgTag(
+            cropped.dataUrl,
+            rawDesc || 'Hình vẽ minh họa đề thi',
+            page,
+            cropped.displayW,
+            cropped.displayH
+          );
+          croppedImgTags.push(replacement);
+        }
       }
     }
 
@@ -344,7 +505,7 @@ export const injectFigureIntoPageMarkdown = (
   pageText: string,
   questionLabel: string,
   imgTag: string,
-  options?: { replaceLeakedBbtTable?: boolean }
+  options?: { replaceLeakedBbtTable?: boolean; box?: BoxTuple }
 ): string => {
   if (!pageText) return imgTag;
 
@@ -405,6 +566,21 @@ export const injectFigureIntoPageMarkdown = (
     // 4. Essay / no options: place right at the end of the question block
     return block.trimEnd() + imgTag;
   };
+
+  // Special case: Top-of-page figure belonging to a question carried over from the PREVIOUS page
+  // (questionLabel === '' AND box is near the top AND page begins with continuation items a)/b)/A./B. before first Câu/Bài)
+  if (!labelNumMatch && options?.box && options.box[0] < 320) {
+    const firstQMatch = /(?:^|\n)[ \t]*(?:#{1,4}\s*)?(?:\*{0,2})(?:Câu|Bài|Question|Problem)\s+\d+/i.exec(pageText);
+    const preamble = firstQMatch ? pageText.slice(0, firstQMatch.index) : pageText;
+    const hasContinuationItems = /(?:^|\n)[ \t]*(?:\*{0,2})(?:[a-d]\)|[A-D]\.)/m.test(preamble);
+    if (hasContinuationItems && !/<img\b/i.test(preamble)) {
+      // Replace placeholder in preamble if any, otherwise place right at the top of the page above continuation items
+      if (UNRESOLVED_FIG_PLACEHOLDER_RE.test(preamble)) {
+        return preamble.replace(UNRESOLVED_FIG_PLACEHOLDER_RE, imgTag) + pageText.slice(preamble.length);
+      }
+      return imgTag.trimStart() + pageText;
+    }
+  }
 
   if (labelNumMatch) {
     const num = labelNumMatch[2];
@@ -524,13 +700,34 @@ export const injectFigureIntoPageMarkdown = (
   return insertBeforeChoicesOrEnd(pageText);
 };
 
+const findQuestionBlockByLabel = (pageText: string, label: string): string | null => {
+  const m = (label || '').trim().match(/(Câu|Bài|Question|Problem)\s*(\d+)/i);
+  if (!m) return null;
+  const num = m[2];
+  const qStartRe = new RegExp(
+    `(?:^|\\n)[ \\t]*(?:#{1,4}\\s*)?(?:\\*{0,2})(?:Câu|Bài|Question|Problem)\\s+${num}\\s*[:.\\)]?(?:\\*{0,2})(?:\\s*[:.\\)])?`,
+    'gi'
+  );
+  const allMatches = Array.from(pageText.matchAll(qStartRe));
+  if (allMatches.length === 0) return null;
+  const blocks = allMatches.map((hit) => {
+    const start = hit.index ?? 0;
+    const nextHeaderRe =
+      /\n[ \t]*(?:#{1,4}\s*)?(?:\*{0,2})(?:Câu\s+\d+|Bài\s+\d+|Question\s+\d+|Problem\s+\d+|PHẦN\s+[IVX1-4]+|PART\s+[IVX1-4]+)(?:\*{0,2})[\s:.\)]/gi;
+    nextHeaderRe.lastIndex = start + hit[0].length;
+    const nextHit = nextHeaderRe.exec(pageText);
+    return pageText.slice(start, nextHit ? nextHit.index : pageText.length);
+  });
+  return blocks.find((b) => !/<img\b/i.test(b)) || blocks[0];
+};
+
 export const applyPdfDetectedFigures = async (
   pageText: string,
   pageDataUrl: string,
   pageNum: number,
   detectedFigures: PdfDetectedFigure[],
   existingBoxes: BoxTuple[],
-  options?: { replaceLeakedBbtTable?: boolean }
+  options?: { replaceLeakedBbtTable?: boolean; proseLineBoxes?: BoxTuple[] }
 ): Promise<{ text: string; croppedBoxes: BoxTuple[] }> => {
   if (!pageDataUrl || !detectedFigures || detectedFigures.length === 0) {
     return { text: pageText, croppedBoxes: existingBoxes };
@@ -540,14 +737,38 @@ export const applyPdfDetectedFigures = async (
   const allBoxes: BoxTuple[] = [...existingBoxes];
 
   for (const fig of detectedFigures) {
-    const parsed = parseBoxCoords(fig.box);
+    const parsedRaw = parseBoxCoords(fig.box);
+    if (!parsedRaw) continue;
+
+    // For vector-only detections, sanitize against prose lines; embedded raster images keep exact bounds
+    const parsed = fig.isRasterImg
+      ? parsedRaw
+      : sanitizeBoxAgainstProse(parsedRaw, options?.proseLineBoxes);
     if (!parsed) continue;
-    // Skip if Pass 1 AI already cropped substantially the same region
-    if (allBoxes.some((b) => computeBoxIoU(b, parsed) > 0.35)) {
+
+    // Skip if Pass 1 AI already cropped substantially the same or containing region
+    if (allBoxes.some((b) => computeBoxIoU(b, parsed) > 0.25 || computeBoxContainment(b, parsed) > 0.55)) {
       continue;
     }
-    // PDF vector/image bounds already include adjacent diagram labels, so use crisp 8/1000 padding
-    const cropped = await cropFigureFromDataUrl(pageDataUrl, parsed, 8);
+
+    // For non-raster vector clusters attached to a known question label, verify the target block actually needs a figure
+    if (!fig.isRasterImg && !fig.isAnswerKeyPage && fig.questionLabel) {
+      const targetBlock = findQuestionBlockByLabel(updated, fig.questionLabel);
+      if (targetBlock) {
+        const hasPlaceholderOrLeakedBbt =
+          UNRESOLVED_FIG_PLACEHOLDER_RE.test(targetBlock) ||
+          (Boolean(options?.replaceLeakedBbtTable) && hasLeakedMarkdownBbtTable(targetBlock));
+        if (/<img\b/i.test(targetBlock) && !hasPlaceholderOrLeakedBbt) {
+          continue;
+        }
+        if (!VISUAL_QUESTION_CUE_RE.test(targetBlock) && !hasPlaceholderOrLeakedBbt) {
+          continue;
+        }
+      }
+    }
+
+    // PDF raster/vector bounds are exact -> use tight 4/1000 padding so adjacent text never bleeds in
+    const cropped = await cropFigureFromDataUrl(pageDataUrl, parsed, fig.isRasterImg ? 3 : 5);
     if (!cropped) continue;
 
     allBoxes.push(cropped.box);
@@ -558,7 +779,10 @@ export const applyPdfDetectedFigures = async (
       cropped.displayW,
       cropped.displayH
     );
-    updated = injectFigureIntoPageMarkdown(updated, fig.questionLabel || '', imgTag, options);
+    updated = injectFigureIntoPageMarkdown(updated, fig.questionLabel || '', imgTag, {
+      ...options,
+      box: parsed,
+    });
   }
 
   return { text: updated, croppedBoxes: allBoxes };
@@ -638,7 +862,7 @@ export const recoverMissingPageFigures = async (
   pageDataUrl: string,
   pageNum: number,
   existingBoxes: BoxTuple[],
-  options?: { replaceLeakedBbtTable?: boolean }
+  options?: { replaceLeakedBbtTable?: boolean; proseLineBoxes?: BoxTuple[] }
 ): Promise<string> => {
   if (!pageDataUrl || !shouldRunPass2FigureDetection(pageText, options)) {
     return pageText;
@@ -651,12 +875,14 @@ export const recoverMissingPageFigures = async (
   const allBoxes: BoxTuple[] = [...existingBoxes];
 
   for (const fig of figures) {
-    const parsed = parseBoxCoords(fig?.box_2d);
+    const parsedRaw = parseBoxCoords(fig?.box_2d);
+    if (!parsedRaw) continue;
+    const parsed = sanitizeBoxAgainstProse(parsedRaw, options?.proseLineBoxes);
     if (!parsed) continue;
-    if (allBoxes.some((b) => computeBoxIoU(b, parsed) > 0.4)) {
+    if (allBoxes.some((b) => computeBoxIoU(b, parsed) > 0.3 || computeBoxContainment(b, parsed) > 0.55)) {
       continue;
     }
-    const cropped = await cropFigureFromDataUrl(pageDataUrl, parsed);
+    const cropped = await cropFigureFromDataUrl(pageDataUrl, parsed, 6);
     if (!cropped) continue;
 
     allBoxes.push(cropped.box);
@@ -667,7 +893,10 @@ export const recoverMissingPageFigures = async (
       cropped.displayW,
       cropped.displayH
     );
-    updated = injectFigureIntoPageMarkdown(updated, fig.questionLabel || '', imgTag, options);
+    updated = injectFigureIntoPageMarkdown(updated, fig.questionLabel || '', imgTag, {
+      ...options,
+      box: parsed,
+    });
   }
 
   return updated;
